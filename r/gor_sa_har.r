@@ -51,6 +51,11 @@ p3 <- ggplot(data = df1, aes(x = Datum,y = Medelsteglängd, group = Type_f, colo
   labs(x = "Datum", y = "Medelsteglängd (m)", colour = NULL) +
   facet_grid(~Type_f)
 
+p9 <- ggplot(data = df1, aes(x = Datum,y = Medelsteglängd, group = Type_f, color = Type_f)) +
+  geom_point() +
+  ylim(0, NA) + xlim(as.POSIXct(earliest_date), as.POSIXct(latest_date)) +
+  geom_smooth() +
+  labs(x = "Datum", y = "Medelsteglängd (m)", colour = NULL)
 
 # HEARTRATE
 df1$Medelpuls <- as.numeric(as.character(df1$Medelpuls))
@@ -70,6 +75,12 @@ p5 <- ggplot( data = df1, aes(x = Sträcka,y = Medeltempo, color = Datum)) +
   geom_smooth(color = "orange") +
   labs(x = "Sträcka (km)", y = "Medeltempo (min/km)")
 
+# plot stride per tempo
+p10 <- ggplot( data = df1, aes(x = Medeltempo,y = Medelsteglängd, color = Type_f)) +
+  geom_point() +
+  scale_x_datetime(date_labels = "%M:%S") +
+  geom_smooth(color = "orange") +
+  labs(y = "Medeltempo (min/km)", x = "Medelsteglängd (m)", colour = "Distans")
 
 # make a date factor for year to group the plots
 df1$År <- format(as.Date(df1$Datum, format="%d/%m/%Y"),"%Y")
@@ -103,6 +114,8 @@ p8 <- ggplot( data = df1, aes(x = Dagar,y = cumsum, group = År, color = År)) +
 ggsave("allPace.png", plot = p1, width = 8, height = 4, dpi = "print")
 ggsave("paceByDist.png", plot = p2, width = 8, height = 4, dpi = "print")
 ggsave("strideByDist.png", plot = p3, width = 8, height = 4, dpi = "print")
+ggsave("strideByDistAlt.png", plot = p9, width = 8, height = 4, dpi = "print")
+ggsave("strideByDistAlt2.png", plot = p10, width = 8, height = 4, dpi = "print")
 ggsave("HRByDist.png", plot = p4, width = 8, height = 4, dpi = "print")
 ggsave("allPaceByDist.png", plot = p5, width = 8, height = 4, dpi = "print")
 ggsave("paceByDistByYear.png", plot = p6, width = 8, height = 4, dpi = "print")
