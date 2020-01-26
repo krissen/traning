@@ -4,7 +4,7 @@
 require(ggplot2)
 require(dplyr)
 require(hms)
-# file_name <- file.choose()
+file_name <- file.choose()
 df1 <- read.csv(file_name, header = TRUE, stringsAsFactors = FALSE)
 
 
@@ -47,6 +47,7 @@ p3 <- ggplot(data = df1, aes(x = Datum,y = Medelsteglängd, group = Type_f, colo
   geom_point() +
   ylim(0, NA) + xlim(as.POSIXct(earliest_date), as.POSIXct(latest_date)) +
   geom_smooth() +
+  theme(axis.text.x=element_text(angle=90,hjust=1)) +
   labs(x = "Datum", y = "Medelsteglängd (m)", colour = NULL) +
   facet_grid(~Type_f)
 
@@ -58,6 +59,7 @@ p4 <- ggplot(data = df1, aes(x = Datum,y = Medelpuls, group = Type_f, color = Ty
   geom_point() +
   ylim(0, NA) + xlim(as.POSIXct(earliest_date), as.POSIXct(latest_date)) +
   geom_smooth() +
+  theme(axis.text.x=element_text(angle=90,hjust=1)) +
   labs(x = "Datum", y = "Medelpuls (bpm)", colour = NULL) +
   facet_grid(~Type_f)
 
@@ -75,6 +77,7 @@ p6 <- ggplot( data = df1, aes(x = Sträcka,y = Medeltempo, group = År, color = 
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
+  theme(axis.text.x=element_text(angle=90,hjust=1)) +
   labs(x = "Sträcka", y = "Medeltempo (min/km)") +
   facet_grid(~År)
 
