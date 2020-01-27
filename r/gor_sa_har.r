@@ -131,11 +131,9 @@ df1$Dagar <- as.Date(df1$Datum, format="%Y-%m-%d") - as.Date(as.character(df1$ny
 # Make the plot
 p8 <- ggplot( data = df1, aes(x = Dagar,y = cumsum, group = År, color = År)) +
   geom_line() +
-  #scale_x_continuous() +
   scale_colour_discrete(guide = 'none') +
-  scale_x_discrete(expand=c(0.1, 0)) +
-  geom_dl(aes(label = År), method = list(dl.trans(x = x + 0.2), "last.points", cex = 0.8)) +
-  #geom_dl(aes(label = År), method = list(dl.trans(x = x - 0.2), "first.points", cex = 0.8)) +
+  # geom_dl(aes(label = År), method = list(dl.trans(x = x + 0.2), "last.points", cex = 0.8)) +
+  geom_dl(aes(label = År), method = list(hjust= -.7,vjust = -.7, "last.points", cex = 0.8)) +
   ggtitle("Kumulativ sträcka under åren") +
   # margin : top right bottom left
   # theme(plot.margin=unit(c(1,1.5,1.5,1),"cm")) +
@@ -143,15 +141,15 @@ p8 <- ggplot( data = df1, aes(x = Dagar,y = cumsum, group = År, color = År)) +
 
 
 # save all plots
-ggsave("tempoOverTid.png", plot = p1, width = 8, height = 4, dpi = "print")
-ggsave("paceByDist.png", plot = p2, width = 8, height = 4, dpi = "print")
-ggsave("stegPerDistans.png", plot = p3, width = 8, height = 4, dpi = "print")
-ggsave("strideByDistAlt.png", plot = p9, width = 8, height = 4, dpi = "print")
-ggsave("strideByDistAlt2.png", plot = p10, width = 8, height = 4, dpi = "print")
-ggsave("pulsPerDistans.png", plot = p4, width = 8, height = 4, dpi = "print")
+ggsave("tempoOverStracka.png", plot = p1, width = 8, height = 4, dpi = "print")
+ggsave("tempo-grpDistans.png", plot = p2, width = 8, height = 4, dpi = "print")
+ggsave("steglangdOverTid-grpDistans.png", plot = p3, width = 8, height = 4, dpi = "print")
+ggsave("steglangdOverTid.png", plot = p9, width = 8, height = 4, dpi = "print")
+ggsave("stegOverTempo.png", plot = p10, width = 8, height = 4, dpi = "print")
+ggsave("pulsOverTid-grpDistans.png", plot = p4, width = 8, height = 4, dpi = "print")
 ggsave("tempoPerDistans.png", plot = p5, width = 8, height = 4, dpi = "print")
-ggsave("tempoPerStrackaPerArpaceByDistByYear.png", plot = p6, width = 8, height = 4, dpi = "print")
-ggsave("kumulativDistansGrpAr.png", plot = p7, width = 8, height = 4, dpi = "print")
-ggsave("kumulativDistansUnderAren.png", plot = p8, width = 8, height = 6.5, dpi = "print")
-ggsave("medeltempoOverKvartal.png", plot = p11, width = 8, height = 4, dpi = "print")
+ggsave("tempoPerStracka-grpAr.png", plot = p6, width = 8, height = 4, dpi = "print")
+ggsave("kumulativDistansOverAr.png", plot = p7, width = 8, height = 4, dpi = "print")
+ggsave("kumulativDistansUnderAren.png", plot = p8, width = 8, height = 6, dpi = "print")
+ggsave("medeltempoOverTid-grpKvartal.png", plot = p11, width = 8, height = 4, dpi = "print")
 
