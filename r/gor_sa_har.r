@@ -4,7 +4,8 @@
 require(ggplot2)
 require(dplyr)
 require(hms)
-file_name <- file.choose()
+#file_name <- file.choose()
+file_name <- file.path("../kristian/filer/csv", "070102-191231.csv")
 df1 <- read.csv(file_name, header = TRUE, stringsAsFactors = FALSE)
 
 
