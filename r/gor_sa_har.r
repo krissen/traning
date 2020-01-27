@@ -23,6 +23,7 @@ p1 <- ggplot( data = df1, aes(x = Datum,y = Medeltempo, color = Sträcka)) +
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth(color = "orange") +
+  ggtitle("Medeltempo över distans") + 
   labs(x = "Datum", y = "Medeltempo (min/km)")
 
 
