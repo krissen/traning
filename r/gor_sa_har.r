@@ -32,6 +32,7 @@ p2 <- ggplot( data = df1, aes(x = Datum,y = Medeltempo, group = Type_f, color = 
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
+  theme(legend.position = "none") +
   ggtitle("Medeltempo över tid grupperat efter distans") + 
   labs(x = "Datum", y = "Medeltempo (min/km)", colour = NULL) +
   facet_grid(~Type_f)
@@ -50,7 +51,7 @@ p3 <- ggplot(data = df1, aes(x = Datum,y = Medelsteglängd, group = Type_f, colo
   geom_point() +
   ylim(0, NA) + xlim(as.POSIXct(earliest_date), as.POSIXct(latest_date)) +
   geom_smooth() +
-  theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  theme(axis.text.x=element_text(angle=90,hjust=1), legend.position = "none") +
   ggtitle("Medelsteglängd över tid, grupperat efter distans") +
   labs(x = "Datum", y = "Medelsteglängd (m)", colour = NULL) +
   facet_grid(~Type_f)
@@ -69,7 +70,7 @@ p4 <- ggplot(data = df1, aes(x = Datum,y = Medelpuls, group = Type_f, color = Ty
   geom_point() +
   ylim(0, NA) + xlim(as.POSIXct(earliest_date), as.POSIXct(latest_date)) +
   geom_smooth() +
-  theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  theme(axis.text.x=element_text(angle=90,hjust=1), legend.position = "none") +
   ggtitle("Medelpuls över tid, grupperat efter distans") +
   labs(x = "Datum", y = "Medelpuls (bpm)", colour = NULL) +
   facet_grid(~Type_f)
@@ -96,12 +97,12 @@ p6 <- ggplot( data = df1, aes(x = Sträcka,y = Medeltempo, group = År, color = 
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
-  theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  theme(axis.text.x=element_text(angle=90,hjust=1), legend.position = "none") +
   ggtitle("Sträcka över medeltempo, grupperat efter år") +
   labs(x = "Sträcka", y = "Medeltempo (min/km)") +
   facet_grid(~År)
 
-df1$Månad <- format(as.Date(df1$Datum, format="%d/%m/%Y"),"%m")
+df1$Månad <- as.numeric(format(as.Date(df1$Datum, format="%d/%m/%Y"),"%m"))
 df1$Kvartal <- ifelse(df1$Månad < 4, "jan-mar", ifelse(df1$Månad < 7, "apr-jun", ifelse(df1$Månad < 10, "jul-sep", "okt-dec")))
 df1$Kvartal_f = factor(df1$Kvartal, levels=c("jan-mar","apr-jun","jul-sep","okt-dec"))
 
@@ -110,7 +111,8 @@ p11 <- ggplot( data = df1, aes(x = Datum, y = Medeltempo, group = Kvartal_f, col
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
   ggtitle("Medeltempo över tid grupperat efter kvartal") +
-  labs(x = "Datum", y = "Medeltempo (min/km)", group = "Kvartal") +
+  theme(legend.position = "none") +
+  labs(x = "Datum", y = "Medeltempo (min/km)", group = "Kvartal", colour = NULL) +
   facet_grid(~Kvartal_f)
 
 # Cumulative sum over years
