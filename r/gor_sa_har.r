@@ -23,7 +23,7 @@ p1 <- ggplot( data = df1, aes(x = Datum,y = Medeltempo, color = Sträcka)) +
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth(color = "orange") +
-  ggtitle("Medeltempo över distans") + 
+  ggtitle("Medeltempo över distans och tid") + 
   labs(x = "Datum", y = "Medeltempo (min/km)")
 
 
@@ -32,6 +32,7 @@ p2 <- ggplot( data = df1, aes(x = Datum,y = Medeltempo, group = Type_f, color = 
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
+  ggtitle("Medeltempo över tid grupperat efter distans") + 
   labs(x = "Datum", y = "Medeltempo (min/km)", colour = NULL) +
   facet_grid(~Type_f)
 
@@ -50,6 +51,7 @@ p3 <- ggplot(data = df1, aes(x = Datum,y = Medelsteglängd, group = Type_f, colo
   ylim(0, NA) + xlim(as.POSIXct(earliest_date), as.POSIXct(latest_date)) +
   geom_smooth() +
   theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  ggtitle("Medelsteglängd över tid, grupperat efter distans") +
   labs(x = "Datum", y = "Medelsteglängd (m)", colour = NULL) +
   facet_grid(~Type_f)
 
@@ -57,6 +59,7 @@ p9 <- ggplot(data = df1, aes(x = Datum,y = Medelsteglängd, group = Type_f, colo
   geom_point() +
   ylim(0, NA) + xlim(as.POSIXct(earliest_date), as.POSIXct(latest_date)) +
   geom_smooth() +
+  ggtitle("Medelsteglängd över tid") +
   labs(x = "Datum", y = "Medelsteglängd (m)", colour = NULL)
 
 # HEARTRATE
@@ -67,6 +70,7 @@ p4 <- ggplot(data = df1, aes(x = Datum,y = Medelpuls, group = Type_f, color = Ty
   ylim(0, NA) + xlim(as.POSIXct(earliest_date), as.POSIXct(latest_date)) +
   geom_smooth() +
   theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  ggtitle("Medelpuls över tid, grupperat efter distans") +
   labs(x = "Datum", y = "Medelpuls (bpm)", colour = NULL) +
   facet_grid(~Type_f)
 
@@ -75,6 +79,7 @@ p5 <- ggplot( data = df1, aes(x = Sträcka,y = Medeltempo, color = Datum)) +
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth(color = "orange") +
+  ggtitle("Medeltempo över sträcka") +
   labs(x = "Sträcka (km)", y = "Medeltempo (min/km)")
 
 # plot stride per tempo
@@ -82,6 +87,7 @@ p10 <- ggplot( data = df1, aes(x = Medeltempo,y = Medelsteglängd, color = Type_
   geom_point() +
   scale_x_datetime(date_labels = "%M:%S") +
   geom_smooth(color = "orange") +
+  ggtitle("Medeltempo över medelsteglängd") +
   labs(y = "Medeltempo (min/km)", x = "Medelsteglängd (m)", colour = "Distans")
 
 # make a date factor for year to group the plots
@@ -91,15 +97,29 @@ p6 <- ggplot( data = df1, aes(x = Sträcka,y = Medeltempo, group = År, color = 
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
   theme(axis.text.x=element_text(angle=90,hjust=1)) +
+  ggtitle("Sträcka över medeltempo, grupperat efter år") +
   labs(x = "Sträcka", y = "Medeltempo (min/km)") +
   facet_grid(~År)
+
+df1$Månad <- format(as.Date(df1$Datum, format="%d/%m/%Y"),"%m")
+df1$Kvartal <- ifelse(df1$Månad < 4, "jan-mar", ifelse(df1$Månad < 7, "apr-jun", ifelse(df1$Månad < 10, "jul-sep", "okt-dec")))
+df1$Kvartal_f = factor(df1$Kvartal, levels=c("jan-mar","apr-jun","jul-sep","okt-dec"))
+
+p11 <- ggplot( data = df1, aes(x = Datum, y = Medeltempo, group = Kvartal_f, color = Kvartal_f)) +
+  geom_point() +
+  scale_y_datetime(date_labels = "%M:%S") +
+  geom_smooth() +
+  ggtitle("Medeltempo över tid grupperat efter kvartal") +
+  labs(x = "Datum", y = "Medeltempo (min/km)", group = "Kvartal") +
+  facet_grid(~Kvartal_f)
 
 # Cumulative sum over years
 df1 <- df1[order(as.Date(df1$Datum)),]
 df1 <- df1 %>% group_by(År) %>% mutate(cumsum = cumsum(Sträcka))
 p7 <- ggplot( data = df1, aes(x = Datum,y = cumsum, group = År, color = År)) +
   geom_line() +
-  labs(x = "Datum", y = "Kumulativ sträcka (km)")
+  ggtitle("Kumulativ sträcka per år") +
+  labs(x="Dagar",y="Sträcka (km)",colour="År")
 
 # Plot these cumulative sums overlaid
 # Find New Year's Day for each and then work out how many days have elapsed since
@@ -109,7 +129,8 @@ df1$Dagar <- as.Date(df1$Datum, format="%Y-%m-%d") - as.Date(as.character(df1$ny
 p8 <- ggplot( data = df1, aes(x = Dagar,y = cumsum, group = År, color = År)) +
   geom_line() +
   scale_x_continuous() +
-  labs(x = "Dagar", y = "Kumulativ sträcka (km)")
+  ggtitle("Kumulativ sträcka under åren") +
+  labs(x="Dagar",y="Sträcka (km)",colour=NULL)
 
 
 # save all plots
@@ -123,4 +144,5 @@ ggsave("allPaceByDist.png", plot = p5, width = 8, height = 4, dpi = "print")
 ggsave("paceByDistByYear.png", plot = p6, width = 8, height = 4, dpi = "print")
 ggsave("cumulativeDistByYear.png", plot = p7, width = 8, height = 4, dpi = "print")
 ggsave("cumulativeDistOverlay.png", plot = p8, width = 8, height = 4, dpi = "print")
+ggsave("medeltempoOverKvartal.png", plot = p11, width = 8, height = 4, dpi = "print")
 
