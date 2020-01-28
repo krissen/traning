@@ -5,6 +5,7 @@ require(ggplot2)
 require(dplyr)
 require(hms)
 require(directlabels)
+require(GGally)
 #file_name <- file.choose()
 file_name <- file.path("../kristian/filer/csv", "070102-191231.csv")
 df1 <- read.csv(file_name, header = TRUE, stringsAsFactors = FALSE)
@@ -105,6 +106,7 @@ p6 <- ggplot( data = df1, aes(x = Sträcka,y = MedeltempoPosix, group = År, col
 
 df1$Månad <- as.numeric(format(as.Date(df1$Datum, format="%d/%m/%Y"),"%m"))
 df1$Kvartal <- ifelse(df1$Månad < 4, "jan-mar", ifelse(df1$Månad < 7, "apr-jun", ifelse(df1$Månad < 10, "jul-sep", "okt-dec")))
+df1$Kvartal_n <- ifelse(df1$Månad < 4, 1, ifelse(df1$Månad < 7, 2, ifelse(df1$Månad < 10, 3, 4)))
 df1$Kvartal_f = factor(df1$Kvartal, levels=c("jan-mar","apr-jun","jul-sep","okt-dec"))
 
 p11 <- ggplot( data = df1, aes(x = Datum, y = MedeltempoPosix, group = Kvartal_f, color = Kvartal_f)) +
@@ -117,10 +119,11 @@ p11 <- ggplot( data = df1, aes(x = Datum, y = MedeltempoPosix, group = Kvartal_f
   facet_grid(~Kvartal_f)
 
 # räkna med tempo
-# idag <- as.POSIXct(strptime("00:00", format = "%M:%S"))
-# df1$MedeltempoSec <- df1$MedeltempoPosix - idag
+idag <- as.POSIXct(strptime("00:00", format = "%M:%S"))
+df1$MedeltempoSec <- as.numeric(df1$MedeltempoPosix - idag)
 # tempo över kvartal:
 # format(median(df1$MedeltempoPosix[df1$Kvartal == "jan-mar"], na.rm=T), "%M:%S")
+cp1 <- ggcorr(cbind("steg"=df1$Medelsteglängd, "kvartal"=df1$Kvartal_n, "år"=as.numeric(df1$År), "tempo"=df1$MedeltempoSec, "sträcka"=df1$Sträcka, "stigning"=as.numeric(df1$Stigning)), method = c("pairwise.complete.obs", "pearson"), label = TRUE, label_round = 3)
 
 # Cumulative sum over years
 df1 <- df1[order(as.Date(df1$Datum)),]
@@ -158,4 +161,4 @@ ggsave("tempoPerStracka-grpAr.png", plot = p6, width = 8, height = 4, dpi = "pri
 ggsave("kumulativDistansOverAr.png", plot = p7, width = 8, height = 4, dpi = "print")
 ggsave("kumulativDistansUnderAren.png", plot = p8, width = 8, height = 6, dpi = "print")
 ggsave("medeltempoOverTid-grpKvartal.png", plot = p11, width = 8, height = 4, dpi = "print")
-
+ggsave("corrplot.png", plot = cp1, width = 8, height = 8, dpi = "print")
