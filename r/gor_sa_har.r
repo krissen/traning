@@ -14,8 +14,6 @@ df1 <- read.csv(file_name, header = TRUE, stringsAsFactors = FALSE)
 df1$Datum <- as.POSIXct(strptime(df1$Datum, format = "%Y-%m-%d %H:%M:%S"))
 # format Avg.Pace to POSIXct
 df1$MedeltempoPosix <- as.POSIXct(strptime(df1$Medeltempo, format = "%M:%S"))
-idag <- as.POSIXct(strptime("00:00", format = "%M:%S"))
-df1$MedeltempoSec <- df1$MedeltempoPosix - idag
 # make groups of different distances using ifelse
 df1$Type <- ifelse(df1$Sträcka < 7, "< 7 km", ifelse(df1$Sträcka < 12, "7-12 km", ifelse(df1$Sträcka < 22, "12-22 km", ifelse(df1$Sträcka < 32, "22-32 km", ifelse(df1$Sträcka < 43, "32-43 km", "> 43 km")))))
 # make factors for these so that they're in the right order when we make the plot
@@ -117,6 +115,12 @@ p11 <- ggplot( data = df1, aes(x = Datum, y = MedeltempoPosix, group = Kvartal_f
   theme(legend.position = "none") +
   labs(x = "Datum", y = "Medeltempo (min/km)", group = "Kvartal", colour = NULL) +
   facet_grid(~Kvartal_f)
+
+# räkna med tempo
+# idag <- as.POSIXct(strptime("00:00", format = "%M:%S"))
+# df1$MedeltempoSec <- df1$MedeltempoPosix - idag
+# tempo över kvartal:
+# format(median(df1$MedeltempoPosix[df1$Kvartal == "jan-mar"], na.rm=T), "%M:%S")
 
 # Cumulative sum over years
 df1 <- df1[order(as.Date(df1$Datum)),]
