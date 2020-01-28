@@ -123,7 +123,7 @@ idag <- as.POSIXct(strptime("00:00", format = "%M:%S"))
 df1$MedeltempoSec <- as.numeric(df1$MedeltempoPosix - idag)
 # tempo över kvartal:
 # format(median(df1$MedeltempoPosix[df1$Kvartal == "jan-mar"], na.rm=T), "%M:%S")
-cp1 <- ggcorr(cbind("steg"=df1$Medelsteglängd, "kvartal"=df1$Kvartal_n, "år"=as.numeric(df1$År), "tempo"=df1$MedeltempoSec, "sträcka"=df1$Sträcka, "stigning"=as.numeric(df1$Stigning)), method = c("pairwise.complete.obs", "pearson"), label = TRUE, label_round = 3)
+cp1 <- ggcorr(cbind("tempo"=df1$MedeltempoSec, "steg"=df1$Medelsteglängd, "kvartal"=df1$Kvartal_n, "år"=as.numeric(df1$År), "sträcka"=df1$Sträcka, "stigning"=as.numeric(df1$Stigning)), method = c("pairwise.complete.obs", "pearson"), label = TRUE, label_round = 3)
 
 # Cumulative sum over years
 df1 <- df1[order(as.Date(df1$Datum)),]
