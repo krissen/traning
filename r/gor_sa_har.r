@@ -13,14 +13,16 @@ df1 <- read.csv(file_name, header = TRUE, stringsAsFactors = FALSE)
 # format Date column to POSIXct
 df1$Datum <- as.POSIXct(strptime(df1$Datum, format = "%Y-%m-%d %H:%M:%S"))
 # format Avg.Pace to POSIXct
-df1$Medeltempo <- as.POSIXct(strptime(df1$Medeltempo, format = "%M:%S"))
+df1$MedeltempoPosix <- as.POSIXct(strptime(df1$Medeltempo, format = "%M:%S"))
+idag <- as.POSIXct(strptime("00:00", format = "%M:%S"))
+df1$MedeltempoSec <- df1$MedeltempoPosix - idag
 # make groups of different distances using ifelse
 df1$Type <- ifelse(df1$Sträcka < 7, "< 7 km", ifelse(df1$Sträcka < 12, "7-12 km", ifelse(df1$Sträcka < 22, "12-22 km", ifelse(df1$Sträcka < 32, "22-32 km", ifelse(df1$Sträcka < 43, "32-43 km", "> 43 km")))))
 # make factors for these so that they're in the right order when we make the plot
 df1$Type_f = factor(df1$Type, levels=c("< 7 km","7-12 km","12-22 km","22-32 km","32-43 km","> 43 km"))
 
 # plot out average pace over time
-p1 <- ggplot( data = df1, aes(x = Datum,y = Medeltempo, color = Sträcka)) +
+p1 <- ggplot( data = df1, aes(x = Datum,y = MedeltempoPosix, color = Sträcka)) +
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth(color = "orange") +
@@ -29,7 +31,7 @@ p1 <- ggplot( data = df1, aes(x = Datum,y = Medeltempo, color = Sträcka)) +
 
 
 # plot out same data grouped by distance
-p2 <- ggplot( data = df1, aes(x = Datum,y = Medeltempo, group = Type_f, color = Type_f)) +
+p2 <- ggplot( data = df1, aes(x = Datum,y = MedeltempoPosix, group = Type_f, color = Type_f)) +
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
@@ -77,7 +79,7 @@ p4 <- ggplot(data = df1, aes(x = Datum,y = Medelpuls, group = Type_f, color = Ty
   facet_grid(~Type_f)
 
 # plot out average pace per distance coloured by year
-p5 <- ggplot( data = df1, aes(x = Sträcka,y = Medeltempo, color = Datum)) +
+p5 <- ggplot( data = df1, aes(x = Sträcka,y = MedeltempoPosix, color = Datum)) +
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth(color = "orange") +
@@ -85,7 +87,7 @@ p5 <- ggplot( data = df1, aes(x = Sträcka,y = Medeltempo, color = Datum)) +
   labs(x = "Sträcka (km)", y = "Medeltempo (min/km)")
 
 # plot stride per tempo
-p10 <- ggplot( data = df1, aes(x = Medeltempo,y = Medelsteglängd, color = Type_f)) +
+p10 <- ggplot( data = df1, aes(x = MedeltempoPosix,y = Medelsteglängd, color = Type_f)) +
   geom_point() +
   scale_x_datetime(date_labels = "%M:%S") +
   geom_smooth(color = "orange") +
@@ -94,7 +96,7 @@ p10 <- ggplot( data = df1, aes(x = Medeltempo,y = Medelsteglängd, color = Type_
 
 # make a date factor for year to group the plots
 df1$År <- format(as.Date(df1$Datum, format="%d/%m/%Y"),"%Y")
-p6 <- ggplot( data = df1, aes(x = Sträcka,y = Medeltempo, group = År, color = År)) +
+p6 <- ggplot( data = df1, aes(x = Sträcka,y = MedeltempoPosix, group = År, color = År)) +
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
@@ -107,7 +109,7 @@ df1$Månad <- as.numeric(format(as.Date(df1$Datum, format="%d/%m/%Y"),"%m"))
 df1$Kvartal <- ifelse(df1$Månad < 4, "jan-mar", ifelse(df1$Månad < 7, "apr-jun", ifelse(df1$Månad < 10, "jul-sep", "okt-dec")))
 df1$Kvartal_f = factor(df1$Kvartal, levels=c("jan-mar","apr-jun","jul-sep","okt-dec"))
 
-p11 <- ggplot( data = df1, aes(x = Datum, y = Medeltempo, group = Kvartal_f, color = Kvartal_f)) +
+p11 <- ggplot( data = df1, aes(x = Datum, y = MedeltempoPosix, group = Kvartal_f, color = Kvartal_f)) +
   geom_point() +
   scale_y_datetime(date_labels = "%M:%S") +
   geom_smooth() +
