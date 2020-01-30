@@ -6,6 +6,7 @@ require(dplyr)
 require(hms)
 require(directlabels)
 require(GGally)
+require(gplots)
 #file_name <- file.choose()
 file_name <- file.path("../kristian/filer/csv", "070102-191231.csv")
 df1 <- read.csv(file_name, header = TRUE, stringsAsFactors = FALSE)
@@ -27,7 +28,6 @@ p1 <- ggplot( data = df1, aes(x = Datum,y = MedeltempoPosix, color = Sträcka)) 
   geom_smooth(color = "orange") +
   ggtitle("Medeltempo över distans och tid") + 
   labs(x = "Datum", y = "Medeltempo (min/km)")
-
 
 # plot out same data grouped by distance
 p2 <- ggplot( data = df1, aes(x = Datum,y = MedeltempoPosix, group = Type_f, color = Type_f)) +
@@ -121,6 +121,21 @@ p11 <- ggplot( data = df1, aes(x = Datum, y = MedeltempoPosix, group = Kvartal_f
 # räkna med tempo
 idag <- as.POSIXct(strptime("00:00", format = "%M:%S"))
 df1$MedeltempoSec <- as.numeric(df1$MedeltempoPosix - idag)
+
+# räkna ut tempo i medeltal per typ
+# tempoTypeMean <- df1 %>%
+#   + group <- by(Type <- f) %>%
+#   + summarize(mean(MedeltempoSec, na.rm=T))
+
+# myAverages = df1 %>%
+#   group <- by(Type <- f) %>%
+#   mutate(myAvg=round(mean(MedeltempoSec),2))
+# p <- ggplot(myAverages, aes(df1$Datum, df1$MedeltempoSec)) +
+#     geom <- point() + facet <- grid(. ~ df1$Type <- f) +
+#     geom <- text(aes(df1$Datum, df1$MedeltempoSec,label = myAvg), size = 200, x = 5, y = 5)
+
+# pTTmeans <- plotmeans(MedeltempoSec ~ Type_f, data = df1, frame = F, mean.labels = T)
+
 # tempo över kvartal:
 # format(median(df1$MedeltempoPosix[df1$Kvartal == "jan-mar"], na.rm=T), "%M:%S")
 cp1 <- ggcorr(cbind("tempo"=df1$MedeltempoSec, "steg"=df1$Medelsteglängd, "kvartal"=df1$Kvartal_n, "år"=as.numeric(df1$År), "sträcka"=df1$Sträcka, "stigning"=as.numeric(df1$Stigning)), method = c("pairwise.complete.obs", "pearson"), label = TRUE, label_round = 3)
@@ -152,6 +167,7 @@ p8 <- ggplot( data = df1, aes(x = Dagar,y = cumsum, group = År, color = År)) +
 # save all plots
 ggsave("tempoOverStracka.png", plot = p1, width = 8, height = 4, dpi = "print")
 ggsave("tempo-grpDistans.png", plot = p2, width = 8, height = 4, dpi = "print")
+# ggsave("tempo-grpDistans-means.png", plot = pTTmeans, width = 8, height = 4, dpi = "print")
 ggsave("steglangdOverTid-grpDistans.png", plot = p3, width = 8, height = 4, dpi = "print")
 ggsave("steglangdOverTid.png", plot = p9, width = 8, height = 4, dpi = "print")
 ggsave("stegOverTempo.png", plot = p10, width = 8, height = 4, dpi = "print")
