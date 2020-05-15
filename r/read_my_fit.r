@@ -1,7 +1,8 @@
 #!/usr/local/bin/R
 
 # library(fitdc)
-library(tracker)
+remotes::install_github("trackeRproject/trackeR", ref = "develop")
+#library(tracker)
 library(lubridate)
 suppressMessages(suppressWarnings(library(tidyverse)))
 
@@ -36,27 +37,26 @@ fetch_run_overview <- function(arun) {
 
 files <- list.files(path="../kristian/filer/tcx",
                     recursive = TRUE,
-                    pattern="*.fit",
+                    pattern="*.tcx",
                     ignore.case = TRUE,
                     full.names=TRUE)
 
-files %>%
-  .[!grepl("fit/0000", .)] -> files
+# files %>%
+#   .[!grepl("fit/0000", .)] -> files
 
-df <- data.frame()
+# df <- data.frame()
 
-for ( file in files ) {
-  tryCatch({
-    run_details <- fetch_run(file)
-  run_overview <- fetch_run_overview(run_details)
-  df <- rbind(df, run_overview)
-  }, error = function(e){})
-}
+# for ( file in files ) {
+#   tryCatch({
+#     run_details <- fetch_run(file)
+#   run_overview <- fetch_run_overview(run_details)
+#   df <- rbind(df, run_overview)
+#   }, error = function(e){})
+# }
 
-test <- readTCX(file, timezone = "", speedunit = "m_per_s",
+run_details <- readTCX(files[[2784]], timezone = "", speedunit = "m_per_s",
         distanceunit = "m")
-run_details <- fetch_run(file)
 
-run_overview <- fetch_run_overview(run_details)
+# run_overview <- fetch_run_overview(run_details)
 
 # vim: ts=2 sw=2 et
