@@ -3,3 +3,4 @@ testpolaring
 tags
 *.swp
 .Rproj.user
+.DS_Store
