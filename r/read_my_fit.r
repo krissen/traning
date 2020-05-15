@@ -1,7 +1,7 @@
 #!/usr/local/bin/R
 
 # library(fitdc)
-library(trackr)
+library(tracker)
 library(lubridate)
 suppressMessages(suppressWarnings(library(tidyverse)))
 
