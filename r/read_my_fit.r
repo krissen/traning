@@ -3,12 +3,19 @@
 # library(fitdc)
 # remotes::install_github("trackeRproject/trackeR", ref = "develop")
 library(trackeR)
+library(stringr)
 # devtools::install_github("trackerproject/trackeRapp")
 library(lubridate)
 suppressMessages(suppressWarnings(library(tidyverse)))
 
 # library("trackeRapp")
 # trackeR_app()
+
+db_summaries <- "summaries.RData"
+db_myruns <- "myruns.RData"
+
+load(db_summaries)
+load(db_myruns)
 
 fetch_run_overview <- function(arun) {
   # arun <- run_details
@@ -64,7 +71,7 @@ files <- list.files(path=mytcxpath,
 
 summaries <- data.frame()
 myruns <- list()
-#for ( i in 1:length(files) ) {
+
 for ( i in 1:length(files) ) {
   thefile <- files[[i]]
   if ( thefile %in% summaries$file ) {
@@ -73,8 +80,6 @@ for ( i in 1:length(files) ) {
     cat("\nReading ", files[[i]], "...", sep = "")
     myruns[[i]] <- read_container(files[[i]])
     cat("\n")
-  #    run_details <- fetch_run(file)
-  #  run_overview <- fetch_run_overview(run_details)
     cat("Creating summary ...\n")
     run_summary <- summary(myruns[[i]])
     cat("Binder ihop\n")
@@ -91,18 +96,20 @@ summaries %>%
   mutate(avgStride= (
     60 * avgSpeed) / (avgCadenceRunning* 2)) -> summaries
 
-db_summaries("summaries.RData")
-db_myruns("myruns.RData")
-save(myruns, file = db_myruns)
-save(summaries, file = db_summaries)
+summaries %>%
+  filter(str_detect(sport, 'running')) %>%
+  mutate(year = format(sessionStart, "%Y")) %>%
+  group_by(year) %>%
+  summarise(totDuration = sum(durationMoving), 
+            meanPace = mean(avgPaceMoving),
+            minPace = min(avgPaceMoving)
+            )
+
+#save(myruns, file = db_myruns)
+#save(summaries, file = db_summaries)
 
 # files %>%
 #   .[!grepl("fit/0000", .)] -> files
 
-# df <- data.frame()
-
-
-
-# run_overview <- fetch_run_overview(run_details)
 
 # vim: ts=2 sw=2 et
