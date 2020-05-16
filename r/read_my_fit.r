@@ -1,11 +1,14 @@
 #!/usr/local/bin/R
 
 # library(fitdc)
-remotes::install_github("trackeRproject/trackeR", ref = "develop")
-#library(tracker)
+# remotes::install_github("trackeRproject/trackeR", ref = "develop")
+library(trackeR)
+# devtools::install_github("trackerproject/trackeRapp")
 library(lubridate)
 suppressMessages(suppressWarnings(library(tidyverse)))
 
+# library("trackeRapp")
+# trackeR_app()
 
 fetch_run_overview <- function(arun) {
   # arun <- run_details
@@ -35,27 +38,70 @@ fetch_run_overview <- function(arun) {
   return(overview)
 }
 
-files <- list.files(path="../kristian/filer/tcx",
+
+mytcxpath = "../kristian/filer/tcx"
+
+# oddrun <- read_container("../kristian/filer/tcx/20200202-115430.tcx")
+
+# plot_route(run, maptype = "watercolor")
+# plot_route(run, maptype = "terrain")
+
+# runs <- read_directory(mytcxpath)
+
+# plot_route(runs, session = NULL)
+
+# strides <- lapply(my_run, function(x) (60 * x$speed) / (x$cadence_running))
+
+# plot(strides[[1]])
+
+# run_sum <- summary(run)
+
+files <- list.files(path=mytcxpath,
                     recursive = TRUE,
                     pattern="*.tcx",
                     ignore.case = TRUE,
                     full.names=TRUE)
+
+summaries <- data.frame()
+myruns <- list()
+#for ( i in 1:length(files) ) {
+for ( i in 1:length(files) ) {
+  thefile <- files[[i]]
+  if ( thefile %in% summaries$file ) {
+    cat("\nHar redan läst in ", thefile, sep = "")
+  } else {
+    cat("\nReading ", files[[i]], "...", sep = "")
+    myruns[[i]] <- read_container(files[[i]])
+    cat("\n")
+  #    run_details <- fetch_run(file)
+  #  run_overview <- fetch_run_overview(run_details)
+    cat("Creating summary ...\n")
+    run_summary <- summary(myruns[[i]])
+    cat("Binder ihop\n")
+    summaries <- rbind(summaries, run_summary,
+                       deparse.level = 0,
+                       make.row.names = FALSE
+                       )
+  }
+}
+
+summaries %>%
+  mutate(avgStrideMoving = (
+    60 * avgSpeedMoving) / (avgCadenceRunningMoving * 2)) %>%
+  mutate(avgStride= (
+    60 * avgSpeed) / (avgCadenceRunning* 2)) -> summaries
+
+db_summaries("summaries.RData")
+db_myruns("myruns.RData")
+save(myruns, file = db_myruns)
+save(summaries, file = db_summaries)
 
 # files %>%
 #   .[!grepl("fit/0000", .)] -> files
 
 # df <- data.frame()
 
-# for ( file in files ) {
-#   tryCatch({
-#     run_details <- fetch_run(file)
-#   run_overview <- fetch_run_overview(run_details)
-#   df <- rbind(df, run_overview)
-#   }, error = function(e){})
-# }
 
-run_details <- readTCX(files[[2784]], timezone = "", speedunit = "m_per_s",
-        distanceunit = "m")
 
 # run_overview <- fetch_run_overview(run_details)
 
