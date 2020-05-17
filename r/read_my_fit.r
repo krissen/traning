@@ -1,5 +1,7 @@
 #!/usr/local/bin/R
 
+# todo: ge info om senast tillagda träningar
+
 # library(fitdc)
 # remotes::install_github("trackeRproject/trackeR", ref = "develop")
 library(trackeR)
@@ -47,6 +49,15 @@ get_my_files <- function(mytcxpath) {
   return(files)
 }
 
+add_my_columns <- function(summarydata) {
+  summarydata %>%
+    mutate(avgStrideMoving = (
+      60 * avgSpeedMoving) / (avgCadenceRunningMoving * 2)) %>%
+      mutate(avgStride= (
+        60 * avgSpeed) / (avgCadenceRunning* 2)) -> summarydata
+  return(summarydata)
+}
+
 get_new_workouts <- function(files, summaries, myruns) {
   for ( i in 1:length(files) ) {
     thefile <- files[[i]]
@@ -58,6 +69,7 @@ get_new_workouts <- function(files, summaries, myruns) {
       cat("\n")
       cat("Skapar summering ...\n")
       run_summary <- summary(myruns[[i]])
+      run_summary <- add_my_columns(run_summary)
       cat("Binder ihop\n")
       summaries <- rbind(summaries, run_summary,
                          deparse.level = 0,
@@ -85,10 +97,13 @@ summaries <- my_templist[["summaries"]]
 myruns <- my_templist[["myruns"]]
 rm(my_templist)
 summaries_newlength <- count(summaries)
+summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
 
 # save if workouts were added
 if ( summaries_oldlength != summaries_newlength ) {
-  cat("New data. Database should be saved.\n")
+  cat("New data: ",
+      summaries_lengthdiff, " workouts.\n", sep = "")
+  cat("Database should be saved.\n")
   #my_dbs_save(db_summaries, db_myruns, summaries, myruns)
 }
 
