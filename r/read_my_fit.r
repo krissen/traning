@@ -13,40 +13,84 @@ suppressMessages(suppressWarnings(library(tidyverse)))
 
 db_summaries <- "summaries.RData"
 db_myruns <- "myruns.RData"
+mytcxpath = "../kristian/filer/tcx"
 
-load(db_summaries)
-load(db_myruns)
-
-fetch_run_overview <- function(arun) {
-  # arun <- run_details
-  last_entry <- length(arun$distance.m)
-  distance <- arun$distance.m[[last_entry]]
-  hr_mean <- mean(as.numeric(arun$heart_rate.bpm), na.rm = TRUE)
-  hr_max <- max(as.numeric(arun$heart_rate.bpm), na.rm = TRUE)
-  
-  dur_start <- arun$timestamp.s[[1]]
-  dur_end <- arun$timestamp.s[[last_entry]]
-  time_start <- as.POSIXct(dur_start, origin="1990-01-01")
-  time_end <- as.POSIXct(dur_end, origin="1990-01-01")
-  interval <- time_start %--% time_end
-  duration <- as.duration(interval)
-
-  speed_mean_ms <- mean(as.numeric(arun$speed.m.s), na.rm = TRUE)
-  speed_kmh <- speed_mean_ms * 3.6
-  speed_minpkm <- 16.666666666667 / speed_mean_ms
-
-  overview <- data.frame(
-                       time_start, duration,
-                       distance,
-                       hr_mean, hr_max,
-                       speed_mean_ms, speed_minpkm
-  )
-
-  return(overview)
+my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
+  save(myruns, file = db_myruns)
+  save(summaries, file = db_summaries)
 }
 
+my_dbs_load <- function(db_summaries, db_myruns) {
+  if ( file.exists(db_summaries) ) {
+    load(db_summaries)
+  } else {
+    summaries <- data.frame()
+  }
+  if ( file.exists(db_myruns) ) {
+    load(db_myruns)
+  } else {
+    myruns <- list()
+  }
+  
+  my_templist <- list()
+  my_templist[["summaries"]] <- summaries
+  my_templist[["myruns"]] <- myruns
+  return(my_templist)
+}
 
-mytcxpath = "../kristian/filer/tcx"
+get_my_files <- function(mytcxpath) {
+  files <- list.files(path=mytcxpath,
+                      recursive = TRUE,
+                      pattern="*.tcx",
+                      ignore.case = TRUE,
+                      full.names=TRUE)
+  return(files)
+}
+
+get_new_workouts <- function(files, summaries, myruns) {
+  for ( i in 1:length(files) ) {
+    thefile <- files[[i]]
+    if ( thefile %in% summaries$file ) {
+      cat("Har redan läst in ", thefile, "\n", sep = "")
+    } else {
+      cat("\nLäser in ", files[[i]], "...", sep = "")
+      myruns[[i]] <- read_container(files[[i]])
+      cat("\n")
+      cat("Skapar summering ...\n")
+      run_summary <- summary(myruns[[i]])
+      cat("Binder ihop\n")
+      summaries <- rbind(summaries, run_summary,
+                         deparse.level = 0,
+                         make.row.names = FALSE
+      )
+    }
+  }
+  my_templist <- list()
+  my_templist[["summaries"]] <- summaries
+  my_templist[["myruns"]] <- myruns
+  return(my_templist)
+}
+
+# load previously read workouts
+my_templist <- my_dbs_load(db_summaries, db_myruns)
+summaries <- my_templist[["summaries"]]
+myruns <- my_templist[["myruns"]]
+rm(my_templist)
+
+# read new workouts if such have been added
+files <- get_my_files(mytcxpath)
+summaries_oldlength <- count(summaries)
+my_templist <- get_new_workouts(files, summaries, myruns)
+summaries <- my_templist[["summaries"]]
+myruns <- my_templist[["myruns"]]
+rm(my_templist)
+summaries_newlength <- count(summaries)
+
+# save if workouts were added
+if ( summaries_oldlength != summaries_newlength ) {
+  cat("New data. Database should be saved.\n")
+  #my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+}
 
 # oddrun <- read_container("../kristian/filer/tcx/20200202-115430.tcx")
 
@@ -63,32 +107,7 @@ mytcxpath = "../kristian/filer/tcx"
 
 # run_sum <- summary(run)
 
-files <- list.files(path=mytcxpath,
-                    recursive = TRUE,
-                    pattern="*.tcx",
-                    ignore.case = TRUE,
-                    full.names=TRUE)
 
-summaries <- data.frame()
-myruns <- list()
-
-for ( i in 1:length(files) ) {
-  thefile <- files[[i]]
-  if ( thefile %in% summaries$file ) {
-    cat("\nHar redan läst in ", thefile, sep = "")
-  } else {
-    cat("\nReading ", files[[i]], "...", sep = "")
-    myruns[[i]] <- read_container(files[[i]])
-    cat("\n")
-    cat("Creating summary ...\n")
-    run_summary <- summary(myruns[[i]])
-    cat("Binder ihop\n")
-    summaries <- rbind(summaries, run_summary,
-                       deparse.level = 0,
-                       make.row.names = FALSE
-                       )
-  }
-}
 
 summaries %>%
   mutate(avgStrideMoving = (
@@ -97,16 +116,28 @@ summaries %>%
     60 * avgSpeed) / (avgCadenceRunning* 2)) -> summaries
 
 summaries %>%
+  filter(file == 0)
+
+summaries %>%
   filter(str_detect(sport, 'running')) %>%
-  mutate(year = format(sessionStart, "%Y")) %>%
+  mutate(
+         #month = format(sessionStart, "%m"),
+         year = format(sessionStart, "%Y")
+         ) %>%
   group_by(year) %>%
   summarise(totDuration = sum(durationMoving), 
             meanPace = mean(avgPaceMoving),
             minPace = min(avgPaceMoving)
             )
 
-#save(myruns, file = db_myruns)
-#save(summaries, file = db_summaries)
+# ta bort rader som matchar
+# summaries2 <- summaries[!(summaries$avgPaceMoving == 0),]
+
+#summaries %>%
+#  filter(str_detect(file, '../kristian/filer/tcx/20200202-115430.tcx'))
+
+
+
 
 # files %>%
 #   .[!grepl("fit/0000", .)] -> files
