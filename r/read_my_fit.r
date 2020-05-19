@@ -83,6 +83,19 @@ get_new_workouts <- function(files, summaries, myruns) {
   return(my_templist)
 }
 
+report_mostrecent <- function(summaries) {
+  tot_distance <- round(sum(summaries$distance) / 1000, digits = 2)
+  avg_distance <- round(mean(summaries$distance) / 1000, digits = 2)
+  avg_duration <- round(
+    mean(as.numeric(
+      summaries$durationMoving), na.rm = TRUE), digits = 0)
+  cat(summaries_lengthdiff, " workouts imported.\n", sep = "")
+  cat("Distance: ", tot_distance, 
+      "km total; ", avg_distance, "km on average.\n", sep = "")
+  cat("Average duration: ", avg_duration, " minutes.\n", sep = "")
+}
+
+
 # load previously read workouts
 my_templist <- my_dbs_load(db_summaries, db_myruns)
 summaries <- my_templist[["summaries"]]
@@ -99,13 +112,16 @@ rm(my_templist)
 summaries_newlength <- count(summaries)
 summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
 
-# save if workouts were added
+# save database if workouts were added
 if ( summaries_oldlength != summaries_newlength ) {
-  cat("New data: ",
-      summaries_lengthdiff, " workouts.\n", sep = "")
-  cat("Database should be saved.\n")
-  #my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+  #cat("New data: ",
+  #    summaries_lengthdiff, " workouts.\n", sep = "")
+  #cat("Database should be saved.\n")
+  my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+  summaries_mostrecent <- tail(summaries, n = summaries_lengthdiff)
+  report_mostrecent(summaries_mostrecent)
 }
+
 
 # oddrun <- read_container("../kristian/filer/tcx/20200202-115430.tcx")
 
