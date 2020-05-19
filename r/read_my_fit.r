@@ -122,6 +122,50 @@ if ( summaries_oldlength != summaries_newlength ) {
   report_mostrecent(summaries_mostrecent)
 }
 
+report_monthstatus <- function(summaries) {
+  my_year <- as.numeric(format(Sys.time(), "%Y"))
+  my_month <- as.numeric(format(Sys.time(), "%m"))
+  my_day <- as.numeric(format(Sys.time(), "%d"))
+
+  summaries %>%
+    mutate(month = as.numeric(
+      format(sessionStart, "%m"))) %>%
+    filter(month == my_month) -> month_summaries
+  
+  month_dist_avg <- round(
+    mean(month_summaries$distance) / 1000, digits = 2)
+  
+  summaries %>%
+    mutate(
+           month = as.numeric(format(sessionStart, "%m")),
+           year = as.numeric(format(sessionStart, "%Y"))) %>%
+    filter(month == my_month) %>%
+    group_by(year) %>%
+    summarise(
+      dist_max = max(distance),
+      dist_sum = sum(distance),
+      dist_avg = mean(distance)
+      ) -> month_yearlies
+  
+  month_yearlies %>%
+    filter(year != my_year) %>%
+    arrange(desc(dist_sum)) -> month_yearlies_top_dist
+  
+  best_year_dist_year <- month_yearlies_top_dist$year[[1]]
+  best_year_dist_km <- round(
+    month_yearlies_top_dist$dist_sum[[1]] / 1000, digits = 2)
+  last_row <- nrow(month_yearlies_top_dist)
+  worst_year_dist_year <- month_yearlies_top_dist$year[[last_row]]
+  worst_year_dist_km <- round(
+    month_yearlies_top_dist$dist_sum[[last_row]] / 1000,
+    digits = 2)
+  
+  
+  month_summaries %>%
+    mutate(day = as.numeric(
+      format(sessionStart, "%d"))) %>%
+    filter(day <= my_day) -> month_summaries_til_day
+}
 
 # oddrun <- read_container("../kristian/filer/tcx/20200202-115430.tcx")
 
