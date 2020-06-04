@@ -20,6 +20,9 @@ if ( isRStudio ) {
   no_means <- FALSE
   do_graphs <- FALSE
   do_verbose <- FALSE
+  do_month_running <- TRUE
+  do_total_pace <- TRUE
+  do_import <- FALSE
 } else {
   my_options = list(
                     make_option(c("-g", "--graphs"),
@@ -36,15 +39,33 @@ if ( isRStudio ) {
                                 type="logical",
                                 action="store_false",
                                 default=TRUE,
-                                help="Print table of means (default TRUE)")
+                                help="Print table of means (default TRUE)"),
+                    make_option("--import",
+                                type="logical",
+                                action="store_true",
+                                default=FALSE,
+                                help="Import new workouts (and save)"),
+                    make_option("--total-pace",
+                                type="logical",
+                                action="store_true",
+                                default=FALSE,
+                                help="Print summarization of pace (all-time)"),
+                    make_option("--month-running",
+                                type="logical",
+                                action="store_true",
+                                default=FALSE,
+                                help="Print summarization of current running month")
                     );
 
   opt_parser <- OptionParser(option_list=my_options);
   options <- parse_args(opt_parser);
 
+  do_import <- options$import
   no_means <- options$no_means
   do_graphs <- options$graphs
   do_verbose <- options$verbose
+  do_month_running <- options$`month-running`
+  do_total_pace <- options$`total-pace`
 }
 
 db_summaries <- "summaries.RData"
@@ -100,13 +121,19 @@ get_new_workouts <- function(files, summaries, myruns) {
         cat("Har redan läst in ", thefile, "\n", sep = "")
       }
     } else {
-      cat("\nLäser in ", files[[i]], "...", sep = "")
+      if (do_verbose) {
+        cat("\nLäser in ", files[[i]], "...", sep = "")
+      }
       myruns[[i]] <- read_container(files[[i]])
-      cat("\n")
-      cat("Skapar summering ...\n")
+      if (do_verbose) {
+        cat("\n")
+        cat("Skapar summering ...\n")
+      }
       run_summary <- summary(myruns[[i]])
       run_summary <- add_my_columns(run_summary)
-      cat("Binder ihop\n")
+      if (do_verbose) {
+        cat("Binder ihop\n")
+      }
       summaries <- rbind(summaries, run_summary,
                          deparse.level = 0,
                          make.row.names = FALSE
@@ -131,31 +158,32 @@ report_mostrecent <- function(summaries) {
   cat("Average duration: ", avg_duration, " minutes.\n", sep = "")
 }
 
-
 # load previously read workouts
 my_templist <- my_dbs_load(db_summaries, db_myruns)
 summaries <- my_templist[["summaries"]]
 myruns <- my_templist[["myruns"]]
 rm(my_templist)
-
-# read new workouts if such have been added
-files <- get_my_files(mytcxpath)
-summaries_oldlength <- count(summaries)
-my_templist <- get_new_workouts(files, summaries, myruns)
-summaries <- my_templist[["summaries"]]
-myruns <- my_templist[["myruns"]]
-rm(my_templist)
-summaries_newlength <- count(summaries)
-summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
-
-# save database if workouts were added
-if ( summaries_oldlength != summaries_newlength ) {
-  #cat("New data: ",
-  #    summaries_lengthdiff, " workouts.\n", sep = "")
-  #cat("Database should be saved.\n")
-  # my_dbs_save(db_summaries, db_myruns, summaries, myruns)
-  summaries_mostrecent <- tail(summaries, n = summaries_lengthdiff)
-  report_mostrecent(summaries_mostrecent)
+  
+if (do_import) {
+  # read new workouts if such have been added
+  files <- get_my_files(mytcxpath)
+  summaries_oldlength <- count(summaries)
+  my_templist <- get_new_workouts(files, summaries, myruns)
+  summaries <- my_templist[["summaries"]]
+  myruns <- my_templist[["myruns"]]
+  rm(my_templist)
+  summaries_newlength <- count(summaries)
+  summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
+  
+  # save database if workouts were added
+  if ( summaries_oldlength != summaries_newlength ) {
+    #cat("New data: ",
+    #    summaries_lengthdiff, " workouts.\n", sep = "")
+    #cat("Database should be saved.\n")
+    my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+    summaries_mostrecent <- tail(summaries, n = summaries_lengthdiff)
+    report_mostrecent(summaries_mostrecent)
+  }
 }
 
 report_monthstatus <- function(summaries) {
@@ -180,7 +208,8 @@ report_monthstatus <- function(summaries) {
     summarise(
       dist_max = max(distance),
       dist_sum = sum(distance),
-      dist_avg = mean(distance)
+      dist_avg = mean(distance),
+      .groups = "keep"
       ) -> month_yearlies
   
   month_yearlies %>%
@@ -210,14 +239,17 @@ report_monthstatus <- function(summaries) {
       dist_avg = mean(distance) / 1000,
       pace_avg = mean(avgPaceMoving),
       pace_min = min(avgPaceMoving),
-      hrat_avg = mean(avgHeartRateMoving, na.rm = TRUE)) %>%
+      hrat_avg = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
+      .groups = "keep") %>%
     arrange(dist_avg) -> month_summaries_til_day
   
   return(month_summaries_til_day)
 }
 
-month_summaries_til_day <- report_monthstatus(summaries)
-print(month_summaries_til_day)
+if ( do_month_running ) {
+  month_summaries_til_day <- report_monthstatus(summaries)
+  print(month_summaries_til_day)
+}
 
 # oddrun <- read_container("../kristian/filer/tcx/20200202-115430.tcx")
 
@@ -255,15 +287,17 @@ my.mean.pace <- function(summaries) {
     group_by(year) %>%
     summarise(totDuration = sum(durationMoving), 
               meanPace = mean(avgPaceMoving),
-              minPace = min(avgPaceMoving)
+              minPace = min(avgPaceMoving),
+              .groups = "keep"
               )
   
   return(mean.pace)
 }
 
-if (no_means) {
+
+if (do_total_pace) {
   mean.pace <- my.mean.pace(summaries)
-  # print(mean.pace)
+  print(mean.pace)
 }
 
 # ta bort rader som matchar
