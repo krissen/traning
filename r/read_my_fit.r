@@ -1,17 +1,51 @@
-#!/usr/local/bin/R
+#!/usr/local/bin/Rscript
 
 # todo: ge info om senast tillagda träningar
 
 # library(fitdc)
 # remotes::install_github("trackeRproject/trackeR", ref = "develop")
-library(trackeR)
+suppressMessages(suppressWarnings(library(trackeR)))
 library(stringr)
 # devtools::install_github("trackerproject/trackeRapp")
-library(lubridate)
+suppressMessages(suppressWarnings(library(lubridate)))
 suppressMessages(suppressWarnings(library(tidyverse)))
+library(optparse)
 
 # library("trackeRapp")
 # trackeR_app()
+
+isRStudio <- Sys.getenv("RSTUDIO") == "1"
+
+if ( isRStudio ) {
+  no_means <- FALSE
+  do_graphs <- FALSE
+  do_verbose <- FALSE
+} else {
+  my_options = list(
+                    make_option(c("-g", "--graphs"),
+                                 type="logical",
+                                 action="store_true",
+                                 default=FALSE,
+                                 help="Print graphs (default %default)"),
+                    make_option(c("-v", "--verbose"),
+                                type="logical",
+                                action="store_true",
+                                default=FALSE,
+                                help="Verbose output"),
+                    make_option(c("-n", "--no_means"),
+                                type="logical",
+                                action="store_false",
+                                default=TRUE,
+                                help="Print table of means (default TRUE)")
+                    );
+
+  opt_parser <- OptionParser(option_list=my_options);
+  options <- parse_args(opt_parser);
+
+  no_means <- options$no_means
+  do_graphs <- options$graphs
+  do_verbose <- options$verbose
+}
 
 db_summaries <- "summaries.RData"
 db_myruns <- "myruns.RData"
@@ -62,7 +96,9 @@ get_new_workouts <- function(files, summaries, myruns) {
   for ( i in 1:length(files) ) {
     thefile <- files[[i]]
     if ( thefile %in% summaries$file ) {
-      cat("Har redan läst in ", thefile, "\n", sep = "")
+      if (do_verbose) {
+        cat("Har redan läst in ", thefile, "\n", sep = "")
+      }
     } else {
       cat("\nLäser in ", files[[i]], "...", sep = "")
       myruns[[i]] <- read_container(files[[i]])
@@ -117,7 +153,7 @@ if ( summaries_oldlength != summaries_newlength ) {
   #cat("New data: ",
   #    summaries_lengthdiff, " workouts.\n", sep = "")
   #cat("Database should be saved.\n")
-  my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+  # my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   summaries_mostrecent <- tail(summaries, n = summaries_lengthdiff)
   report_mostrecent(summaries_mostrecent)
 }
@@ -160,12 +196,28 @@ report_monthstatus <- function(summaries) {
     month_yearlies_top_dist$dist_sum[[last_row]] / 1000,
     digits = 2)
   
-  
   month_summaries %>%
-    mutate(day = as.numeric(
-      format(sessionStart, "%d"))) %>%
-    filter(day <= my_day) -> month_summaries_til_day
+    mutate(
+      day = as.numeric(format(sessionStart, "%d")),
+      year = as.numeric(format(sessionStart, "%Y"))
+      ) %>%
+    filter(day <= my_day) %>%
+    select(year, distance, avgPaceMoving, avgHeartRateMoving) %>%
+    group_by(year) %>%
+    summarise(
+      dist_max = max(distance) / 1000,
+      dist_sum = sum(distance) / 1000,
+      dist_avg = mean(distance) / 1000,
+      pace_avg = mean(avgPaceMoving),
+      pace_min = min(avgPaceMoving),
+      hrat_avg = mean(avgHeartRateMoving, na.rm = TRUE)) %>%
+    arrange(dist_avg) -> month_summaries_til_day
+  
+  return(month_summaries_til_day)
 }
+
+month_summaries_til_day <- report_monthstatus(summaries)
+print(month_summaries_til_day)
 
 # oddrun <- read_container("../kristian/filer/tcx/20200202-115430.tcx")
 
@@ -184,26 +236,35 @@ report_monthstatus <- function(summaries) {
 
 
 
-summaries %>%
-  mutate(avgStrideMoving = (
-    60 * avgSpeedMoving) / (avgCadenceRunningMoving * 2)) %>%
-  mutate(avgStride= (
-    60 * avgSpeed) / (avgCadenceRunning* 2)) -> summaries
+# summaries %>%
+#  mutate(avgStrideMoving = (
+#    60 * avgSpeedMoving) / (avgCadenceRunningMoving * 2)) %>%
+#  mutate(avgStride= (
+#    60 * avgSpeed) / (avgCadenceRunning* 2)) -> summaries
 
-summaries %>%
-  filter(file == 0)
+# summaries %>%
+#  filter(file == 0)
 
-summaries %>%
-  filter(str_detect(sport, 'running')) %>%
-  mutate(
-         #month = format(sessionStart, "%m"),
-         year = format(sessionStart, "%Y")
-         ) %>%
-  group_by(year) %>%
-  summarise(totDuration = sum(durationMoving), 
-            meanPace = mean(avgPaceMoving),
-            minPace = min(avgPaceMoving)
-            )
+my.mean.pace <- function(summaries) {
+  mean.pace <- summaries %>%
+    filter(str_detect(sport, 'running')) %>%
+    mutate(
+           #month = format(sessionStart, "%m"),
+           year = format(sessionStart, "%Y")
+           ) %>%
+    group_by(year) %>%
+    summarise(totDuration = sum(durationMoving), 
+              meanPace = mean(avgPaceMoving),
+              minPace = min(avgPaceMoving)
+              )
+  
+  return(mean.pace)
+}
+
+if (no_means) {
+  mean.pace <- my.mean.pace(summaries)
+  # print(mean.pace)
+}
 
 # ta bort rader som matchar
 # summaries2 <- summaries[!(summaries$avgPaceMoving == 0),]
