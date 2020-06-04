@@ -237,11 +237,12 @@ report_monthstatus <- function(summaries) {
       dist_max = max(distance) / 1000,
       dist_sum = sum(distance) / 1000,
       dist_avg = mean(distance) / 1000,
+      d_avg_dy = (mean(distance) / 1000) / my_day,
       pace_avg = mean(avgPaceMoving),
       pace_min = min(avgPaceMoving),
       hrat_avg = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       .groups = "keep") %>%
-    arrange(dist_avg) -> month_summaries_til_day
+    arrange(d_avg_dy) -> month_summaries_til_day
   
   return(month_summaries_til_day)
 }
