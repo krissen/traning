@@ -1,6 +1,6 @@
 #!/usr/local/bin/Rscript
 
-# todo: ge info om senast tillagda träningar
+# todo: ge info om senast tillagda traningar
 
 # library(fitdc)
 # remotes::install_github("trackeRproject/trackeR", ref = "develop")
@@ -118,11 +118,11 @@ get_new_workouts <- function(files, summaries, myruns) {
     thefile <- files[[i]]
     if ( thefile %in% summaries$file ) {
       if (do_verbose) {
-        cat("Har redan läst in ", thefile, "\n", sep = "")
+        cat("Har redan last in ", thefile, "\n", sep = "")
       }
     } else {
       if (do_verbose) {
-        cat("\nLäser in ", files[[i]], "...", sep = "")
+        cat("\nLaser in ", files[[i]], "...", sep = "")
       }
       myruns[[i]] <- read_container(files[[i]])
       if (do_verbose) {
