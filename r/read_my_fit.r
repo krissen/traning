@@ -20,8 +20,8 @@ if ( isRStudio ) {
   no_means <- FALSE
   do_graphs <- FALSE
   do_verbose <- FALSE
-  do_month_running <- TRUE
-  do_total_pace <- TRUE
+  do_month_running <- FALSE
+  do_total_pace <- FALSE
   do_import <- FALSE
 } else {
   my_options = list(
@@ -144,7 +144,7 @@ get_new_workouts <- function(files, summaries, myruns) {
         cat("Skapar summering ...\n")
       }
       run_summary <- summary(myruns[[i]])
-      run_summary <- fix_zero_moving(run_summary)
+      # run_summary <- fix_zero_moving(run_summary)
       run_summary <- add_my_columns(run_summary)
       if (do_verbose) {
         cat("Binder ihop\n")
@@ -302,8 +302,8 @@ my.mean.pace <- function(summaries) {
            ) %>%
     group_by(year) %>%
     summarise(totDuration = sum(durationMoving), 
-              meanPace = mean(avgPaceMoving),
-              minPace = min(avgPaceMoving),
+              meanPace = mean(avgPaceMoving, na.rm = TRUE),
+              minPace = min(avgPaceMoving, na.rm = TRUE),
               .groups = "keep"
               )
   
