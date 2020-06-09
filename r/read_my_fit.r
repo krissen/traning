@@ -113,6 +113,20 @@ add_my_columns <- function(summarydata) {
   return(summarydata)
 }
 
+fix_zero_moving <- function(summarydata) {
+  summarydata %>%
+    mutate(
+      durationMoving = ifelse(durationMoving == 0, duration, durationMoving),
+      avgHeartRateMoving = ifelse(is.na(avgHeartRateMoving), 
+                                  avgHeartRate, avgHeartRateMoving),
+      avgAltitudeMoving = ifelse(is.na(avgAltitudeMoving),
+                                 avgAltitude, avgAltitudeMoving),
+      avgPaceMoving = ifelse(avgPaceMoving == 0, avgPace, avgPaceMoving),
+      avgSpeedMoving = ifelse(is.na(avgSpeedMoving), avgSpeed, avgSpeedMoving)
+      ) -> summarydata
+  return(summarydata)
+}
+
 get_new_workouts <- function(files, summaries, myruns) {
   for ( i in 1:length(files) ) {
     thefile <- files[[i]]
@@ -130,6 +144,7 @@ get_new_workouts <- function(files, summaries, myruns) {
         cat("Skapar summering ...\n")
       }
       run_summary <- summary(myruns[[i]])
+      run_summary <- fix_zero_moving(run_summary)
       run_summary <- add_my_columns(run_summary)
       if (do_verbose) {
         cat("Binder ihop\n")
