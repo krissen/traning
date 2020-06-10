@@ -23,4 +23,7 @@ shinyServer(function(input, output) {
 
     })
 
+    output$plot.mean.pace <- renderPlot(plot.mean.pace)
+    output$plot.monthly.dist <- renderPlot(plot.monthly.dist)
+
 })

@@ -20,8 +20,8 @@ if ( isRStudio ) {
   no_means <- FALSE
   do_graphs <- FALSE
   do_verbose <- FALSE
-  do_month_running <- FALSE
-  do_total_pace <- FALSE
+  do_month_running <- TRUE
+  do_total_pace <- TRUE
   do_import <- FALSE
 } else {
   my_options = list(
@@ -262,9 +262,29 @@ report_monthstatus <- function(summaries) {
   return(month_summaries_til_day)
 }
 
+fetch.plot.monthly.dist <- function(month_summaries_til_day) {
+  month_summaries_til_day %>%
+    ggplot(aes(x = as.integer(year), y = dist_avg),
+               colour='black') +
+      geom_point() +
+      geom_smooth(method = 'loess', formula = 'y ~ x') +
+      geom_line(aes(y = d_avg_dy),
+                    colour = "cyan") +
+      geom_line(aes(x = as.integer(year),
+                    y = pace_avg), colour = 'green') +
+      ggtitle("Distans och tempo för löpande månad") +
+      labs(x = "År", y = "Distans") -> p1
+  p1
+  return(p1)
+}
+
 if ( do_month_running ) {
   month_summaries_til_day <- report_monthstatus(summaries)
-  print(month_summaries_til_day)
+  if ( ! isRStudio ) {
+    print(month_summaries_til_day)
+  } else {
+    plot.monthly.dist <- fetch.plot.monthly.dist(month_summaries_til_day)
+  }
 }
 
 # oddrun <- read_container("../kristian/filer/tcx/20200202-115430.tcx")
@@ -306,14 +326,25 @@ my.mean.pace <- function(summaries) {
               minPace = min(avgPaceMoving, na.rm = TRUE),
               .groups = "keep"
               )
-  
   return(mean.pace)
 }
 
+fetch.plot.mean.pace <- function(mean.pace) {
+  mean.pace %>%
+    ggplot(aes(x = as.integer(year), y = meanPace)) +
+      geom_point() +
+      geom_smooth(method = 'loess', formula = 'y ~ x') +
+      labs(x = "År", y = "Medeltempo (min/km)") -> p1
+  return(p1)
+}
 
 if (do_total_pace) {
   mean.pace <- my.mean.pace(summaries)
-  print(mean.pace)
+  if ( ! isRStudio ) {
+    print(mean.pace)
+  } else {
+    plot.mean.pace <- fetch.plot.mean.pace(mean.pace)
+  }
 }
 
 # ta bort rader som matchar
@@ -321,9 +352,6 @@ if (do_total_pace) {
 
 #summaries %>%
 #  filter(str_detect(file, '../kristian/filer/tcx/20200202-115430.tcx'))
-
-
-
 
 # files %>%
 #   .[!grepl("fit/0000", .)] -> files
