@@ -263,18 +263,40 @@ report_monthstatus <- function(summaries) {
 }
 
 fetch.plot.monthly.dist <- function(month_summaries_til_day) {
+  colors <- c("Distance, total" = "darkblue",
+              "Pace, avg" = "black",
+              "Dist., daily avg." = "cyan")
+
+  fills <- c("Distance, total" = "darkblue",
+             "Pace, avg" = "green",
+             "Dist., daily avg." = "brown")
+
   month_summaries_til_day %>%
-    ggplot(aes(x = as.integer(year), y = dist_avg),
-               colour='black') +
-      geom_point() +
-      geom_smooth(method = 'loess', formula = 'y ~ x') +
-      geom_line(aes(y = d_avg_dy),
-                    colour = "cyan") +
-      geom_line(aes(x = as.integer(year),
-                    y = pace_avg), colour = 'green') +
-      ggtitle("Distans och tempo för löpande månad") +
-      labs(x = "År", y = "Distans") -> p1
-  p1
+    ggplot(aes(x = as.integer(year))) +
+    # geom_point() +
+    # geom_smooth(method = 'loess', formula = 'y ~ x') +
+    geom_col(
+      aes(
+        y = dist_avg,
+        fill = "Dist., medel"
+      )) +
+    geom_col(aes(
+      y = d_avg_dy,
+      fill = "Dist., daily medel.")) +
+    geom_line(aes(
+      y = pace_avg,
+      colour = 'Tempo, medel')) +
+    scale_colour_manual(" ", values=c(
+      "Tempo, medel" = "red"
+    )) +
+    scale_fill_manual("", values=c(
+      "Dist., medel" = "darkblue",
+      "Dist. per dag, medel." = "black"
+    )) +
+    theme(legend.key=element_blank(),
+          legend.title=element_blank()) +
+    ggtitle("Distans och tempo för löpande månad") +
+    labs(x = "År", y = "Kilometer") -> p1
   return(p1)
 }
 
@@ -334,6 +356,7 @@ fetch.plot.mean.pace <- function(mean.pace) {
     ggplot(aes(x = as.integer(year), y = meanPace)) +
       geom_point() +
       geom_smooth(method = 'loess', formula = 'y ~ x') +
+      ggtitle("Tempo över år") +
       labs(x = "År", y = "Medeltempo (min/km)") -> p1
   return(p1)
 }
