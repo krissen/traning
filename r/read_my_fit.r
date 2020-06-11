@@ -263,14 +263,9 @@ report_monthstatus <- function(summaries) {
 }
 
 fetch.plot.monthly.dist <- function(month_summaries_til_day) {
-  colors <- c("Distance, total" = "darkblue",
-              "Pace, avg" = "black",
-              "Dist., daily avg." = "cyan")
-
-  fills <- c("Distance, total" = "darkblue",
-             "Pace, avg" = "green",
-             "Dist., daily avg." = "brown")
-
+  my_month <- format(Sys.time(), "%B")
+  my_title <- stringr::str_glue("Distans och tempo för löpande månad ({my_month})")
+  
   month_summaries_til_day %>%
     ggplot(aes(x = as.integer(year))) +
     # geom_point() +
@@ -282,20 +277,20 @@ fetch.plot.monthly.dist <- function(month_summaries_til_day) {
       )) +
     geom_col(aes(
       y = d_avg_dy,
-      fill = "Dist., daily medel.")) +
+      fill = "Dist. per dag, medel.")) +
     geom_line(aes(
       y = pace_avg,
       colour = 'Tempo, medel')) +
-    scale_colour_manual(" ", values=c(
+    scale_colour_manual("", values=c(
       "Tempo, medel" = "red"
     )) +
-    scale_fill_manual("", values=c(
+    scale_fill_manual(" ", values=c(
       "Dist., medel" = "darkblue",
-      "Dist. per dag, medel." = "black"
+      "Dist. per dag, medel." = "lightblue"
     )) +
     theme(legend.key=element_blank(),
           legend.title=element_blank()) +
-    ggtitle("Distans och tempo för löpande månad") +
+    ggtitle(my_title) +
     labs(x = "År", y = "Kilometer") -> p1
   return(p1)
 }
