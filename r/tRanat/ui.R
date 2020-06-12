@@ -19,17 +19,22 @@ shinyUI(fluidPage(
         # Show a plot of the generated distribution
         mainPanel(
             plotOutput("plot.monthly.dist"),
-            fluidRow(
-                column(12,
-                       dataTableOutput('table.monthly')
-                )
-            ),
+            # fluidRow(
+            #     column(12,
+            #            dataTableOutput('table.monthly')
+            #     )
+            # ),
             plotOutput("plot.mean.pace"),
-            fluidRow(
-                column(12,
-                       dataTableOutput('table.mean.pace')
-                )
+            tabsetPanel(
+                        id = 'tabell',
+                        tabPanel("Månad", DT::dataTableOutput("table.monthly")),
+                        tabPanel("Årlig", DT::dataTableOutput("table.mean.pace"))
             )
+            # fluidRow(
+            #     column(12,
+            #            dataTableOutput('table.mean.pace')
+            #     )
+            # )
         )
     #)
 ))
