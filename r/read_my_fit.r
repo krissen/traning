@@ -330,7 +330,7 @@ if ( do_month_running ) {
 # summaries %>%
 #  filter(file == 0)
 
-my.mean.pace <- function(summaries) {
+fetch.my.mean.pace <- function(summaries) {
   mean.pace <- summaries %>%
     filter(str_detect(sport, 'running')) %>%
     mutate(
@@ -357,7 +357,7 @@ fetch.plot.mean.pace <- function(mean.pace) {
 }
 
 if (do_total_pace) {
-  mean.pace <- my.mean.pace(summaries)
+  mean.pace <- fetch.my.mean.pace(summaries)
   if ( ! isRStudio ) {
     print(mean.pace)
   } else {

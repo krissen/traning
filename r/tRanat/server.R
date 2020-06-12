@@ -7,6 +7,7 @@
 #    http://shiny.rstudio.com/
 #
 
+library(DT)
 library(shiny)
 
 # Define server logic required to draw a histogram
@@ -25,5 +26,8 @@ shinyServer(function(input, output) {
 
     output$plot.mean.pace <- renderPlot(plot.mean.pace)
     output$plot.monthly.dist <- renderPlot(plot.monthly.dist)
+
+    output$table.mean.pace <- DT::renderDataTable({ mean.pace })
+    output$table.monthly <- DT::renderDataTable({ month_summaries_til_day })
 
 })
