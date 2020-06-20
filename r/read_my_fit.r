@@ -346,6 +346,25 @@ fetch.my.mean.pace <- function(summaries) {
   return(mean.pace)
 }
 
+fetch.plot.sum.dist <- function(summaries) {
+  summaries %>%
+    mutate(
+           year = as.numeric(format(sessionStart, "%Y"))) %>%
+    group_by(year) %>%
+    summarise(
+      dist_max = max(distance),
+      dist_sum = sum(distance) / 1000,
+      dist_avg = mean(distance) / 1000,
+      .groups = "keep"
+      ) %>%
+    ggplot(aes(x = as.integer(year), y = dist_sum)) +
+      geom_point() +
+      geom_smooth(method = 'loess', formula = 'y ~ x') +
+      ggtitle("Distans över år") +
+      labs(x = "År", y = "Kilometer") -> plot.sum.dist
+  return(plot.sum.dist)
+}
+
 fetch.plot.mean.pace <- function(mean.pace) {
   mean.pace %>%
     ggplot(aes(x = as.integer(year), y = meanPace)) +
