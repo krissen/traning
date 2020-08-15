@@ -249,10 +249,10 @@ report_monthstatus <- function(summaries) {
     select(year, distance, avgPaceMoving, avgHeartRateMoving) %>%
     group_by(year) %>%
     summarise(
-      dist_max = max(distance) / 1000,
+      d_avg_dy = (sum(distance) / 1000) / my_day,
       dist_sum = sum(distance) / 1000,
+      dist_max = max(distance) / 1000,
       dist_avg = mean(distance) / 1000,
-      d_avg_dy = dist_sum / my_day,
       pace_avg = mean(avgPaceMoving),
       pace_min = min(avgPaceMoving),
       hrat_avg = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
