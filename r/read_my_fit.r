@@ -315,9 +315,9 @@ report_monthstatus <- function(summaries) {
       'Km/dag' = (sum(distance) / 1000) / my_day,
       'Km, tot' = sum(distance) / 1000,
       'Km, max' = max(distance) / 1000,
-      'Km, medel' = mean(distance) / 1000,
+      #'Km, medel' = mean(distance) / 1000,
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving)),
-      'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
+      #'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
       #'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       Turer = n(),
       .groups = "keep") %>%
