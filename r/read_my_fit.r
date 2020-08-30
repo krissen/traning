@@ -201,6 +201,42 @@ if (do_import) {
   }
 }
 
+report_monthtop <- function(summaries) {
+  # Gör funktion för att lista bästa månader.
+  # Mesta distans, t. ex.
+  summaries %>%
+    mutate(month = as.numeric(
+      format(sessionStart, "%m"))) %>%
+    filter(sport == 'running') -> month_summaries
+  
+  month_dist_avg <- round(
+    mean(month_summaries$distance) / 1000, digits = 2)
+  
+  month_summaries %>%
+    mutate(
+      day = as.numeric(format(sessionStart, "%d")),
+      # 'År' = as.numeric(format(sessionStart, "%Y")),
+      'År-mån' = format(sessionStart, "%Y-%m")
+      ) %>%
+    # filter(day <= my_day) %>%
+    select(`År-mån`, distance, avgPaceMoving, avgHeartRateMoving) %>%
+    group_by(`År-mån`) %>%
+    summarise(
+      #'Km/dag, medel' = (sum(distance) / 1000) / my_day,
+      'Km, tot' = sum(distance) / 1000,
+      'Km, max' = max(distance) / 1000,
+      'Km, medel' = mean(distance) / 1000,
+      'Tempo, medel' = mean(avgPaceMoving),
+      'Tempo, max' = min(avgPaceMoving),
+      'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
+      .groups = "keep") %>%
+    arrange(`Km, tot`, .by_group = FALSE) %>%
+    tail(n = 10) -> month_top
+  month_top
+  
+  return(month_summaries_til_day)
+}
+
 report_monthstatus <- function(summaries) {
   my_year <- as.numeric(format(Sys.time(), "%Y"))
   my_month <- as.numeric(format(Sys.time(), "%m"))
@@ -209,7 +245,8 @@ report_monthstatus <- function(summaries) {
   summaries %>%
     mutate(month = as.numeric(
       format(sessionStart, "%m"))) %>%
-    filter(month == my_month) -> month_summaries
+    filter(month == my_month,
+           sport == 'running') -> month_summaries
   
   month_dist_avg <- round(
     mean(month_summaries$distance) / 1000, digits = 2)
@@ -243,21 +280,21 @@ report_monthstatus <- function(summaries) {
   month_summaries %>%
     mutate(
       day = as.numeric(format(sessionStart, "%d")),
-      year = as.numeric(format(sessionStart, "%Y"))
+      'År' = as.numeric(format(sessionStart, "%Y"))
       ) %>%
     filter(day <= my_day) %>%
-    select(year, distance, avgPaceMoving, avgHeartRateMoving) %>%
-    group_by(year) %>%
+    select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
+    group_by(`År`) %>%
     summarise(
-      d_avg_dy = (sum(distance) / 1000) / my_day,
-      dist_sum = sum(distance) / 1000,
-      dist_max = max(distance) / 1000,
-      dist_avg = mean(distance) / 1000,
-      pace_avg = mean(avgPaceMoving),
-      pace_min = min(avgPaceMoving),
-      hrat_avg = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
+      'Km/dag, medel' = (sum(distance) / 1000) / my_day,
+      'Km, tot.' = sum(distance) / 1000,
+      'Km, max' = max(distance) / 1000,
+      'Km, medel' = mean(distance) / 1000,
+      'Tempo, medel' = mean(avgPaceMoving),
+      'Tempo, max' = min(avgPaceMoving),
+      'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       .groups = "keep") %>%
-    arrange(d_avg_dy) -> month_summaries_til_day
+    arrange('Km/dag, medel') -> month_summaries_til_day
   
   return(month_summaries_til_day)
 }
