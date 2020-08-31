@@ -178,7 +178,7 @@ get_new_workouts <- function(files, summaries, myruns) {
 
 report_mostrecent <- function(summaries) {
   tot_distance <- round(sum(summaries$distance) / 1000, digits = 2)
-  avg_distance <- round(mean(summaries$distance) / 1000, digits = 2)
+  avg_distance <- round(mean(summaries$distance, na.rm = TRUE) / 1000, digits = 2)
   avg_duration <- round(
     mean(as.numeric(
       summaries$durationMoving), na.rm = TRUE), digits = 0)
@@ -217,10 +217,16 @@ if (do_import) {
 }
 
 dec_to_mmss <- function(myint) {
- # myint <- as.integer(5.87776) 
+ # myint <- as.integer(5.37776) 
  myint_secs <- as.integer(myint * 60, units = "seconds")
  myint_mmss <- seconds_to_period(myint_secs)
- return(myint_mmss)
+ myint_min <- minute(myint_mmss)
+ myint_sec <- second(myint_mmss)
+ if ( nchar(as.character(myint_sec)) == 1 ) {
+   myint_sec <- stringr::str_glue("{myint_sec}0")
+ }
+ myint_manual <- stringr::str_glue("{myint_min}:{myint_sec}")
+ return(myint_manual)
 }
 
 report_monthtop <- function(summaries) {
@@ -245,8 +251,8 @@ report_monthtop <- function(summaries) {
       #'Km/dag, medel' = (sum(distance) / 1000) / my_day,
       'Km, tot' = sum(distance) / 1000,
       'Km, max' = max(distance) / 1000,
-      #'Km, medel' = mean(distance) / 1000,
-      'Tempo, medel' =  dec_to_mmss(mean(avgPaceMoving)),
+      #'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
+      'Tempo, medel' =  dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       #'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
       # 'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       Turer = n(),
@@ -280,8 +286,8 @@ report_monthlast <- function(summaries) {
       'Km/dag' = (sum(distance) / 1000) / my_day,
       'Km, tot' = sum(distance) / 1000,
       'Km, max' = max(distance) / 1000,
-      #'Km, medel' = mean(distance) / 1000,
-      'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving)),
+      #'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
+      'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       #'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
       #'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       Turer = n(),
@@ -315,8 +321,8 @@ report_monthstatus <- function(summaries) {
       'Km/dag' = (sum(distance) / 1000) / my_day,
       'Km, tot' = sum(distance) / 1000,
       'Km, max' = max(distance) / 1000,
-      #'Km, medel' = mean(distance) / 1000,
-      'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving)),
+      #'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
+      'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       #'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
       #'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       Turer = n(),
@@ -428,7 +434,7 @@ fetch.plot.sum.dist <- function(summaries) {
     summarise(
       dist_max = max(distance),
       dist_sum = sum(distance) / 1000,
-      dist_avg = mean(distance) / 1000,
+      dist_avg = mean(distance, na.rm = TRUE) / 1000,
       .groups = "keep"
       ) %>%
     ggplot(aes(x = as.integer(year), y = dist_sum)) +
