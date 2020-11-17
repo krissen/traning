@@ -21,6 +21,7 @@ if ( isRStudio ) {
   do_graphs <- FALSE
   do_verbose <- FALSE
   do_month_running <- TRUE
+  do_year_running  <- FALSE
   do_month_last <- FALSE
   do_month_top <- FALSE
   do_total_pace <- TRUE
@@ -28,46 +29,51 @@ if ( isRStudio ) {
 } else {
   my_options = list(
                     make_option(c("-g", "--graphs"),
-                                 type="logical",
-                                 action="store_true",
-                                 default=FALSE,
-                                 help="Print graphs (default %default)"),
+                                 type = "logical",
+                                 action = "store_true",
+                                 default = FALSE,
+                                 help = "Print graphs (default %default)"),
                     make_option(c("-v", "--verbose"),
-                                type="logical",
-                                action="store_true",
-                                default=FALSE,
-                                help="Verbose output"),
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Verbose output"),
                     make_option(c("-n", "--no_means"),
-                                type="logical",
-                                action="store_false",
-                                default=TRUE,
-                                help="Print table of means (default TRUE)"),
+                                type = "logical",
+                                action = "store_false",
+                                default = TRUE,
+                                help = "Print table of means (default TRUE)"),
                     make_option("--import",
-                                type="logical",
-                                action="store_true",
-                                default=FALSE,
-                                help="Import new workouts (and save)"),
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Import new workouts (and save)"),
                     make_option("--total-pace",
-                                type="logical",
-                                action="store_true",
-                                default=FALSE,
-                                help="Print summarization of pace (all-time)"),
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Print summarization of pace (all-time)"),
                     make_option("--month-top",
-                                type="logical",
-                                action="store_true",
-                                default=FALSE,
-                                help="Print summarization of top 10 months"
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Print summarization of top 10 months"
                                 ),
                     make_option("--month-last",
-                                type="logical",
-                                action="store_true",
-                                default=FALSE,
-                                help="Print summarization of last month over the years"),
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Print summarization of last month over the years"),
                     make_option("--month-running",
-                                type="logical",
-                                action="store_true",
-                                default=FALSE,
-                                help="Print summarization of current running month")
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Print summarization of current running month"),
+                    make_option("--year-running",
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Print summarization of current running year")
                     );
 
   opt_parser <- OptionParser(option_list=my_options);
@@ -223,7 +229,7 @@ dec_to_mmss <- function(myint) {
  myint_min <- minute(myint_mmss)
  myint_sec <- second(myint_mmss)
  if ( myint_sec <= 9 ) {
-	 myint_sec <- stringr::str_glue("0{myint_sec}")
+   myint_sec <- stringr::str_glue("0{myint_sec}")
  } else if ( nchar(as.character(myint_sec)) == 1 ) {
    myint_sec <- stringr::str_glue("{myint_sec}0")
  }
