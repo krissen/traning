@@ -250,19 +250,19 @@ report_monthtop <- function(summaries) {
     select(`År-mån`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     group_by(`År-mån`) %>%
     summarise(
-      #'Km/dag, medel' = (sum(distance) / 1000) / my_day,
+      # 'Km/dag, medel' = (sum(distance) / 1000) / my_day,
       'Km, tot' = sum(distance) / 1000,
       'Km, max' = max(distance) / 1000,
-      #'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
+      # 'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
       'Tempo, medel' =  dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
-      #'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
+      # 'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
       # 'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       Turer = n(),
       .groups = "keep") %>%
     arrange(`Km, tot`, .by_group = FALSE) %>%
     tail(n = 10) -> month_top
   # month_top
-  
+
   return(month_top)
 }
 
@@ -277,7 +277,7 @@ report_monthlast <- function(summaries) {
       format(sessionStart, "%m"))) %>%
     filter(month == do_month,
            sport == 'running') -> month_summaries
-  
+
   month_summaries %>%
     mutate(
       'År' = as.numeric(format(sessionStart, "%Y"))
@@ -288,10 +288,10 @@ report_monthlast <- function(summaries) {
       'Km/dag' = (sum(distance) / 1000) / my_day,
       'Km, tot' = sum(distance) / 1000,
       'Km, max' = max(distance) / 1000,
-      #'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
+      # 'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
-      #'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
-      #'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
+      # 'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
+      # 'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       Turer = n(),
       .groups = "keep") %>%
     arrange(`Km/dag`, .by_group = FALSE) > month_summaries_last
@@ -323,10 +323,10 @@ report_monthstatus <- function(summaries) {
       'Km/dag' = (sum(distance) / 1000) / my_day,
       'Km, tot' = sum(distance) / 1000,
       'Km, max' = max(distance) / 1000,
-      #'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
+      # 'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
-      #'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
-      #'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
+      # 'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
+      # 'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       Turer = n(),
       .groups = "keep") %>%
     arrange(`Km/dag`, .by_group = FALSE) -> month_summaries_til_day
@@ -416,7 +416,7 @@ fetch.my.mean.pace <- function(summaries) {
   mean.pace <- summaries %>%
     filter(str_detect(sport, 'running')) %>%
     mutate(
-           #month = format(sessionStart, "%m"),
+           # month = format(sessionStart, "%m"),
            year = format(sessionStart, "%Y")
            ) %>%
     group_by(year) %>%
