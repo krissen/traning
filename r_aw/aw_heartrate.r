@@ -1,12 +1,12 @@
-if(!require(pacman))install.packages("pacman")
+# if(!require(pacman))install.packages("pacman")
 library(tidyverse)
 library(lubridate)
 
-pacman::p_load('dplyr', 'tidyr',
-               'ggplot2',  'ggalt',
-               'forcats', 'R.utils', 'png', 
-               'grid', 'ggpubr', 'scales',
-               'bbplot')
+#pacman::p_load('dplyr', 'tidyr',
+#               'ggplot2',  'ggalt',
+#               'forcats', 'R.utils', 'png', 
+#               'grid', 'ggpubr', 'scales',
+#               'bbplot')
 
 # Läs in fil.
 df <- read.table("data/export_201120-201220.csv",
@@ -63,25 +63,6 @@ rect_data <- data.frame(xmin = day_xmin,
                         col=c("#00FF00", "#7FFF00", "#FFFF00",
                               "#FFA500", "#FF0000"))
 
-# Tidsstämplar som ska kommenteras
-t1 <- as.POSIXct("2020-12-16 07:00:00", tz="")
-t2 <- as.POSIXct("2020-12-16 10:00:00", tz="")
-t3 <- as.POSIXct("2020-12-16 13:47:02", tz="")
-
-# Kommentarer
-annotation <- data.frame(
-			 # Tidsstämplar
-			 x = c(t1,t2),
-			 # Var på y-axeln
-			 y = c(20,20),
-
-			 # Kommentarstexter
-			 label = c(
-				   "10 km run",
-				   "Defence starts"
-			 )
-)
-
 # 100% — FF
 # 95% — F2
 # 90% — E6
@@ -104,27 +85,48 @@ annotation <- data.frame(
 # 5% — 0D
 # 0% — 00
 
-
+# startplot
 ggplot(data=day, aes(ymin=0)) +
+  theme_bw() +
+  # theme(panel.border = element_blank()) +
+  theme(panel.border = element_blank(), panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), axis.line = element_line(colour = "black")) +
   scale_x_datetime(
-    # date_breaks="4 hours",
     date_breaks="2 hours",
     date_labels = "%H:%M",
-    # limits = ymd_h(c("2020-12-16 05", "2020-12-16 18"))) +
     limits = as.POSIXct(c("2020-12-16 06:00", "2020-12-16 19:00"))) +
-  geom_line(aes(x=Date, y=Heart.rate.count.min.),colour="black", alpha = 0.75) +
-  geom_line(aes(x=Date, y=hr_mean_total),colour="blue", alpha = 0.2) +
+  geom_line(aes(x=Date, y=Heart.rate.count.min.), colour="black",
+            size = 1.15) +
+            # alpha = 0.75) +
+  # HR mean, month
+  geom_line(aes(x=Date, y=hr_mean_total),colour="blue", alpha = 0.3) +
+  #geom_label(aes(x = as.POSIXct("2020-12-16 18:15:00"), y = 88, label = "HR mean, month"), 
+  #           hjust = 0, vjust = -0.4, 
+  #           colour = "#0000ff80",
+  #           #fill = NULL, 
+  #           label.size = NA, 
+  #           family="Helvetica", size = 2.5) +
+  annotate("text", x=as.POSIXct("2020-12-16 18:05:00"), y=85,
+           label= "HR mean, month",
+           colour = "#0000ff80",
+           family="Helvetica", size = 3) +
   geom_line(aes(x=Date, y=hr_mean_day),colour="purple", alpha = 0.3) +
-  # geom_smooth(aes(x=Date, y=Heart.rate.count.min.),colour="blue",se=FALSE, span=0.010) +
-  # geom_smooth(aes(x=Date, y=Heart.rate.count.min.),colour="orange",se=FALSE, span=0.025) +
+  #geom_label(aes(x = as.POSIXct("2020-12-16 18:25:00"), y = 122, label = "HR mean, day"), 
+  #           hjust = 0, vjust = -0.4, 
+  #           colour = "#0000ff80",
+  #           #fill = "#00FFFF00", 
+  #           label.size = NA, 
+  #           family="Helvetica", size = 3) +
+  annotate("text", x=as.POSIXct("2020-12-16 18:11:00"), y=117,
+           label= "HR mean, day",
+           colour = "#6A0DAD80",
+           family="Helvetica", size = 3) +
   geom_rect(data=rect_data, aes(xmin=xmin,xmax=xmax,ymin=ymin,ymax=ymax,fill=col),alpha=0.05) +
   scale_fill_identity() + 
-  # bbc_style() +
-  # multiple_line + 
   geom_vline(xintercept = as.POSIXct("2020-12-16 06:35:00"),
              size = 0.5, colour = "#00000033",
              linetype = "dashed") +
-  geom_label(aes(x = as.POSIXct("2020-12-16 06:40:00"), y = 25, label = "10k run"), 
+  geom_label(aes(x = as.POSIXct("2020-12-16 06:40:00"), y = 10, label = "10k run"), 
              hjust = 0, vjust = 0.5, 
              colour = "#555555", fill = "#FFFFFFCC", 
              label.size = NA, 
@@ -133,41 +135,78 @@ ggplot(data=day, aes(ymin=0)) +
              size = 0.5, colour = "#00000033", linetype = "dashed") +
   geom_vline(xintercept = as.POSIXct("2020-12-16 10:00:00"),
              size = 0.5, colour = "#FF000066", linetype = "dashed") +
-  geom_label(aes(x = as.POSIXct("2020-12-16 10:05:00"), y = 25, label = "The defence"), 
+  geom_label(aes(x = as.POSIXct("2020-12-16 10:05:00"), y = 10, label = "The defence"), 
              hjust = 0, vjust = 0.5, 
              colour = "#555555", fill = "#FFFFFF4D", 
              label.size = NA, 
              family="Helvetica", size = 3) +
-  geom_vline(xintercept = as.POSIXct("2020-12-16 12:30:00"),
+  geom_vline(xintercept = as.POSIXct("2020-12-16 12:25:00"),
              size = 0.5, colour = "#FF00004D", linetype = "dashed") +
-  geom_curve(aes(x = as.POSIXct("2020-12-16 06:30:00"), y = 45,
-                 xend = as.POSIXct("2020-12-16 07:00:00"), yend = 43), 
+  # Discussion starts.
+  geom_curve(aes(x = as.POSIXct("2020-12-16 15:59:00"), y = 150,
+                 xend = as.POSIXct("2020-12-16 10:40:00"), yend = 95), 
              colour = "#555555", 
              size=0.5, 
-             curvature = -0.2,
-             arrow = arrow(length = unit(0.03, "npc")))
-  # theme(axis.text.x = element_text(angle = 45)) +
-  geom_text(data=annotation, aes( x=x, y=y, label=label),                 , 
-            color=c("black", "black"), 
-            size=3,
-            angle=90,
-            alpha = 0.5,
-            fontface="italic" )
+             curvature = 0.35,
+             arrow = arrow(length = unit(0.01, "npc"))) +
+  geom_label(aes(x = as.POSIXct("2020-12-16 16:00:00"), y = 150, label = "Discussion proper begins"), 
+             hjust = 0, vjust = 0.4, 
+             colour = "#555555",
+             # fill = "#FFFFFF4D", 
+             label.size = NA, 
+             family="Helvetica", size = 3) +
+  # Grading committee returns
+  geom_curve(aes(x = as.POSIXct("2020-12-16 15:59:00"), y = 139,
+                 xend = as.POSIXct("2020-12-16 13:20:00"), yend = 95), 
+             colour = "#555555", 
+             size=0.5, 
+             curvature = 0.3,
+             arrow = arrow(length = unit(0.01, "npc"))) +
+  geom_label(aes(x = as.POSIXct("2020-12-16 16:00:00"), y = 139, label = "Decision announced"), 
+             hjust = 0, vjust = 0.4, 
+             colour = "#555555",
+             # fill = "#FFFFFF4D", 
+             label.size = NA, 
+             family="Helvetica", size = 3) +
+  # Social event
+  geom_vline(xintercept = as.POSIXct("2020-12-16 13:40:00"),
+             size = 0.5, colour = "#00000033",
+             linetype = "dashed") +
+  geom_label(aes(x = as.POSIXct("2020-12-16 13:43:00"), y = 10, label = "Social event"), 
+             hjust = 0, vjust = 0.5, 
+             colour = "#555555", fill = "#FFFFFFCC", 
+             label.size = NA, 
+             family="Helvetica", size = 3) +
+  geom_vline(xintercept = as.POSIXct("2020-12-16 15:30:00"),
+             size = 0.5, colour = "#00000033", linetype = "dashed") +
+  # Carrying stuff
+  geom_label(aes(x = as.POSIXct("2020-12-16 16:02:00"), y = 128, label = "Carrying stuff"), 
+             hjust = 0, vjust = 0.4, 
+             colour = "#555555",
+             # fill = "#FFFFFF4D", 
+             label.size = NA, 
+             family="Helvetica", size = 3) +
+  geom_curve(aes(x = as.POSIXct("2020-12-16 15:59:00"), y = 130,
+                 xend = as.POSIXct("2020-12-16 15:25:00"), yend = 95), 
+             colour = "#555555", 
+             size=0.5, 
+             curvature = 0.5,
+             arrow = arrow(length = unit(0.01, "npc"))) +
+  geom_curve(aes(x = as.POSIXct("2020-12-16 15:59:00"), y = 130,
+                 xend = as.POSIXct("2020-12-16 16:20:00"), yend = 95), 
+             colour = "#555555", 
+             size=0.5, 
+             curvature = 0.55,
+             arrow = arrow(length = unit(0.01, "npc"))) +
+  labs(title = "Day of dissertation defence",
+       x = NULL,
+       y = "Heartrate") -> hrplot
+# endplot
+
+ggsave("hr_Dissertation_defence.png", plot = hrplot, 
+       width = 8, height = 4, dpi = "print")
+
+# endplot
 
 
-# Test med pil och kommentar.
-# Funkar men känns klumpigt.
-# p + geom_curve(aes(x = t1, y = 100, xend = t2, yend = 80), 
-# 		colour = "#FF0000", 
-# 		size=0.5, 
-# 		curvature = -0.2,
-# 		arrow = arrow(length = unit(0.03, "npc"))) + 
-
-# geom_label(aes(x = t1, y = 100, label = "Here is the\nUnicode symbol"), 
-# 	    hjust = 0, 
-# 	    vjust = 0.5, 
-# 	    colour = "#FAAB18", 
-# 	    # fill = "white", 
-# 	    label.size = NA, 
-# 	    family="Helvetica", 
-# 	    size = 3)
+# vim: ts=2 sw=2 et
