@@ -319,7 +319,8 @@ report_yearstatus <- function(summaries) {
       dayyear = as.numeric(format(sessionStart, "%-j")),
       'År' = as.numeric(format(sessionStart, "%Y"))
       ) %>%
-    filter(dayyear <= my_dayyear) %>%
+    filter(dayyear <= my_dayyear,
+           sport == 'running') %>%
     select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     group_by(`År`) %>%
     summarise(
@@ -476,6 +477,7 @@ fetch.my.mean.pace <- function(summaries) {
 
 fetch.plot.sum.dist <- function(summaries) {
   summaries %>%
+    filter(str_detect(sport, 'running')) %>%
     mutate(
            year = as.numeric(format(sessionStart, "%Y"))) %>%
     group_by(year) %>%
