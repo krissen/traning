@@ -22,6 +22,7 @@ if ( isRStudio ) {
   do_verbose <- FALSE
   do_month_running <- TRUE
   do_year_running  <- FALSE
+  do_year_top  <- FALSE
   do_month_last <- FALSE
   do_month_top <- FALSE
   do_total_pace <- TRUE
@@ -69,6 +70,11 @@ if ( isRStudio ) {
                                 action = "store_true",
                                 default = FALSE,
                                 help = "Print summarization of current running month"),
+                    make_option("--year-top",
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Print summarization of top year"),
                     make_option("--year-running",
                                 type = "logical",
                                 action = "store_true",
@@ -87,6 +93,7 @@ if ( isRStudio ) {
   do_month_last <- options$`month-last`
   do_month_running <- options$`month-running`
   do_year_running  <- options$`year-running`
+  do_year_top  <- options$`year-top`
   do_total_pace <- options$`total-pace`
 }
 
@@ -307,6 +314,36 @@ report_monthlast <- function(summaries) {
   return(month_summaries_last)
 }
 
+report_yearstop <- function(summaries) {
+  my_year <- as.numeric(format(Sys.time(), "%Y"))
+  my_month <- as.numeric(format(Sys.time(), "%m"))
+  my_day <- as.numeric(format(Sys.time(), "%d"))
+  my_dayyear <- as.numeric(format(Sys.time(), "%-j"))
+
+  summaries %>%
+    mutate(
+      day = as.numeric(format(sessionStart, "%d")),
+      dayyear = as.numeric(format(sessionStart, "%-j")),
+      'År' = as.numeric(format(sessionStart, "%Y"))
+      ) %>%
+    filter(sport == 'running') %>%
+    select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
+    group_by(`År`) %>%
+    summarise(
+      'Km/dag' = (sum(distance) / 1000) / my_dayyear,
+      'Km, tot' = sum(distance) / 1000,
+      'Km, max' = max(distance) / 1000,
+      # 'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
+      'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
+      # 'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
+      # 'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
+      Turer = n(),
+      .groups = "keep") %>%
+    arrange(`Km/dag`, .by_group = FALSE) -> year_summaries_til_day
+
+  return(year_summaries_til_day)
+}
+
 report_yearstatus <- function(summaries) {
   my_year <- as.numeric(format(Sys.time(), "%Y"))
   my_month <- as.numeric(format(Sys.time(), "%m"))
@@ -428,6 +465,14 @@ if (do_year_running) {
   year_summaries_til_day <- report_yearstatus(summaries)
   if ( ! isRStudio ) {
     print(year_summaries_til_day)
+  } # else {
+    # plot.monthly.dist <- fetch.plot.monthly.dist(month_summaries_til_day)
+  # }
+}
+if (do_year_top) {
+  year_summaries <- report_yearstop(summaries)
+  if ( ! isRStudio ) {
+    print(year_summaries)
   } # else {
     # plot.monthly.dist <- fetch.plot.monthly.dist(month_summaries_til_day)
   # }
