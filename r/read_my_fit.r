@@ -249,7 +249,7 @@ report_monthtop <- function(summaries) {
   summaries %>%
     # mutate(month = as.numeric(
     #   format(sessionStart, "%m"))) %>%
-    filter(sport == 'running') -> month_summaries
+    filter(str_detect(sport, 'running')) -> month_summaries
   
   #month_dist_avg <- round(
   #  mean(month_summaries$distance) / 1000, digits = 2)
@@ -290,7 +290,7 @@ report_monthlast <- function(summaries) {
     mutate(month = as.numeric(
       format(sessionStart, "%m"))) %>%
     filter(month == do_month,
-           sport == 'running') -> month_summaries
+	   str_detect(sport, 'running')) -> month_summaries
 
   month_summaries %>%
     mutate(
@@ -326,7 +326,7 @@ report_yearstop <- function(summaries) {
       dayyear = as.numeric(format(sessionStart, "%-j")),
       'År' = as.numeric(format(sessionStart, "%Y"))
       ) %>%
-    filter(sport == 'running') %>%
+    filter(str_detect(sport, 'running')) %>%
     select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     group_by(`År`) %>%
     summarise(
@@ -357,7 +357,7 @@ report_yearstatus <- function(summaries) {
       'År' = as.numeric(format(sessionStart, "%Y"))
       ) %>%
     filter(dayyear <= my_dayyear,
-           sport == 'running') %>%
+	   str_detect(sport, 'running')) %>%
     select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     group_by(`År`) %>%
     summarise(
@@ -384,7 +384,7 @@ report_monthstatus <- function(summaries) {
     mutate(month = as.numeric(
       format(sessionStart, "%m"))) %>%
     filter(month == my_month,
-           sport == 'running') -> month_summaries
+	   str_detect(sport, 'running')) -> month_summaries
 
   month_summaries %>%
     mutate(
