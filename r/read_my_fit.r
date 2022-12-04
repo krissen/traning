@@ -2,15 +2,27 @@
 
 # todo: ge info om senast tillagda traningar
 
+# Installing Packages that are not already available in the system 
+list.of.packages <- c("trackeR", "stringr",
+                      "lubridate", "tidyverse",
+                      "optparse")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+
+# Loading Packages
+invisible(lapply(list.of.packages, require, character.only = TRUE))
+
+# Använder men flyttat upp till automatisk installation
+# suppressMessages(suppressWarnings(library(trackeR)))
+# library(stringr)
+# suppressMessages(suppressWarnings(library(lubridate)))
+# suppressMessages(suppressWarnings(library(tidyverse)))
+# library(optparse)
+
+# Gammalt
 # library(fitdc)
 # remotes::install_github("trackeRproject/trackeR", ref = "develop")
-suppressMessages(suppressWarnings(library(trackeR)))
-library(stringr)
 # devtools::install_github("trackerproject/trackeRapp")
-suppressMessages(suppressWarnings(library(lubridate)))
-suppressMessages(suppressWarnings(library(tidyverse)))
-library(optparse)
-
 # library("trackeRapp")
 # trackeR_app()
 
