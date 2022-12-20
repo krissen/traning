@@ -1,4 +1,4 @@
-#!/usr/local/bin/Rscript
+#!/usr/bin/Rscript
 
 # todo: ge info om senast tillagda traningar
 
@@ -10,7 +10,7 @@ new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"
 if(length(new.packages)) install.packages(new.packages)
 
 # Loading Packages
-invisible(lapply(list.of.packages, require, character.only = TRUE))
+suppressWarnings(suppressMessages(invisible(lapply(list.of.packages, require, character.only = TRUE))))
 
 # Använder men flyttat upp till automatisk installation
 # suppressMessages(suppressWarnings(library(trackeR)))
