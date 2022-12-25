@@ -527,6 +527,16 @@ if ( do_month_this ) {
   #  plot.monthly.dist <- fetch.plot.monthly.dist(month_summaries_til_day)
   }
 }
+
+if ( do_month_last ) {
+  month_summaries_last <- report_monthlast(summaries)
+  if ( ! isRStudio ) {
+    print(month_summaries_last)
+  #} else {
+  #  plot.monthly.dist <- fetch.plot.monthly.dist(month_summaries_til_day)
+  }
+}
+
 if (do_year_running) {
   year_summaries_til_day <- report_yearstatus(summaries)
   if ( ! isRStudio ) {
