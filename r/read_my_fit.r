@@ -36,6 +36,7 @@ if ( isRStudio ) {
   do_year_running  <- FALSE
   do_year_top  <- FALSE
   do_month_last <- FALSE
+  do_month_this <- FALSE
   do_month_top <- FALSE
   do_total_pace <- TRUE
   do_import <- FALSE
@@ -72,6 +73,11 @@ if ( isRStudio ) {
                                 default = FALSE,
                                 help = "Print summarization of top 10 months"
                                 ),
+                    make_option("--month-this",
+                                type = "logical",
+                                action = "store_true",
+                                default = FALSE,
+                                help = "Print summarization of runs this month"),
                     make_option("--month-last",
                                 type = "logical",
                                 action = "store_true",
@@ -103,6 +109,7 @@ if ( isRStudio ) {
   do_verbose <- options$verbose
   do_month_top <- options$`month-top`
   do_month_last <- options$`month-last`
+  do_month_this <- options$`month-this`
   do_month_running <- options$`month-running`
   do_year_running  <- options$`year-running`
   do_year_top  <- options$`year-top`
@@ -292,6 +299,35 @@ report_monthtop <- function(summaries) {
   return(month_top)
 }
 
+report_runs_year_month <- function(summaries,
+                                   do_year = format(Sys.time(), "%Y"),
+                                   do_month = format(Sys.time(), "%m")
+                                                  ) {
+
+  summaries %>%
+    mutate(month = as.numeric(
+      format(sessionStart, "%m")),
+      year = as.numeric(format(sessionStart, "%Y"))) %>%
+    filter(month == do_month,
+           year == do_year,
+           str_detect(sport, 'running')) -> month_summaries
+
+  month_summaries %>%
+    mutate(
+      'År' = as.numeric(format(sessionStart, "%Y")),
+      'Mån' = as.numeric(format(sessionStart, "%m")),
+      'Dag' = as.numeric(format(sessionStart, "%d")),
+      'Km' = distance / 1000,
+      'Pace' = avgPaceMoving,
+      'HR' = avgHeartRateMoving
+      ) %>%
+    select(`År`, `Mån`, `Dag`, Km, Pace, HR) %>%
+    arrange(`Dag`) -> runs_year_month
+  # month_summaries_last
+  
+  return(runs_year_month)
+}
+
 report_monthlast <- function(summaries) {
   my_year <- as.numeric(format(Sys.time(), "%Y"))
   my_month <- as.numeric(format(Sys.time(), "%m"))
@@ -473,6 +509,24 @@ if ( do_month_running ) {
   }
 }
 
+if ( do_month_this ) {
+  my_month_word <- format(Sys.time(), "%b")
+  my_month <- format(Sys.time(), "%m")
+  my_year <- format(Sys.time(), "%Y")
+  month_summaries_this <- report_runs_year_month(summaries)
+  my_month_km <- round(sum(month_summaries_this$Km), digits = 2)
+  my_month_pace <- round(mean(month_summaries_this$Pace), digits = 2)
+  my_month_runs <- nrow(month_summaries_this)
+  if ( ! isRStudio ) {
+    print(month_summaries_this)
+    print(paste("Totalt ", my_month_runs, " springturer ",
+                "under ", my_month_word , " ", my_year, "; ",
+                my_month_km, " km, ", my_month_pace,
+                " min/km.", sep = ""))
+  #} else {
+  #  plot.monthly.dist <- fetch.plot.monthly.dist(month_summaries_til_day)
+  }
+}
 if (do_year_running) {
   year_summaries_til_day <- report_yearstatus(summaries)
   if ( ! isRStudio ) {
