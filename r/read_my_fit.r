@@ -1,4 +1,4 @@
-#!/usr/bin/Rscript
+#!/usr/bin/env Rscript --vanilla
 
 # todo: ge info om senast tillagda traningar
 
@@ -356,7 +356,7 @@ report_monthlast <- function(summaries) {
       # 'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
       Turer = n(),
       .groups = "keep") %>%
-    arrange(`Km/dag`, .by_group = FALSE) > month_summaries_last
+    arrange(`Km/dag`, .by_group = FALSE) -> month_summaries_last
   # month_summaries_last
   
   return(month_summaries_last)
@@ -366,12 +366,12 @@ report_yearstop <- function(summaries) {
   my_year <- as.numeric(format(Sys.time(), "%Y"))
   my_month <- as.numeric(format(Sys.time(), "%m"))
   my_day <- as.numeric(format(Sys.time(), "%d"))
-  my_dayyear <- as.numeric(format(Sys.time(), "%-j"))
+  my_dayyear <- as.numeric(format(Sys.time(), "%j"))
 
   summaries %>%
     mutate(
       day = as.numeric(format(sessionStart, "%d")),
-      dayyear = as.numeric(format(sessionStart, "%-j")),
+      dayyear = as.numeric(format(sessionStart, "%j")),
       'År' = as.numeric(format(sessionStart, "%Y"))
       ) %>%
     filter(str_detect(sport, 'running')) %>%
@@ -396,12 +396,12 @@ report_yearstatus <- function(summaries) {
   my_year <- as.numeric(format(Sys.time(), "%Y"))
   my_month <- as.numeric(format(Sys.time(), "%m"))
   my_day <- as.numeric(format(Sys.time(), "%d"))
-  my_dayyear <- as.numeric(format(Sys.time(), "%-j"))
+  my_dayyear <- as.numeric(format(Sys.time(), "%j"))
 
   summaries %>%
     mutate(
       day = as.numeric(format(sessionStart, "%d")),
-      dayyear = as.numeric(format(sessionStart, "%-j")),
+      dayyear = as.numeric(format(sessionStart, "%j")),
       'År' = as.numeric(format(sessionStart, "%Y"))
       ) %>%
     filter(dayyear <= my_dayyear,
