@@ -308,8 +308,8 @@ report_runs_year_month <- function(summaries,
     mutate(month = as.numeric(
       format(sessionStart, "%m")),
       year = as.numeric(format(sessionStart, "%Y"))) %>%
-    filter(month == do_month,
-           year == do_year,
+    filter(month == as.numeric(do_month),
+           year == as.numeric(do_year),
            str_detect(sport, 'running')) -> month_summaries
 
   month_summaries %>%
@@ -317,9 +317,9 @@ report_runs_year_month <- function(summaries,
       'År' = as.numeric(format(sessionStart, "%Y")),
       'Mån' = as.numeric(format(sessionStart, "%m")),
       'Dag' = as.numeric(format(sessionStart, "%d")),
-      'Km' = distance / 1000,
-      'Pace' = avgPaceMoving,
-      'HR' = avgHeartRateMoving
+      'Km' = round(distance / 1000, digits = 2),
+      'Pace' = round(avgPaceMoving, digits = 2),
+      'HR' = round(avgHeartRateMoving, digits = 0)
       ) %>%
     select(`År`, `Mån`, `Dag`, Km, Pace, HR) %>%
     arrange(`Dag`) -> runs_year_month
