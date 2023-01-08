@@ -331,7 +331,16 @@ report_runs_year_month <- function(summaries,
 report_monthlast <- function(summaries) {
   my_year <- as.numeric(format(Sys.time(), "%Y"))
   my_month <- as.numeric(format(Sys.time(), "%m"))
-  do_month <- my_month - 1
+  if ( my_month == 1 ) {
+    do_year <- my_year - 1
+    do_month <- 12
+  } else {
+    do_year <- my_year
+    do_month <- my_month - 1
+  }
+  
+  print(paste("Visar data för ", month.name[do_month], sep = ""))
+  
   my_day <- as.numeric(format(Sys.time(), "%d"))
 
   summaries %>%
