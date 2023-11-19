@@ -123,7 +123,8 @@ if ( isRStudio ) {
     dates <- strsplit(options$datesum, "--")[[1]]
     do_datesum_from <- dates[1]
     if (length(dates) == 2) {
-      do_datesum_to <- dates[2]
+      do_datesum_to <- as.Date(dates[2]) + 1 # Lägg till en dag för att inkludera hela slutdagen
+
     } else {
       do_datesum_to <- format(Sys.Date(), "%Y-%m-%d") # Använd dagens datum om inget 'till'-datum anges
     }
@@ -253,7 +254,7 @@ report_datesum <- function(summaries, do_datesum_from, do_datesum_to) {
   summaries <- summaries %>%
     filter(str_detect(sport, 'running'))
   filtered_summaries <- summaries %>%
-    filter(sessionStart >= do_datesum_from & sessionStart <= do_datesum_to)
+    filter(sessionStart >= do_datesum_from & sessionStart < do_datesum_to)
 
   # tot_distance <- round(sum(filtered_summaries$distance) / 1000, digits = 2)
   # avg_distance <- round(mean(filtered_summaries$distance,
