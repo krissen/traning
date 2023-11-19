@@ -136,9 +136,6 @@ if ( isRStudio ) {
   }
 }
 
-print(paste0("Från ", do_datesum_from, " till ",
-    do_datesum_to))
-
 db_summaries <- "summaries.RData"
 db_myruns <- "myruns.RData"
 mytcxpath = "../kristian/filer/tcx"
@@ -209,7 +206,15 @@ get_new_workouts <- function(files, summaries, myruns) {
       if (do_verbose) {
         cat("\nLaser in ", files[[i]], "...", sep = "")
       }
-      myruns[[i]] <- read_container(files[[i]])
+      # myruns[[i]] <- read_container(files[[i]])
+      myruns[[i]] <- tryCatch({
+        read_container(files[[i]])
+      }, error = function(e) {
+        # Hantera felet, t.ex. genom att skriva ut ett meddelande
+        message("Fel vid läsning av filen: ", files[[i]])
+        # Återgå ett specifikt värde, t.ex. NULL
+        NULL
+      })
       if (do_verbose) {
         cat("\n")
         cat("Skapar summering ...\n")
