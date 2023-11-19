@@ -37,68 +37,73 @@ if ( isRStudio ) {
   do_year_top  <- FALSE
   do_month_last <- FALSE
   do_month_this <- FALSE
+  da_datesum <- FALSE
   do_month_top <- FALSE
   do_total_pace <- TRUE
   do_import <- FALSE
 } else {
   my_options = list(
-                    make_option(c("-g", "--graphs"),
-                                 type = "logical",
-                                 action = "store_true",
-                                 default = FALSE,
-                                 help = "Print graphs (default %default)"),
-                    make_option(c("-v", "--verbose"),
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Verbose output"),
-                    make_option(c("-n", "--no_means"),
-                                type = "logical",
-                                action = "store_false",
-                                default = TRUE,
-                                help = "Print table of means (default TRUE)"),
-                    make_option("--import",
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Import new workouts (and save)"),
-                    make_option("--total-pace",
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Print summarization of pace (all-time)"),
-                    make_option("--month-top",
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Print summarization of top 10 months"
-                                ),
-                    make_option("--month-this",
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Print summarization of runs this month"),
-                    make_option("--month-last",
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Print summarization of last month over the years"),
-                    make_option("--month-running",
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Print summarization of current running month"),
-                    make_option("--year-top",
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Print summarization of top year"),
-                    make_option("--year-running",
-                                type = "logical",
-                                action = "store_true",
-                                default = FALSE,
-                                help = "Print summarization of current running year")
-                    );
+    make_option(c("-g", "--graphs"),
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Print graphs (default %default)"),
+    make_option(c("-v", "--verbose"),
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Verbose output"),
+    make_option(c("-n", "--no_means"),
+      type = "logical",
+      action = "store_false",
+      default = TRUE,
+      help = "Print table of means (default TRUE)"),
+    make_option("--import",
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Import new workouts (and save)"),
+    make_option("--total-pace",
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Print summarization of pace (all-time)"),
+    make_option("--month-top",
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Print summarization of top 10 months"
+      ),
+    make_option("--month-this",
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Print summarization of runs this month"),
+    make_option("--month-last",
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Print summarization of last month over the years"),
+    make_option("--month-running",
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Print summarization of current running month"),
+    make_option("--year-top",
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Print summarization of top year"),
+    make_option("--year-running",
+      type = "logical",
+      action = "store_true",
+      default = FALSE,
+      help = "Print summarization of current running year"),
+    make_option(c("--datesum"),
+      type = "character",
+      default = NULL,
+      help = "Date summary in format 'YYYY-MM-DD--YYYY-MM-DD'. If only one date is provided, use 'YYYY-MM-DD'")
+    );
 
   opt_parser <- OptionParser(option_list=my_options);
   options <- parse_args(opt_parser);
@@ -114,7 +119,25 @@ if ( isRStudio ) {
   do_year_running  <- options$`year-running`
   do_year_top  <- options$`year-top`
   do_total_pace <- options$`total-pace`
+  if (!is.null(options$datesum)) {
+    dates <- strsplit(options$datesum, "--")[[1]]
+    do_datesum_from <- dates[1]
+    if (length(dates) == 2) {
+      do_datesum_to <- dates[2]
+    } else {
+      do_datesum_to <- format(Sys.Date(), "%Y-%m-%d") # Använd dagens datum om inget 'till'-datum anges
+    }
+    # Se till att do_datesum_from och do_datesum_to är av typen Date
+    do_datesum_from <- as.Date(do_datesum_from)
+    do_datesum_to <- as.Date(do_datesum_to)
+  } else {
+    do_datesum_from <- NULL
+    do_datesum_to <- NULL
+  }
 }
+
+print(paste0("Från ", do_datesum_from, " till ",
+    do_datesum_to))
 
 db_summaries <- "summaries.RData"
 db_myruns <- "myruns.RData"
@@ -219,6 +242,49 @@ report_mostrecent <- function(summaries) {
   cat("Distance: ", tot_distance, 
       "km total; ", avg_distance, "km on average.\n", sep = "")
   cat("Average duration: ", avg_duration, " minutes.\n", sep = "")
+}
+
+report_datesum <- function(summaries, do_datesum_from, do_datesum_to) {
+  summaries <- summaries %>%
+    filter(str_detect(sport, 'running'))
+  filtered_summaries <- summaries %>%
+    filter(sessionStart >= do_datesum_from & sessionStart <= do_datesum_to)
+
+  # tot_distance <- round(sum(filtered_summaries$distance) / 1000, digits = 2)
+  # avg_distance <- round(mean(filtered_summaries$distance,
+  #     na.rm = TRUE) / 1000, digits = 2)
+  # avg_duration <- round(
+  #   mean(as.numeric(
+  #       filtered_summaries$durationMoving), na.rm = TRUE), digits = 0)
+
+  # cat(nrow(filtered_summaries), " in date range.\n", sep = "")
+  # cat("Distance: ", tot_distance, 
+  #     "km total; ", avg_distance, "km on average.\n", sep = "")
+  # cat("Average duration: ", avg_duration, " minutes.\n", sep = "")
+
+  filtered_summaries %>%
+    # mutate(
+      # day = as.numeric(format(sessionStart, "%d")),
+      # 'År' = as.numeric(format(sessionStart, "%Y")),
+      # 'År-mån' = format(sessionStart, "%Y-%m")
+      # ) %>%
+    # filter(day <= my_day) %>%
+    # select(`År-mån`, distance, avgPaceMoving, avgHeartRateMoving) %>%
+    # group_by(`År-mån`) %>%
+    summarise(
+      # 'Km/dag, medel' = (sum(distance) / 1000) / my_day,
+      'Km, tot' = sum(distance) / 1000,
+      'Km, max' = max(distance) / 1000,
+      'Km, med' = mean(distance) / 1000,
+      # 'Km, medel' = mean(distance, na.rm = TRUE) / 1000,
+      'Tempo, medel' =  dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
+      'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
+      'Puls, medel' = mean(as.numeric(avgHeartRateMoving), na.rm = TRUE),
+      Turer = n(),
+      .groups = "keep") -> datesum
+    # arrange(`Km, tot`, .by_group = FALSE) %>%
+    # tail(n = 10) -> month_top
+  datesum
 }
 
 # load previously read workouts
@@ -562,6 +628,19 @@ if (do_year_top) {
     # plot.monthly.dist <- fetch.plot.monthly.dist(month_summaries_til_day)
   # }
 }
+
+# Kontrollera om do_datesum_from och do_datesum_to inte är NULL
+if (!is.null(do_datesum_from) && !is.null(do_datesum_to)) {
+  # Kör funktionen report_datesum med de angivna datumen
+  datesum_report <- report_datesum(summaries, do_datesum_from, do_datesum_to)
+
+  # Skriv ut rapporten om inte i RStudio, annars kan du göra annat (t.ex. plotta)
+  if (!isRStudio) {
+    print(datesum_report)
+  }
+  # Annan kod för RStudio, t.ex. plotting, kan läggas här
+}
+
 
 # oddrun <- read_container("../kristian/filer/tcx/20200202-115430.tcx")
 
