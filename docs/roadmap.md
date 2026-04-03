@@ -1,37 +1,9 @@
 # tRäning — Roadmap
 
-## Phase 2: Reorganise project structure
+## ~~Phase 2: Reorganise project structure~~ DONE (2026-04-03)
 
-**Goal:** Modern, sustainable R project layout.
-
-**Target structure:**
-```
-traning/
-├── DESCRIPTION          # R package metadata, declares imports
-├── NAMESPACE
-├── renv.lock            # Pinned dependencies via renv
-├── R/
-│   ├── import.R         # Parse FIT/TCX files (extract from read_my_fit.r)
-│   ├── metrics.R        # Pace, HR zones, summaries, date-range aggregation
-│   ├── report.R         # Text/table reporting functions
-│   ├── plot.R           # ggplot2 visualizations
-│   └── utils.R          # Shared helpers (dec_to_mmss, date handling)
-├── inst/
-│   └── cli.R            # optparse entry point — thin wrapper calling R/ functions
-├── app/
-│   ├── server.R         # Shiny app (currently tRanat/)
-│   └── ui.R
-├── tests/
-│   └── testthat/
-└── man/                 # roxygen2-generated docs
-```
-
-**Key moves:**
-- Split `read_my_fit.r` (740 lines) into domain modules under `R/`
-- Standard R package structure (`devtools::load_all()`)
-- Add `renv` for dependency management
-- CLI as thin script in `inst/`; Shiny app calls same exported functions
-- Data stays entirely outside the repo
+Completed. See changelog for details. Project is now an R package with
+`R/` modules, `inst/cli.R` entry point, and `devtools::load_all()` workflow.
 
 ---
 

@@ -1,3 +1,0 @@
-# Path to external training data directory.
-# Copy this file to .Renviron and set the path for your machine.
-TRANING_DATA=/Users/YOURNAME/Documents/traning-data

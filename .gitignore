@@ -16,3 +16,17 @@ kristian/
 bertel/
 *.RData
 .Renviron
+.Rhistory
+
+# Generated graphs (personal training data)
+scripts/grafer/
+*.png
+
+# R package build artifacts
+man/
+*.Rcheck
+.Rbuildignore
+
+# renv
+renv/library/
+renv/staging/

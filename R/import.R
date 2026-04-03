@@ -1,0 +1,94 @@
+# Data I/O: load, save, and import workout data
+
+#' Save summaries and myruns to RData files
+#' @param db_summaries Path to summaries.RData
+#' @param db_myruns Path to myruns.RData
+#' @param summaries Data frame of workout summaries
+#' @param myruns List of trackeR run objects
+#' @export
+my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
+  save(myruns, file = db_myruns)
+  save(summaries, file = db_summaries)
+}
+
+#' Load summaries and myruns from RData files
+#' @param db_summaries Path to summaries.RData
+#' @param db_myruns Path to myruns.RData
+#' @return List with elements "summaries" and "myruns"
+#' @export
+my_dbs_load <- function(db_summaries, db_myruns) {
+  if (file.exists(db_summaries)) {
+    load(db_summaries)
+  } else {
+    summaries <- data.frame()
+  }
+  if (file.exists(db_myruns)) {
+    load(db_myruns)
+  } else {
+    myruns <- list()
+  }
+
+  my_templist <- list()
+  my_templist[["summaries"]] <- summaries
+  my_templist[["myruns"]] <- myruns
+  return(my_templist)
+}
+
+#' List all TCX files in a directory
+#' @param mytcxpath Path to directory containing TCX files
+#' @return Character vector of full file paths
+#' @export
+get_my_files <- function(mytcxpath) {
+  files <- list.files(
+    path = mytcxpath,
+    recursive = TRUE,
+    pattern = "*.tcx",
+    ignore.case = TRUE,
+    full.names = TRUE
+  )
+  return(files)
+}
+
+#' Import new TCX workouts not already in summaries
+#' @param files Character vector of TCX file paths
+#' @param summaries Existing summaries data frame
+#' @param myruns Existing myruns list
+#' @param verbose Logical, print progress messages (default FALSE)
+#' @return List with elements "summaries" and "myruns"
+#' @export
+get_new_workouts <- function(files, summaries, myruns, verbose = FALSE) {
+  for (i in 1:length(files)) {
+    thefile <- files[[i]]
+    if (thefile %in% summaries$file) {
+      if (verbose) {
+        cat("Har redan last in ", thefile, "\n", sep = "")
+      }
+    } else {
+      if (verbose) {
+        cat("\nLaser in ", files[[i]], "...", sep = "")
+      }
+      myruns[[i]] <- tryCatch({
+        trackeR::read_container(files[[i]])
+      }, error = function(e) {
+        message("Fel vid lasning av filen: ", files[[i]])
+        NULL
+      })
+      if (verbose) {
+        cat("\n")
+        cat("Skapar summering ...\n")
+      }
+      run_summary <- summary(myruns[[i]])
+      run_summary <- add_my_columns(run_summary)
+      if (verbose) {
+        cat("Binder ihop\n")
+      }
+      summaries <- rbind(summaries, run_summary,
+                         deparse.level = 0,
+                         make.row.names = FALSE)
+    }
+  }
+  my_templist <- list()
+  my_templist[["summaries"]] <- summaries
+  my_templist[["myruns"]] <- myruns
+  return(my_templist)
+}
