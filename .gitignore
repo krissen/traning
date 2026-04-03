@@ -5,3 +5,8 @@ tags
 .Rproj.user
 .DS_Store
 .not_found
+.claude/
+CLAUDE.md
+GUIDELINES.md
+_decisions/
+research/
