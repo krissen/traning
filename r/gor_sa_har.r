@@ -8,7 +8,11 @@ require(directlabels)
 require(GGally)
 require(gplots)
 #file_name <- file.choose()
-file_name <- file.path("../kristian/filer/csv", "070102-191231.csv")
+traning_data <- Sys.getenv("TRANING_DATA")
+if (traning_data == "") {
+  stop("TRANING_DATA is not set. Copy .Renviron.example to .Renviron and set the path.")
+}
+file_name <- file.path(traning_data, "kristian", "filer", "csv", "070102-191231.csv")
 df1 <- read.csv(file_name, header = TRUE, stringsAsFactors = FALSE)
 
 

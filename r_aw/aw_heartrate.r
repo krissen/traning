@@ -3,7 +3,12 @@ library(lubridate)
 library(stringr)
 
 # Read file
-df <- read.table("data/export_201120-201220.csv",
+traning_data <- Sys.getenv("TRANING_DATA")
+if (traning_data == "") {
+  stop("TRANING_DATA is not set. Copy .Renviron.example to .Renviron and set the path.")
+}
+df <- read.table(file.path(traning_data, "kristian", "general_metrics", "csv",
+                            "export_201120-201220.csv"),
                  header = TRUE,
                  sep = ",",
                  fill = TRUE)

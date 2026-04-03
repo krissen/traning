@@ -137,9 +137,14 @@ if ( isRStudio ) {
   }
 }
 
-db_summaries <- "summaries.RData"
-db_myruns <- "myruns.RData"
-mytcxpath = "../kristian/filer/tcx"
+traning_data <- Sys.getenv("TRANING_DATA")
+if (traning_data == "") {
+  stop("TRANING_DATA is not set. Copy .Renviron.example to .Renviron and set the path.")
+}
+
+db_summaries <- file.path(traning_data, "cache", "summaries.RData")
+db_myruns    <- file.path(traning_data, "cache", "myruns.RData")
+mytcxpath    <- file.path(traning_data, "kristian", "filer", "tcx")
 
 my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
   save(myruns, file = db_myruns)

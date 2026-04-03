@@ -10,3 +10,9 @@ CLAUDE.md
 GUIDELINES.md
 _decisions/
 research/
+
+# Personal data (moved to ~/Documents/traning-data/)
+kristian/
+bertel/
+*.RData
+.Renviron
