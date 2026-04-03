@@ -1,34 +1,8 @@
 # tRäning — Roadmap
 
-## Phase 1: Separate personal data from repo
-
-**Goal:** Remove personal training files from git history so the repo can eventually go public.
-
-**What to move out:**
-- `kristian/filer/` — TCX, FIT, CSV, GPX, JSON (~22k Garmin Connect files, ~3700 TCX)
-- `kristian/general_metrics/` — Apple Watch exports
-- `bertel/` — Another person's Garmin data (.hst, .tcx)
-- `r/summaries.RData`, `r/myruns.RData` — Cached parsed data (large)
-
-**Target location:** `~/Documents/traning/` (separate repo or untracked)
-
-**Tool:** `git filter-repo` (Git project's recommended tool; `git filter-branch` is deprecated, BFG unmaintained since 2018).
-
-```bash
-git filter-repo --path kristian/filer/ --path kristian/general_metrics/ --path bertel/ --invert-paths
-```
-
-**Considerations:**
-- Back up before rewriting history
-- Rewrites all commits — requires force push
-- Update all data path references in R scripts to point to external location
-- Use a config file or env var for the data root path so it's user-configurable
-
----
-
 ## Phase 2: Reorganise project structure
 
-**Goal:** Modern, sustainable R project layout after personal data is removed.
+**Goal:** Modern, sustainable R project layout.
 
 **Target structure:**
 ```
