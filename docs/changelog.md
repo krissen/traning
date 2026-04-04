@@ -3,13 +3,18 @@
 ## 2026-04-04 — Phase 3: Garmin data fetching
 
 - Added Python-based Garmin Connect fetcher (`python/`)
-  - `garmin_fetch.py` — CLI entry point with `--limit`, `--all`, `--dry-run`, `--reauth`
-  - `garmin_auth.py` — OAuth authentication with TOTP/MFA support
+  - `garmin_fetch.py` — CLI with `--limit`, `--all`, `--dry-run`, `--reauth`, `--login-method`
+  - `garmin_auth.py` — Auth via pirate-garmin (browser login, DI tokens ~1 year)
   - `garmin_download.py` — Activity download (summary JSON, details JSON, TCX)
   - `garmin_utils.py` — Naming conventions matching existing gconnect/ format
-- Created `requirements.txt` (garth, garminconnect, requests) and `setup_venv.sh`
+- Authentication: pirate-garmin handles post-Cloudflare Garmin auth (mobile SSO + DI OAuth)
+  - `--login-method browser` (default): pirate-garmin browser login
+  - `--login-method native`: garminconnect TLS impersonation (fallback)
+  - Credentials from `.Renviron` (GARMIN_EMAIL/GARMIN_PASSWORD) or interactive prompt
+- `requirements.txt` (garminconnect, pirate-garmin, requests) and `setup_venv.sh`
 - Symlinks in `tcx/` created automatically (relative paths, same convention as bulk export)
 - Incremental fetching: scans existing files, only downloads new activities
+- Auto-commits new activities to data repo after fetch
 - Rate limiting with exponential backoff for Garmin API
 - Documentation: `docs/user/` (setup + usage), `docs/dev/` (design)
 - Added test bootstrap (`tests/testthat.R`) and smoke test for `dec_to_mmss()`

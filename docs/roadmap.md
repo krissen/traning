@@ -9,9 +9,10 @@ Completed. See changelog for details. Project is now an R package with
 
 ## ~~Phase 3: Garmin data fetching library~~ DONE (2026-04-04)
 
-Completed. Python script in `python/` fetches activities from Garmin Connect
-using `garminconnect` + `garth`. Outputs TCX + JSON to `gconnect/`, creates
-symlinks in `tcx/` — compatible with existing R import pipeline. See
+Completed. Python script in `python/` fetches activities from Garmin Connect.
+Auth via `pirate-garmin` (browser-based, bypasses Cloudflare). Downloads
+TCX + JSON to `gconnect/`, creates symlinks in `tcx/`, auto-commits to
+data repo. Compatible with existing R import pipeline. See
 `docs/user/garmin-fetch-setup.md` and `docs/dev/garmin-fetch-design.md`.
 
 ---
