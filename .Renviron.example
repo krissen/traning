@@ -1,3 +1,8 @@
 # Path to external training data directory.
 # Copy this file to .Renviron and set the path for your machine.
 TRANING_DATA=/Users/YOURNAME/Documents/traning-data
+
+# Garmin Connect credentials (used by python/garmin_fetch.py).
+# Optional — you'll be prompted if not set.
+GARMIN_EMAIL=
+GARMIN_PASSWORD=

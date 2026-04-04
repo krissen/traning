@@ -5,7 +5,7 @@ Usage:
     python python/garmin_fetch.py              # Fetch up to 50 new activities
     python python/garmin_fetch.py --all        # Fetch all missing activities
     python python/garmin_fetch.py --limit 200  # Fetch up to 200
-    python python/garmin_fetch.py --dry-run    # Show what would be fetched
+    python python/garmin_fetch.py --dry-run    # Preview
     python python/garmin_fetch.py --reauth     # Force re-authentication
 """
 
@@ -13,7 +13,7 @@ import argparse
 import logging
 import sys
 
-from garmin_auth import authenticate, RateLimitedError
+from garmin_auth import authenticate
 from garmin_download import fetch_new_activities
 from garmin_utils import get_data_dir, token_dir, setup_logging
 
@@ -41,6 +41,10 @@ def main() -> int:
         help="Force re-authentication (ignore saved tokens)",
     )
     parser.add_argument(
+        "--login-method", choices=["browser", "native"], default="browser",
+        help="Login method: browser (default, pirate-garmin) or native (garminconnect)",
+    )
+    parser.add_argument(
         "--verbose", "-v", action="store_true",
         help="Enable debug logging",
     )
@@ -57,10 +61,11 @@ def main() -> int:
     # Authenticate
     try:
         tokens = token_dir(data_dir)
-        client = authenticate(tokens, force_reauth=args.reauth)
-    except RateLimitedError as e:
-        log.error("%s", e)
-        return 1
+        client = authenticate(
+            tokens,
+            force_reauth=args.reauth,
+            method=args.login_method,
+        )
     except Exception:
         log.exception("Authentication failed")
         return 1
