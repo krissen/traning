@@ -31,6 +31,8 @@ data repo. Compatible with existing R import pipeline. See
 
 **Process:** Librarian searches literature, saves to `research/`, creates primers in `research/_analys/`. Analysis decisions documented in `_decisions/`.
 
+**References:** Ingest via Vyasa (`ingest_reference` + `finalize_reference`) and link into this project with `checkout_reference`. All literature should be searchable and tagged in the shared library.
+
 ---
 
 ## Phase 5: MCP server
