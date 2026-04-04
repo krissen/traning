@@ -1,5 +1,37 @@
 # tRäning — Changelog
 
+## 2026-04-04 — Phase 4: Knowledge base & advanced metrics
+
+### Knowledge base
+- Literature search across 6 topics: training load (TRIMP), cardiac drift,
+  HR zone distribution, pace-HR efficiency, volume periodization, wearable data
+- 50 papers ingested in Vyasa, checked out as symlinks in `sources/`
+- 6 analysis primers in `research/_analys/` with formulas, thresholds, and
+  implementation guidance
+- Analysis spec with prioritized implementation order in
+  `research/_decisions/analysis-spec.md`
+- Garmin Connect JSON field catalogue in `research/_decisions/garmin-json-fields.md`
+  — discovered `hrTimeInZone_1..5`, `directWorkoutRpe`, `recoveryHeartRate`,
+  `vO2MaxValue`, and `averageTemperature` fields
+
+### Advanced metrics (`R/advanced_metrics.R`)
+- `compute_efficiency_factor()` — pace:HR ratio per run + 28-day rolling mean
+- `compute_acwr()` — acute:chronic workload ratio (coupled + uncoupled)
+- `compute_monotony_strain()` — Foster's training monotony and strain indices
+- All three use summaries data only (no per-second data needed)
+
+### Visualizations (`R/plot.R`)
+- `fetch.plot.ef()` — EF scatter + loess + rolling mean trend
+- `fetch.plot.acwr()` — dual-panel ACWR zones + weekly km bars
+- `fetch.plot.monotony()` — dual-panel monotony + strain
+- CLI flags: `--ef`, `--acwr`, `--monotony`
+
+### Import fixes (`R/import.R`)
+- Fix trackeR 1.6.1 unit converter bug (`.onLoad()` copies all converters)
+- Match files by basename to handle relative vs absolute path mismatch
+- Improved error handling with actual error messages in Swedish
+- Fix `report_mostrecent()` NA total distance (`na.rm = TRUE`)
+
 ## 2026-04-04 — Phase 3: Garmin data fetching
 
 - Added Python-based Garmin Connect fetcher (`python/`)

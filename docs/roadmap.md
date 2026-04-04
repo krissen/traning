@@ -17,21 +17,18 @@ data repo. Compatible with existing R import pipeline. See
 
 ---
 
-## Phase 4: Build knowledge base
+## ~~Phase 4: Build knowledge base~~ DONE (2026-04-04)
 
-**Goal:** Ground all analysis decisions in running science literature.
+Knowledge base built. 50 papers across 6 topics ingested in Vyasa and
+checked out to `sources/`. Analysis primers with formulas and thresholds
+in `research/_analys/`. First three metrics implemented in R:
+Efficiency Factor, ACWR, and Monotony/Strain — with plot functions and
+CLI flags (`--ef`, `--acwr`, `--monotony`).
 
-**Priority topics (from Sports Analyst):**
-
-1. **Training Load & Stress (TRIMP/HRSS)** — Transform raw HR data into cumulative load metrics; enable fatigue/fitness tracking (ATL/CTL/TSB) across 15+ years of data
-2. **Cardiac Drift & Aerobic Decoupling** — Pace-to-HR ratio analysis over run halves; decoupling >5% signals aerobic deficiency
-3. **Heart Rate Zone Distribution** — Time-in-zone per run and aggregated monthly/yearly; reveals training polarization (80/20)
-4. **Pace-HR Efficiency Trend (Cardiac Cost)** — Pace/HR ratio over months and years to detect long-term aerobic fitness changes
-5. **Volume Periodization** — Weekly/monthly km progression, acute:chronic workload ratio, monotony/strain indices for injury-risk patterns
-
-**Process:** Librarian searches literature, saves to `research/`, creates primers in `research/_analys/`. Analysis decisions documented in `_decisions/`.
-
-**References:** Ingest via Vyasa (`ingest_reference` + `finalize_reference`) and link into this project with `checkout_reference`. All literature should be searchable and tagged in the shared library.
+Remaining for future implementation (per-second data needed):
+- HR Zone Distribution (Polarization Index)
+- Cardiac Drift & Aerobic Decoupling
+- TRIMP / ATL / CTL / TSB (Performance Management Chart)
 
 ---
 
