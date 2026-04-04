@@ -49,4 +49,8 @@ data repo. Compatible with existing R import pipeline. See
 - Reads from the same data store as CLI/Shiny
 - Stateless queries against cached summaries
 
-**Reference:** [garmin-connect-mcp](https://github.com/etweisberg/garmin-connect-mcp) — existing MCP server for Garmin Connect with 27 tools. Routes API calls through headless Playwright. Worth studying for API design and tool surface before building our own.
+**References:**
+- [garmin-connect-mcp](https://github.com/etweisberg/garmin-connect-mcp) — existing MCP server for Garmin Connect with 27 tools. Routes API calls through headless Playwright. Worth studying for API design and tool surface.
+- `~/dev/vyasa` (Vyasa) — our most mature MCP server (research library). Best reference for patterns.
+- `~/dev/bifrost/scripts/mcp/` (Hermod) — bibliometric analysis MCP server. FastMCP-based, R data backend.
+- `~/dev/narada-mcp/` (Narada) — another of our MCP servers.
