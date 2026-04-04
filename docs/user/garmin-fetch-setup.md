@@ -40,7 +40,8 @@ Or add it to your `.zshrc` / `.bashrc`.
 Run the script. It will prompt for your Garmin Connect email and password:
 
 ```bash
-python/.venv/bin/python python/garmin_fetch.py --dry-run
+source python/.venv/bin/activate
+python python/garmin_fetch.py --dry-run
 ```
 
 If your account has MFA/TOTP enabled, you'll also be prompted for the code.

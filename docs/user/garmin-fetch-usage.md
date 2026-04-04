@@ -5,7 +5,8 @@
 Fetch up to 50 new activities (the default):
 
 ```bash
-python/.venv/bin/python python/garmin_fetch.py
+source python/.venv/bin/activate
+python python/garmin_fetch.py
 ```
 
 Then import into R:
@@ -29,7 +30,7 @@ Rscript inst/cli.R --import
 If you have a gap in your data (e.g. activities since Nov 2023 are missing), fetch everything:
 
 ```bash
-python/.venv/bin/python python/garmin_fetch.py --all
+python python/garmin_fetch.py --all
 ```
 
 This may take a while due to API rate limits. Progress is logged every 10 activities. If interrupted, re-run — it skips already-downloaded activities.
