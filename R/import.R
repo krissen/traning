@@ -78,27 +78,23 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE) {
     thefile <- files[[i]]
     if (basename(thefile) %in% existing_basenames) {
       if (verbose) {
-        cat("Har redan last in ", thefile, "\n", sep = "")
+        cat("Redan inläst: ", basename(thefile), "\n", sep = "")
       }
     } else {
       if (verbose) {
-        cat("\nLaser in ", files[[i]], "...", sep = "")
+        cat("Läser in ", basename(files[[i]]), " ... ", sep = "")
       }
       myruns[[i]] <- tryCatch({
         trackeR::read_container(files[[i]])
       }, error = function(e) {
-        message("Fel vid lasning av filen: ", files[[i]])
+        warning("Kunde inte läsa: ", basename(files[[i]]),
+                " (", conditionMessage(e), ")", call. = FALSE)
         NULL
       })
-      if (verbose) {
-        cat("\n")
-        cat("Skapar summering ...\n")
-      }
+      if (is.null(myruns[[i]])) next
+      if (verbose) cat("OK\n")
       run_summary <- summary(myruns[[i]])
       run_summary <- add_my_columns(run_summary)
-      if (verbose) {
-        cat("Binder ihop\n")
-      }
       summaries <- rbind(summaries, run_summary,
                          deparse.level = 0,
                          make.row.names = FALSE)
