@@ -20,9 +20,9 @@ echo "Installing dependencies ..."
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 "$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt"
 
-echo "Installing Chromium for browser login fallback ..."
-"$VENV_DIR/bin/playwright" install chromium
-
 echo ""
 echo "Done. Activate with:"
 echo "  source $VENV_DIR/bin/activate"
+echo ""
+echo "Note: Browser login fallback uses your system Chrome."
+echo "No extra browser download needed."

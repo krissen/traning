@@ -110,7 +110,9 @@ def _browser_login(tokenstore: str) -> Garmin:
     ticket = None
 
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(headless=False)
+        # Use system Chrome (not Playwright's Chromium) to avoid
+        # Cloudflare detecting automation flags.
+        browser = pw.chromium.launch(channel="chrome", headless=False)
         page = browser.new_page()
 
         def _on_request(request):
