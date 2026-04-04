@@ -6,13 +6,37 @@ import re
 from pathlib import Path
 
 
+def _read_renviron(path: Path) -> dict[str, str]:
+    """Parse a .Renviron file (KEY=VALUE lines, # comments)."""
+    env = {}
+    if not path.is_file():
+        return env
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" in line:
+            key, _, value = line.partition("=")
+            env[key.strip()] = value.strip()
+    return env
+
+
 def get_data_dir() -> Path:
-    """Return the TRANING_DATA directory, or raise if unset."""
+    """Return the TRANING_DATA directory.
+
+    Checks the environment first, then falls back to .Renviron in the
+    project root (so the same config works for both R and Python).
+    """
     raw = os.environ.get("TRANING_DATA")
+    if not raw:
+        # Look for .Renviron in project root (parent of python/)
+        project_root = Path(__file__).resolve().parent.parent
+        renviron = _read_renviron(project_root / ".Renviron")
+        raw = renviron.get("TRANING_DATA")
     if not raw:
         raise EnvironmentError(
             "TRANING_DATA is not set. "
-            "Export it or add it to .Renviron / your shell profile."
+            "Add it to .Renviron or export it in your shell."
         )
     p = Path(raw)
     if not p.is_dir():
