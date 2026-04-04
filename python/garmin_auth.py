@@ -77,15 +77,11 @@ def _load_tokens(token_file: Path) -> Garmin | None:
         return client
 
     if data.get("jwt_web"):
-        # JWT_WEB from browser login — route via connect proxy
+        # JWT_WEB from browser login
         client = Garmin()
-        c = client.client
-        c.jwt_web = data["jwt_web"]
-        if data.get("csrf_token"):
-            c.csrf_token = data["csrf_token"]
-        c._connectapi = c._connect
+        _setup_jwt_client(client.client, data["jwt_web"], data.get("csrf_token"))
         # Verify the token still works
-        c.connectapi("/userprofile-service/socialProfile")
+        client.client.connectapi("/userprofile-service/socialProfile")
         return client
 
     return None
@@ -179,18 +175,33 @@ def _browser_login(token_file: Path) -> Garmin:
 
     # Create client with JWT_WEB
     client = Garmin()
-    c = client.client
-    c.jwt_web = jwt_web
-    if csrf_token:
-        c.csrf_token = csrf_token
-    # JWT_WEB auth must go through connect.garmin.com (web proxy),
-    # not directly to connectapi.garmin.com (which rejects cookies).
-    # The DI-Backend header in get_api_headers() tells the proxy
-    # where to forward the request.
-    c._connectapi = c._connect
+    _setup_jwt_client(client.client, jwt_web, csrf_token)
 
     log.info("Browser login successful")
     return client
+
+
+def _setup_jwt_client(c, jwt_web: str, csrf_token: str | None) -> None:
+    """Configure a garminconnect Client for JWT_WEB cookie auth.
+
+    Three things needed to make API calls work with JWT_WEB:
+    1. Route through connect.garmin.com (not connectapi.garmin.com)
+    2. Use curl_cffi session (TLS impersonation) to pass Cloudflare
+    3. Set JWT_WEB as a real cookie on the session
+    """
+    c.jwt_web = jwt_web
+    if csrf_token:
+        c.csrf_token = csrf_token
+
+    # API calls must go through the web proxy
+    c._connectapi = c._connect
+
+    # Set JWT_WEB as a real cookie on the curl_cffi session
+    c.cs.cookies.set("JWT_WEB", jwt_web, domain=".garmin.com")
+
+    # Use curl_cffi (with TLS impersonation) for API calls instead of
+    # plain requests.Session which gets blocked by Cloudflare
+    c._fresh_api_session = lambda: c.cs
 
 
 def _find_system_browser() -> dict:
