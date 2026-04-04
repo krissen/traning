@@ -77,12 +77,13 @@ def _load_tokens(token_file: Path) -> Garmin | None:
         return client
 
     if data.get("jwt_web"):
-        # JWT_WEB from browser login
+        # JWT_WEB from browser login — route via connect proxy
         client = Garmin()
         c = client.client
         c.jwt_web = data["jwt_web"]
         if data.get("csrf_token"):
             c.csrf_token = data["csrf_token"]
+        c._connectapi = c._connect
         # Verify the token still works
         c.connectapi("/userprofile-service/socialProfile")
         return client
@@ -182,6 +183,11 @@ def _browser_login(token_file: Path) -> Garmin:
     c.jwt_web = jwt_web
     if csrf_token:
         c.csrf_token = csrf_token
+    # JWT_WEB auth must go through connect.garmin.com (web proxy),
+    # not directly to connectapi.garmin.com (which rejects cookies).
+    # The DI-Backend header in get_api_headers() tells the proxy
+    # where to forward the request.
+    c._connectapi = c._connect
 
     log.info("Browser login successful")
     return client
