@@ -9,6 +9,7 @@ Three strategies, tried in order:
 import getpass
 import logging
 import re
+import tempfile
 from pathlib import Path
 
 from garminconnect import Garmin
@@ -109,14 +110,16 @@ def _browser_login(tokenstore: str) -> Garmin:
 
     ticket = None
 
-    with sync_playwright() as pw:
-        # Use a real system browser (not Playwright's Chromium) to avoid
-        # Cloudflare detecting automation flags.
-        browser = pw.chromium.launch(
+    with sync_playwright() as pw, tempfile.TemporaryDirectory() as tmpdir:
+        # Use a real system browser with a temporary profile to avoid
+        # conflicts with the running browser and Cloudflare detection.
+        browser_opts = _find_system_browser()
+        context = pw.chromium.launch_persistent_context(
+            tmpdir,
             headless=False,
-            **_find_system_browser(),
+            **browser_opts,
         )
-        page = browser.new_page()
+        page = context.pages[0] if context.pages else context.new_page()
 
         def _on_request(request):
             nonlocal ticket
@@ -135,7 +138,7 @@ def _browser_login(tokenstore: str) -> Garmin:
         except Exception:
             pass  # ticket might already be captured
 
-        browser.close()
+        context.close()
 
     if not ticket:
         raise GarminConnectAuthenticationError(
