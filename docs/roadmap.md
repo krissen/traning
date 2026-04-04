@@ -7,20 +7,12 @@ Completed. See changelog for details. Project is now an R package with
 
 ---
 
-## Phase 3: Garmin data fetching library
+## ~~Phase 3: Garmin data fetching library~~ DONE (2026-04-04)
 
-**Goal:** Programmatic download of training data from Garmin Connect.
-
-**Recommendation:** Python (`garth` + `garminconnect`), not R.
-- No maintained R package exists for Garmin Connect
-- `garth` — OAuth1/OAuth2 auth with token persistence, TOTP support
-- `garminconnect` — High-level API: activities, sleep, HR, body composition (~2k GitHub stars, actively maintained)
-- Call from R via `reticulate` if needed, or run Python fetch script that dumps to data directory
-
-**Deliverables:**
-- Python script for fetching new activities
-- Output format compatible with R import pipeline
-- Token management (no credentials in repo)
+Completed. Python script in `python/` fetches activities from Garmin Connect
+using `garminconnect` + `garth`. Outputs TCX + JSON to `gconnect/`, creates
+symlinks in `tcx/` — compatible with existing R import pipeline. See
+`docs/user/garmin-fetch-setup.md` and `docs/dev/garmin-fetch-design.md`.
 
 ---
 

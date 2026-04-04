@@ -30,8 +30,9 @@ man/
 # Leftover IDE artifacts
 r_aw/
 
-# Python venv
+# Python
 python/.venv/
+__pycache__/
 
 # renv
 renv/library/

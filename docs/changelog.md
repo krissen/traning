@@ -1,5 +1,19 @@
 # tRäning — Changelog
 
+## 2026-04-04 — Phase 3: Garmin data fetching
+
+- Added Python-based Garmin Connect fetcher (`python/`)
+  - `garmin_fetch.py` — CLI entry point with `--limit`, `--all`, `--dry-run`, `--reauth`
+  - `garmin_auth.py` — OAuth authentication with TOTP/MFA support
+  - `garmin_download.py` — Activity download (summary JSON, details JSON, TCX)
+  - `garmin_utils.py` — Naming conventions matching existing gconnect/ format
+- Created `requirements.txt` (garth, garminconnect, requests) and `setup_venv.sh`
+- Symlinks in `tcx/` created automatically (relative paths, same convention as bulk export)
+- Incremental fetching: scans existing files, only downloads new activities
+- Rate limiting with exponential backoff for Garmin API
+- Documentation: `docs/user/` (setup + usage), `docs/dev/` (design)
+- Added test bootstrap (`tests/testthat.R`) and smoke test for `dec_to_mmss()`
+
 ## 2026-04-03 — Phase 2: R package structure
 
 - Restructured project as an R package (`DESCRIPTION`, `NAMESPACE`, `R/`)
