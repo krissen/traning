@@ -1,5 +1,9 @@
 # Data I/O: load, save, and import workout data
 
+# Workaround for trackeR 1.6.1 bug: change_units() calls get("degree2degree")
+# but the function is not exported from the trackeR namespace.
+degree2degree <- function(x) x
+
 #' Save summaries and myruns to RData files
 #' @param db_summaries Path to summaries.RData
 #' @param db_myruns Path to myruns.RData
