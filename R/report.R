@@ -5,7 +5,7 @@
 #' @param n_imported Number of workouts imported
 #' @export
 report_mostrecent <- function(summaries, n_imported) {
-  tot_distance <- round(sum(summaries$distance) / 1000, digits = 2)
+  tot_distance <- round(sum(summaries$distance, na.rm = TRUE) / 1000, digits = 2)
   avg_distance <- round(mean(summaries$distance, na.rm = TRUE) / 1000, digits = 2)
   avg_duration <- round(
     mean(as.numeric(summaries$durationMoving), na.rm = TRUE), digits = 0)
