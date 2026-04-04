@@ -135,11 +135,11 @@ def _browser_login(tokenstore: str) -> Garmin:
         page.on("request", _on_request)
         page.goto(sso_url)
 
-        # Wait up to 2 minutes for user to complete login
-        try:
-            page.wait_for_url("**/modern/**", timeout=120_000)
-        except Exception:
-            pass  # ticket might already be captured
+        # Poll until ticket captured or timeout (2 min)
+        for _ in range(240):
+            if ticket:
+                break
+            page.wait_for_timeout(500)
 
         context.close()
 
