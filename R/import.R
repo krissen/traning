@@ -1,5 +1,20 @@
 # Data I/O: load, save, and import workout data
 
+# Workaround for trackeR 1.6.1 bug: change_units() uses get() to find
+# unit conversion functions by name in the calling environment, but they
+# are not exported from the trackeR namespace. Copy all conversion
+# functions into this package's namespace so get() can find them.
+.onLoad <- function(libname, pkgname) {
+  ns <- asNamespace("trackeR")
+  pkg_env <- parent.env(environment())
+  for (fn_name in ls(ns, pattern = "2")) {
+    obj <- get(fn_name, envir = ns)
+    if (is.function(obj)) {
+      assign(fn_name, obj, envir = pkg_env)
+    }
+  }
+}
+
 #' Save summaries and myruns to RData files
 #' @param db_summaries Path to summaries.RData
 #' @param db_myruns Path to myruns.RData
@@ -57,31 +72,29 @@ get_my_files <- function(mytcxpath) {
 #' @return List with elements "summaries" and "myruns"
 #' @export
 get_new_workouts <- function(files, summaries, myruns, verbose = FALSE) {
+  # Match on basename to handle relative vs absolute path mismatches
+  existing_basenames <- basename(summaries$file[!is.na(summaries$file)])
   for (i in 1:length(files)) {
     thefile <- files[[i]]
-    if (thefile %in% summaries$file) {
+    if (basename(thefile) %in% existing_basenames) {
       if (verbose) {
-        cat("Har redan last in ", thefile, "\n", sep = "")
+        cat("Redan inläst: ", basename(thefile), "\n", sep = "")
       }
     } else {
       if (verbose) {
-        cat("\nLaser in ", files[[i]], "...", sep = "")
+        cat("Läser in ", basename(files[[i]]), " ... ", sep = "")
       }
       myruns[[i]] <- tryCatch({
         trackeR::read_container(files[[i]])
       }, error = function(e) {
-        message("Fel vid lasning av filen: ", files[[i]])
+        warning("Kunde inte läsa: ", basename(files[[i]]),
+                " (", conditionMessage(e), ")", call. = FALSE)
         NULL
       })
-      if (verbose) {
-        cat("\n")
-        cat("Skapar summering ...\n")
-      }
+      if (is.null(myruns[[i]])) next
+      if (verbose) cat("OK\n")
       run_summary <- summary(myruns[[i]])
       run_summary <- add_my_columns(run_summary)
-      if (verbose) {
-        cat("Binder ihop\n")
-      }
       summaries <- rbind(summaries, run_summary,
                          deparse.level = 0,
                          make.row.names = FALSE)

@@ -12,6 +12,7 @@ Imports:
     lubridate,
     dplyr,
     tidyr,
+    tibble,
     ggplot2,
     optparse
 Suggests:

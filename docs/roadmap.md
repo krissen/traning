@@ -17,21 +17,60 @@ data repo. Compatible with existing R import pipeline. See
 
 ---
 
-## Phase 4: Build knowledge base
+## ~~Phase 4: Build knowledge base~~ DONE (2026-04-04)
 
-**Goal:** Ground all analysis decisions in running science literature.
+Knowledge base built. 50 papers across 6 topics ingested in Vyasa and
+checked out to `sources/`. Analysis primers with formulas and thresholds
+in `research/_analys/`. First three metrics implemented in R:
+Efficiency Factor, ACWR, and Monotony/Strain — with plot functions and
+CLI flags (`--ef`, `--acwr`, `--monotony`).
 
-**Priority topics (from Sports Analyst):**
+Remaining for future implementation (per-second data needed):
+- HR Zone Distribution (Polarization Index)
+- Cardiac Drift & Aerobic Decoupling
+- TRIMP / ATL / CTL / TSB (Performance Management Chart)
 
-1. **Training Load & Stress (TRIMP/HRSS)** — Transform raw HR data into cumulative load metrics; enable fatigue/fitness tracking (ATL/CTL/TSB) across 15+ years of data
-2. **Cardiac Drift & Aerobic Decoupling** — Pace-to-HR ratio analysis over run halves; decoupling >5% signals aerobic deficiency
-3. **Heart Rate Zone Distribution** — Time-in-zone per run and aggregated monthly/yearly; reveals training polarization (80/20)
-4. **Pace-HR Efficiency Trend (Cardiac Cost)** — Pace/HR ratio over months and years to detect long-term aerobic fitness changes
-5. **Volume Periodization** — Weekly/monthly km progression, acute:chronic workload ratio, monotony/strain indices for injury-risk patterns
+---
 
-**Process:** Librarian searches literature, saves to `research/`, creates primers in `research/_analys/`. Analysis decisions documented in `_decisions/`.
+## Phase 4b: Unified CLI
 
-**References:** Ingest via Vyasa (`ingest_reference` + `finalize_reference`) and link into this project with `checkout_reference`. All literature should be searchable and tagged in the shared library.
+**Goal:** Single entry point `traning <command>` replacing the current split
+between `python garmin_fetch.py`, `Rscript inst/cli.R --flag`, and manual
+venv activation. Same pattern as `bifrost <command>`.
+
+**Target UX:**
+```bash
+traning fetch              # Garmin Connect: hämta nya aktiviteter
+traning fetch --all        # Garmin Connect: hämta alla som saknas
+traning fetch --dry-run    # Förhandsgranska utan nedladdning
+traning import             # Importera TCX → RData-cache
+traning update             # fetch + import i ett steg
+
+traning report month       # Nuvarande --month-running
+traning report year        # Nuvarande --year-running
+traning report pace        # Nuvarande --total-pace
+traning report top         # Nuvarande --year-top / --month-top
+
+traning ef                 # Effektivitetsfaktor-plot
+traning acwr               # ACWR-plot
+traning monotony           # Monotoni/strain-plot
+traning datesum 2024-01-01--2024-06-30
+
+traning shiny              # Starta tRanat Shiny-appen
+```
+
+**Architecture:**
+- Python CLI (Click) as the unified dispatcher, like `bifrost`
+- R commands invoked via `Rscript` subprocess
+- Python commands (fetch) invoked directly
+- Installable via `pip install -e .` with `console_scripts` entry point
+- Venv management transparent to user
+
+**Why Python, not R:**
+- Garmin fetch is already Python
+- Click gives clean subcommand structure
+- Can dispatch to R via subprocess — same as bifrost does
+- Single `traning` command instead of remembering which language to use
 
 ---
 

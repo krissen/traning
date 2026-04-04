@@ -49,7 +49,16 @@ my_options <- list(
     help = "Print summarization of current running year"),
   make_option(c("--datesum"),
     type = "character", default = NULL,
-    help = "Date summary in format 'YYYY-MM-DD--YYYY-MM-DD'")
+    help = "Date summary in format 'YYYY-MM-DD--YYYY-MM-DD'"),
+  make_option("--ef",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Plot Efficiency Factor trend over time"),
+  make_option("--acwr",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Plot Acute:Chronic Workload Ratio (last 365 days)"),
+  make_option("--monotony",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Plot Training Monotony and Strain (last 365 days)")
 )
 
 opt_parser <- OptionParser(option_list = my_options)
@@ -64,6 +73,9 @@ do_month_running <- options$`month-running`
 do_year_running <- options$`year-running`
 do_year_top     <- options$`year-top`
 do_total_pace   <- options$`total-pace`
+do_ef           <- options$ef
+do_acwr         <- options$acwr
+do_monotony     <- options$monotony
 
 # Parse date range
 if (!is.null(options$datesum)) {
@@ -154,6 +166,18 @@ if (!is.null(do_datesum_from) && !is.null(do_datesum_to)) {
 
 if (do_total_pace) {
   print(fetch.my.mean.pace(summaries))
+}
+
+if (do_ef) {
+  print(fetch.plot.ef(summaries))
+}
+
+if (do_acwr) {
+  print(fetch.plot.acwr(summaries))
+}
+
+if (do_monotony) {
+  print(fetch.plot.monotony(summaries))
 }
 
 # vim: ts=2 sw=2 et
