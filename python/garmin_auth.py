@@ -110,9 +110,12 @@ def _browser_login(tokenstore: str) -> Garmin:
     ticket = None
 
     with sync_playwright() as pw:
-        # Use system Chrome (not Playwright's Chromium) to avoid
+        # Use a real system browser (not Playwright's Chromium) to avoid
         # Cloudflare detecting automation flags.
-        browser = pw.chromium.launch(channel="chrome", headless=False)
+        browser = pw.chromium.launch(
+            headless=False,
+            **_find_system_browser(),
+        )
         page = browser.new_page()
 
         def _on_request(request):
@@ -154,6 +157,28 @@ def _browser_login(tokenstore: str) -> Garmin:
     client.login(tokenstore=tokenstore)
     log.info("Browser login successful")
     return client
+
+
+def _find_system_browser() -> dict:
+    """Find a Chromium-based browser on the system.
+
+    Returns kwargs for pw.chromium.launch() — either
+    executable_path (Vivaldi, etc.) or channel ('chrome').
+    """
+    candidates = [
+        "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ]
+    for path in candidates:
+        if Path(path).exists():
+            log.debug("Using system browser: %s", path)
+            return {"executable_path": path}
+
+    # Fallback: let Playwright try its own Chrome channel
+    log.debug("No system browser found, trying Playwright chrome channel")
+    return {"channel": "chrome"}
 
 
 def _prompt_mfa() -> str:
