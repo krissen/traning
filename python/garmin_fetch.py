@@ -11,6 +11,7 @@ Usage:
 
 import argparse
 import logging
+import subprocess
 import sys
 
 from garmin_auth import authenticate
@@ -81,10 +82,28 @@ def main() -> int:
         )
         action = "would fetch" if args.dry_run else "fetched"
         log.info("Done — %s %d new activities", action, n)
+        if n > 0 and not args.dry_run:
+            _commit_data(data_dir, n)
         return 0
     except Exception:
         log.exception("Fetch failed")
         return 2
+
+
+def _commit_data(data_dir, n: int) -> None:
+    """Git add + commit new files in the data repo."""
+    try:
+        subprocess.run(
+            ["git", "add", "kristian/filer/gconnect/", "kristian/filer/tcx/"],
+            cwd=data_dir, check=True, capture_output=True,
+        )
+        subprocess.run(
+            ["git", "commit", "-m", f"(import) Fetch {n} new activities from Garmin Connect"],
+            cwd=data_dir, check=True, capture_output=True,
+        )
+        log.info("Committed %d new activities to data repo", n)
+    except subprocess.CalledProcessError as e:
+        log.warning("Git commit failed: %s", e.stderr.decode().strip())
 
 
 if __name__ == "__main__":
