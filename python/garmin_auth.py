@@ -5,8 +5,16 @@ import logging
 from pathlib import Path
 
 from garminconnect import Garmin
+from garminconnect.exceptions import (
+    GarminConnectAuthenticationError,
+    GarminConnectTooManyRequestsError,
+)
 
 log = logging.getLogger(__name__)
+
+
+class RateLimitedError(Exception):
+    """Raised when Garmin rate-limits login attempts."""
 
 
 def authenticate(token_dir: Path, force_reauth: bool = False) -> Garmin:
@@ -42,7 +50,15 @@ def _interactive_login(tokenstore: str) -> Garmin:
         password=password,
         prompt_mfa=_prompt_mfa,
     )
-    client.login(tokenstore=tokenstore)
+    try:
+        client.login(tokenstore=tokenstore)
+    except (GarminConnectTooManyRequestsError, GarminConnectAuthenticationError) as e:
+        if "429" in str(e) or "Rate Limit" in str(e):
+            raise RateLimitedError(
+                "Garmin rate-limited the login request. "
+                "Wait a few minutes and try again."
+            ) from e
+        raise
     log.info("Logged in and tokens saved to %s", tokenstore)
     return client
 

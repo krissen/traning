@@ -13,7 +13,7 @@ import argparse
 import logging
 import sys
 
-from garmin_auth import authenticate
+from garmin_auth import authenticate, RateLimitedError
 from garmin_download import fetch_new_activities
 from garmin_utils import get_data_dir, token_dir, setup_logging
 
@@ -58,6 +58,9 @@ def main() -> int:
     try:
         tokens = token_dir(data_dir)
         client = authenticate(tokens, force_reauth=args.reauth)
+    except RateLimitedError as e:
+        log.error("%s", e)
+        return 1
     except Exception:
         log.exception("Authentication failed")
         return 1
