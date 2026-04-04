@@ -86,18 +86,20 @@ def _native_login(tokenstore: str) -> Garmin:
 def _browser_login(tokenstore: str) -> Garmin:
     """Log in via a real browser to bypass Cloudflare.
 
-    Opens Garmin SSO in Chromium. The user logs in normally (including
-    MFA if needed). We capture the service ticket from the redirect
-    and exchange it for OAuth tokens.
+    Opens Garmin SSO in Chrome. After user logs in, extracts
+    JWT_WEB cookie from the browser session and uses it to
+    obtain DI OAuth tokens for persistent API access.
     """
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
         raise RuntimeError(
             "Browser login requires Playwright. Install it:\n"
-            "  pip install playwright && playwright install chromium"
+            "  pip install playwright"
         )
 
+    # Use the portal SSO URL — the browser completes the full login
+    # including ticket exchange, so we just need the resulting cookies.
     sso_url = (
         f"{_SSO_SIGNIN}"
         f"?clientId={_PORTAL_CLIENT_ID}"
@@ -108,12 +110,10 @@ def _browser_login(tokenstore: str) -> Garmin:
     print("A browser window will open. Log in to Garmin Connect.")
     print("The window closes automatically after login.\n")
 
-    ticket = None
+    jwt_web = None
+    cookies = []
 
     with sync_playwright() as pw, tempfile.TemporaryDirectory() as tmpdir:
-        # Use system Chrome with a temporary profile.
-        # Key: suppress --enable-automation and AutomationControlled
-        # so Cloudflare sees a normal browser, not a bot.
         browser_opts = _find_system_browser()
         context = pw.chromium.launch_persistent_context(
             tmpdir,
@@ -123,46 +123,64 @@ def _browser_login(tokenstore: str) -> Garmin:
             **browser_opts,
         )
         page = context.pages[0] if context.pages else context.new_page()
-
-        def _on_request(request):
-            nonlocal ticket
-            # Garmin redirects to service URL with ?ticket=ST-...
-            m = re.search(r"[?&]ticket=(ST-[^&]+)", request.url)
-            if m and not ticket:
-                ticket = m.group(1)
-                log.debug("Captured service ticket: %s...", ticket[:20])
-
-        page.on("request", _on_request)
         page.goto(sso_url)
 
-        # Poll until ticket captured or timeout (2 min)
-        for _ in range(240):
-            if ticket:
+        # Wait for login to complete — user lands on connect.garmin.com
+        for _ in range(240):  # 2 min timeout
+            cookies = context.cookies("https://connect.garmin.com")
+            for c in cookies:
+                if c["name"] == "JWT_WEB":
+                    jwt_web = c["value"]
+                    break
+            if jwt_web:
                 break
             page.wait_for_timeout(500)
 
         context.close()
 
-    if not ticket:
+    if not jwt_web:
         raise GarminConnectAuthenticationError(
-            "Could not capture service ticket. Did you complete the login?"
+            "Could not get JWT_WEB cookie. Did you complete the login?"
         )
 
-    log.info("Got service ticket, exchanging for tokens ...")
+    log.info("Got JWT_WEB from browser, obtaining API tokens ...")
 
-    # Exchange ticket for OAuth tokens using garminconnect internals
+    # Inject JWT_WEB into a garminconnect client and use the
+    # connect.garmin.com DI refresh endpoint to get proper DI tokens.
     client = Garmin()
-    client.client._establish_session(
-        ticket, service_url=_PORTAL_SERVICE
-    )
-    client.client.dump(tokenstore)
-    log.debug("Tokens saved to %s", tokenstore)
+    c = client.client
+    c.jwt_web = jwt_web
+    c.cs.cookies.set("JWT_WEB", jwt_web, domain="connect.garmin.com")
 
-    # Reload via normal path (loads tokens + fetches profile)
+    try:
+        c._refresh_session()
+        if c.di_token:
+            log.info("DI tokens obtained via refresh")
+            c.dump(tokenstore)
+        else:
+            # DI refresh didn't yield tokens — save JWT_WEB manually
+            log.info("Using JWT_WEB directly (no DI tokens)")
+            _save_jwt_tokens(tokenstore, jwt_web)
+    except Exception as e:
+        log.debug("DI refresh failed: %s — saving JWT_WEB", e)
+        _save_jwt_tokens(tokenstore, jwt_web)
+
+    # Reload via normal path
     client = Garmin()
     client.login(tokenstore=tokenstore)
     log.info("Browser login successful")
     return client
+
+
+def _save_jwt_tokens(tokenstore: str, jwt_web: str) -> None:
+    """Save JWT_WEB in garminconnect's token format as a fallback."""
+    import json
+    p = Path(tokenstore)
+    if p.is_dir():
+        p = p / "garmin_tokens.json"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    data = {"di_token": jwt_web, "di_refresh_token": None, "di_client_id": None}
+    p.write_text(json.dumps(data))
 
 
 def _find_system_browser() -> dict:
