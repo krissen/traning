@@ -1,8 +1,19 @@
 # Data I/O: load, save, and import workout data
 
-# Workaround for trackeR 1.6.1 bug: change_units() calls get("degree2degree")
-# but the function is not exported from the trackeR namespace.
-degree2degree <- function(x) x
+# Workaround for trackeR 1.6.1 bug: change_units() uses get() to find
+# unit conversion functions by name in the calling environment, but they
+# are not exported from the trackeR namespace. Copy all conversion
+# functions into this package's namespace so get() can find them.
+.onLoad <- function(libname, pkgname) {
+  ns <- asNamespace("trackeR")
+  pkg_env <- parent.env(environment())
+  for (fn_name in ls(ns, pattern = "2")) {
+    obj <- get(fn_name, envir = ns)
+    if (is.function(obj)) {
+      assign(fn_name, obj, envir = pkg_env)
+    }
+  }
+}
 
 #' Save summaries and myruns to RData files
 #' @param db_summaries Path to summaries.RData
