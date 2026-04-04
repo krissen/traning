@@ -72,9 +72,11 @@ get_my_files <- function(mytcxpath) {
 #' @return List with elements "summaries" and "myruns"
 #' @export
 get_new_workouts <- function(files, summaries, myruns, verbose = FALSE) {
+  # Match on basename to handle relative vs absolute path mismatches
+  existing_basenames <- basename(summaries$file[!is.na(summaries$file)])
   for (i in 1:length(files)) {
     thefile <- files[[i]]
-    if (thefile %in% summaries$file) {
+    if (basename(thefile) %in% existing_basenames) {
       if (verbose) {
         cat("Har redan last in ", thefile, "\n", sep = "")
       }
