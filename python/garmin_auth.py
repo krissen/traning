@@ -111,12 +111,15 @@ def _browser_login(tokenstore: str) -> Garmin:
     ticket = None
 
     with sync_playwright() as pw, tempfile.TemporaryDirectory() as tmpdir:
-        # Use a real system browser with a temporary profile to avoid
-        # conflicts with the running browser and Cloudflare detection.
+        # Use system Chrome with a temporary profile.
+        # Key: suppress --enable-automation and AutomationControlled
+        # so Cloudflare sees a normal browser, not a bot.
         browser_opts = _find_system_browser()
         context = pw.chromium.launch_persistent_context(
             tmpdir,
             headless=False,
+            ignore_default_args=["--enable-automation"],
+            args=["--disable-blink-features=AutomationControlled"],
             **browser_opts,
         )
         page = context.pages[0] if context.pages else context.new_page()
@@ -163,13 +166,12 @@ def _browser_login(tokenstore: str) -> Garmin:
 
 
 def _find_system_browser() -> dict:
-    """Find a Chromium-based browser on the system.
+    """Find a Chromium-based browser compatible with Playwright.
 
-    Returns kwargs for pw.chromium.launch() — either
-    executable_path (Vivaldi, etc.) or channel ('chrome').
+    Returns kwargs for pw.chromium.launch_persistent_context().
+    Note: Vivaldi is excluded — it crashes with Playwright's CDP flags.
     """
     candidates = [
-        "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
         "/Applications/Chromium.app/Contents/MacOS/Chromium",
@@ -179,9 +181,9 @@ def _find_system_browser() -> dict:
             log.debug("Using system browser: %s", path)
             return {"executable_path": path}
 
-    # Fallback: let Playwright try its own Chrome channel
-    log.debug("No system browser found, trying Playwright chrome channel")
-    return {"channel": "chrome"}
+    # Fallback: Playwright's bundled Chromium (less likely to pass Cloudflare)
+    log.debug("No system browser found, using Playwright Chromium")
+    return {}
 
 
 def _prompt_mfa() -> str:
