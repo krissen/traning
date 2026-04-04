@@ -1,9 +1,5 @@
 # Plot functions — each returns a ggplot2 object
 
-# NOTE: fetch.plot.monthly.top() is called in the old script (line 585)
-# but was never defined. Known pre-existing bug — only triggers when
-# isRStudio == TRUE && do_month_top == TRUE.
-
 #' Bar + line plot of monthly distance and pace
 #' @param month_summaries_til_day Tibble from report_monthstatus()
 #' @return ggplot2 object

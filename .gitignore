@@ -27,6 +27,12 @@ man/
 *.Rcheck
 .Rbuildignore
 
+# Leftover IDE artifacts
+r_aw/
+
+# Python venv
+python/.venv/
+
 # renv
 renv/library/
 renv/staging/
