@@ -1,5 +1,60 @@
 # tRäning — Changelog
 
+## 0.3.0 — Unified output system
+
+### Consistent table/plot toggle for all commands
+- All 14 report commands now support both table and plot output via `--plot`
+- Advanced metrics (EF, HRE, ACWR, monotony, PMC, recovery HR) previously
+  plot-only — now default to table output like all other commands
+- New `report_ef()`, `report_hre()`, `report_acwr()`, `report_monotony()`,
+  `report_pmc()`, `report_recovery_hr()` functions in `R/report.R`
+- `report_monthtop()` now accepts `n` parameter (was hardcoded to 10)
+- `--limit` flag to control table row count on any command
+
+### File output with format support
+- `--output FILE` saves output to file (both plots and tables)
+- `--format` for explicit format: plots (`pdf`, `png`), tables (`csv`,
+  `json`, `jsonl`, `xlsx`)
+- Default save location: `$TRANING_DATA/output/plots/` and
+  `$TRANING_DATA/output/tables/` with timestamped filenames
+- `--no-open` suppresses auto-opening of saved files (open is default)
+- `save_plot()` and `save_table()` helpers in `R/utils.R`
+- JSONL output in preparation for MCP server integration
+
+### Configurable defaults via environment
+- `TRANING_OUTPUT_DIR` — base directory for saved output
+- `TRANING_PLOT_FORMAT` — default plot format (default: pdf)
+- `TRANING_TABLE_FORMAT` — default table format (default: csv)
+- `TRANING_OPEN` — auto-open after save (default: true)
+
+### Date filtering fix for time-series metrics
+- ACWR, monotony, PMC, EF, HRE, recovery HR now receive full unfiltered
+  data for computation; date range applied to the output only
+- Previously, `--after`/`--before` pre-filtered input data, corrupting
+  rolling-window calculations at boundaries
+- Time-series plot functions accept `from`/`to` parameters that override
+  the `days=365` default
+
+### Python CLI updates
+- All commands forward `--output`, `--format`, `--no-open`, `--limit`
+- Advanced metric commands now respect `--plot` toggle (was hardcoded to
+  always-plot)
+
+### Shiny app rebuilt from scratch
+- `global.R` — data loading at startup with Garmin JSON augmentation
+- `ui.R` — `navbarPage` with 5 sections: Månad (4 tabs), År (2 tabs),
+  Tempo, Datumperiod (with date picker), Avancerat (6 tabs)
+- `server.R` — all 14 report types with both plot and table output
+- Each tab shows plot + interactive DT table simultaneously
+- Recovery HR gracefully handles missing Garmin data
+
+### Tests
+- 65 tests total (was 36), all passing
+- New `test-report-advanced.R` covering all 6 advanced report functions,
+  `save_plot()`, and `save_table()` (CSV, JSON, JSONL)
+
+---
+
 ## 2026-04-05 — Phase 4e: Literature-driven metric expansion
 
 ### Data pipeline: Garmin JSON integration (`R/garmin_json.R`)
