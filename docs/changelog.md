@@ -1,5 +1,82 @@
 # tRäning — Changelog
 
+## 2026-04-05 — Phase 4e: Literature-driven metric expansion
+
+### Data pipeline: Garmin JSON integration (`R/garmin_json.R`)
+- New module reads 4398 Garmin JSON file pairs (summary + details)
+- Handles both old format (summaryDTO-nested, pre-late-2024) and new format
+  (flat top-level keys)
+- `import_garmin_json()` — batch-reads all JSON, extracts maxHR,
+  hrTimeInZone_1..5, vO2MaxValue, recoveryHeartRate, directWorkoutRpe,
+  averageTemperature, minHR
+- `augment_summaries()` — joins Garmin JSON fields to summaries via
+  timestamp matching (±120 s tolerance)
+- Added `jsonlite` to DESCRIPTION Imports
+
+### Physiological configuration (`R/physiology.R`)
+- `import_resting_hr()` — parses Apple Watch resting HR CSV
+  (2431 daily observations, 2017-09 to 2024-10); filters out Garmin
+  "Connect" entries and physiological outliers
+- `get_hr_max()` — four-level priority: HR_MAX env → 98th percentile of
+  Garmin maxHR → Tanaka formula → 185 bpm fallback
+- `get_hr_rest(date)` — time-varying resting HR from Apple Watch data
+  (backward-looking 30-day rolling mean); falls back to HR_REST env or
+  50 bpm for dates outside AW coverage
+- `save_resting_hr()` / `load_resting_hr()` — RData cache
+
+### New metric: HRE — Heart Rate Efficiency (`R/advanced_metrics.R`)
+- `compute_hre()` — avgHR × avgPace = beats/km (Votyakov et al. 2025)
+- Filter: running, >5 km, HR > 0; 28-day rolling mean
+- Votyakov thresholds: <700 well-fitted, 700-750 fitted, >800 poorly-fitted
+- `fetch.plot.hre()` — scatter + rolling mean + threshold bands
+- CLI: `traning hre`
+
+### New metric: TRIMP / CTL / ATL / TSB — Performance Management Chart
+- `compute_trimp()` — Banister bTRIMP per session (Morton 1990 formula)
+  with time-varying HRrest from Apple Watch data
+- `compute_pmc()` — daily CTL (42-day EWMA), ATL (7-day EWMA),
+  TSB = CTL - ATL (Murray 2017 EWMA method)
+- `fetch.plot.pmc()` — three-panel chart: fitness/fatigue lines, TSB zone
+  bars (with coaching heuristic caveat), daily TRIMP bars
+- CLI: `traning pmc --after -1y`
+
+### New metric: Recovery Heart Rate
+- `compute_recovery_hr()` — extracts post-workout recovery HR from enriched
+  summaries (520 activities, Nov 2023+), 28-day rolling mean
+- `fetch.plot.recovery_hr()` — scatter + rolling mean trend
+- CLI: `traning recovery-hr`
+
+### ACWR corrections (literature-driven)
+- Fixed underloading threshold 0.5 → 0.8 (Hulin 2016)
+- Added uncoupled ACWR as dashed grey line on plot (Impellizzeri 2020:
+  coupled variant systematically dampens spikes)
+- Added `weekly_pct_change` column (Nielsen 2014: >30% = injury risk)
+
+### EF improvements (literature-driven)
+- Refactored `fetch.plot.ef()` to dual-panel chart with weekly km bars
+  below (volume context, per Votyakov 2025 recommendation)
+
+### CLI updates
+- R CLI: new `--hre`, `--pmc`, `--recovery-hr` flags
+- Python CLI: new `traning hre`, `traning pmc`, `traning recovery-hr`
+  commands
+
+---
+
+## 2026-04-05 — Phase 4d: Evidence-based primer rework
+
+All 6 research themes rewritten with actual literature findings:
+1. Continuous Wearable Data (6 papers)
+2. Cardiac Drift & Decoupling (5 papers)
+3. Pace-HR Efficiency (6 papers)
+4. HR Zone Distribution (7 papers)
+5. Volume Periodization / ACWR (9 papers)
+6. Training Load / TRIMP (12 papers)
+
+Tracking: `research/_analys/PROGRESS.md` (all items complete).
+
+---
+
 ## 2026-04-05 — Phase 4c: Flexible date ranges & plot variants
 
 ### Date range system (`R/daterange.R`)

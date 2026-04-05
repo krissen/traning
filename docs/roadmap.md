@@ -1,53 +1,39 @@
 # tRäning — Roadmap
 
-## ~~Phase 2: Reorganise project structure~~ DONE (2026-04-03)
+## Phase 4f: HR zone distribution & polarization index
 
-Completed. See changelog for details. Project is now an R package with
-`R/` modules, `inst/cli.R` entry point, and `devtools::load_all()` workflow.
+**Goal:** Track training intensity distribution and flag the "moderate
+intensity trap" (excessive Zone 2 training).
 
----
+**Deliverables:**
+- Collapse Garmin 5-zone to research 3-zone (Seiler: Z1 < VT1, Z2 = VT1-VT2, Z3 > VT2)
+- Per-second zone classification from myruns (covers full 20-year history)
+- Polarization Index (Treff 2019)
+- Stacked bar chart (monthly/yearly), PI trend line
+- Cross-validate Garmin hrTimeInZone (316 activities) against per-second results
+- CLI: `traning zones --after -1y`
 
-## ~~Phase 3: Garmin data fetching library~~ DONE (2026-04-04)
+**Data sources:** Garmin JSON hrTimeInZone_1..5 (316 activities, Dec 2024+),
+per-second HR from myruns (3412 activities, full history).
 
-Completed. Python script in `python/` fetches activities from Garmin Connect.
-Auth via `pirate-garmin` (browser-based, bypasses Cloudflare). Downloads
-TCX + JSON to `gconnect/`, creates symlinks in `tcx/`, auto-commits to
-data repo. Compatible with existing R import pipeline. See
-`docs/user/garmin-fetch-setup.md` and `docs/dev/garmin-fetch-design.md`.
-
----
-
-## ~~Phase 4: Build knowledge base~~ DONE (2026-04-04)
-
-Knowledge base built. 50 papers across 6 topics ingested in Vyasa and
-checked out to `sources/`. Analysis primers with formulas and thresholds
-in `research/_analys/`. First three metrics implemented in R:
-Efficiency Factor, ACWR, and Monotony/Strain — with plot functions and
-CLI flags (`--ef`, `--acwr`, `--monotony`).
-
-Remaining for future implementation (per-second data needed):
-- HR Zone Distribution (Polarization Index)
-- Cardiac Drift & Aerobic Decoupling
-- TRIMP / ATL / CTL / TSB (Performance Management Chart)
+**Dependencies:** `R/garmin_json.R`, `R/physiology.R` (both done).
 
 ---
 
-## ~~Phase 4b: Unified CLI~~ DONE (2026-04-05)
+## Phase 4g: Aerobic decoupling
 
-Completed. Single `traning <command>` entry point via Python Click dispatcher.
-Garmin modules restructured as proper package (`python/traning_cli/garmin/`).
-R reports/plots delegated via subprocess to `inst/cli.R`. Installable via
-`pip install -e .` with `console_scripts` entry point.
+**Goal:** Compare first-half vs second-half pace:HR ratio to quantify
+aerobic fitness limitations within a single run.
 
----
+**Deliverables:**
+- `compute_decoupling()` — per-second data extraction, first 10 min excluded,
+  midpoint split, 30s rolling mean on speed (GPS noise), temperature annotation
+- Trend plot with threshold bands (<3%, 3-5%, 5-8%, >8%)
+- CLI: `traning decoupling --after -1y`
 
-## ~~Phase 4c: Flexible date ranges & plot variants~~ DONE (2026-04-05)
+**Filters:** running, >45 min, easy pace (>5:00/km).
 
-Completed. All report commands now accept `--after`/`--before`/`--span`
-for flexible date filtering (absolute and relative expressions). All
-table commands have plot variants via `--plot` flag. Shared helpers
-(`R/daterange.R`, `R/plot_reports.R`) ensure zero duplication. Python
-CLI updated with shared decorator. See `docs/user/cli-reference.md`.
+**Dependencies:** Requires new `R/persecond.R` module for myruns access pattern.
 
 ---
 
