@@ -33,6 +33,7 @@ r_aw/
 # Python
 python/.venv/
 __pycache__/
+*.egg-info/
 
 # renv
 renv/library/

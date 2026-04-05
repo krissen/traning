@@ -20,9 +20,12 @@ echo "Installing dependencies ..."
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
 "$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt"
 
+echo "Installing traning CLI ..."
+"$VENV_DIR/bin/pip" install --quiet -e "$SCRIPT_DIR/.."
+
 echo ""
 echo "Done. Activate with:"
 echo "  source $VENV_DIR/bin/activate"
 echo ""
+echo "The 'traning' command is now available in the venv."
 echo "Note: Browser login fallback uses your system Chrome."
-echo "No extra browser download needed."

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from garminconnect import Garmin
 
-from garmin_utils import (
+from .utils import (
     activity_filename_prefix,
     extract_activity_id,
     gconnect_dir,

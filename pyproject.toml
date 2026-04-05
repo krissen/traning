@@ -1,0 +1,21 @@
+[project]
+name = "traning-cli"
+version = "0.1.0"
+description = "Unified CLI for tRäning — running data analysis"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "garminconnect>=0.3.1",
+    "pirate-garmin @ git+https://github.com/jeffton/pirate-garmin.git",
+    "requests>=2.28.0",
+]
+
+[project.scripts]
+traning = "traning_cli.main:cli"
+
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["python"]

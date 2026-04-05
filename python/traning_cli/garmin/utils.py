@@ -21,6 +21,12 @@ def _read_renviron(path: Path) -> dict[str, str]:
     return env
 
 
+def get_project_root() -> Path:
+    """Return the traning project root directory."""
+    # garmin/utils.py -> garmin/ -> traning_cli/ -> python/ -> repo root
+    return Path(__file__).resolve().parent.parent.parent.parent
+
+
 def get_data_dir() -> Path:
     """Return the TRANING_DATA directory.
 
@@ -29,9 +35,7 @@ def get_data_dir() -> Path:
     """
     raw = os.environ.get("TRANING_DATA")
     if not raw:
-        # Look for .Renviron in project root (parent of python/)
-        project_root = Path(__file__).resolve().parent.parent
-        renviron = _read_renviron(project_root / ".Renviron")
+        renviron = _read_renviron(get_project_root() / ".Renviron")
         raw = renviron.get("TRANING_DATA")
     if not raw:
         raise EnvironmentError(
