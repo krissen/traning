@@ -14,6 +14,7 @@ Imports:
     tidyr,
     tibble,
     ggplot2,
+    jsonlite,
     optparse
 Suggests:
     shiny,

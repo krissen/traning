@@ -273,6 +273,13 @@ def ef(show_plot, after, before, span):
 
 @cli.command()
 @report_options
+def hre(show_plot, after, before, span):
+    """Plot Heart Rate Efficiency (beats/km, Votyakov)."""
+    _r_report("--hre", False, after, before, span)
+
+
+@cli.command()
+@report_options
 def acwr(show_plot, after, before, span):
     """Plot Acute:Chronic Workload Ratio."""
     _r_report("--acwr", False, after, before, span)
@@ -283,6 +290,20 @@ def acwr(show_plot, after, before, span):
 def monotony(show_plot, after, before, span):
     """Plot Training Monotony and Strain."""
     _r_report("--monotony", False, after, before, span)
+
+
+@cli.command()
+@report_options
+def pmc(show_plot, after, before, span):
+    """Plot Performance Management Chart (TRIMP/CTL/ATL/TSB)."""
+    _r_report("--pmc", False, after, before, span)
+
+
+@cli.command(name="recovery-hr")
+@report_options
+def recovery_hr(show_plot, after, before, span):
+    """Plot Recovery Heart Rate trend."""
+    _r_report("--recovery-hr", False, after, before, span)
 
 
 # -- datesum ----------------------------------------------------------------

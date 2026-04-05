@@ -53,12 +53,21 @@ my_options <- list(
   make_option("--ef",
     type = "logical", action = "store_true", default = FALSE,
     help = "Plot Efficiency Factor trend over time"),
+  make_option("--hre",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Plot Heart Rate Efficiency (beats/km, Votyakov)"),
   make_option("--acwr",
     type = "logical", action = "store_true", default = FALSE,
     help = "Plot Acute:Chronic Workload Ratio (last 365 days)"),
   make_option("--monotony",
     type = "logical", action = "store_true", default = FALSE,
     help = "Plot Training Monotony and Strain (last 365 days)"),
+  make_option("--pmc",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Plot Performance Management Chart (TRIMP/CTL/ATL/TSB)"),
+  make_option("--recovery-hr",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Plot Recovery Heart Rate trend (requires Garmin JSON import)"),
   # --- Date range flags ---
   make_option("--after",
     type = "character", default = NULL,
@@ -88,8 +97,11 @@ do_year_running <- options$`year-running`
 do_year_top     <- options$`year-top`
 do_total_pace   <- options$`total-pace`
 do_ef           <- options$ef
+do_hre          <- options$hre
 do_acwr         <- options$acwr
 do_monotony     <- options$monotony
+do_pmc          <- options$pmc
+do_recovery_hr  <- options$`recovery-hr`
 do_plot         <- options$plot
 
 # --- Build date range ---
@@ -221,7 +233,7 @@ if (do_year_top) {
 # Only runs if no other report command was given (to avoid double output)
 any_report <- do_month_top || do_month_running || do_month_this ||
   do_month_last || do_year_running || do_year_top || do_total_pace ||
-  do_ef || do_acwr || do_monotony
+  do_ef || do_hre || do_acwr || do_monotony || do_pmc || do_recovery_hr
 
 if (!is.null(options$datesum) || (has_daterange && !any_report)) {
   dr_from <- date_range$from
@@ -250,12 +262,24 @@ if (do_ef) {
   print(fetch.plot.ef(summaries_filtered))
 }
 
+if (do_hre) {
+  print(fetch.plot.hre(summaries_filtered))
+}
+
 if (do_acwr) {
   print(fetch.plot.acwr(summaries_filtered))
 }
 
 if (do_monotony) {
   print(fetch.plot.monotony(summaries_filtered))
+}
+
+if (do_pmc) {
+  print(fetch.plot.pmc(summaries_filtered))
+}
+
+if (do_recovery_hr) {
+  print(fetch.plot.recovery_hr(summaries_filtered))
 }
 
 # vim: ts=2 sw=2 et
