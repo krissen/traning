@@ -82,11 +82,10 @@ fetch.plot.mean.pace <- function(mean.pace) {
   return(p1)
 }
 
-#' Scatter plot of Efficiency Factor (EF) over time with rolling 28-day trend
+#' Dual-panel plot of Efficiency Factor (EF) over time
 #'
-#' Calls \code{compute_efficiency_factor()} internally.  Each run is shown as
-#' a point; a loess smoother (blue) captures the local trend; the 28-day
-#' rolling mean (red) reveals the longer fitness arc.
+#' Upper panel: EF scatter + loess smoother + 28-day rolling mean.
+#' Lower panel: weekly km bars providing volume context (Votyakov 2025).
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
@@ -94,25 +93,123 @@ fetch.plot.mean.pace <- function(mean.pace) {
 fetch.plot.ef <- function(summaries) {
   ef_data <- compute_efficiency_factor(summaries)
 
-  ef_data %>%
+  # Weekly km for volume panel
+  acwr_data <- compute_acwr(summaries) %>%
+    dplyr::filter(
+      date >= min(ef_data$sessionStart),
+      date <= max(ef_data$sessionStart)
+    )
+
+  # EF panel data
+  ef_panel <- ef_data %>%
+    dplyr::select(sessionStart, ef, ef_rolling28) %>%
+    tidyr::pivot_longer(
+      cols = c(ef, ef_rolling28),
+      names_to = "metrik", values_to = "value"
+    ) %>%
+    dplyr::mutate(panel = factor("EF", levels = c("EF", "Veckokilometer")))
+
+  # Volume panel data — use weekly_km
+  km_panel <- acwr_data %>%
+    dplyr::select(date, weekly_km) %>%
+    dplyr::rename(sessionStart = date) %>%
+    dplyr::mutate(
+      metrik = "weekly_km",
+      value = weekly_km,
+      panel = factor("Veckokilometer", levels = c("EF", "Veckokilometer"))
+    ) %>%
+    dplyr::select(sessionStart, metrik, value, panel)
+
+  combined <- dplyr::bind_rows(ef_panel, km_panel)
+
+  combined %>%
     ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
+    # EF points (only in EF panel)
     ggplot2::geom_point(
-      ggplot2::aes(y = ef),
+      data = dplyr::filter(combined, metrik == "ef"),
+      ggplot2::aes(y = value),
+      alpha = 0.4, size = 1.5, colour = "grey40"
+    ) +
+    # EF loess smoother
+    ggplot2::geom_smooth(
+      data = dplyr::filter(combined, metrik == "ef"),
+      ggplot2::aes(y = value),
+      method = "loess", formula = "y ~ x",
+      colour = "steelblue", se = FALSE, linewidth = 0.8
+    ) +
+    # EF 28-day rolling mean
+    ggplot2::geom_line(
+      data = dplyr::filter(combined, metrik == "ef_rolling28"),
+      ggplot2::aes(y = value),
+      colour = "firebrick", linewidth = 0.9, na.rm = TRUE
+    ) +
+    # Weekly km bars
+    ggplot2::geom_col(
+      data = dplyr::filter(combined, metrik == "weekly_km"),
+      ggplot2::aes(y = value),
+      fill = "steelblue", alpha = 0.7, width = 1
+    ) +
+    ggplot2::facet_grid(
+      rows = ggplot2::vars(panel),
+      scales = "free_y",
+      space = "fixed"
+    ) +
+    ggplot2::ggtitle("Effektivitetsfaktor (EF) över tid") +
+    ggplot2::labs(x = NULL, y = NULL) +
+    ggplot2::theme(
+      strip.text = ggplot2::element_text(face = "bold")
+    ) -> p
+  return(p)
+}
+
+#' Scatter plot of Heart Rate Efficiency (HRE) over time
+#'
+#' Calls \code{compute_hre()} internally.  Each run is shown as a point;
+#' the 28-day rolling mean reveals the fitness trend.  Votyakov (2025)
+#' thresholds are shown as horizontal bands: <700 bpkm well-fitted,
+#' 700-750 fitted, >800 poorly-fitted.  Lower HRE = better fitness.
+#'
+#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @return ggplot2 object
+#' @export
+fetch.plot.hre <- function(summaries) {
+  hre_data <- compute_hre(summaries)
+
+  hre_data %>%
+    ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
+    # Votyakov threshold bands
+    ggplot2::annotate("rect",
+      xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 700,
+      fill = "#27ae60", alpha = 0.06
+    ) +
+    ggplot2::annotate("rect",
+      xmin = -Inf, xmax = Inf, ymin = 700, ymax = 750,
+      fill = "#f1c40f", alpha = 0.06
+    ) +
+    ggplot2::annotate("rect",
+      xmin = -Inf, xmax = Inf, ymin = 800, ymax = Inf,
+      fill = "#e74c3c", alpha = 0.06
+    ) +
+    ggplot2::geom_hline(yintercept = c(700, 750, 800),
+      colour = "grey70", linetype = "dotted", linewidth = 0.4
+    ) +
+    ggplot2::geom_point(
+      ggplot2::aes(y = hre),
       alpha = 0.4, size = 1.5, colour = "grey40"
     ) +
     ggplot2::geom_smooth(
-      ggplot2::aes(y = ef),
+      ggplot2::aes(y = hre),
       method = "loess", formula = "y ~ x",
       colour = "steelblue", se = FALSE, linewidth = 0.8
     ) +
     ggplot2::geom_line(
-      ggplot2::aes(y = ef_rolling28),
+      ggplot2::aes(y = hre_rolling28),
       colour = "firebrick", linewidth = 0.9, na.rm = TRUE
     ) +
-    ggplot2::ggtitle("Effektivitetsfaktor (EF) över tid") +
+    ggplot2::ggtitle("Hjärtslagskostnad (HRE) över tid") +
     ggplot2::labs(
       x = NULL,
-      y = "Effektivitetsfaktor (m/min per bpm)"
+      y = "Hjärtslagskostnad (slag/km)"
     ) -> p
   return(p)
 }
@@ -138,10 +235,11 @@ fetch.plot.acwr <- function(summaries, days = 365) {
     dplyr::filter(date > cutoff, !is.na(acwr))
 
   # Assign each observation to an ACWR zone for colouring
+  # Hulin (2016): sweet spot 0.8-1.3; below 0.8 = underloading
   acwr_window <- acwr_window %>%
     dplyr::mutate(
       zon = dplyr::case_when(
-        acwr < 0.5             ~ "Underbelastning",
+        acwr < 0.8             ~ "Underbelastning",
         acwr <= 1.3            ~ "Optimalt",
         acwr <= 1.5            ~ "Varning",
         TRUE                   ~ "Överbelastning"
@@ -201,6 +299,16 @@ fetch.plot.acwr <- function(summaries, days = 365) {
       data = ref_df,
       ggplot2::aes(yintercept = 1.5),
       colour = "#e74c3c", linetype = "dashed", linewidth = 0.5
+    ) +
+    # Uncoupled ACWR — dashed grey line for comparison
+    # (Impellizzeri 2020: coupled ACWR systematically dampens spikes)
+    ggplot2::geom_line(
+      data = acwr_window %>%
+        dplyr::filter(!is.na(acwr_uncoupled)) %>%
+        dplyr::mutate(panel = factor("ACWR", levels = c("ACWR", "Veckokilometer"))),
+      ggplot2::aes(x = date, y = acwr_uncoupled),
+      colour = "grey60", linewidth = 0.5, linetype = "dashed",
+      na.rm = TRUE, inherit.aes = FALSE
     ) +
     # ACWR line — coloured by zone (only ACWR panel has non-NA zon)
     ggplot2::geom_line(
@@ -292,6 +400,166 @@ fetch.plot.monotony <- function(summaries, days = 365) {
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
       strip.text = ggplot2::element_text(face = "bold")
+    ) -> p
+  return(p)
+}
+
+#' Scatter plot of Recovery Heart Rate over time
+#'
+#' Shows post-workout recovery HR per run with a 28-day rolling mean.
+#' Lower recovery HR indicates better cardiovascular fitness (Cole 1999).
+#' Requires enriched summaries with garmin_recoveryHeartRate.
+#'
+#' @param summaries Enriched summaries from \code{augment_summaries()}.
+#' @return ggplot2 object
+#' @export
+#' Performance Management Chart (PMC)
+#'
+#' Three-panel chart showing CTL (fitness), ATL (fatigue), and TSB (form)
+#' derived from daily TRIMP via exponentially weighted moving averages.
+#' TSB zones use coaching heuristics — not validated for recreational running.
+#'
+#' @param summaries Summaries data frame.
+#' @param days Integer. Number of trailing days to show. Default 365.
+#' @param hr_max Numeric or NULL. HRmax override.
+#' @param hr_rest Numeric or NULL. HRrest override.
+#' @return ggplot2 object
+#' @export
+fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL) {
+  pmc_data <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest)
+
+  if (nrow(pmc_data) == 0) {
+    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
+  }
+
+  cutoff <- max(pmc_data$date, na.rm = TRUE) - days
+  pmc_window <- pmc_data %>% dplyr::filter(date > cutoff)
+
+  # Panel 1: CTL + ATL lines
+  fitness_fatigue <- pmc_window %>%
+    dplyr::select(date, ctl, atl) %>%
+    tidyr::pivot_longer(cols = c(ctl, atl), names_to = "metrik", values_to = "value") %>%
+    dplyr::mutate(
+      metrik = dplyr::recode(metrik, ctl = "Fitness (CTL)", atl = "Trötthet (ATL)"),
+      panel  = factor("Fitness / Trötthet",
+                       levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
+    )
+
+  # Panel 2: TSB with zone colouring
+  tsb_panel <- pmc_window %>%
+    dplyr::select(date, tsb) %>%
+    dplyr::mutate(
+      zon = dplyr::case_when(
+        tsb > 15    ~ "Utvilad",
+        tsb > 5     ~ "Tävlingsredo",
+        tsb > -10   ~ "Produktiv",
+        tsb > -20   ~ "Trött",
+        TRUE        ~ "Överbelastad"
+      ),
+      zon = factor(zon, levels = c("Utvilad", "Tävlingsredo", "Produktiv",
+                                    "Trött", "Överbelastad")),
+      panel = factor("Form (TSB)",
+                     levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
+    )
+
+  # Panel 3: daily TRIMP bars
+  trimp_panel <- pmc_window %>%
+    dplyr::select(date, daily_trimp) %>%
+    dplyr::mutate(
+      panel = factor("Daglig TRIMP",
+                     levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
+    )
+
+  zon_farger <- c(
+    "Utvilad"       = "#3498db",
+    "Tävlingsredo"  = "#27ae60",
+    "Produktiv"     = "#95a5a6",
+    "Trött"         = "#f1c40f",
+    "Överbelastad"  = "#e74c3c"
+  )
+
+  # Reference lines for TSB panel
+  tsb_ref <- data.frame(
+    panel = factor("Form (TSB)",
+                   levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
+  )
+
+  ggplot2::ggplot() +
+    # Panel 1: CTL + ATL lines
+    ggplot2::geom_line(
+      data = fitness_fatigue,
+      ggplot2::aes(x = date, y = value, colour = metrik),
+      linewidth = 0.8, na.rm = TRUE
+    ) +
+    ggplot2::scale_colour_manual(
+      name   = NULL,
+      values = c("Fitness (CTL)" = "steelblue", "Trötthet (ATL)" = "#e74c3c")
+    ) +
+    # Panel 2: TSB coloured by zone
+    ggplot2::geom_col(
+      data = tsb_panel,
+      ggplot2::aes(x = date, y = tsb, fill = zon),
+      width = 1, na.rm = TRUE
+    ) +
+    ggplot2::scale_fill_manual(name = "TSB-zon", values = zon_farger) +
+    # TSB zero line
+    ggplot2::geom_hline(
+      data = tsb_ref,
+      ggplot2::aes(yintercept = 0),
+      colour = "grey30", linewidth = 0.4
+    ) +
+    # Panel 3: daily TRIMP bars
+    ggplot2::geom_col(
+      data = trimp_panel,
+      ggplot2::aes(x = date, y = daily_trimp),
+      fill = "steelblue", alpha = 0.7, width = 1
+    ) +
+    ggplot2::facet_grid(
+      rows = ggplot2::vars(panel),
+      scales = "free_y",
+      space = "fixed"
+    ) +
+    ggplot2::ggtitle("Performance Management Chart (PMC)") +
+    ggplot2::labs(
+      x = NULL, y = NULL,
+      caption = "TSB-trösklar är coaching-heuristik, ej validerade för motionslöpning"
+    ) +
+    ggplot2::theme(
+      strip.text      = ggplot2::element_text(face = "bold"),
+      legend.position = "bottom"
+    )
+}
+
+#' Scatter plot of Recovery Heart Rate over time (see above)
+#' @inheritParams fetch.plot.pmc
+#' @export
+fetch.plot.recovery_hr <- function(summaries) {
+  rhr_data <- compute_recovery_hr(summaries)
+
+  if (nrow(rhr_data) == 0) {
+    message("Ingen recovery HR-data tillgänglig.")
+    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen recovery HR-data"))
+  }
+
+  rhr_data %>%
+    ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
+    ggplot2::geom_point(
+      ggplot2::aes(y = recovery_hr),
+      alpha = 0.4, size = 1.5, colour = "grey40"
+    ) +
+    ggplot2::geom_smooth(
+      ggplot2::aes(y = recovery_hr),
+      method = "loess", formula = "y ~ x",
+      colour = "steelblue", se = FALSE, linewidth = 0.8
+    ) +
+    ggplot2::geom_line(
+      ggplot2::aes(y = recovery_hr_rolling28),
+      colour = "firebrick", linewidth = 0.9, na.rm = TRUE
+    ) +
+    ggplot2::ggtitle("Recovery HR efter löpning") +
+    ggplot2::labs(
+      x = NULL,
+      y = "Recovery HR (bpm)"
     ) -> p
   return(p)
 }

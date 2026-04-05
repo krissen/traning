@@ -1,5 +1,6 @@
 """Unified CLI for tRäning — running data analysis."""
 
+import functools
 import logging
 import subprocess
 import sys
@@ -35,6 +36,35 @@ def _get_version():
         if line.startswith("Version:"):
             return line.split(":", 1)[1].strip()
     return "unknown"
+
+
+def report_options(f):
+    """Shared options for all report commands: --plot, --after, --before, --span."""
+    @click.option("--plot", "show_plot", is_flag=True, help="Show plot instead of table")
+    @click.option("--after", default=None,
+                  help="Start of date range (YYYY, YYYY-MM, YYYY-MM-DD, -Nw/-Nm/-Ny/-Nd)")
+    @click.option("--before", default=None,
+                  help="End of date range (same formats as --after)")
+    @click.option("--span", default=None,
+                  help="Duration from --after (e.g. 3m, 1y). Requires --after")
+    @functools.wraps(f)
+    def wrapper(*args, **kwargs):
+        return f(*args, **kwargs)
+    return wrapper
+
+
+def _r_report(flag, show_plot=False, after=None, before=None, span=None):
+    """Build and execute an R report/plot command."""
+    cmd = ["Rscript", str(CLI_R), flag]
+    if show_plot:
+        cmd.append("--plot")
+    if after:
+        cmd.append(f"--after={after}")
+    if before:
+        cmd.append(f"--before={before}")
+    if span:
+        cmd.append(f"--span={span}")
+    _exec(cmd)
 
 
 # -- top-level group -------------------------------------------------------
@@ -184,74 +214,121 @@ def report():
 
 
 @report.command()
-def month():
+@report_options
+def month(show_plot, after, before, span):
     """Current month vs same month previous years."""
-    _exec(["Rscript", str(CLI_R), "--month-running"])
+    _r_report("--month-running", show_plot, after, before, span)
 
 
 @report.command()
-def year():
+@report_options
+def year(show_plot, after, before, span):
     """Current year vs previous years (same day-of-year)."""
-    _exec(["Rscript", str(CLI_R), "--year-running"])
+    _r_report("--year-running", show_plot, after, before, span)
 
 
 @report.command()
-def pace():
+@report_options
+def pace(show_plot, after, before, span):
     """Pace summary per year."""
-    _exec(["Rscript", str(CLI_R), "--total-pace"])
+    _r_report("--total-pace", show_plot, after, before, span)
 
 
 @report.command()
-def top():
+@report_options
+def top(show_plot, after, before, span):
     """Year totals."""
-    _exec(["Rscript", str(CLI_R), "--year-top"])
+    _r_report("--year-top", show_plot, after, before, span)
 
 
 @report.command(name="month-top")
-def month_top():
+@report_options
+def month_top(show_plot, after, before, span):
     """Top 10 months by distance."""
-    _exec(["Rscript", str(CLI_R), "--month-top"])
+    _r_report("--month-top", show_plot, after, before, span)
 
 
 @report.command(name="month-this")
-def month_this():
+@report_options
+def month_this(show_plot, after, before, span):
     """Individual runs this month."""
-    _exec(["Rscript", str(CLI_R), "--month-this"])
+    _r_report("--month-this", show_plot, after, before, span)
 
 
 @report.command(name="month-last")
-def month_last():
+@report_options
+def month_last(show_plot, after, before, span):
     """Last month across years."""
-    _exec(["Rscript", str(CLI_R), "--month-last"])
+    _r_report("--month-last", show_plot, after, before, span)
 
 
 # -- plot commands (top-level) -----------------------------------------------
 
 @cli.command()
-def ef():
+@report_options
+def ef(show_plot, after, before, span):
     """Plot Efficiency Factor trend."""
-    _exec(["Rscript", str(CLI_R), "--ef"])
+    _r_report("--ef", False, after, before, span)
 
 
 @cli.command()
-def acwr():
+@report_options
+def hre(show_plot, after, before, span):
+    """Plot Heart Rate Efficiency (beats/km, Votyakov)."""
+    _r_report("--hre", False, after, before, span)
+
+
+@cli.command()
+@report_options
+def acwr(show_plot, after, before, span):
     """Plot Acute:Chronic Workload Ratio."""
-    _exec(["Rscript", str(CLI_R), "--acwr"])
+    _r_report("--acwr", False, after, before, span)
 
 
 @cli.command()
-def monotony():
+@report_options
+def monotony(show_plot, after, before, span):
     """Plot Training Monotony and Strain."""
-    _exec(["Rscript", str(CLI_R), "--monotony"])
+    _r_report("--monotony", False, after, before, span)
+
+
+@cli.command()
+@report_options
+def pmc(show_plot, after, before, span):
+    """Plot Performance Management Chart (TRIMP/CTL/ATL/TSB)."""
+    _r_report("--pmc", False, after, before, span)
+
+
+@cli.command(name="recovery-hr")
+@report_options
+def recovery_hr(show_plot, after, before, span):
+    """Plot Recovery Heart Rate trend."""
+    _r_report("--recovery-hr", False, after, before, span)
 
 
 # -- datesum ----------------------------------------------------------------
 
 @cli.command()
-@click.argument("range")
-def datesum(range):
-    """Summary for a date range (YYYY-MM-DD--YYYY-MM-DD)."""
-    _exec(["Rscript", str(CLI_R), "--datesum", range])
+@click.argument("range", required=False, default=None)
+@report_options
+def datesum(range, show_plot, after, before, span):
+    """Summary for a date range.
+
+    RANGE: Legacy format YYYY-MM-DD--YYYY-MM-DD (optional).
+    Prefer --after/--before instead.
+    """
+    cmd = ["Rscript", str(CLI_R)]
+    if range:
+        cmd.extend(["--datesum", range])
+    if show_plot:
+        cmd.append("--plot")
+    if after:
+        cmd.append(f"--after={after}")
+    if before:
+        cmd.append(f"--before={before}")
+    if span:
+        cmd.append(f"--span={span}")
+    _exec(cmd)
 
 
 # -- shiny ------------------------------------------------------------------
