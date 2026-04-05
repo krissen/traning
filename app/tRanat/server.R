@@ -106,6 +106,20 @@ shinyServer(function(input, output, session) {
     report_datesum(summaries, input$datesum_range[1], input$datesum_range[2])
   })
 
+  # --- Readiness: integrerad dashboard ---
+
+  output$plot_readiness_score <- plotly::renderPlotly({
+    req(health_daily)
+    p <- fetch.plot.readiness_score(health_daily, summaries,
+                                     from = dr_from(), to = dr_to())
+    ply(p)
+  })
+  output$table_readiness_score <- DT::renderDataTable({
+    req(health_daily)
+    report_readiness(health_daily, summaries,
+                      from = dr_from(), to = dr_to())
+  })
+
   # --- Hälsa: Apple Watch data ---
 
   output$plot_resting_hr <- plotly::renderPlotly({
