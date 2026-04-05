@@ -39,9 +39,9 @@ fetch.my.mean.pace <- function(summaries) {
     dplyr::mutate(year = format(sessionStart, "%Y")) %>%
     dplyr::group_by(year) %>%
     dplyr::summarise(
-      totDuration = sum(durationMoving),
-      meanPace = mean(avgPaceMoving, na.rm = TRUE),
-      minPace = min(avgPaceMoving, na.rm = TRUE),
+      totDuration = round(sum(durationMoving), 0),
+      meanPace = round(mean(avgPaceMoving, na.rm = TRUE), 2),
+      minPace = round(min(avgPaceMoving, na.rm = TRUE), 2),
       .groups = "keep")
   return(mean.pace)
 }
