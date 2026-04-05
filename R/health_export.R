@@ -86,15 +86,39 @@
   dplyr::bind_rows(rows)
 }
 
-#' Parse sleep_analysis samples (nested field format)
+#' Parse sleep_analysis samples
+#'
+#' Detects format automatically:
+#' \itemize{
+#'   \item Aggregated (HAE daily): has \code{totalSleep}, \code{core} etc.
+#'   \item Raw segments: has \code{value} with stage names (Kärna, Djup, etc.)
+#' }
+#'
 #' @param samples List of sleep sample objects
 #' @return Tibble in long format with sleep_* metrics
 #' @keywords internal
 .parse_sleep <- function(samples) {
-  # Fields to extract as numeric metrics (hours)
+  if (length(samples) == 0) return(tibble::tibble())
+
+  # Detect format: aggregated has "totalSleep", raw has "value"
+  first <- samples[[1]]
+  if (!is.null(first$totalSleep)) {
+    return(.parse_sleep_aggregated(samples))
+  }
+  if (!is.null(first$value) && is.character(first$value)) {
+    return(.parse_sleep_raw(samples))
+  }
+  warning("Okänt sömnformat — varken aggregerat eller rått")
+  tibble::tibble()
+}
+
+#' Parse aggregated sleep samples (HAE daily export format)
+#' @param samples List of aggregated sleep objects with totalSleep, core, etc.
+#' @return Tibble in long format
+#' @keywords internal
+.parse_sleep_aggregated <- function(samples) {
   sleep_fields <- c("totalSleep", "core", "deep", "rem", "awake", "inBed",
                      "asleep")
-  # Time fields to extract as character
   time_fields <- c("sleepStart", "sleepEnd", "inBedStart", "inBedEnd")
 
   rows <- lapply(samples, function(s) {
@@ -105,35 +129,214 @@
       val <- s[[f]]
       if (is.null(val)) return(NULL)
       tibble::tibble(
-        date   = d,
-        metric = paste0("sleep_", f),
-        value  = as.numeric(val),
-        source = src
+        date = d, metric = paste0("sleep_", f),
+        value = as.numeric(val), source = src
       )
     })
 
     time_rows <- lapply(time_fields, function(f) {
       val <- s[[f]]
       if (is.null(val) || val == "") return(NULL)
-      # Store sleep times as fractional hours since midnight
       parsed <- lubridate::ymd_hms(val, tz = "Europe/Stockholm", quiet = TRUE)
       if (is.na(parsed)) return(NULL)
       hour_frac <- lubridate::hour(parsed) +
                    lubridate::minute(parsed) / 60 +
                    lubridate::second(parsed) / 3600
-      # If sleepStart is before midnight next day -> previous evening
-      # (e.g. 23:52 = 23.87, not a problem)
       tibble::tibble(
-        date   = d,
-        metric = paste0("sleep_", f),
-        value  = hour_frac,
-        source = src
+        date = d, metric = paste0("sleep_", f),
+        value = hour_frac, source = src
       )
     })
 
     dplyr::bind_rows(c(numeric_rows, time_rows))
   })
   dplyr::bind_rows(rows)
+}
+
+# Map Swedish sleep stage names to metric suffixes
+.sleep_stage_map <- c(
+  "I s\u00e4ngen" = "inBed",
+  "K\u00e4rna"    = "core",
+  "Djup"          = "deep",
+  "REM"           = "rem",
+  "Vaken"         = "awake",
+  "Sova"          = "asleep"
+)
+
+# Sources ranked by sleep staging quality (best first)
+.sleep_source_priority <- c(
+  "Apple Watch f\u00f6r Kristian", "kankad", "kankad ",
+  "Sleep Cycle", "AutoSleep", "Oura",
+  "Health Sync", "Health Import", "Klocka", "anandavani", "Connect"
+)
+
+#' Parse raw sleep segment samples into daily summaries
+#'
+#' Groups segments by night (using end-date), picks the best source per
+#' night (preferring Apple Watch staging), and sums hours per stage.
+#'
+#' @param samples List of raw sleep segment objects with \code{value}
+#'   (stage name), \code{qty} (hours), \code{startDate}, \code{endDate}.
+#' @return Tibble in long format with sleep_* metrics per day.
+#' @keywords internal
+.parse_sleep_raw <- function(samples) {
+  # Vectorised extraction for performance (96K+ rows)
+  n <- length(samples)
+  end_dates <- character(n)
+  start_dates <- character(n)
+  stages <- character(n)
+  hours <- numeric(n)
+  sources <- character(n)
+
+  for (i in seq_len(n)) {
+    s <- samples[[i]]
+    end_dates[i]   <- s$endDate %||% s$end %||% s$date %||% ""
+    start_dates[i] <- s$startDate %||% s$start %||% s$date %||% ""
+    stages[i]      <- s$value %||% ""
+    hours[i]       <- as.numeric(s$qty %||% 0)
+    sources[i]     <- s$source %||% NA_character_
+  }
+
+  # Assign sleep date from end timestamp (wake-up date)
+  sleep_date <- as.Date(substr(end_dates, 1, 10))
+
+  df <- tibble::tibble(
+    date   = sleep_date,
+    stage  = stages,
+    hours  = hours,
+    source = sources,
+    start_ts = start_dates,
+    end_ts   = end_dates
+  )
+
+  # Map stages to metric names; drop unknown stages
+  df$metric_suffix <- .sleep_stage_map[df$stage]
+  df <- df[!is.na(df$metric_suffix), ]
+
+  # Deduplicate identical segments (Sleep Cycle often reports duplicates)
+  df <- dplyr::distinct(df, date, stage, hours, source, start_ts, end_ts,
+                         .keep_all = TRUE)
+
+  # Source priority: rank each source
+  df$src_rank <- match(df$source, .sleep_source_priority)
+  df$src_rank[is.na(df$src_rank)] <- length(.sleep_source_priority) + 1L
+
+  # Has staging = source provides Kärna/Djup/REM (not just inBed/asleep)
+  staging_suffixes <- c("core", "deep", "rem")
+
+  # Per night: pick source with best staging
+  best_source <- df |>
+    dplyr::group_by(date, source) |>
+    dplyr::summarise(
+      has_staging = any(metric_suffix %in% staging_suffixes),
+      src_rank = dplyr::first(src_rank),
+      .groups = "drop"
+    ) |>
+    dplyr::group_by(date) |>
+    dplyr::arrange(dplyr::desc(has_staging), src_rank) |>
+    dplyr::summarise(best_source = dplyr::first(source), .groups = "drop")
+
+  # Filter to best source per night
+  df <- df |>
+    dplyr::inner_join(best_source, by = "date") |>
+    dplyr::filter(source == best_source)
+
+  # For stages with real data (core/deep/REM): sum durations.
+  # For "asleep"/"inBed" (pre-staging era): take max per night to avoid
+  # double-counting from overlapping Sleep Cycle segments.
+  overlap_suffixes <- c("asleep", "inBed")
+
+  stage_totals <- df |>
+    dplyr::group_by(date, metric_suffix, source) |>
+    dplyr::summarise(
+      hours = dplyr::if_else(
+        dplyr::first(metric_suffix) %in% overlap_suffixes,
+        max(hours, na.rm = TRUE),
+        sum(hours, na.rm = TRUE)
+      ),
+      .groups = "drop"
+    )
+
+  # Compute totalSleep = core + deep + rem (when staging available)
+  # or inBed (when only Sleep Cycle-era data exists)
+  daily <- stage_totals |>
+    tidyr::pivot_wider(names_from = metric_suffix, values_from = hours,
+                       values_fill = 0)
+
+  # Ensure columns exist
+  for (col in c("core", "deep", "rem", "asleep", "inBed")) {
+    if (!col %in% names(daily)) daily[[col]] <- 0
+  }
+
+  daily <- daily |>
+    dplyr::mutate(
+      totalSleep = dplyr::case_when(
+        core + deep + rem > 0 ~ core + deep + rem,
+        asleep > 0            ~ asleep,
+        inBed > 0             ~ inBed,
+        TRUE                  ~ 0
+      )
+    )
+
+  # Sleep times: earliest start, latest end per night
+  sleep_times <- df |>
+    dplyr::filter(metric_suffix != "inBed") |>
+    dplyr::group_by(date) |>
+    dplyr::summarise(
+      sleepStart = min(start_ts),
+      sleepEnd   = max(end_ts),
+      .groups = "drop"
+    )
+
+  bed_times <- df |>
+    dplyr::filter(metric_suffix == "inBed") |>
+    dplyr::group_by(date) |>
+    dplyr::summarise(
+      inBedStart = min(start_ts),
+      inBedEnd   = max(end_ts),
+      .groups = "drop"
+    )
+
+  daily <- daily |>
+    dplyr::left_join(sleep_times, by = "date") |>
+    dplyr::left_join(bed_times, by = "date")
+
+  # Pivot back to long format matching .parse_sleep_aggregated output
+  numeric_cols <- intersect(
+    c("totalSleep", "core", "deep", "rem", "awake", "inBed", "asleep"),
+    names(daily)
+  )
+  time_cols <- intersect(
+    c("sleepStart", "sleepEnd", "inBedStart", "inBedEnd"),
+    names(daily)
+  )
+
+  numeric_long <- daily |>
+    dplyr::select(date, source, dplyr::all_of(numeric_cols)) |>
+    tidyr::pivot_longer(cols = dplyr::all_of(numeric_cols),
+                        names_to = "field", values_to = "value") |>
+    dplyr::mutate(metric = paste0("sleep_", field)) |>
+    dplyr::select(date, metric, value, source)
+
+  time_long <- if (length(time_cols) > 0) {
+    daily |>
+      dplyr::select(date, source, dplyr::all_of(time_cols)) |>
+      tidyr::pivot_longer(cols = dplyr::all_of(time_cols),
+                          names_to = "field", values_to = "ts") |>
+      dplyr::mutate(
+        parsed = lubridate::ymd_hms(ts, tz = "Europe/Stockholm", quiet = TRUE),
+        value = lubridate::hour(parsed) +
+                lubridate::minute(parsed) / 60 +
+                lubridate::second(parsed) / 3600,
+        metric = paste0("sleep_", field)
+      ) |>
+      dplyr::filter(!is.na(parsed)) |>
+      dplyr::select(date, metric, value, source)
+  } else {
+    tibble::tibble()
+  }
+
+  dplyr::bind_rows(numeric_long, time_long)
 }
 
 # --- Source cleaning -----------------------------------------------------------
