@@ -6,3 +6,13 @@ TRANING_DATA=/Users/YOURNAME/Documents/traning-data
 # Optional — you'll be prompted if not set.
 GARMIN_EMAIL=
 GARMIN_PASSWORD=
+
+# Output defaults (all optional).
+# TRANING_OUTPUT_DIR — base directory for saved plots/tables (default: $TRANING_DATA/output)
+# TRANING_PLOT_FORMAT — default plot format: pdf, png (default: pdf)
+# TRANING_TABLE_FORMAT — default table format: csv, json, jsonl, xlsx (default: csv)
+# TRANING_OPEN — open files after saving: true/false (default: true)
+#TRANING_OUTPUT_DIR=
+#TRANING_PLOT_FORMAT=pdf
+#TRANING_TABLE_FORMAT=csv
+#TRANING_OPEN=true
