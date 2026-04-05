@@ -45,8 +45,14 @@ aerobic fitness limitations within a single run.
 - **Garmin download** — Trigger data fetch from Garmin Connect
 - **Stats** — Serve computed statistics (monthly/yearly summaries, pace trends, totals)
 - **Images** — Serve generated plots as PNG (cumulative distance, pace over time, etc.)
-- **Tables** — Serve report tables as structured data
+- **Tables** — Serve report tables as structured data (JSON/JSONL ready via `save_table()`)
 - **Queries** — Date range summaries, month comparisons, year-over-year analysis
+
+**Groundwork done (v0.3.0):**
+- All report functions return tibbles — direct JSON serialization
+- `save_table(format="jsonl")` produces one JSON object per row
+- `save_plot(format="png")` for image responses
+- `get_output_defaults()` for configurable paths
 
 **Architecture considerations:**
 - R-based (plumber?) or Python-based server wrapping R functions

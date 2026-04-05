@@ -1,6 +1,6 @@
 Package: traning
 Title: Personal Running Data Analysis
-Version: 0.2.0
+Version: 0.3.0
 Authors@R: person("Kristian", "Niemi", role = c("aut", "cre"))
 Description: Read Garmin TCX workout files, compute running statistics,
     and produce reports and visualizations.
@@ -19,6 +19,8 @@ Imports:
 Suggests:
     shiny,
     DT,
+    writexl,
     devtools,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+RoxygenNote: 7.3.3
