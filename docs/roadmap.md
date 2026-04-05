@@ -32,45 +32,12 @@ Remaining for future implementation (per-second data needed):
 
 ---
 
-## Phase 4b: Unified CLI
+## ~~Phase 4b: Unified CLI~~ DONE (2026-04-05)
 
-**Goal:** Single entry point `traning <command>` replacing the current split
-between `python garmin_fetch.py`, `Rscript inst/cli.R --flag`, and manual
-venv activation. Same pattern as `bifrost <command>`.
-
-**Target UX:**
-```bash
-traning fetch              # Garmin Connect: hämta nya aktiviteter
-traning fetch --all        # Garmin Connect: hämta alla som saknas
-traning fetch --dry-run    # Förhandsgranska utan nedladdning
-traning import             # Importera TCX → RData-cache
-traning update             # fetch + import i ett steg
-
-traning report month       # Nuvarande --month-running
-traning report year        # Nuvarande --year-running
-traning report pace        # Nuvarande --total-pace
-traning report top         # Nuvarande --year-top / --month-top
-
-traning ef                 # Effektivitetsfaktor-plot
-traning acwr               # ACWR-plot
-traning monotony           # Monotoni/strain-plot
-traning datesum 2024-01-01--2024-06-30
-
-traning shiny              # Starta tRanat Shiny-appen
-```
-
-**Architecture:**
-- Python CLI (Click) as the unified dispatcher, like `bifrost`
-- R commands invoked via `Rscript` subprocess
-- Python commands (fetch) invoked directly
-- Installable via `pip install -e .` with `console_scripts` entry point
-- Venv management transparent to user
-
-**Why Python, not R:**
-- Garmin fetch is already Python
-- Click gives clean subcommand structure
-- Can dispatch to R via subprocess — same as bifrost does
-- Single `traning` command instead of remembering which language to use
+Completed. Single `traning <command>` entry point via Python Click dispatcher.
+Garmin modules restructured as proper package (`python/traning_cli/garmin/`).
+R reports/plots delegated via subprocess to `inst/cli.R`. Installable via
+`pip install -e .` with `console_scripts` entry point.
 
 ---
 

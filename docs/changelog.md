@@ -1,5 +1,23 @@
 # tRäning — Changelog
 
+## 2026-04-05 — Phase 4b: Unified CLI
+
+- Single `traning` command replacing `Rscript inst/cli.R` and `python garmin_fetch.py`
+- Python Click CLI dispatcher (`python/traning_cli/main.py`)
+  - `traning fetch` — Garmin Connect fetch (pure Python, calls garmin modules directly)
+  - `traning import` — TCX → RData cache (delegates to R)
+  - `traning update` — fetch + import in one step
+  - `traning report {month,year,pace,top,month-top,month-this,month-last}` — reports
+  - `traning ef`, `traning acwr`, `traning monotony` — plot commands
+  - `traning datesum RANGE` — date range summary
+  - `traning shiny` — launch tRanat Shiny app
+- Garmin modules restructured: `python/garmin_*.py` → `python/traning_cli/garmin/`
+  - Proper Python package with relative imports
+  - Path resolution updated for new directory depth
+- `pyproject.toml` with `console_scripts` entry point (`pip install -e .`)
+- `setup_venv.sh` updated to install CLI automatically
+- Same pattern as bifrost CLI
+
 ## 2026-04-04 — Phase 4: Knowledge base & advanced metrics
 
 ### Knowledge base
