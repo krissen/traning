@@ -52,22 +52,22 @@ my_options <- list(
     help = "Date summary in format 'YYYY-MM-DD--YYYY-MM-DD'"),
   make_option("--ef",
     type = "logical", action = "store_true", default = FALSE,
-    help = "Plot Efficiency Factor trend over time"),
+    help = "Efficiency Factor trend over time"),
   make_option("--hre",
     type = "logical", action = "store_true", default = FALSE,
-    help = "Plot Heart Rate Efficiency (beats/km, Votyakov)"),
+    help = "Heart Rate Efficiency (beats/km, Votyakov)"),
   make_option("--acwr",
     type = "logical", action = "store_true", default = FALSE,
-    help = "Plot Acute:Chronic Workload Ratio (last 365 days)"),
+    help = "Acute:Chronic Workload Ratio (last 365 days)"),
   make_option("--monotony",
     type = "logical", action = "store_true", default = FALSE,
-    help = "Plot Training Monotony and Strain (last 365 days)"),
+    help = "Training Monotony and Strain (last 365 days)"),
   make_option("--pmc",
     type = "logical", action = "store_true", default = FALSE,
-    help = "Plot Performance Management Chart (TRIMP/CTL/ATL/TSB)"),
+    help = "Performance Management Chart (TRIMP/CTL/ATL/TSB)"),
   make_option("--recovery-hr",
     type = "logical", action = "store_true", default = FALSE,
-    help = "Plot Recovery Heart Rate trend (requires Garmin JSON import)"),
+    help = "Recovery Heart Rate trend (requires Garmin JSON import)"),
   # --- Date range flags ---
   make_option("--after",
     type = "character", default = NULL,
@@ -81,7 +81,19 @@ my_options <- list(
   # --- Output mode ---
   make_option("--plot",
     type = "logical", action = "store_true", default = FALSE,
-    help = "Show plot instead of table")
+    help = "Show plot instead of table"),
+  make_option("--output",
+    type = "character", default = NULL,
+    help = "Save output to file (plot or table). Format from extension or --format"),
+  make_option("--format",
+    type = "character", default = NULL,
+    help = "Output format. Plots: pdf, png. Tables: csv, json, jsonl, xlsx"),
+  make_option("--no-open",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Don't open output file after saving (default: open)"),
+  make_option("--limit",
+    type = "integer", default = NULL,
+    help = "Limit table rows (default varies per command)")
 )
 
 opt_parser <- OptionParser(option_list = my_options)
@@ -103,6 +115,10 @@ do_monotony     <- options$monotony
 do_pmc          <- options$pmc
 do_recovery_hr  <- options$`recovery-hr`
 do_plot         <- options$plot
+do_output       <- options$output
+do_format       <- options$format
+do_no_open      <- options$`no-open`
+do_limit        <- options$limit
 
 # --- Build date range ---
 # Handle legacy --datesum format as syntactic sugar for --after/--before
@@ -167,9 +183,10 @@ if (needs_garmin && dir.exists(gc_json_dir)) {
 }
 
 # --- Pre-filter by date range ---
-# Filtering happens upstream: report/plot functions receive already-filtered data.
-# For commands with inherent date logic (month/year comparisons), the filter limits
-# which years are included while preserving the function's internal comparison logic.
+# For basic report commands (month/year comparisons, datesum), pre-filtering
+# limits which years are included while preserving internal comparison logic.
+# For time-series metrics (ef, hre, acwr, monotony, pmc, recovery-hr),
+# filtering happens AFTER computation to preserve rolling-window integrity.
 has_daterange <- !is.null(date_range$from) || !is.null(date_range$to)
 summaries_filtered <- if (has_daterange) {
   filter_by_daterange(summaries, date_range)
@@ -177,63 +194,77 @@ summaries_filtered <- if (has_daterange) {
   summaries
 }
 
-# --- Reports ---
+# --- Helpers: emit plot or table ---
+do_open <- if (do_no_open) FALSE else NULL  # NULL = use env default
+
+emit_plot <- function(p, default_name = "plot") {
+  save_plot(p, output = do_output, default_name = default_name,
+            format = do_format, open = do_open)
+}
+
+emit_table <- function(tbl, default_name = "table") {
+  if (!is.null(do_output) || !is.null(do_format)) {
+    save_table(tbl, output = do_output, default_name = default_name,
+               format = do_format, open = do_open)
+  } else {
+    print(tbl)
+  }
+}
+
+# --- Reports: basic commands (pre-filtered data is fine) ---
 if (do_month_top) {
   if (do_plot) {
-    print(plot_monthtop(summaries_filtered))
+    emit_plot(plot_monthtop(summaries_filtered), "month-top")
   } else {
-    print(report_monthtop(summaries_filtered))
+    emit_table(report_monthtop(summaries_filtered, n = do_limit %||% 10L), "month-top")
   }
 }
 
 if (do_month_running) {
   if (do_plot) {
-    print(plot_monthstatus(summaries_filtered))
+    emit_plot(plot_monthstatus(summaries_filtered), "month-running")
   } else {
-    print(report_monthstatus(summaries_filtered))
+    emit_table(report_monthstatus(summaries_filtered), "month-running")
   }
 }
 
 if (do_month_this) {
   if (do_plot) {
-    print(plot_runs_month(summaries_filtered))
+    emit_plot(plot_runs_month(summaries_filtered), "month-this")
   } else {
-    my_month_word <- format(Sys.time(), "%b")
-    my_month <- format(Sys.time(), "%m")
-    my_year <- format(Sys.time(), "%Y")
     month_summaries_this <- report_runs_year_month(summaries_filtered)
-    my_month_km <- round(sum(month_summaries_this$Km), digits = 2)
-    my_month_pace <- round(mean(month_summaries_this$Pace), digits = 2)
-    my_month_runs <- nrow(month_summaries_this)
-    print(month_summaries_this)
-    print(paste("Totalt ", my_month_runs, " springturer ",
-                "under ", my_month_word, " ", my_year, "; ",
-                my_month_km, " km, ", my_month_pace,
-                " min/km.", sep = ""))
+    emit_table(month_summaries_this, "month-this")
+    if (is.null(do_output) && is.null(do_format)) {
+      my_month_km <- round(sum(month_summaries_this$Km), digits = 2)
+      my_month_pace <- round(mean(month_summaries_this$Pace), digits = 2)
+      cat(sprintf("Totalt %d springturer under %s %s; %s km, %s min/km.\n",
+          nrow(month_summaries_this), format(Sys.time(), "%b"),
+          format(Sys.time(), "%Y"), my_month_km, my_month_pace))
+    }
   }
 }
 
 if (do_month_last) {
   if (do_plot) {
-    print(plot_monthlast(summaries_filtered))
+    emit_plot(plot_monthlast(summaries_filtered), "month-last")
   } else {
-    print(report_monthlast(summaries_filtered))
+    emit_table(report_monthlast(summaries_filtered), "month-last")
   }
 }
 
 if (do_year_running) {
   if (do_plot) {
-    print(plot_yearstatus(summaries_filtered))
+    emit_plot(plot_yearstatus(summaries_filtered), "year-running")
   } else {
-    print(report_yearstatus(summaries_filtered))
+    emit_table(report_yearstatus(summaries_filtered), "year-running")
   }
 }
 
 if (do_year_top) {
   if (do_plot) {
-    print(plot_yearstop(summaries_filtered))
+    emit_plot(plot_yearstop(summaries_filtered), "year-top")
   } else {
-    print(report_yearstop(summaries_filtered))
+    emit_table(report_yearstop(summaries_filtered), "year-top")
   }
 }
 
@@ -251,43 +282,78 @@ if (!is.null(options$datesum) || (has_daterange && !any_report)) {
   if (is.null(dr_to))   dr_to   <- Sys.Date() + 1
 
   if (do_plot) {
-    print(plot_datesum(summaries, dr_from, dr_to))
+    emit_plot(plot_datesum(summaries, dr_from, dr_to), "datesum")
   } else {
-    print(report_datesum(summaries, dr_from, dr_to))
+    emit_table(report_datesum(summaries, dr_from, dr_to), "datesum")
   }
 }
 
 if (do_total_pace) {
   if (do_plot) {
     mean_pace_data <- fetch.my.mean.pace(summaries_filtered)
-    print(fetch.plot.mean.pace(mean_pace_data))
+    emit_plot(fetch.plot.mean.pace(mean_pace_data), "total-pace")
   } else {
-    print(fetch.my.mean.pace(summaries_filtered))
+    emit_table(fetch.my.mean.pace(summaries_filtered), "total-pace")
   }
 }
 
+# --- Reports: time-series metrics (use FULL data, filter output) ---
+# These commands always receive unfiltered summaries so that rolling-window
+# computations (28-day means, EWMA, etc.) have complete history.
+# The date range is applied to the computed output for display.
+
 if (do_ef) {
-  print(fetch.plot.ef(summaries_filtered))
+  if (do_plot) {
+    emit_plot(fetch.plot.ef(summaries, from = date_range$from, to = date_range$to), "ef")
+  } else {
+    emit_table(report_ef(summaries, n = do_limit %||% 28L,
+                    from = date_range$from, to = date_range$to), "ef")
+  }
 }
 
 if (do_hre) {
-  print(fetch.plot.hre(summaries_filtered))
+  if (do_plot) {
+    emit_plot(fetch.plot.hre(summaries, from = date_range$from, to = date_range$to), "hre")
+  } else {
+    emit_table(report_hre(summaries, n = do_limit %||% 28L,
+                     from = date_range$from, to = date_range$to), "hre")
+  }
 }
 
 if (do_acwr) {
-  print(fetch.plot.acwr(summaries_filtered))
+  if (do_plot) {
+    emit_plot(fetch.plot.acwr(summaries, from = date_range$from, to = date_range$to), "acwr")
+  } else {
+    emit_table(report_acwr(summaries, n = do_limit %||% 28L,
+                      from = date_range$from, to = date_range$to), "acwr")
+  }
 }
 
 if (do_monotony) {
-  print(fetch.plot.monotony(summaries_filtered))
+  if (do_plot) {
+    emit_plot(fetch.plot.monotony(summaries, from = date_range$from, to = date_range$to), "monotony")
+  } else {
+    emit_table(report_monotony(summaries, n = do_limit %||% 28L,
+                          from = date_range$from, to = date_range$to), "monotony")
+  }
 }
 
 if (do_pmc) {
-  print(fetch.plot.pmc(summaries_filtered))
+  if (do_plot) {
+    emit_plot(fetch.plot.pmc(summaries, from = date_range$from, to = date_range$to), "pmc")
+  } else {
+    emit_table(report_pmc(summaries, n = do_limit %||% 28L,
+                     from = date_range$from, to = date_range$to), "pmc")
+  }
 }
 
 if (do_recovery_hr) {
-  print(fetch.plot.recovery_hr(summaries_filtered))
+  if (do_plot) {
+    emit_plot(fetch.plot.recovery_hr(summaries, from = date_range$from, to = date_range$to), "recovery-hr")
+  } else {
+    emit_table(report_recovery_hr(summaries, n = do_limit %||% 28L,
+                             from = date_range$from, to = date_range$to), "recovery-hr")
+  }
 }
 
 # vim: ts=2 sw=2 et
