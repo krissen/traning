@@ -20,6 +20,7 @@ Suggests:
     shiny,
     DT,
     plotly,
+    patchwork,
     writexl,
     devtools,
     testthat (>= 3.0.0)

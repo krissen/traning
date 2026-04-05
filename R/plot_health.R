@@ -233,7 +233,126 @@ fetch.plot.readiness <- function(health_daily, days = 90) {
           size = 16, face = "bold"))
       )
   } else {
-    message("Installera 'patchwork' för kombinerad vy. Visar HRV.")
+    message("Installera 'patchwork' f\u00f6r kombinerad vy. Visar HRV.")
     p_hrv
   }
+}
+
+# --- Integrated readiness score dashboard -------------------------------------
+
+#' Readiness score dashboard with composite score, HRV, sleep, and training load
+#'
+#' @param health_daily Long-format tibble from \code{load_health_data()}.
+#' @param summaries Garmin summaries tibble.
+#' @param hr_max Optional HRmax override.
+#' @param hr_rest Optional HRrest override.
+#' @param from Start date. NULL uses \code{days}.
+#' @param to End date. NULL = today.
+#' @param days Number of recent days if from/to not specified. Default 90.
+#' @return ggplot2 object (patchwork composite).
+#' @export
+fetch.plot.readiness_score <- function(health_daily, summaries,
+                                        hr_max = NULL, hr_rest = NULL,
+                                        from = NULL, to = NULL,
+                                        days = 90) {
+  if (is.null(from)) from <- Sys.Date() - days
+  if (is.null(to))   to   <- Sys.Date()
+
+  r <- compute_readiness(health_daily, summaries,
+                          hr_max = hr_max, hr_rest = hr_rest,
+                          after = from, before = to)
+
+  if (nrow(r) == 0) {
+    message("Ingen readiness-data i intervallet")
+    return(ggplot2::ggplot())
+  }
+
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    message("Installera 'patchwork' f\u00f6r readiness-dashboard")
+    return(ggplot2::ggplot())
+  }
+
+  theme_panel <- ggplot2::theme_minimal() +
+    ggplot2::theme(axis.title.x = ggplot2::element_blank(),
+                   plot.title = ggplot2::element_text(size = 10, face = "bold"))
+
+  # Panel 1: Readiness score
+  r_score <- r |> dplyr::filter(!is.na(readiness_score))
+  p1 <- ggplot2::ggplot(r_score, ggplot2::aes(x = date, y = readiness_score)) +
+    ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
+                      ymin = 70, ymax = 100, fill = "#4CAF50", alpha = 0.1) +
+    ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
+                      ymin = 40, ymax = 70, fill = "#FFC107", alpha = 0.1) +
+    ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
+                      ymin = 0, ymax = 40, fill = "#F44336", alpha = 0.1) +
+    ggplot2::geom_line(colour = "grey40", linewidth = 0.4) +
+    ggplot2::geom_point(ggplot2::aes(colour = readiness_status), size = 1.5) +
+    ggplot2::scale_colour_manual(
+      values = c("Gr\u00f6n" = "#4CAF50", "Gul" = "#FFC107",
+                 "R\u00f6d" = "#F44336"),
+      guide = "none"
+    ) +
+    ggplot2::geom_hline(yintercept = c(40, 70), linetype = "dashed",
+                        alpha = 0.3) +
+    ggplot2::scale_y_continuous(limits = c(0, 100)) +
+    ggplot2::labs(title = "Beredskap", y = "Po\u00e4ng") +
+    theme_panel
+
+  # Panel 2: HRV with baseline band
+  r_hrv <- r |> dplyr::filter(!is.na(ln_rmssd))
+  p2 <- ggplot2::ggplot(r_hrv, ggplot2::aes(x = date)) +
+    ggplot2::geom_ribbon(
+      ggplot2::aes(ymin = ln_rmssd_7d_mean - ln_rmssd_7d_sd,
+                   ymax = ln_rmssd_7d_mean + ln_rmssd_7d_sd),
+      fill = "steelblue", alpha = 0.2, na.rm = TRUE) +
+    ggplot2::geom_point(ggplot2::aes(y = ln_rmssd),
+                        alpha = 0.3, size = 0.8, colour = "grey50") +
+    ggplot2::geom_line(ggplot2::aes(y = ln_rmssd_7d_mean),
+                       colour = "steelblue", linewidth = 0.7, na.rm = TRUE) +
+    ggplot2::geom_point(
+      data = r_hrv |> dplyr::filter(hrv_flag),
+      ggplot2::aes(y = ln_rmssd), colour = "red", shape = 17, size = 2) +
+    ggplot2::labs(title = "HRV — Ln(RMSSD)", y = "Ln(RMSSD)") +
+    theme_panel
+
+  # Panel 3: Sleep
+  r_sleep <- r |> dplyr::filter(!is.na(sleep_total))
+  p3 <- ggplot2::ggplot(r_sleep, ggplot2::aes(x = date, y = sleep_total)) +
+    ggplot2::geom_col(
+      ggplot2::aes(fill = ifelse(sleep_flag, "Flaggad", "Normal")),
+      width = 0.8, alpha = 0.7) +
+    ggplot2::scale_fill_manual(
+      values = c("Normal" = "steelblue", "Flaggad" = "#F44336"),
+      guide = "none") +
+    ggplot2::geom_hline(yintercept = 7, linetype = "dashed",
+                        colour = "darkgreen", alpha = 0.5) +
+    ggplot2::labs(title = "S\u00f6mn", y = "Timmar") +
+    theme_panel
+
+  # Panel 4: Training load
+  r_load <- r |> dplyr::filter(!is.na(daily_trimp) | !is.na(atl))
+  p4 <- ggplot2::ggplot(r_load, ggplot2::aes(x = date)) +
+    ggplot2::geom_col(ggplot2::aes(y = daily_trimp),
+                      fill = "grey70", alpha = 0.5, width = 0.8) +
+    ggplot2::geom_line(ggplot2::aes(y = atl, colour = "ATL"),
+                       linewidth = 0.7, na.rm = TRUE) +
+    ggplot2::geom_line(ggplot2::aes(y = ctl, colour = "CTL"),
+                       linewidth = 0.7, na.rm = TRUE) +
+    ggplot2::scale_colour_manual(values = c("ATL" = "tomato", "CTL" = "steelblue")) +
+    ggplot2::labs(title = "Tr\u00e4ningsbelastning", y = "TRIMP",
+                  colour = NULL) +
+    theme_panel +
+    ggplot2::theme(legend.position = "bottom",
+                   legend.key.size = ggplot2::unit(0.4, "cm"))
+
+  # Combine
+  p1 / p2 / p3 / p4 +
+    patchwork::plot_layout(heights = c(2, 1.5, 1, 1.5)) +
+    patchwork::plot_annotation(
+      title = paste("Readiness-dashboard —",
+                    format(from, "%Y-%m-%d"), "till",
+                    format(to, "%Y-%m-%d")),
+      theme = ggplot2::theme(
+        plot.title = ggplot2::element_text(size = 14, face = "bold"))
+    )
 }

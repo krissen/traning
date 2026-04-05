@@ -356,3 +356,42 @@ report_recovery_hr <- function(summaries, n = 28, from = NULL, to = NULL) {
     dplyr::select(Datum, Km, `Recovery HR`, `RHR 28d`) %>%
     .tail_or_daterange(n, from, to, "Datum")
 }
+
+#' Readiness report — daily composite score with components
+#'
+#' @param health_daily Long-format tibble from \code{load_health_data()}.
+#' @param summaries Garmin summaries tibble.
+#' @param n Number of most recent days to show (default 14).
+#' @param from Start date (inclusive). Overrides n.
+#' @param to End date (exclusive). Overrides n.
+#' @param hr_max Optional HRmax override.
+#' @param hr_rest Optional HRrest override.
+#' @return Tibble with Swedish column names.
+#' @export
+report_readiness <- function(health_daily, summaries, n = 14,
+                              from = NULL, to = NULL,
+                              hr_max = NULL, hr_rest = NULL) {
+  r <- compute_readiness(health_daily, summaries,
+                          hr_max = hr_max, hr_rest = hr_rest)
+  if (nrow(r) == 0) {
+    return(tibble::tibble(Datum = as.Date(character(0))))
+  }
+  r |>
+    dplyr::mutate(
+      Datum       = date,
+      Beredskap   = round(readiness_score, 0),
+      Status      = readiness_status,
+      `Ln RMSSD`  = round(ln_rmssd, 2),
+      `HRV z`     = round(hrv_z, 1),
+      Vilopuls    = round(resting_hr, 0),
+      `VP avvik`  = round(rhr_deviation, 1),
+      `Sömn` = round(sleep_total, 1),
+      TRIMP       = round(daily_trimp, 0),
+      TSB         = round(tsb, 1),
+      Kvalitet    = data_quality
+    ) |>
+    dplyr::select(Datum, Beredskap, Status, `Ln RMSSD`, `HRV z`,
+                  Vilopuls, `VP avvik`, `Sömn`, TRIMP, TSB,
+                  Kvalitet) |>
+    .tail_or_daterange(n, from, to, "Datum")
+}
