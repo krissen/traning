@@ -86,7 +86,7 @@ shinyUI(
     # -------------------------------------------------------------- Readiness
     tabPanel("Readiness",
       fluidRow(
-        column(12, plotly::plotlyOutput("plot_readiness_score", height = "800px"))
+        column(12, plotOutput("plot_readiness_score", height = "800px"))
       ),
       fluidRow(
         column(12, DT::dataTableOutput("table_readiness_score"))

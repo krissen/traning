@@ -108,11 +108,10 @@ shinyServer(function(input, output, session) {
 
   # --- Readiness: integrerad dashboard ---
 
-  output$plot_readiness_score <- plotly::renderPlotly({
+  output$plot_readiness_score <- renderPlot({
     req(health_daily)
-    p <- fetch.plot.readiness_score(health_daily, summaries,
-                                     from = dr_from(), to = dr_to())
-    ply(p)
+    fetch.plot.readiness_score(health_daily, summaries,
+                                from = dr_from(), to = dr_to())
   })
   output$table_readiness_score <- DT::renderDataTable({
     req(health_daily)
