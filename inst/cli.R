@@ -133,6 +133,7 @@ if (traning_data == "") {
 db_summaries <- file.path(traning_data, "cache", "summaries.RData")
 db_myruns    <- file.path(traning_data, "cache", "myruns.RData")
 mytcxpath    <- file.path(traning_data, "kristian", "filer", "tcx")
+gc_json_dir  <- file.path(traning_data, "kristian", "filer", "gconnect")
 
 # --- Load data ---
 my_templist <- my_dbs_load(db_summaries, db_myruns)
@@ -156,6 +157,13 @@ if (do_import) {
     summaries_mostrecent <- utils::tail(summaries, n = summaries_lengthdiff)
     report_mostrecent(summaries_mostrecent, summaries_lengthdiff)
   }
+}
+
+# --- Augment with Garmin JSON data (if needed) ---
+needs_garmin <- do_recovery_hr
+if (needs_garmin && dir.exists(gc_json_dir)) {
+  garmin_data <- load_garmin_json(gc_json_dir)
+  summaries <- augment_summaries(summaries, garmin_data)
 }
 
 # --- Pre-filter by date range ---

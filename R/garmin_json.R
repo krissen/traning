@@ -330,3 +330,83 @@ augment_summaries <- function(summaries, garmin_data,
 
   dplyr::bind_cols(summaries, tibble::as_tibble(result_cols))
 }
+
+#' Load Garmin JSON data with incremental caching
+#'
+#' Wraps \code{import_garmin_json()} with an RData cache. On first call, reads
+#' all JSON files and saves the result. On subsequent calls, only reads files
+#' newer than the cache and appends them.
+#'
+#' @param gc_dir Character. Path to the gconnect directory.
+#' @param cache_path Character. Path for the RData cache file.
+#'   Default: \code{file.path(dirname(gc_dir), "..", "..", "cache", "garmin_json.RData")}.
+#' @return Tibble identical to \code{import_garmin_json()} output.
+#' @export
+load_garmin_json <- function(gc_dir,
+                             cache_path = NULL) {
+  if (is.null(cache_path)) {
+    cache_path <- file.path(
+      dirname(gc_dir), "..", "..", "cache", "garmin_json.RData"
+    )
+    cache_path <- normalizePath(cache_path, mustWork = FALSE)
+  }
+
+  if (!file.exists(cache_path)) {
+    # Cold start — read everything
+    garmin_data <- import_garmin_json(gc_dir)
+    save(garmin_data, file = cache_path)
+    return(garmin_data)
+  }
+
+  # Load cached data
+  load(cache_path)  # loads 'garmin_data'
+  cache_mtime <- file.info(cache_path)$mtime
+
+  # Find summary files newer than the cache
+  summary_files <- list.files(
+    gc_dir,
+    pattern = "_summary\\.json$",
+    full.names = TRUE
+  )
+  file_mtimes <- file.info(summary_files)$mtime
+  new_files <- summary_files[file_mtimes > cache_mtime]
+
+  if (length(new_files) == 0) {
+    message("Garmin JSON cache: ", nrow(garmin_data),
+            " aktiviteter (inga nya filer).")
+    return(garmin_data)
+  }
+
+  # Parse only the new files by creating a temp dir with symlinks
+  tmp_dir <- tempfile("gc_incr_")
+  dir.create(tmp_dir)
+  on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+
+  for (sf in new_files) {
+    file.copy(sf, tmp_dir)
+    # Also copy the corresponding details file if it exists
+    prefix <- sub("_summary\\.json$", "", basename(sf))
+    det <- file.path(gc_dir, paste0(prefix, "_details.json"))
+    if (file.exists(det)) file.copy(det, tmp_dir)
+  }
+
+  new_data <- import_garmin_json(tmp_dir)
+
+  # Remove any rows already in cache (by filename_prefix) and append
+  if (nrow(new_data) > 0) {
+    new_data <- new_data[!new_data$filename_prefix %in%
+                           garmin_data$filename_prefix, ]
+  }
+
+  if (nrow(new_data) > 0) {
+    garmin_data <- dplyr::bind_rows(garmin_data, new_data)
+    message("Garmin JSON cache: +", nrow(new_data), " nya, ",
+            nrow(garmin_data), " totalt.")
+  } else {
+    message("Garmin JSON cache: ", nrow(garmin_data),
+            " aktiviteter (inga nya unika).")
+  }
+
+  save(garmin_data, file = cache_path)
+  garmin_data
+}
