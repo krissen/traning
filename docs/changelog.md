@@ -1,5 +1,40 @@
 # tRäning — Changelog
 
+## 2026-04-05 — Phase 4c: Flexible date ranges & plot variants
+
+### Date range system (`R/daterange.R`)
+- New `--after`, `--before`, `--span` flags on all report and plot commands
+- Flexible date expressions: absolute (`2023`, `2023-03`, `2023-03-04`) and
+  relative (`-3w`, `-1y`, `-6m`, `-10d`)
+- `--span` for windowed queries: `--after -1y --span 3m` = 3-month window
+  starting 1 year ago
+- Legacy `--datesum YYYY-MM-DD--YYYY-MM-DD` format still works
+- Pre-filters summaries upstream — existing report functions unchanged
+
+### Plot variants for all table commands (`R/plot_reports.R`)
+- New `--plot` flag switches table output to a chart
+- `plot_monthtop()` — horizontal bar chart, colored by year
+- `plot_runs_month()` — lollipop chart with pace color scale
+- `plot_monthstatus()` — year-comparison bar chart for current month
+- `plot_monthlast()` — year-comparison bar chart for last month
+- `plot_yearstatus()` — year-to-date bar chart
+- `plot_yearstop()` — full-year totals bar chart
+- `plot_datesum()` — auto-aggregated bars (daily/weekly/monthly by span)
+- Shared `.plot_year_bars()` helper for consistent styling
+- `--total-pace --plot` wires to existing `fetch.plot.mean.pace()`
+
+### Python CLI updates (`python/traning_cli/main.py`)
+- Shared `report_options` decorator adds `--plot`/`--after`/`--before`/`--span`
+  to all report commands
+- `_r_report()` helper eliminates per-command boilerplate
+- Plot commands (`ef`, `acwr`, `monotony`) also accept date range flags
+
+### Tests
+- `tests/testthat/test-daterange.R` — 15 test cases for parsing, range building,
+  and filtering
+
+---
+
 ## 2026-04-05 — Phase 4b: Unified CLI
 
 - Single `traning` command replacing `Rscript inst/cli.R` and `python garmin_fetch.py`

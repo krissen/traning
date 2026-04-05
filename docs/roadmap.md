@@ -41,6 +41,16 @@ R reports/plots delegated via subprocess to `inst/cli.R`. Installable via
 
 ---
 
+## ~~Phase 4c: Flexible date ranges & plot variants~~ DONE (2026-04-05)
+
+Completed. All report commands now accept `--after`/`--before`/`--span`
+for flexible date filtering (absolute and relative expressions). All
+table commands have plot variants via `--plot` flag. Shared helpers
+(`R/daterange.R`, `R/plot_reports.R`) ensure zero duplication. Python
+CLI updated with shared decorator. See `docs/user/cli-reference.md`.
+
+---
+
 ## Phase 5: MCP server
 
 **Goal:** Expose tRäning as an MCP (Model Context Protocol) server.
