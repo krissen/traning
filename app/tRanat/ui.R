@@ -83,6 +83,14 @@ shinyUI(
       )
     ),
 
+    # ------------------------------------------------------------------- Hälsa
+    navbarMenu("Hälsa",
+      plot_tab("resting_hr", "Vilopuls"),
+      plot_tab("hrv", "HRV"),
+      plot_tab("sleep", "Sömn"),
+      plot_tab("vo2max", "VO2max")
+    ),
+
     # ---------------------------------------------------------------- Avancerat
     navbarMenu("Avancerat",
       plot_tab("ef", "EF"),

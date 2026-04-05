@@ -106,6 +106,63 @@ shinyServer(function(input, output, session) {
     report_datesum(summaries, input$datesum_range[1], input$datesum_range[2])
   })
 
+  # --- Hälsa: Apple Watch data ---
+
+  output$plot_resting_hr <- plotly::renderPlotly({
+    req(health_daily)
+    ply(fetch.plot.resting_hr(health_daily, from = dr_from(), to = dr_to()))
+  })
+  output$table_resting_hr <- DT::renderDataTable({
+    req(health_daily)
+    health_daily |>
+      dplyr::filter(metric == "resting_heart_rate") |>
+      dplyr::select(date, value, source) |>
+      dplyr::arrange(dplyr::desc(date))
+  })
+
+  output$plot_hrv <- plotly::renderPlotly({
+    req(health_daily)
+    ply(fetch.plot.hrv(health_daily, from = dr_from(), to = dr_to()))
+  })
+  output$table_hrv <- DT::renderDataTable({
+    req(health_daily)
+    health_daily |>
+      dplyr::filter(metric == "heart_rate_variability") |>
+      dplyr::mutate(ln_rmssd = round(log(value), 2),
+                    value = round(value, 1)) |>
+      dplyr::select(date, RMSSD = value, Ln_RMSSD = ln_rmssd) |>
+      dplyr::arrange(dplyr::desc(date))
+  })
+
+  output$plot_sleep <- plotly::renderPlotly({
+    req(health_daily)
+    ply(fetch.plot.sleep(health_daily, from = dr_from(), to = dr_to()))
+  })
+  output$table_sleep <- DT::renderDataTable({
+    req(health_daily)
+    get_readiness(health_daily, after = dr_from(), before = dr_to()) |>
+      dplyr::select(date, dplyr::any_of(c(
+        "sleep_totalSleep", "sleep_deep", "sleep_rem",
+        "sleep_core", "sleep_awake"
+      ))) |>
+      dplyr::mutate(dplyr::across(dplyr::where(is.numeric),
+                                   \(x) round(x, 2))) |>
+      dplyr::arrange(dplyr::desc(date))
+  })
+
+  output$plot_vo2max <- plotly::renderPlotly({
+    req(health_daily)
+    ply(fetch.plot.vo2max(health_daily, from = dr_from(), to = dr_to()))
+  })
+  output$table_vo2max <- DT::renderDataTable({
+    req(health_daily)
+    health_daily |>
+      dplyr::filter(metric == "vo2_max") |>
+      dplyr::mutate(value = round(value, 1)) |>
+      dplyr::select(date, VO2max = value) |>
+      dplyr::arrange(dplyr::desc(date))
+  })
+
   # --- Avancerat: full data in, date range on output only ---
 
   # -------------------------------------------------------------------- EF

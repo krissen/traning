@@ -42,3 +42,12 @@ if (dir.exists(gc_json_dir)) {
     )
   }
 }
+
+# --- Ladda Apple Watch hälsodata ---
+health_daily <- tryCatch(
+  load_health_data(),
+  error = function(e) {
+    warning("Kunde inte ladda hälsodata: ", conditionMessage(e))
+    NULL
+  }
+)
