@@ -90,7 +90,7 @@ fetch.plot.mean.pace <- function(mean.pace) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-fetch.plot.ef <- function(summaries) {
+fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
   ef_data <- compute_efficiency_factor(summaries)
 
   # Weekly km for volume panel
@@ -159,6 +159,10 @@ fetch.plot.ef <- function(summaries) {
     ggplot2::theme(
       strip.text = ggplot2::element_text(face = "bold")
     ) -> p
+  if (!is.null(from) || !is.null(to)) {
+    xlim <- c(from, to)
+    p <- p + ggplot2::coord_cartesian(xlim = as.Date(xlim))
+  }
   return(p)
 }
 
@@ -172,7 +176,7 @@ fetch.plot.ef <- function(summaries) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-fetch.plot.hre <- function(summaries) {
+fetch.plot.hre <- function(summaries, from = NULL, to = NULL) {
   hre_data <- compute_hre(summaries)
 
   hre_data %>%
@@ -211,6 +215,10 @@ fetch.plot.hre <- function(summaries) {
       x = NULL,
       y = "Hjärtslagskostnad (slag/km)"
     ) -> p
+  if (!is.null(from) || !is.null(to)) {
+    xlim <- c(from, to)
+    p <- p + ggplot2::coord_cartesian(xlim = as.Date(xlim))
+  }
   return(p)
 }
 
@@ -226,13 +234,22 @@ fetch.plot.hre <- function(summaries) {
 #' @param days Integer.  Number of trailing days to show.  Default 365.
 #' @return ggplot2 object
 #' @export
-fetch.plot.acwr <- function(summaries, days = 365) {
+fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL) {
   acwr_data <- compute_acwr(summaries)
 
-  cutoff <- max(acwr_data$date, na.rm = TRUE) - days
+  # Date range overrides the days parameter
+  if (!is.null(from)) {
+    cutoff <- as.Date(from)
+  } else {
+    cutoff <- max(acwr_data$date, na.rm = TRUE) - days
+  }
 
   acwr_window <- acwr_data %>%
     dplyr::filter(date > cutoff, !is.na(acwr))
+
+  if (!is.null(to)) {
+    acwr_window <- acwr_window %>% dplyr::filter(date < as.Date(to))
+  }
 
   # Assign each observation to an ACWR zone for colouring
   # Hulin (2016): sweet spot 0.8-1.3; below 0.8 = underloading
@@ -351,13 +368,21 @@ fetch.plot.acwr <- function(summaries, days = 365) {
 #' @param days Integer.  Number of trailing days to show.  Default 365.
 #' @return ggplot2 object
 #' @export
-fetch.plot.monotony <- function(summaries, days = 365) {
+fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL) {
   ms_data <- compute_monotony_strain(summaries)
 
-  cutoff <- max(ms_data$date, na.rm = TRUE) - days
+  if (!is.null(from)) {
+    cutoff <- as.Date(from)
+  } else {
+    cutoff <- max(ms_data$date, na.rm = TRUE) - days
+  }
 
   ms_window <- ms_data %>%
     dplyr::filter(date > cutoff)
+
+  if (!is.null(to)) {
+    ms_window <- ms_window %>% dplyr::filter(date < as.Date(to))
+  }
 
   # Build long format for facet_grid — one panel per metric
   long <- ms_window %>%
@@ -404,15 +429,6 @@ fetch.plot.monotony <- function(summaries, days = 365) {
   return(p)
 }
 
-#' Scatter plot of Recovery Heart Rate over time
-#'
-#' Shows post-workout recovery HR per run with a 28-day rolling mean.
-#' Lower recovery HR indicates better cardiovascular fitness (Cole 1999).
-#' Requires enriched summaries with garmin_recoveryHeartRate.
-#'
-#' @param summaries Enriched summaries from \code{augment_summaries()}.
-#' @return ggplot2 object
-#' @export
 #' Performance Management Chart (PMC)
 #'
 #' Three-panel chart showing CTL (fitness), ATL (fatigue), and TSB (form)
@@ -423,17 +439,27 @@ fetch.plot.monotony <- function(summaries, days = 365) {
 #' @param days Integer. Number of trailing days to show. Default 365.
 #' @param hr_max Numeric or NULL. HRmax override.
 #' @param hr_rest Numeric or NULL. HRrest override.
+#' @param from Date or NULL. Start of display window (overrides days).
+#' @param to Date or NULL. End of display window.
 #' @return ggplot2 object
 #' @export
-fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL) {
+fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
+                           from = NULL, to = NULL) {
   pmc_data <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest)
 
   if (nrow(pmc_data) == 0) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
   }
 
-  cutoff <- max(pmc_data$date, na.rm = TRUE) - days
+  if (!is.null(from)) {
+    cutoff <- as.Date(from)
+  } else {
+    cutoff <- max(pmc_data$date, na.rm = TRUE) - days
+  }
   pmc_window <- pmc_data %>% dplyr::filter(date > cutoff)
+  if (!is.null(to)) {
+    pmc_window <- pmc_window %>% dplyr::filter(date < as.Date(to))
+  }
 
   # Panel 1: CTL + ATL lines
   fitness_fatigue <- pmc_window %>%
@@ -533,7 +559,7 @@ fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL)
 #' Scatter plot of Recovery Heart Rate over time (see above)
 #' @inheritParams fetch.plot.pmc
 #' @export
-fetch.plot.recovery_hr <- function(summaries) {
+fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL) {
   rhr_data <- compute_recovery_hr(summaries)
 
   if (nrow(rhr_data) == 0) {
@@ -590,6 +616,11 @@ fetch.plot.recovery_hr <- function(summaries) {
   p <- p +
     ggplot2::ggtitle("Recovery HR efter löpning") +
     ggplot2::labs(x = NULL)
+
+  if (!is.null(from) || !is.null(to)) {
+    xlim <- c(from, to)
+    p <- p + ggplot2::coord_cartesian(xlim = as.Date(xlim))
+  }
 
   return(p)
 }
