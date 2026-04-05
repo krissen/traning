@@ -1,4 +1,4 @@
-# Advanced training metrics: Efficiency Factor, ACWR, and Training Monotony/Strain
+# Advanced training metrics: EF, HRE, ACWR, Monotony/Strain
 
 # Internal helper: compute a rolling sum over a numeric vector using a sliding window.
 # Partial windows at the start are returned as NA.
@@ -120,6 +120,74 @@ compute_efficiency_factor <- function(summaries) {
     )
 }
 
+#' Compute Heart Rate Efficiency (HRE) per run — Votyakov metric
+#'
+#' HRE = average heart rate (bpm) * average pace (min/km) = beats per km.
+#' A lower HRE means fewer heartbeats needed per km — better aerobic fitness.
+#' This is the arithmetic inverse of Efficiency Factor.
+#'
+#' Votyakov et al. (2025) validated HRE over 14 years with thresholds:
+#' <700 bpkm = well-fitted, 700-750 = fitted, >800 = poorly-fitted.
+#'
+#' Only runs longer than 5 km are included.  A 28-day rolling mean
+#' (hre_rolling28) reveals the underlying fitness trend.
+#'
+#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @return Tibble with one row per qualifying run, ordered by date, with
+#'   columns: \code{sessionStart}, \code{distance_km},
+#'   \code{avgHeartRateMoving}, \code{avgPaceMoving}, \code{hre},
+#'   \code{hre_rolling28}.
+#' @export
+compute_hre <- function(summaries) {
+  runs <- summaries %>%
+    dplyr::filter(
+      stringr::str_detect(sport, "running"),
+      distance > 5000
+    ) %>%
+    dplyr::mutate(
+      sessionStart = as.Date(sessionStart),
+      distance_km  = distance / 1000,
+      hr           = as.numeric(avgHeartRateMoving),
+      pace         = as.numeric(avgPaceMoving)
+    ) %>%
+    dplyr::filter(!is.na(hr), hr > 0, !is.na(pace), pace > 0) %>%
+    dplyr::arrange(sessionStart) %>%
+    dplyr::mutate(
+      hre = hr * pace
+    )
+
+  daily_hre <- runs %>%
+    dplyr::group_by(sessionStart) %>%
+    dplyr::summarise(daily_hre = mean(hre, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::arrange(sessionStart)
+
+  date_spine <- tibble::tibble(
+    sessionStart = seq(
+      min(daily_hre$sessionStart),
+      max(daily_hre$sessionStart),
+      by = "day"
+    )
+  )
+
+  rolling_hre <- date_spine %>%
+    dplyr::left_join(daily_hre, by = "sessionStart") %>%
+    dplyr::mutate(
+      hre_rolling28 = .rolling_mean(daily_hre, window = 28)
+    ) %>%
+    dplyr::select(sessionStart, hre_rolling28)
+
+  runs %>%
+    dplyr::left_join(rolling_hre, by = "sessionStart") %>%
+    dplyr::select(
+      sessionStart,
+      distance_km,
+      avgHeartRateMoving,
+      avgPaceMoving,
+      hre,
+      hre_rolling28
+    )
+}
+
 #' Compute Acute:Chronic Workload Ratio (ACWR)
 #'
 #' ACWR = acute load / chronic load, where:
@@ -194,7 +262,13 @@ compute_acwr <- function(summaries) {
       acwr             = dplyr::if_else(
         chronic_load > 0, acute_load / chronic_load, NA_real_),
       acwr_uncoupled   = dplyr::if_else(
-        chronic_uncoupled > 0, acute_load / chronic_uncoupled, NA_real_)
+        chronic_uncoupled > 0, acute_load / chronic_uncoupled, NA_real_),
+      # Week-over-week percentage change (Nielsen 2014: >30% = injury risk)
+      weekly_pct_change = dplyr::if_else(
+        dplyr::lag(weekly_km, 7) > 0,
+        (weekly_km / dplyr::lag(weekly_km, 7) - 1) * 100,
+        NA_real_
+      )
     ) %>%
     dplyr::select(
       date,
@@ -203,7 +277,8 @@ compute_acwr <- function(summaries) {
       acute_load,
       chronic_load,
       acwr,
-      acwr_uncoupled
+      acwr_uncoupled,
+      weekly_pct_change
     )
 }
 
@@ -265,4 +340,200 @@ compute_monotony_strain <- function(summaries) {
       )
     ) %>%
     dplyr::select(date, daily_km, weekly_km, monotony, strain)
+}
+
+#' Compute Recovery Heart Rate trend
+#'
+#' Extracts recovery heart rate from enriched summaries (garmin_recoveryHeartRate
+#' column, available for activities from ~Nov 2023 onward) and computes a
+#' 28-day rolling mean.  Lower recovery HR = better cardiovascular fitness
+#' (Cole et al. 1999).
+#'
+#' @param summaries Enriched summaries (must contain garmin_recoveryHeartRate)
+#' @return Tibble with columns: sessionStart, distance_km,
+#'   recovery_hr, recovery_hr_rolling28
+#' @export
+compute_recovery_hr <- function(summaries) {
+  if (!"garmin_recoveryHeartRate" %in% names(summaries)) {
+    stop("summaries saknar garmin_recoveryHeartRate. Kör augment_summaries() först.")
+  }
+
+  runs <- summaries %>%
+    dplyr::filter(
+      stringr::str_detect(sport, "running"),
+      !is.na(garmin_recoveryHeartRate),
+      garmin_recoveryHeartRate > 0
+    ) %>%
+    dplyr::mutate(
+      sessionStart = as.Date(sessionStart),
+      distance_km  = distance / 1000,
+      recovery_hr  = as.numeric(garmin_recoveryHeartRate)
+    ) %>%
+    dplyr::arrange(sessionStart)
+
+  if (nrow(runs) == 0) {
+    return(tibble::tibble(
+      sessionStart = as.Date(character(0)),
+      distance_km = numeric(0),
+      recovery_hr = numeric(0),
+      recovery_hr_rolling28 = numeric(0)
+    ))
+  }
+
+  daily <- runs %>%
+    dplyr::group_by(sessionStart) %>%
+    dplyr::summarise(daily_rhr = mean(recovery_hr, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::arrange(sessionStart)
+
+  date_spine <- tibble::tibble(
+    sessionStart = seq(min(daily$sessionStart), max(daily$sessionStart), by = "day")
+  )
+
+  rolling <- date_spine %>%
+    dplyr::left_join(daily, by = "sessionStart") %>%
+    dplyr::mutate(
+      recovery_hr_rolling28 = .rolling_mean(daily_rhr, window = 28)
+    ) %>%
+    dplyr::select(sessionStart, recovery_hr_rolling28)
+
+  runs %>%
+    dplyr::left_join(rolling, by = "sessionStart") %>%
+    dplyr::select(sessionStart, distance_km, recovery_hr, recovery_hr_rolling28)
+}
+
+# Internal helper: exponentially weighted moving average (recursive).
+# lambda = 2 / (window + 1), where window = time constant in days.
+# EWMA(t) = EWMA(t-1) * (1-lambda) + x(t) * lambda
+# Returns NA for the first element; the second element seeds the EWMA.
+.ewma <- function(x, window) {
+  n <- length(x)
+  if (n == 0) return(numeric(0))
+  lambda <- 2 / (window + 1)
+  result <- rep(NA_real_, n)
+  # Seed with first non-NA value
+  seed_idx <- which(!is.na(x))[1]
+  if (is.na(seed_idx)) return(result)
+  result[seed_idx] <- x[seed_idx]
+  for (i in (seed_idx + 1):n) {
+    prev <- result[i - 1]
+    curr <- x[i]
+    if (is.na(curr)) curr <- 0
+    result[i] <- prev * (1 - lambda) + curr * lambda
+  }
+  result
+}
+
+#' Compute TRIMP per session (Banister model)
+#'
+#' Calculates training impulse using the Morton (1990) exponential formula:
+#' \deqn{TRIMP = duration\_min \times \Delta HR \times 0.64 e^{1.92 \times \Delta HR}}
+#' where \eqn{\Delta HR = (avgHR - HRrest) / (HRmax - HRrest)}.
+#'
+#' HRrest is time-varying when Apple Watch data is available (via
+#' \code{get_hr_rest()}), otherwise a fixed value is used.
+#'
+#' @param summaries Summaries data frame.
+#' @param hr_max Numeric. Maximum heart rate (bpm).
+#' @param hr_rest Numeric vector or scalar. Resting heart rate(s). If a scalar,
+#'   the same value is used for all sessions. If a vector, must be the same
+#'   length as the number of qualifying sessions (matched by date order).
+#'   If NULL, \code{get_hr_rest()} is called for each session date.
+#' @return Tibble with: date, daily_trimp, trimp_type ("btrimp").
+#' @export
+compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL) {
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
+
+  runs <- summaries %>%
+    dplyr::filter(
+      stringr::str_detect(sport, "running"),
+      !is.na(avgHeartRateMoving),
+      as.numeric(avgHeartRateMoving) > 0,
+      !is.na(durationMoving)
+    ) %>%
+    dplyr::mutate(
+      date         = as.Date(sessionStart),
+      hr           = as.numeric(avgHeartRateMoving),
+      duration_min = as.numeric(durationMoving, units = "mins")
+    ) %>%
+    dplyr::filter(duration_min > 10) %>%
+    dplyr::arrange(date)
+
+  if (nrow(runs) == 0) {
+    return(tibble::tibble(date = as.Date(character(0)),
+                          daily_trimp = numeric(0),
+                          trimp_type = character(0)))
+  }
+
+  # Resolve HRrest per session
+  if (is.null(hr_rest)) {
+    hr_rest_vec <- get_hr_rest(runs$date)
+  } else if (length(hr_rest) == 1) {
+    hr_rest_vec <- rep(hr_rest, nrow(runs))
+  } else {
+    hr_rest_vec <- hr_rest
+  }
+
+  runs <- runs %>%
+    dplyr::mutate(
+      hr_rest     = hr_rest_vec,
+      delta_hr    = (hr - hr_rest) / (hr_max - hr_rest),
+      # Clamp delta_hr to [0, 1] to avoid nonsensical values
+      delta_hr    = pmax(0, pmin(1, delta_hr)),
+      trimp       = duration_min * delta_hr * 0.64 * exp(1.92 * delta_hr)
+    )
+
+  # Aggregate to daily TRIMP (sum if multiple runs per day)
+  daily_trimp <- runs %>%
+    dplyr::group_by(date) %>%
+    dplyr::summarise(daily_trimp = sum(trimp, na.rm = TRUE), .groups = "drop") %>%
+    dplyr::mutate(trimp_type = "btrimp")
+
+  daily_trimp
+}
+
+#' Compute Performance Management Chart (ATL, CTL, TSB)
+#'
+#' Uses exponentially weighted moving averages (EWMA) of daily TRIMP:
+#' \itemize{
+#'   \item ATL (Acute Training Load / "fatigue"): EWMA with 7-day time constant
+#'   \item CTL (Chronic Training Load / "fitness"): EWMA with 42-day time constant
+#'   \item TSB (Training Stress Balance / "form"): CTL - ATL
+#' }
+#'
+#' EWMA formula (Murray 2017): \eqn{EWMA(t) = EWMA(t-1) \times (1 - \lambda) + TRIMP(t) \times \lambda}
+#' where \eqn{\lambda = 2 / (window + 1)}.
+#'
+#' @param summaries Summaries data frame.
+#' @param hr_max Numeric. Maximum heart rate. NULL = auto-detect.
+#' @param hr_rest Numeric or NULL. Resting heart rate. NULL = time-varying from AW data.
+#' @return Tibble with daily values: date, daily_trimp, atl, ctl, tsb.
+#' @export
+compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL) {
+  daily_trimp <- compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest)
+
+  if (nrow(daily_trimp) == 0) {
+    return(tibble::tibble(date = as.Date(character(0)),
+                          daily_trimp = numeric(0),
+                          atl = numeric(0), ctl = numeric(0),
+                          tsb = numeric(0)))
+  }
+
+  # Build full date spine — rest days = 0 TRIMP
+  date_spine <- tibble::tibble(
+    date = seq(min(daily_trimp$date), max(daily_trimp$date), by = "day")
+  )
+
+  daily_full <- date_spine %>%
+    dplyr::left_join(daily_trimp %>% dplyr::select(date, daily_trimp),
+                     by = "date") %>%
+    dplyr::mutate(daily_trimp = dplyr::if_else(is.na(daily_trimp), 0, daily_trimp))
+
+  # EWMA computation
+  x <- daily_full$daily_trimp
+  daily_full %>%
+    dplyr::mutate(
+      atl = .ewma(x, window = 7),
+      ctl = .ewma(x, window = 42),
+      tsb = ctl - atl
+    )
 }
