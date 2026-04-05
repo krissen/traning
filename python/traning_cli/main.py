@@ -39,7 +39,7 @@ def _get_version():
 
 
 def report_options(f):
-    """Shared options for all report commands: --plot, --after, --before, --span."""
+    """Shared options for all report commands: --plot, --after, --before, --span, --output, --limit."""
     @click.option("--plot", "show_plot", is_flag=True, help="Show plot instead of table")
     @click.option("--after", default=None,
                   help="Start of date range (YYYY, YYYY-MM, YYYY-MM-DD, -Nw/-Nm/-Ny/-Nd)")
@@ -47,13 +47,20 @@ def report_options(f):
                   help="End of date range (same formats as --after)")
     @click.option("--span", default=None,
                   help="Duration from --after (e.g. 3m, 1y). Requires --after")
+    @click.option("--output", default=None,
+                  help="Save output to file (format from extension or --format)")
+    @click.option("--format", "fmt", default=None,
+                  help="Output format. Plots: pdf, png. Tables: csv, json, jsonl, xlsx")
+    @click.option("--no-open", is_flag=True, help="Don't open output file after saving")
+    @click.option("--limit", type=int, default=None, help="Limit table rows")
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         return f(*args, **kwargs)
     return wrapper
 
 
-def _r_report(flag, show_plot=False, after=None, before=None, span=None):
+def _r_report(flag, show_plot=False, after=None, before=None, span=None,
+              limit=None, output=None, fmt=None, no_open=False):
     """Build and execute an R report/plot command."""
     cmd = ["Rscript", str(CLI_R), flag]
     if show_plot:
@@ -64,6 +71,14 @@ def _r_report(flag, show_plot=False, after=None, before=None, span=None):
         cmd.append(f"--before={before}")
     if span:
         cmd.append(f"--span={span}")
+    if limit is not None:
+        cmd.append(f"--limit={limit}")
+    if output:
+        cmd.append(f"--output={output}")
+    if fmt:
+        cmd.append(f"--format={fmt}")
+    if no_open:
+        cmd.append("--no-open")
     _exec(cmd)
 
 
@@ -215,95 +230,95 @@ def report():
 
 @report.command()
 @report_options
-def month(show_plot, after, before, span):
+def month(show_plot, after, before, span, output, fmt, no_open, limit):
     """Current month vs same month previous years."""
-    _r_report("--month-running", show_plot, after, before, span)
+    _r_report("--month-running", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @report.command()
 @report_options
-def year(show_plot, after, before, span):
+def year(show_plot, after, before, span, output, fmt, no_open, limit):
     """Current year vs previous years (same day-of-year)."""
-    _r_report("--year-running", show_plot, after, before, span)
+    _r_report("--year-running", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @report.command()
 @report_options
-def pace(show_plot, after, before, span):
+def pace(show_plot, after, before, span, output, fmt, no_open, limit):
     """Pace summary per year."""
-    _r_report("--total-pace", show_plot, after, before, span)
+    _r_report("--total-pace", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @report.command()
 @report_options
-def top(show_plot, after, before, span):
+def top(show_plot, after, before, span, output, fmt, no_open, limit):
     """Year totals."""
-    _r_report("--year-top", show_plot, after, before, span)
+    _r_report("--year-top", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @report.command(name="month-top")
 @report_options
-def month_top(show_plot, after, before, span):
+def month_top(show_plot, after, before, span, output, fmt, no_open, limit):
     """Top 10 months by distance."""
-    _r_report("--month-top", show_plot, after, before, span)
+    _r_report("--month-top", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @report.command(name="month-this")
 @report_options
-def month_this(show_plot, after, before, span):
+def month_this(show_plot, after, before, span, output, fmt, no_open, limit):
     """Individual runs this month."""
-    _r_report("--month-this", show_plot, after, before, span)
+    _r_report("--month-this", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @report.command(name="month-last")
 @report_options
-def month_last(show_plot, after, before, span):
+def month_last(show_plot, after, before, span, output, fmt, no_open, limit):
     """Last month across years."""
-    _r_report("--month-last", show_plot, after, before, span)
+    _r_report("--month-last", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 # -- plot commands (top-level) -----------------------------------------------
 
 @cli.command()
 @report_options
-def ef(show_plot, after, before, span):
-    """Plot Efficiency Factor trend."""
-    _r_report("--ef", False, after, before, span)
+def ef(show_plot, after, before, span, output, fmt, no_open, limit):
+    """Efficiency Factor trend."""
+    _r_report("--ef", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @cli.command()
 @report_options
-def hre(show_plot, after, before, span):
-    """Plot Heart Rate Efficiency (beats/km, Votyakov)."""
-    _r_report("--hre", False, after, before, span)
+def hre(show_plot, after, before, span, output, fmt, no_open, limit):
+    """Heart Rate Efficiency (beats/km, Votyakov)."""
+    _r_report("--hre", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @cli.command()
 @report_options
-def acwr(show_plot, after, before, span):
-    """Plot Acute:Chronic Workload Ratio."""
-    _r_report("--acwr", False, after, before, span)
+def acwr(show_plot, after, before, span, output, fmt, no_open, limit):
+    """Acute:Chronic Workload Ratio."""
+    _r_report("--acwr", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @cli.command()
 @report_options
-def monotony(show_plot, after, before, span):
-    """Plot Training Monotony and Strain."""
-    _r_report("--monotony", False, after, before, span)
+def monotony(show_plot, after, before, span, output, fmt, no_open, limit):
+    """Training Monotony and Strain."""
+    _r_report("--monotony", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @cli.command()
 @report_options
-def pmc(show_plot, after, before, span):
-    """Plot Performance Management Chart (TRIMP/CTL/ATL/TSB)."""
-    _r_report("--pmc", False, after, before, span)
+def pmc(show_plot, after, before, span, output, fmt, no_open, limit):
+    """Performance Management Chart (TRIMP/CTL/ATL/TSB)."""
+    _r_report("--pmc", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 @cli.command(name="recovery-hr")
 @report_options
-def recovery_hr(show_plot, after, before, span):
-    """Plot Recovery Heart Rate trend."""
-    _r_report("--recovery-hr", False, after, before, span)
+def recovery_hr(show_plot, after, before, span, output, fmt, no_open, limit):
+    """Recovery Heart Rate trend."""
+    _r_report("--recovery-hr", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
 # -- datesum ----------------------------------------------------------------
@@ -311,7 +326,7 @@ def recovery_hr(show_plot, after, before, span):
 @cli.command()
 @click.argument("range", required=False, default=None)
 @report_options
-def datesum(range, show_plot, after, before, span):
+def datesum(range, show_plot, after, before, span, output, fmt, no_open, limit):
     """Summary for a date range.
 
     RANGE: Legacy format YYYY-MM-DD--YYYY-MM-DD (optional).
@@ -328,6 +343,14 @@ def datesum(range, show_plot, after, before, span):
         cmd.append(f"--before={before}")
     if span:
         cmd.append(f"--span={span}")
+    if limit is not None:
+        cmd.append(f"--limit={limit}")
+    if output:
+        cmd.append(f"--output={output}")
+    if fmt:
+        cmd.append(f"--format={fmt}")
+    if no_open:
+        cmd.append("--no-open")
     _exec(cmd)
 
 
