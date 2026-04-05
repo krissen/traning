@@ -1,5 +1,78 @@
 # tRäning — Changelog
 
+## 0.4.0 — Apple Watch integration & readiness model
+
+### Apple Watch health data pipeline (`R/health_export.R`)
+- New module parses Health Auto Export (HAE) iOS app JSON exports
+- Handles 3 data formats: standard qty, heart rate Min/Avg/Max, nested sleep
+- Source filtering: removes Garmin Connect contamination from resting HR
+  (Connect reports ~100 bpm vs Apple Watch ~50 bpm; HAE averages them)
+- Raw sleep segment parser: 96K+ segments across 13 years from 6+ sources
+  (Sleep Cycle, Apple Watch, Oura, AutoSleep, etc.), with per-night source
+  selection (prefers AW staging), segment deduplication, and overlap-safe
+  aggregation
+- Daily aggregation for non-aggregated exports (sum for steps/energy,
+  mean for physiological metrics, min/max for heart rate)
+- Cache I/O: `load_health_data()` / `save_health_data()` → `health_daily.RData`
+- Convenience: `pivot_health_wide()`, `get_readiness()` with Ln(RMSSD)
+
+### Data backfill
+- TCP backfill script (`python/backfill_tcp.py`) queries HAE TCP server on
+  iPhone in 3-month chunks, saves per-metric JSON files
+- 117K rows, 91 metrics, 2013–2026 imported:
+  - Sleep: 4471 nights (2013+), Resting HR: 2976 days (2017+),
+    HRV: 2934 days (2017+), VO2max: 2204 days (2017+),
+    Cardio recovery: 858 days (2022+), plus step count, active energy,
+    walking metrics, body composition, running mechanics, etc.
+- Known gaps: 2023-06 → 2024-03 and 2025-03 → 2025-12 (missing from HealthKit)
+
+### Health visualizations (`R/plot_health.R`)
+- `fetch.plot.resting_hr()` — 9-year trend with LOESS + annual means
+- `fetch.plot.hrv()` — Ln(RMSSD) with 7-day rolling baseline ± 1 SD band
+- `fetch.plot.sleep()` — total sleep LOESS + monthly stage breakdown
+  (kärnsömn/REM/djupsömn/vaken) with 7h target line
+- `fetch.plot.vo2max()` — Apple Watch VO2max estimate trend
+
+### Readiness model (`R/readiness.R`)
+- `compute_readiness()` — daily composite score (0–100) fusing Apple Watch
+  health data with Garmin training load
+- Four components via piecewise-linear scoring:
+  - HRV (35%): Ln(RMSSD) z-score vs 7-day rolling baseline
+  - Sleep (30%): total hours + staging quality bonus/penalty
+  - Resting HR (20%): deviation from 30-day rolling baseline
+  - Training load (15%): previous day's TRIMP ratio to ATL
+- NA-aware weight redistribution when components are missing
+- Warning flags: HRV suppression (z < -1), sustained RHR elevation
+  (>5 bpm for 3+ consecutive days), poor sleep + suppressed HRV,
+  acute load spike (>2× ATL)
+- Traffic-light status: Grön (≥70), Gul (40–69), Röd (<40)
+- Data quality tracking: full/partial/minimal
+- `fetch.plot.readiness_score()` — 4-panel patchwork dashboard:
+  score with zone bands, HRV with baseline ribbon + flag markers,
+  sleep bars with flag coloring, ATL/CTL lines + TRIMP bars
+- Based on Seshadri 2019, Plews 2013, Buchheit 2014, Simpson 2017
+
+### Shiny app updates
+- New top-level "Readiness" tab with integrated 4-panel dashboard + table
+- New "Hälsa" menu with Vilopuls, HRV, Sömn, VO2max tabs
+- Health data loaded at startup via `load_health_data()` in global.R
+- Readiness dashboard uses renderPlot (patchwork incompatible with plotly)
+
+### CLI updates
+- `--readiness` — daily readiness table or 4-panel dashboard (with `--plot`)
+- `--import-health` — import Apple Watch health data from HAE JSON files
+- Supports `--after`/`--before`/`--limit` for date filtering
+- `patchwork` added to Suggests in DESCRIPTION
+
+### Tests
+- 159 tests total (was 93), all passing
+- New `test-health-export.R` (28 tests): parser formats, source cleaning,
+  aggregation, pivot, readiness accessor
+- New `test-readiness.R` (66 tests): piecewise scoring, component scores,
+  weighted composite, consecutive flag, integration tests
+
+---
+
 ## 0.3.0 — Unified output system
 
 ### Consistent table/plot toggle for all commands

@@ -1,5 +1,50 @@
 # tRäning — Roadmap
 
+## Phase 5b: Automated health data pipeline
+
+**Goal:** Automate daily health data import from iPhone to server.
+
+**Deliverables:**
+- FastAPI receiver on kailash (port 8421) accepting HAE JSON POST
+- HAE iOS automations: health metrics at 06:00, workouts at 06:30
+- Systemd service for receiver, Tailscale networking
+- Resting HR export without aggregation (separate automation)
+
+**Dependencies:** Health export pipeline (done), Tailscale (done).
+
+---
+
+## Phase 5c: MCP server
+
+**Goal:** Expose tRäning as an MCP server for AI-powered training analysis.
+
+**Deliverables:**
+- FastMCP server (Python) wrapping R functions via subprocess
+- Tools: readiness, sleep, HRV, training load, sessions, fitness trend,
+  period comparison, taper planning, daily suggestion
+- Plot tools returning PNG
+- R bridge module for subprocess execution and result parsing
+
+**Dependencies:** Phase 5a readiness model (done), automated pipeline (5b).
+
+**References:** Hermod (FastMCP + R), Vyasa, garmin-connect-mcp (27 tools).
+
+---
+
+## Phase 5d: Taper planning & race analysis
+
+**Goal:** Answer "I have a race on date X — help me prepare."
+
+**Deliverables:**
+- `compute_taper_plan(race_date, distance_km)` — weekly km targets
+  with ACWR constraint (max +10%/week), 2-week taper, TSB target 5–15
+- `compute_race_readiness(target_date)` — CTL/ACWR/HRV trajectory assessment
+- Exposed via MCP and CLI
+
+**Dependencies:** Phase 5a (done), Phase 5c (MCP).
+
+---
+
 ## Phase 4f: HR zone distribution & polarization index
 
 **Goal:** Track training intensity distribution and flag the "moderate
