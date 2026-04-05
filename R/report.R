@@ -393,5 +393,6 @@ report_readiness <- function(health_daily, summaries, n = 14,
     dplyr::select(Datum, Beredskap, Status, `Ln RMSSD`, `HRV z`,
                   Vilopuls, `VP avvik`, `Sömn`, TRIMP, TSB,
                   Kvalitet) |>
-    .tail_or_daterange(n, from, to, "Datum")
+    .tail_or_daterange(n, from, to, "Datum") |>
+    dplyr::arrange(dplyr::desc(Datum))
 }

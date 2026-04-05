@@ -288,8 +288,8 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
     ggplot2::geom_line(colour = "grey40", linewidth = 0.4) +
     ggplot2::geom_point(ggplot2::aes(colour = readiness_status), size = 1.5) +
     ggplot2::scale_colour_manual(
-      values = c("Gr\u00f6n" = "#4CAF50", "Gul" = "#FFC107",
-                 "R\u00f6d" = "#F44336"),
+      values = c("Grön" = "#4CAF50", "Gul" = "#FFC107",
+                 "Röd" = "#F44336"),
       guide = "none"
     ) +
     ggplot2::geom_hline(yintercept = c(40, 70), linetype = "dashed",
