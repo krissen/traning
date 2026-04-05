@@ -68,6 +68,12 @@ my_options <- list(
   make_option("--recovery-hr",
     type = "logical", action = "store_true", default = FALSE,
     help = "Recovery Heart Rate trend (requires Garmin JSON import)"),
+  make_option("--readiness",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Daily readiness score (Apple Watch + Garmin fusion)"),
+  make_option("--import-health",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Import Apple Watch health data from Health Auto Export JSON"),
   # --- Date range flags ---
   make_option("--after",
     type = "character", default = NULL,
@@ -114,6 +120,8 @@ do_acwr         <- options$acwr
 do_monotony     <- options$monotony
 do_pmc          <- options$pmc
 do_recovery_hr  <- options$`recovery-hr`
+do_readiness    <- options$readiness
+do_import_health <- options$`import-health`
 do_plot         <- options$plot
 do_output       <- options$output
 do_format       <- options$format
@@ -272,7 +280,8 @@ if (do_year_top) {
 # Only runs if no other report command was given (to avoid double output)
 any_report <- do_month_top || do_month_running || do_month_this ||
   do_month_last || do_year_running || do_year_top || do_total_pace ||
-  do_ef || do_hre || do_acwr || do_monotony || do_pmc || do_recovery_hr
+  do_ef || do_hre || do_acwr || do_monotony || do_pmc || do_recovery_hr ||
+  do_readiness
 
 if (!is.null(options$datesum) || (has_daterange && !any_report)) {
   dr_from <- date_range$from
@@ -344,6 +353,28 @@ if (do_pmc) {
   } else {
     emit_table(report_pmc(summaries, n = do_limit %||% 28L,
                      from = date_range$from, to = date_range$to), "pmc")
+  }
+}
+
+# --- Health data import ---
+if (do_import_health) {
+  import_health_export(verbose = TRUE)
+}
+
+# --- Readiness (requires health data) ---
+if (do_readiness) {
+  health_daily <- load_health_data()
+  if (nrow(health_daily) == 0) {
+    cat("Ingen hälsodata hittades. Kör --import-health först.\n")
+  } else {
+    if (do_plot) {
+      emit_plot(fetch.plot.readiness_score(health_daily, summaries,
+                  from = date_range$from, to = date_range$to), "readiness")
+    } else {
+      emit_table(report_readiness(health_daily, summaries,
+                    n = do_limit %||% 14L,
+                    from = date_range$from, to = date_range$to), "readiness")
+    }
   }
 }
 
