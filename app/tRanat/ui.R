@@ -18,15 +18,33 @@ plot_tab <- function(id, title, ...) {
 shinyUI(
   navbarPage("tRäning",
     header = fluidRow(
-      column(3,
-        dateRangeInput("global_daterange", NULL,
-          start = Sys.Date() - 365,
-          end   = Sys.Date(),
-          separator = "—"
+      column(2,
+        selectInput("date_preset", NULL,
+          choices = c(
+            "Allt"              = "all",
+            "7 dagar"           = "7d",
+            "4 veckor"          = "4w",
+            "3 månader"        = "3m",
+            "6 månader"        = "6m",
+            "I år"             = "ytd",
+            "12 månader"       = "12m",
+            "2 år"             = "2y",
+            "5 år"             = "5y",
+            "Anpassa\u2026"     = "custom"
+          ),
+          selected = "all",
+          width = "160px"
         )
       ),
-      column(2,
-        checkboxInput("use_daterange", "Filtrera på datum", value = FALSE)
+      column(3,
+        conditionalPanel(
+          condition = "input.date_preset === 'custom'",
+          dateRangeInput("global_daterange", NULL,
+            start     = Sys.Date() - 365,
+            end       = Sys.Date(),
+            separator = "\u2014"
+          )
+        )
       )
     ),
 

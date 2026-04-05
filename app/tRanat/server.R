@@ -4,20 +4,35 @@ library(plotly)
 
 shinyServer(function(input, output, session) {
 
-  # --- Global date range ---
-  dr_from <- reactive({
-    if (input$use_daterange) input$global_daterange[1] else NULL
+  # --- Global date range from preset selector ---
+  preset_dates <- reactive({
+    today <- Sys.Date()
+    switch(input$date_preset,
+      "all"    = list(from = NULL, to = NULL),
+      "7d"     = list(from = today - 7,               to = today),
+      "4w"     = list(from = today - 28,              to = today),
+      "3m"     = list(from = today - 90,              to = today),
+      "6m"     = list(from = today - 182,             to = today),
+      "ytd"    = list(from = as.Date(paste0(format(today, "%Y"), "-01-01")),
+                      to = today),
+      "12m"    = list(from = today - 365,             to = today),
+      "2y"     = list(from = today - 730,             to = today),
+      "5y"     = list(from = today - 1826,            to = today),
+      "custom" = list(from = input$global_daterange[1],
+                      to   = input$global_daterange[2])
+    )
   })
-  dr_to <- reactive({
-    if (input$use_daterange) input$global_daterange[2] else NULL
-  })
+
+  dr_from <- reactive(preset_dates()$from)
+  dr_to   <- reactive(preset_dates()$to)
 
   # Filtered summaries for basic reports (month/year comparisons)
   summaries_f <- reactive({
-    if (!input$use_daterange) return(summaries)
+    from <- dr_from()
+    if (is.null(from)) return(summaries)
     dr <- build_date_range(
-      after  = as.character(input$global_daterange[1]),
-      before = as.character(input$global_daterange[2])
+      after  = as.character(from),
+      before = as.character(dr_to())
     )
     filter_by_daterange(summaries, dr)
   })
