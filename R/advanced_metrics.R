@@ -221,9 +221,10 @@ compute_acwr <- function(summaries) {
     dplyr::summarise(daily_km = sum(distance, na.rm = TRUE) / 1000,
                      .groups = "drop")
 
-  # Full date spine with rest days as 0
+  # Full date spine with rest days as 0; extend to today
+  spine_end <- max(max(daily$date), Sys.Date())
   date_spine <- tibble::tibble(
-    date = seq(min(daily$date), max(daily$date), by = "day")
+    date = seq(min(daily$date), spine_end, by = "day")
   )
 
   daily_full <- date_spine %>%
@@ -312,8 +313,9 @@ compute_monotony_strain <- function(summaries) {
     dplyr::summarise(daily_km = sum(distance, na.rm = TRUE) / 1000,
                      .groups = "drop")
 
+  spine_end <- max(max(daily$date), Sys.Date())
   date_spine <- tibble::tibble(
-    date = seq(min(daily$date), max(daily$date), by = "day")
+    date = seq(min(daily$date), spine_end, by = "day")
   )
 
   daily_full <- date_spine %>%
@@ -528,9 +530,11 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL) {
                           tsb = numeric(0)))
   }
 
-  # Build full date spine — rest days = 0 TRIMP
+  # Build full date spine — rest days = 0 TRIMP.
+  # Extend to today so that CTL/ATL decay is visible after the last run.
+  spine_end <- max(max(daily_trimp$date), Sys.Date())
   date_spine <- tibble::tibble(
-    date = seq(min(daily_trimp$date), max(daily_trimp$date), by = "day")
+    date = seq(min(daily_trimp$date), spine_end, by = "day")
   )
 
   daily_full <- date_spine %>%
