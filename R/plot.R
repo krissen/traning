@@ -541,7 +541,10 @@ fetch.plot.recovery_hr <- function(summaries) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen recovery HR-data"))
   }
 
-  rhr_data %>%
+  has_avg_hr <- "avg_hr" %in% names(rhr_data) &&
+    any(!is.na(rhr_data$avg_hr))
+
+  p <- rhr_data %>%
     ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
     ggplot2::geom_point(
       ggplot2::aes(y = recovery_hr),
@@ -555,11 +558,38 @@ fetch.plot.recovery_hr <- function(summaries) {
     ggplot2::geom_line(
       ggplot2::aes(y = recovery_hr_rolling28),
       colour = "firebrick", linewidth = 0.9, na.rm = TRUE
-    ) +
+    )
+
+  if (has_avg_hr) {
+    # Scale avgHR onto recovery HR range for dual-axis display
+    rhr_range <- range(rhr_data$recovery_hr, na.rm = TRUE)
+    ahr_range <- range(rhr_data$avg_hr, na.rm = TRUE)
+    scale_factor <- diff(rhr_range) / max(diff(ahr_range), 1)
+    offset <- rhr_range[1] - ahr_range[1] * scale_factor
+
+    p <- p +
+      ggplot2::geom_smooth(
+        ggplot2::aes(y = avg_hr * scale_factor + offset),
+        method = "loess", formula = "y ~ x",
+        colour = "darkorange", se = FALSE, linewidth = 0.7,
+        linetype = "dashed", na.rm = TRUE
+      ) +
+      ggplot2::scale_y_continuous(
+        name = "Recovery HR (bpm)",
+        sec.axis = ggplot2::sec_axis(
+          ~ (. - offset) / scale_factor,
+          name = "Medel-HR (bpm)"
+        )
+      ) +
+      ggplot2::theme(
+        axis.title.y.right = ggplot2::element_text(colour = "darkorange"),
+        axis.text.y.right  = ggplot2::element_text(colour = "darkorange")
+      )
+  }
+
+  p <- p +
     ggplot2::ggtitle("Recovery HR efter löpning") +
-    ggplot2::labs(
-      x = NULL,
-      y = "Recovery HR (bpm)"
-    ) -> p
+    ggplot2::labs(x = NULL)
+
   return(p)
 }

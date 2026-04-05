@@ -396,9 +396,19 @@ compute_recovery_hr <- function(summaries) {
     ) %>%
     dplyr::select(sessionStart, recovery_hr_rolling28)
 
-  runs %>%
-    dplyr::left_join(rolling, by = "sessionStart") %>%
-    dplyr::select(sessionStart, distance_km, recovery_hr, recovery_hr_rolling28)
+  result <- runs %>%
+    dplyr::left_join(rolling, by = "sessionStart")
+
+  if ("avgHeartRate" %in% names(runs)) {
+    result %>%
+      dplyr::mutate(avg_hr = as.numeric(avgHeartRate)) %>%
+      dplyr::select(sessionStart, distance_km, recovery_hr,
+                    recovery_hr_rolling28, avg_hr)
+  } else {
+    result %>%
+      dplyr::select(sessionStart, distance_km, recovery_hr,
+                    recovery_hr_rolling28)
+  }
 }
 
 # Internal helper: exponentially weighted moving average (recursive).
