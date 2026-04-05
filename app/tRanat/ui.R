@@ -1,74 +1,51 @@
 library(shiny)
 library(DT)
+library(plotly)
+
+# Helper: standard tab layout with plotly + DT table
+plot_tab <- function(id, title, ...) {
+  tabPanel(title,
+    ...,
+    fluidRow(
+      column(12, plotly::plotlyOutput(paste0("plot_", id), height = "500px"))
+    ),
+    fluidRow(
+      column(12, DT::dataTableOutput(paste0("table_", id)))
+    )
+  )
+}
 
 shinyUI(
   navbarPage("tRäning",
+    header = fluidRow(
+      column(3,
+        dateRangeInput("global_daterange", NULL,
+          start = Sys.Date() - 365,
+          end   = Sys.Date(),
+          separator = "—"
+        )
+      ),
+      column(2,
+        checkboxInput("use_daterange", "Filtrera på datum", value = FALSE)
+      )
+    ),
 
     # ------------------------------------------------------------------ Månad
     navbarMenu("Månad",
-      tabPanel("Löpande månad",
-        fluidRow(
-          column(12, plotOutput("plot_monthstatus", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_monthstatus"))
-        )
-      ),
-      tabPanel("Denna månad",
-        fluidRow(
-          column(12, plotOutput("plot_month_this", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_month_this"))
-        )
-      ),
-      tabPanel("Förra månaden",
-        fluidRow(
-          column(12, plotOutput("plot_monthlast", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_monthlast"))
-        )
-      ),
-      tabPanel("Toppmånader",
-        fluidRow(
-          column(12, plotOutput("plot_monthtop", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_monthtop"))
-        )
-      )
+      plot_tab("monthstatus", "Löpande månad"),
+      plot_tab("month_this", "Denna månad"),
+      plot_tab("monthlast", "Förra månaden"),
+      plot_tab("monthtop", "Toppmånader")
     ),
 
     # --------------------------------------------------------------------- År
     navbarMenu("År",
-      tabPanel("Löpande år",
-        fluidRow(
-          column(12, plotOutput("plot_yearstatus", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_yearstatus"))
-        )
-      ),
-      tabPanel("Hela år",
-        fluidRow(
-          column(12, plotOutput("plot_yearstop", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_yearstop"))
-        )
-      )
+      plot_tab("yearstatus", "Löpande år"),
+      plot_tab("yearstop", "Hela år")
     ),
 
     # ------------------------------------------------------------------- Tempo
-    tabPanel("Tempo",
-      fluidRow(
-        column(12, plotOutput("plot_pace", height = "500px"))
-      ),
-      fluidRow(
-        column(12, DT::dataTableOutput("table_pace"))
-      )
-    ),
+    plot_tab("pace", "Tempo"),
 
     # --------------------------------------------------------------- Datumperiod
     tabPanel("Datumperiod",
@@ -81,7 +58,7 @@ shinyUI(
         )
       ),
       fluidRow(
-        column(12, plotOutput("plot_datesum", height = "500px"))
+        column(12, plotly::plotlyOutput("plot_datesum", height = "500px"))
       ),
       fluidRow(
         column(12, DT::dataTableOutput("table_datesum"))
@@ -90,54 +67,12 @@ shinyUI(
 
     # ---------------------------------------------------------------- Avancerat
     navbarMenu("Avancerat",
-      tabPanel("EF",
-        fluidRow(
-          column(12, plotOutput("plot_ef", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_ef"))
-        )
-      ),
-      tabPanel("HRE",
-        fluidRow(
-          column(12, plotOutput("plot_hre", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_hre"))
-        )
-      ),
-      tabPanel("ACWR",
-        fluidRow(
-          column(12, plotOutput("plot_acwr", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_acwr"))
-        )
-      ),
-      tabPanel("Monotoni",
-        fluidRow(
-          column(12, plotOutput("plot_monotony", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_monotony"))
-        )
-      ),
-      tabPanel("PMC",
-        fluidRow(
-          column(12, plotOutput("plot_pmc", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_pmc"))
-        )
-      ),
-      tabPanel("Recovery HR",
-        fluidRow(
-          column(12, plotOutput("plot_recovery_hr", height = "500px"))
-        ),
-        fluidRow(
-          column(12, DT::dataTableOutput("table_recovery_hr"))
-        )
-      )
+      plot_tab("ef", "EF"),
+      plot_tab("hre", "HRE"),
+      plot_tab("acwr", "ACWR"),
+      plot_tab("monotony", "Monotoni"),
+      plot_tab("pmc", "PMC"),
+      plot_tab("recovery_hr", "Recovery HR")
     )
   )
 )

@@ -19,6 +19,7 @@ Imports:
 Suggests:
     shiny,
     DT,
+    plotly,
     writexl,
     devtools,
     testthat (>= 3.0.0)
