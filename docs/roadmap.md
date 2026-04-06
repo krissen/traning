@@ -52,57 +52,6 @@
 
 ---
 
-## Phase 4h: FIT & Polar import
-
-**Goal:** Import the 2093 FIT files and 267 SRD (Polar) files that exist
-on disk but are not in summaries/myruns, extending coverage back toward
-1999.
-
-**Problem:** `trackeR::read_container()` treats FIT as XML and fails
-(FIT is binary). The old pipeline used `fittotcx` (CLI tool) to convert
-FIT → TCX before import. SRD (Polar) files have no current parser.
-
-**Data inventory:**
-- 2093 FIT files (2012–2020, plus 136 with coded names), mostly
-  duplicates of existing TCX — dedup needed via timestamp matching
-- 267 SRD files (2006), Polar format
-- 2 HST files (2006), Polar logbook format (split via `split_logbook.pl`)
-
-**Deliverables:**
-- FIT reader using `FITfileR` R package (reads FIT binary natively)
-  or batch conversion via `fittotcx`/`gpsbabel`
-- Timestamp-based deduplication against existing summaries (±120 s)
-- SRD/HST parser or conversion pipeline
-- `traning import fit` and `traning import polar` CLI commands
-- Extend `get_my_files()` to scan FIT/SRD directories
-
-**References:** Old FIT code in git history (commit `6912a02`),
-conversion script `~/bin/scripts/gor_tankagarmin.sh` (uses `fittotcx`),
-`split_logbook.pl` for HST files.
-
-**Dependencies:** None.
-
----
-
-## Refactor: Unified report function signatures
-
-**Goal:** All `report_*()` functions share the same `(summaries, n, from, to)`
-signature and use `.tail_or_daterange()` for filtering, limiting, and sorting.
-
-**Deliverables:**
-- Migrate `report_monthtop`, `report_monthstatus`, `report_monthlast`,
-  `report_yearstop`, `report_yearstatus`, `report_runs_year_month` to
-  `(summaries, n, from, to)` signature with `.tail_or_daterange()`
-- `--limit` works on all commands (currently only `report_monthtop`)
-- Remove pre-filtering in CLI layer (`summaries_filtered`) for migrated
-  commands — let the functions handle it themselves
-- Update Shiny app callers
-- Update tests
-
-**Dependencies:** None.
-
----
-
 ## Phase 4g: Aerobic decoupling
 
 **Goal:** Compare first-half vs second-half pace:HR ratio to quantify
