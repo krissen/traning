@@ -18,7 +18,7 @@
 - **Tables** — Serve report tables as structured data (JSON/JSONL ready via `save_table()`)
 - **Queries** — Date range summaries, month comparisons, year-over-year analysis
 
-**Dependencies:** Phase 5a readiness model (done), automated pipeline (5b).
+**Dependencies:** Phase 5a readiness model (done), automated pipeline (5b, done).
 
 **References:** Hermod (FastMCP + R), Vyasa, garmin-connect-mcp (27 tools).
 
