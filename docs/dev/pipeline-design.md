@@ -50,8 +50,9 @@ FastAPI /v1/health (kailash:8421)
   ▼
 health_export/metrics/
   │ git add + git diff --cached --quiet + git commit
+  │ background: Rscript cli.R --import-health
   ▼
-traning-data repo (local commits)
+health_daily.RData (cache, available to Vayu)
   │ traning-push.timer (daily 03:00)
   ▼
 GitHub (krissen/traning-data)
@@ -87,6 +88,7 @@ FastAPI /v1/trigger/garmin (kailash:8421)
 traning fetch garmin
   │ Garmin Connect API → summary JSON + details JSON + TCX
   │ git add + git commit
+  │ then: Rscript cli.R --import (rebuild summaries.RData)
   ▼
 traning-data repo
 ```
@@ -143,7 +145,7 @@ Fail-safe: notification errors are logged but never block data operations.
 All operations from kedar via `deploy.sh`:
 
 ```
-deploy.sh code      git pull + pip install + systemd restart
+deploy.sh code      git pull + pip install + R deps + systemd restart
 deploy.sh secrets   SCP traning-env.local → /etc/traning/env
 deploy.sh tokens    SCP .garmin_tokens/ → traning-data on kailash
 deploy.sh status    systemctl + journalctl overview
@@ -153,6 +155,24 @@ deploy.sh all       code + secrets + tokens + enable services
 Code is deployed via git (not rsync). Both kailash and kedar work from
 the same GitHub remote. Sensitive files (credentials, tokens, .Renviron)
 are never committed — transferred via SCP only.
+
+### R dependencies
+
+`deploy.sh code` runs `scripts/install_r_deps.sh` which:
+1. Parses Imports + server-critical Suggests from DESCRIPTION
+2. Tries pacman (Arch binaries) first — currently none available
+3. Falls back to CRAN source install with `Ncpus=4`
+4. Verifies all packages installed
+
+System dependencies required (pacman/paru): `gdal`, `udunits` (AUR).
+
+### Generated `.Renviron`
+
+`deploy.sh secrets` writes `~/dev/traning/.Renviron` with:
+- `TRANING_DATA` — path to data repo
+- `TRANING_OPEN=false` — suppress interactive plot windows
+- `R_LIBS_USER=~/R/library` — user library (system `/usr/lib/R/library` is not writable)
+- `LANG=sv_SE.utf8` — UTF-8 locale for Swedish column names
 
 ## Home Assistant configuration
 

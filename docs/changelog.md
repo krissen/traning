@@ -1,5 +1,40 @@
 # tRäning — Changelog
 
+## 2026-04-06 — Pipeline and deploy fixes
+
+### Import pipeline
+- **Auto-import after data receive:** R import now runs automatically
+  after every Garmin fetch (webhook + timer) and HAE data push (health +
+  workouts). Previously, raw data was fetched but never parsed into
+  RData cache on kailash.
+- **Batch checkpoints:** `get_new_workouts()` saves cache every 500
+  files during import, preventing data loss on crash. Critical for
+  first-time imports (~4500 files).
+- **Fixed NULL assignment crash:** `myruns[[i]] <- NULL` silently does
+  nothing in R (NULL removes list elements), causing subscript-out-of-bounds
+  on next access. Now uses intermediate variable.
+- **Fixed empty summaries on first import:** `basename(summaries$file)`
+  crashed when summaries had no `file` column (fresh install).
+- **Stripped `trackeRdataSummary` class on load:** trackeR's `[` method
+  expects exactly 6 columns, breaking all dplyr operations. Converted
+  to plain `data.frame` at load time.
+
+### Deploy (`deploy.sh`)
+- **R dependency install:** `deploy.sh code` now runs
+  `scripts/install_r_deps.sh` after Python deps. Script reads
+  DESCRIPTION, checks pacman (Arch) first, falls back to CRAN with
+  parallel compilation.
+- **`.Renviron` generation:** Now includes `R_LIBS_USER=~/R/library`
+  (user library for R packages not in system library) and
+  `LANG=sv_SE.utf8` (prevents encoding warnings for Swedish column
+  names).
+
+### New files
+- `scripts/install_r_deps.sh` — R dependency installer with
+  pacman-first strategy and `--check` dry-run mode
+
+---
+
 ## 2026-04-06 — Phase 5c: Vayu MCP server
 
 ### MCP server (`python/traning_cli/mcp/`)
