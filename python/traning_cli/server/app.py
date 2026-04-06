@@ -27,18 +27,10 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
 
-    @application.middleware("http")
-    async def log_requests(request: Request, call_next):
-        log.info(">> %s %s (headers: %s)", request.method, request.url.path,
-                 dict(request.headers))
-        response = await call_next(request)
-        log.info("<< %s %s → %d", request.method, request.url.path,
-                 response.status_code)
-        return response
-
     @application.get("/health")
     async def healthcheck():
         return {"status": "ok"}
+
 
     @application.get("/v1/status", dependencies=[Depends(require_api_key)])
     async def status():
