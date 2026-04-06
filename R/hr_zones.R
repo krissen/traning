@@ -503,7 +503,50 @@ load_zone_distribution <- function(summaries,
       vt2_pct       = vt2_pct
     )
     save(zone_cache, file = cache_path)
-    message("Zoncache sparad: ", nrow(per_activity), " sessioner.")
+    message("Zoncache sparad: ", nrow(per_activity), " sessioner (per-sekund).")
+  }
+
+  # --- Garmin JSON fallback for sessions without per-second data ---
+  per_activity <- per_activity %>%
+    dplyr::mutate(source = "persec")
+
+  if (.has_garmin_zones(summaries)) {
+    garmin_dates <- per_activity$sessionStart
+    garmin_fallback <- summaries %>%
+      dplyr::filter(
+        stringr::str_detect(sport, "running"),
+        !(as.Date(sessionStart) %in% garmin_dates)
+      ) %>%
+      dplyr::filter(dplyr::if_all(
+        dplyr::all_of(paste0("garmin_hrTimeInZone_", 1:5)), ~ !is.na(.x)
+      )) %>%
+      dplyr::mutate(
+        sessionStart = as.Date(sessionStart),
+        distance_km  = distance / 1000,
+        z1_sec   = as.numeric(garmin_hrTimeInZone_1) +
+                   as.numeric(garmin_hrTimeInZone_2),
+        z2_sec   = as.numeric(garmin_hrTimeInZone_3),
+        z3_sec   = as.numeric(garmin_hrTimeInZone_4) +
+                   as.numeric(garmin_hrTimeInZone_5),
+        total_sec = z1_sec + z2_sec + z3_sec
+      ) %>%
+      dplyr::filter(total_sec > 0) %>%
+      dplyr::mutate(
+        z1_pct = 100 * z1_sec / total_sec,
+        z2_pct = 100 * z2_sec / total_sec,
+        z3_pct = 100 * z3_sec / total_sec,
+        source = "garmin"
+      ) %>%
+      dplyr::select(sessionStart, distance_km,
+                    z1_pct, z2_pct, z3_pct,
+                    z1_sec, z2_sec, z3_sec, total_sec, source)
+
+    if (nrow(garmin_fallback) > 0) {
+      message("Garmin JSON-fallback: ", nrow(garmin_fallback),
+              " sessioner utan per-sekundsdata.")
+      per_activity <- dplyr::bind_rows(per_activity, garmin_fallback) %>%
+        dplyr::arrange(sessionStart)
+    }
   }
 
   # Build monthly aggregation

@@ -2,6 +2,15 @@
 # Requires: compute_zone_distribution(), compute_polarization_index(),
 #           cross_validate_zones() from R/hr_zones.R
 
+# Auto-select date breaks to avoid label overlap
+.auto_date_breaks <- function(dates) {
+  span_days <- as.numeric(diff(range(dates, na.rm = TRUE)))
+  if (span_days > 365 * 10) return("2 years")
+  if (span_days > 365 * 4)  return("1 year")
+  if (span_days > 365 * 2)  return("6 months")
+  "3 months"
+}
+
 #' Stacked bar chart of Seiler 3-zone distribution over time
 #'
 #' Aggregates training time into Seiler's three intensity zones (low,
@@ -97,7 +106,10 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
       labels = function(x) paste0(x, " %")
     ) +
     ggplot2::coord_cartesian(ylim = c(0, 100)) +
-    ggplot2::scale_x_date(date_labels = "%Y-%m", date_breaks = "3 months") +
+    ggplot2::scale_x_date(
+      date_labels = "%Y-%m",
+      date_breaks = .auto_date_breaks(long$year_month)
+    ) +
     ggplot2::ggtitle("Zonf\u00f6rdelning per m\u00e5nad (Seiler 3-zon)") +
     ggplot2::labs(x = NULL, y = "Andel (%)") +
     ggplot2::theme(
@@ -190,7 +202,10 @@ fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
       linewidth = 0.7,
       na.rm     = TRUE
     ) +
-    ggplot2::scale_x_date(date_labels = "%Y-%m", date_breaks = "3 months") +
+    ggplot2::scale_x_date(
+      date_labels = "%Y-%m",
+      date_breaks = .auto_date_breaks(pi_data$year_month)
+    ) +
     ggplot2::ggtitle("Polariseringsindex (Treff 2019)") +
     ggplot2::labs(x = NULL, y = "PI") +
     ggplot2::theme(
