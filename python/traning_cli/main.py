@@ -27,6 +27,29 @@ def _run(cmd):
     return result.returncode
 
 
+def _has_remote(data_dir: Path) -> bool:
+    """Check if the data repo has a git remote configured."""
+    result = subprocess.run(
+        ["git", "remote"],
+        cwd=data_dir, capture_output=True, text=True,
+    )
+    return bool(result.stdout.strip())
+
+
+def _maybe_pull(data_dir: Path) -> None:
+    """Pull from remote if one is configured. Silent on failure."""
+    if not _has_remote(data_dir):
+        return
+    result = subprocess.run(
+        ["git", "pull", "--ff-only"],
+        cwd=data_dir, capture_output=True,
+    )
+    if result.returncode == 0:
+        log.info("Pulled latest data from remote")
+    else:
+        log.warning("git pull failed: %s", result.stderr.decode().strip())
+
+
 def _get_version():
     """Read version from R DESCRIPTION file."""
     desc = TRANING_ROOT / "DESCRIPTION"
@@ -266,6 +289,8 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
     except (EnvironmentError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
+    _maybe_pull(data_dir)
+
     try:
         tokens = token_dir(data_dir)
         client = authenticate(tokens, force_reauth=reauth, method=login_method)
@@ -323,6 +348,8 @@ def sync_health(server, inbox, days_back, fetch_all, force, dry_run, verbose):
     except (EnvironmentError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
+    _maybe_pull(data_dir)
+
     do_server = server or (not server and not inbox)
     do_inbox = inbox or (not server and not inbox)
 
@@ -378,6 +405,8 @@ def sync_all(dry_run, reauth, verbose):
         data_dir = get_data_dir()
     except (EnvironmentError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
+
+    _maybe_pull(data_dir)
 
     # --- Garmin ---
     click.echo("=== Garmin ===")
@@ -630,3 +659,40 @@ def shiny(port):
     """Start the tRanat Shiny app."""
     r_expr = f'shiny::runApp("{APP_DIR}", port={port}, launch.browser=TRUE)'
     _exec(["Rscript", "-e", r_expr])
+
+
+# -- server -----------------------------------------------------------------
+
+@cli.command()
+@click.option("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
+@click.option("--port", type=int, default=8421, help="Port (default: 8421)")
+@click.option("--reload", is_flag=True, help="Auto-reload on code changes (dev)")
+def serve(host, port, reload):
+    """Start the health data receiver (FastAPI)."""
+    import uvicorn
+    uvicorn.run("traning_cli.server:app", host=host, port=port, reload=reload)
+
+
+# -- pull -------------------------------------------------------------------
+
+@cli.command()
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+def pull(verbose):
+    """Pull latest data from GitHub remote."""
+    from .garmin.utils import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+    except (EnvironmentError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+
+    if not _has_remote(data_dir):
+        raise click.ClickException("Inget remote konfigurerat för data-repot")
+
+    result = subprocess.run(
+        ["git", "pull", "--ff-only"],
+        cwd=data_dir, capture_output=not verbose,
+    )
+    if result.returncode != 0:
+        raise click.ClickException("git pull misslyckades")
+    click.echo("Data uppdaterad")
