@@ -43,6 +43,11 @@ my_dbs_load <- function(db_summaries, db_myruns) {
     myruns <- list()
   }
 
+  # Strip trackeRdataSummary class — its [ method conflicts with dplyr
+  if (inherits(summaries, "trackeRdataSummary")) {
+    class(summaries) <- "data.frame"
+  }
+
   my_templist <- list()
   my_templist[["summaries"]] <- summaries
   my_templist[["myruns"]] <- myruns
