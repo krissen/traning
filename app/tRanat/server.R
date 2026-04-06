@@ -238,4 +238,26 @@ shinyServer(function(input, output, session) {
     )
   })
 
+  # -------------------------------------------------------------- Decoupling
+  output$plot_decoupling <- renderPlot({
+    tryCatch(
+      fetch.plot.decoupling(summaries, myruns,
+                            from = dr_from(), to = dr_to(),
+                            decoupling_data = decoupling_data),
+      error = function(e) {
+        ggplot2::ggplot() +
+          ggplot2::ggtitle(paste("Ej tillgänglig:", e$message))
+      }
+    )
+  })
+  output$table_decoupling <- DT::renderDataTable({
+    tryCatch(
+      report_decoupling(from = dr_from(), to = dr_to(),
+                        decoupling_data = decoupling_data),
+      error = function(e) {
+        data.frame(fel = paste("Ej tillgänglig:", e$message))
+      }
+    )
+  })
+
 })

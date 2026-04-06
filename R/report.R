@@ -412,6 +412,48 @@ report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
     .tail_or_daterange(n, from, to, "Datum")
 }
 
+#' Aerobic Decoupling report — recent qualifying runs
+#'
+#' Shows per-run decoupling percentage (pace:HR drift between first and second
+#' half) with 28-day rolling mean.  Requires per-second data from myruns.
+#'
+#' @param decoupling_data Tibble from \code{compute_decoupling()} or
+#'   \code{load_decoupling()}.  If NULL, computed on the fly from
+#'   \code{summaries} and \code{myruns}.
+#' @param summaries Summaries tibble (only used if \code{decoupling_data} is NULL).
+#' @param myruns Myruns list (only used if \code{decoupling_data} is NULL).
+#' @inheritParams report_ef
+#' @return Tibble
+#' @export
+report_decoupling <- function(summaries = NULL, myruns = NULL,
+                              n = 28, from = NULL, to = NULL,
+                              decoupling_data = NULL) {
+  if (is.null(decoupling_data)) {
+    decoupling_data <- compute_decoupling(summaries, myruns)
+  }
+
+  if (nrow(decoupling_data) == 0) {
+    return(tibble::tibble(
+      Datum = as.Date(character(0)), Km = numeric(0),
+      Tempo = character(0), HR = numeric(0),
+      `Dekopp %` = numeric(0), `Dekopp 28d` = numeric(0),
+      Temp = numeric(0)))
+  }
+
+  decoupling_data %>%
+    dplyr::mutate(
+      Datum       = sessionStart,
+      Km          = round(distance_km, 1),
+      Tempo       = vapply(avg_pace, dec_to_mmss, character(1)),
+      HR          = round(avg_hr, 0),
+      `Dekopp %`  = round(decoupling_pct, 1),
+      `Dekopp 28d` = round(decoupling_rolling28, 1),
+      Temp        = round(temperature, 0)
+    ) %>%
+    dplyr::select(Datum, Km, Tempo, HR, `Dekopp %`, `Dekopp 28d`, Temp) %>%
+    .tail_or_daterange(n, from, to, "Datum")
+}
+
 #' Readiness report — daily composite score with components
 #'
 #' @param health_daily Long-format tibble from \code{load_health_data()}.

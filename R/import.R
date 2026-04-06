@@ -178,3 +178,96 @@ repair_myruns <- function(files, summaries, myruns, verbose = FALSE) {
 
   list(summaries = summaries, myruns = myruns)
 }
+
+#' Repair myruns entries with missing per-second heart rate data
+#'
+#' Finds sessions where summaries has avgHeartRateMoving > 0 but the
+#' corresponding myruns entry has no usable HR values (all NA or zero).
+#' Re-parses the original TCX file to recover the data.
+#'
+#' This addresses a historical issue where trackeR silently dropped HR
+#' data during import (likely a bug in an older trackeR version or a
+#' TCX format variant it didn't handle well at the time).
+#'
+#' @param files Character vector of TCX file paths.
+#' @param summaries Summaries data frame.
+#' @param myruns List of trackeRdata objects.
+#' @param verbose Logical.  Print progress messages.
+#' @return Named list with \code{$summaries} (unchanged) and \code{$myruns}
+#'   (repaired entries).
+#' @export
+repair_myruns_hr <- function(files, summaries, myruns, verbose = FALSE) {
+  n_summaries <- nrow(summaries)
+  file_basenames <- basename(files)
+
+  # Find sessions with summary HR but no per-second HR
+  problem_indices <- which(vapply(seq_len(n_summaries), function(i) {
+    has_summary_hr <- !is.na(summaries$avgHeartRateMoving[[i]]) &&
+                      as.numeric(summaries$avgHeartRateMoving[[i]]) > 0
+    if (!has_summary_hr) return(FALSE)
+    if (i > length(myruns) || is.null(myruns[[i]])) return(FALSE)
+    df <- tryCatch(as.data.frame(myruns[[i]]), error = function(e) NULL)
+    if (is.null(df) || !"heart_rate" %in% names(df)) return(TRUE)
+    n_hr <- sum(!is.na(df$heart_rate) & df$heart_rate > 0)
+    n_hr == 0
+  }, logical(1)))
+
+  n_problem <- length(problem_indices)
+  if (n_problem == 0) {
+    message("myruns HR: inga sessioner att reparera.")
+    return(list(summaries = summaries, myruns = myruns))
+  }
+
+  message("myruns HR-reparation: ", n_problem,
+          " sessioner med summary-HR men saknar per-sekund-HR ...")
+  n_repaired <- 0L
+  n_failed <- 0L
+  n_no_file <- 0L
+
+  for (idx in seq_along(problem_indices)) {
+    i <- problem_indices[idx]
+
+    if (idx %% 100 == 0 || idx == 1) {
+      message("  ", idx, " / ", n_problem, " ...")
+    }
+
+    summary_file <- summaries$file[i]
+    if (is.na(summary_file) || nchar(summary_file) == 0) {
+      n_no_file <- n_no_file + 1L
+      next
+    }
+
+    match_idx <- which(file_basenames == basename(summary_file))
+    if (length(match_idx) == 0) {
+      n_no_file <- n_no_file + 1L
+      next
+    }
+
+    file_path <- files[match_idx[1]]
+
+    new_data <- tryCatch(
+      trackeR::read_container(file_path),
+      error = function(e) NULL
+    )
+
+    if (is.null(new_data)) {
+      n_failed <- n_failed + 1L
+      next
+    }
+
+    # Verify the re-parsed data actually has HR
+    new_df <- tryCatch(as.data.frame(new_data), error = function(e) NULL)
+    if (!is.null(new_df) && "heart_rate" %in% names(new_df) &&
+        sum(!is.na(new_df$heart_rate) & new_df$heart_rate > 0) > 0) {
+      myruns[[i]] <- new_data
+      n_repaired <- n_repaired + 1L
+    } else {
+      n_failed <- n_failed + 1L
+    }
+  }
+
+  message("myruns HR-reparation klar: ", n_repaired, " reparerade, ",
+          n_failed, " misslyckade, ", n_no_file, " utan matchande fil.")
+
+  list(summaries = summaries, myruns = myruns)
+}

@@ -160,8 +160,8 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
       strip.text = ggplot2::element_text(face = "bold")
     ) -> p
   if (!is.null(from) || !is.null(to)) {
-    xlim <- c(from, to)
-    p <- p + ggplot2::coord_cartesian(xlim = as.Date(xlim))
+    xlim <- as.Date(c(from %||% NA, to %||% NA))
+    p <- p + ggplot2::coord_cartesian(xlim = xlim)
   }
   return(p)
 }
@@ -216,8 +216,8 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL) {
       y = "Hjärtslagskostnad (slag/km)"
     ) -> p
   if (!is.null(from) || !is.null(to)) {
-    xlim <- c(from, to)
-    p <- p + ggplot2::coord_cartesian(xlim = as.Date(xlim))
+    xlim <- as.Date(c(from %||% NA, to %||% NA))
+    p <- p + ggplot2::coord_cartesian(xlim = xlim)
   }
   return(p)
 }
@@ -618,8 +618,134 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL) {
     ggplot2::labs(x = NULL)
 
   if (!is.null(from) || !is.null(to)) {
-    xlim <- c(from, to)
-    p <- p + ggplot2::coord_cartesian(xlim = as.Date(xlim))
+    xlim <- as.Date(c(from %||% NA, to %||% NA))
+    p <- p + ggplot2::coord_cartesian(xlim = xlim)
+  }
+
+  return(p)
+}
+
+#' Two-panel plot of Aerobic Decoupling over time
+#'
+#' Upper panel: per-run decoupling percentage (scatter + 28-day rolling mean)
+#' with threshold bands (<3% green, 3-5% yellow, 5-8% orange, >8% red).
+#' Lower panel: weekly km bars for volume context.
+#'
+#' @param decoupling_data Tibble from \code{compute_decoupling()} or
+#'   \code{load_decoupling()}.  If NULL, computed from summaries + myruns.
+#' @param summaries Summaries tibble (used for weekly km bars and as fallback
+#'   if \code{decoupling_data} is NULL).
+#' @param myruns Myruns list (only needed if \code{decoupling_data} is NULL).
+#' @param from Date or character.  Optional left x-axis limit.
+#' @param to Date or character.  Optional right x-axis limit.
+#' @return ggplot2 object
+#' @export
+fetch.plot.decoupling <- function(summaries, myruns = NULL,
+                                  from = NULL, to = NULL,
+                                  decoupling_data = NULL) {
+  if (is.null(decoupling_data)) {
+    decoupling_data <- compute_decoupling(summaries, myruns)
+  }
+
+  if (nrow(decoupling_data) == 0) {
+    message("Ingen decoupling-data tillg\u00e4nglig.")
+    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen decoupling-data"))
+  }
+
+  # Weekly km for volume panel
+  acwr_data <- compute_acwr(summaries) %>%
+    dplyr::filter(
+      date >= min(decoupling_data$sessionStart),
+      date <= max(decoupling_data$sessionStart)
+    )
+
+  # Decoupling panel data
+  dc_panel <- decoupling_data %>%
+    dplyr::select(sessionStart, decoupling_pct, decoupling_rolling28) %>%
+    tidyr::pivot_longer(
+      cols = c(decoupling_pct, decoupling_rolling28),
+      names_to = "metrik", values_to = "value"
+    ) %>%
+    dplyr::mutate(
+      panel = factor("Decoupling (%)",
+                     levels = c("Decoupling (%)", "Veckokilometer"))
+    )
+
+  # Volume panel data
+  km_panel <- acwr_data %>%
+    dplyr::select(date, weekly_km) %>%
+    dplyr::rename(sessionStart = date) %>%
+    dplyr::mutate(
+      metrik = "weekly_km",
+      value = weekly_km,
+      panel = factor("Veckokilometer",
+                     levels = c("Decoupling (%)", "Veckokilometer"))
+    ) %>%
+    dplyr::select(sessionStart, metrik, value, panel)
+
+  combined <- dplyr::bind_rows(dc_panel, km_panel)
+
+  combined %>%
+    ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
+    # Threshold bands (only visible in decoupling panel)
+    ggplot2::annotate("rect",
+      xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 3,
+      fill = "#27ae60", alpha = 0.06
+    ) +
+    ggplot2::annotate("rect",
+      xmin = -Inf, xmax = Inf, ymin = 3, ymax = 5,
+      fill = "#f1c40f", alpha = 0.06
+    ) +
+    ggplot2::annotate("rect",
+      xmin = -Inf, xmax = Inf, ymin = 5, ymax = 8,
+      fill = "#e67e22", alpha = 0.06
+    ) +
+    ggplot2::annotate("rect",
+      xmin = -Inf, xmax = Inf, ymin = 8, ymax = Inf,
+      fill = "#e74c3c", alpha = 0.06
+    ) +
+    ggplot2::geom_hline(yintercept = c(3, 5, 8),
+      colour = "grey70", linetype = "dotted", linewidth = 0.4
+    ) +
+    # Decoupling points
+    ggplot2::geom_point(
+      data = dplyr::filter(combined, metrik == "decoupling_pct"),
+      ggplot2::aes(y = value),
+      alpha = 0.4, size = 1.5, colour = "grey40"
+    ) +
+    # Loess smoother
+    ggplot2::geom_smooth(
+      data = dplyr::filter(combined, metrik == "decoupling_pct"),
+      ggplot2::aes(y = value),
+      method = "loess", formula = "y ~ x",
+      colour = "steelblue", se = FALSE, linewidth = 0.8
+    ) +
+    # 28-day rolling mean
+    ggplot2::geom_line(
+      data = dplyr::filter(combined, metrik == "decoupling_rolling28"),
+      ggplot2::aes(y = value),
+      colour = "firebrick", linewidth = 0.9, na.rm = TRUE
+    ) +
+    # Weekly km bars
+    ggplot2::geom_col(
+      data = dplyr::filter(combined, metrik == "weekly_km"),
+      ggplot2::aes(y = value),
+      fill = "steelblue", alpha = 0.7, width = 1
+    ) +
+    ggplot2::facet_grid(
+      rows = ggplot2::vars(panel),
+      scales = "free_y",
+      space = "fixed"
+    ) +
+    ggplot2::ggtitle("Aerob decoupling \u00f6ver tid") +
+    ggplot2::labs(x = NULL, y = NULL) +
+    ggplot2::theme(
+      strip.text = ggplot2::element_text(face = "bold")
+    ) -> p
+
+  if (!is.null(from) || !is.null(to)) {
+    xlim <- as.Date(c(from %||% NA, to %||% NA))
+    p <- p + ggplot2::coord_cartesian(xlim = xlim)
   }
 
   return(p)

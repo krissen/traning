@@ -108,7 +108,11 @@ shinyUI(
       plot_tab("acwr", "ACWR"),
       plot_tab("monotony", "Monotoni"),
       plot_tab("pmc", "PMC"),
-      plot_tab("recovery_hr", "Recovery HR")
+      plot_tab("recovery_hr", "Recovery HR"),
+      tabPanel("Decoupling",
+        plotOutput("plot_decoupling", height = "500px"),
+        DT::dataTableOutput("table_decoupling")
+      )
     )
   )
 )
