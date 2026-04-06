@@ -72,6 +72,25 @@ per-second HR from myruns (3412 activities, full history).
 
 ---
 
+## Refactor: Unified report function signatures
+
+**Goal:** All `report_*()` functions share the same `(summaries, n, from, to)`
+signature and use `.tail_or_daterange()` for filtering, limiting, and sorting.
+
+**Deliverables:**
+- Migrate `report_monthtop`, `report_monthstatus`, `report_monthlast`,
+  `report_yearstop`, `report_yearstatus`, `report_runs_year_month` to
+  `(summaries, n, from, to)` signature with `.tail_or_daterange()`
+- `--limit` works on all commands (currently only `report_monthtop`)
+- Remove pre-filtering in CLI layer (`summaries_filtered`) for migrated
+  commands — let the functions handle it themselves
+- Update Shiny app callers
+- Update tests
+
+**Dependencies:** None.
+
+---
+
 ## Phase 4g: Aerobic decoupling
 
 **Goal:** Compare first-half vs second-half pace:HR ratio to quantify

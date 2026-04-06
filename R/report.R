@@ -61,8 +61,8 @@ report_monthtop <- function(summaries, n = 10) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(`Km, tot`, .by_group = FALSE) %>%
-    utils::tail(n = n) -> month_top
+    dplyr::arrange(dplyr::desc(`Km, tot`)) %>%
+    utils::head(n = n) -> month_top
 
   return(month_top)
 }
@@ -96,7 +96,7 @@ report_runs_year_month <- function(summaries,
       'HR' = round(avgHeartRateMoving, digits = 0)
     ) %>%
     dplyr::select(`År`, `Mån`, `Dag`, Km, Pace, HR) %>%
-    dplyr::arrange(`Dag`) -> runs_year_month
+    dplyr::arrange(dplyr::desc(`Dag`)) -> runs_year_month
 
   return(runs_year_month)
 }
@@ -136,7 +136,7 @@ report_monthlast <- function(summaries) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(`Km/dag`, .by_group = FALSE) -> month_summaries_last
+    dplyr::arrange(dplyr::desc(`År`)) -> month_summaries_last
 
   return(month_summaries_last)
 }
@@ -164,7 +164,7 @@ report_yearstop <- function(summaries) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(`Km/dag`, .by_group = FALSE) -> year_summaries_til_day
+    dplyr::arrange(dplyr::desc(`År`)) -> year_summaries_til_day
 
   return(year_summaries_til_day)
 }
@@ -194,7 +194,7 @@ report_yearstatus <- function(summaries) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(`Km/dag`, .by_group = FALSE) -> year_summaries_til_day
+    dplyr::arrange(dplyr::desc(`År`)) -> year_summaries_til_day
 
   return(year_summaries_til_day)
 }
@@ -227,7 +227,7 @@ report_monthstatus <- function(summaries) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(`Km/dag`, .by_group = FALSE) -> month_summaries_til_day
+    dplyr::arrange(dplyr::desc(`År`)) -> month_summaries_til_day
 
   return(month_summaries_til_day)
 }
@@ -244,6 +244,8 @@ report_monthstatus <- function(summaries) {
   } else {
     data <- utils::tail(data, n = n)
   }
+  # Newest first — the user reads top-to-bottom
+  data <- dplyr::arrange(data, dplyr::desc(.data[[date_col]]))
   data
 }
 
@@ -357,6 +359,46 @@ report_recovery_hr <- function(summaries, n = 28, from = NULL, to = NULL) {
     .tail_or_daterange(n, from, to, "Datum")
 }
 
+#' HR zone distribution report — monthly Seiler 3-zone percentages
+#'
+#' Returns monthly zone distribution with Polarization Index.  Uses Garmin
+#' Connect hrTimeInZone data mapped to Seiler 3-zone model (Z1 = low,
+#' Z2 = threshold, Z3 = high).
+#'
+#' @inheritParams report_ef
+#' @return Tibble with monthly zone distribution and PI
+#' @export
+report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL) {
+  zone_data <- compute_zone_distribution(summaries)
+
+  if (nrow(zone_data$monthly) == 0) {
+    return(tibble::tibble(
+      Datum = as.Date(character(0)),
+      `Z1 %` = numeric(0), `Z2 %` = numeric(0), `Z3 %` = numeric(0),
+      PI = numeric(0), Turer = integer(0), `Tot min` = numeric(0)))
+  }
+
+  pi_data <- compute_polarization_index(zone_data)
+
+  pi_data %>%
+    dplyr::mutate(
+      Datum     = as.Date(paste0(year_month, "-01")),
+      `Z1 %`    = round(z1_pct, 1),
+      `Z2 %`    = round(z2_pct, 1),
+      `Z3 %`    = round(z3_pct, 1),
+      PI        = round(pi, 2),
+      Turer     = n_activities
+    ) %>%
+    dplyr::left_join(
+      zone_data$monthly %>%
+        dplyr::select(year_month, total_min),
+      by = "year_month"
+    ) %>%
+    dplyr::mutate(`Tot min` = round(total_min, 0)) %>%
+    dplyr::select(Datum, `Z1 %`, `Z2 %`, `Z3 %`, PI, Turer, `Tot min`) %>%
+    .tail_or_daterange(n, from, to, "Datum")
+}
+
 #' Readiness report — daily composite score with components
 #'
 #' @param health_daily Long-format tibble from \code{load_health_data()}.
@@ -393,6 +435,5 @@ report_readiness <- function(health_daily, summaries, n = 14,
     dplyr::select(Datum, Beredskap, Status, `Ln RMSSD`, `HRV z`,
                   Vilopuls, `VP avvik`, `Sömn`, TRIMP, TSB,
                   Kvalitet) |>
-    .tail_or_daterange(n, from, to, "Datum") |>
-    dplyr::arrange(dplyr::desc(Datum))
+    .tail_or_daterange(n, from, to, "Datum")
 }

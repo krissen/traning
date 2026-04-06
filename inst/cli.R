@@ -68,6 +68,9 @@ my_options <- list(
   make_option("--recovery-hr",
     type = "logical", action = "store_true", default = FALSE,
     help = "Recovery Heart Rate trend (requires Garmin JSON import)"),
+  make_option("--hr-zones",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "HR zone distribution and Polarization Index (Seiler 3-zone)"),
   make_option("--readiness",
     type = "logical", action = "store_true", default = FALSE,
     help = "Daily readiness score (Apple Watch + Garmin fusion)"),
@@ -123,6 +126,7 @@ do_acwr         <- options$acwr
 do_monotony     <- options$monotony
 do_pmc          <- options$pmc
 do_recovery_hr  <- options$`recovery-hr`
+do_hr_zones     <- options$`hr-zones`
 do_readiness    <- options$readiness
 do_import_health <- options$`import-health`
 do_force        <- options$force
@@ -188,7 +192,7 @@ if (do_import) {
 }
 
 # --- Augment with Garmin JSON data (if needed) ---
-needs_garmin <- do_recovery_hr
+needs_garmin <- do_recovery_hr || do_hr_zones
 if (needs_garmin && dir.exists(gc_json_dir)) {
   garmin_data <- load_garmin_json(gc_json_dir)
   summaries <- augment_summaries(summaries, garmin_data)
@@ -285,7 +289,7 @@ if (do_year_top) {
 any_report <- do_month_top || do_month_running || do_month_this ||
   do_month_last || do_year_running || do_year_top || do_total_pace ||
   do_ef || do_hre || do_acwr || do_monotony || do_pmc || do_recovery_hr ||
-  do_readiness
+  do_readiness || do_hr_zones
 
 if (!is.null(options$datesum) || (has_daterange && !any_report)) {
   dr_from <- date_range$from
@@ -379,6 +383,15 @@ if (do_readiness) {
                     n = do_limit %||% 14L,
                     from = date_range$from, to = date_range$to), "readiness")
     }
+  }
+}
+
+if (do_hr_zones) {
+  if (do_plot) {
+    emit_plot(fetch.plot.hr_zones(summaries, from = date_range$from, to = date_range$to), "hr-zones")
+  } else {
+    emit_table(report_hr_zones(summaries, n = do_limit %||% 12L,
+                  from = date_range$from, to = date_range$to), "hr-zones")
   }
 }
 

@@ -531,6 +531,13 @@ def recovery_hr(show_plot, after, before, span, output, fmt, no_open, limit):
     _r_report("--recovery-hr", show_plot, after, before, span, limit, output, fmt, no_open)
 
 
+@cli.command(name="zones")
+@report_options
+def hr_zones(show_plot, after, before, span, output, fmt, no_open, limit):
+    """HR zone distribution and Polarization Index (Seiler 3-zone)."""
+    _r_report("--hr-zones", show_plot, after, before, span, limit, output, fmt, no_open)
+
+
 # -- datesum ----------------------------------------------------------------
 
 @cli.command()
