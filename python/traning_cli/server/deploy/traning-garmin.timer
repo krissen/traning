@@ -1,0 +1,9 @@
+[Unit]
+Description=Garmin fetch polling (every 30 min, 06-22)
+
+[Timer]
+OnCalendar=*-*-* 06..22:00,30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

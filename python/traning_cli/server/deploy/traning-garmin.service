@@ -1,0 +1,12 @@
+[Unit]
+Description=tRäning Garmin fetch (oneshot)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=krisniem
+EnvironmentFile=/etc/traning/env
+WorkingDirectory=/home/krisniem/traning
+ExecStart=/home/krisniem/traning/python/.venv/bin/traning fetch garmin --login-method browser
+StandardOutput=journal
+StandardError=journal
