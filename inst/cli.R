@@ -188,7 +188,8 @@ rm(my_templist)
 if (do_import) {
   files <- get_my_files(mytcxpath)
   summaries_oldlength <- dplyr::count(summaries)
-  my_templist <- get_new_workouts(files, summaries, myruns, verbose = do_verbose)
+  my_templist <- get_new_workouts(files, summaries, myruns, verbose = do_verbose,
+                                  db_summaries = db_summaries, db_myruns = db_myruns)
   summaries <- my_templist[["summaries"]]
   myruns <- my_templist[["myruns"]]
   rm(my_templist)

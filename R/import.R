@@ -71,11 +71,14 @@ get_my_files <- function(mytcxpath) {
 #' @param verbose Logical, print progress messages (default FALSE)
 #' @return List with elements "summaries" and "myruns"
 #' @export
-get_new_workouts <- function(files, summaries, myruns, verbose = FALSE) {
+get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
+                             batch_size = 500,
+                             db_summaries = NULL, db_myruns = NULL) {
   # Match on basename to handle relative vs absolute path mismatches
   existing_basenames <- if ("file" %in% names(summaries))
     basename(summaries$file[!is.na(summaries$file)]) else character(0)
-  for (i in 1:length(files)) {
+  n_imported <- 0
+  for (i in seq_along(files)) {
     thefile <- files[[i]]
     if (basename(thefile) %in% existing_basenames) {
       if (verbose) {
@@ -85,20 +88,29 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE) {
       if (verbose) {
         cat("Läser in ", basename(files[[i]]), " ... ", sep = "")
       }
-      myruns[[i]] <- tryCatch({
+      parsed <- tryCatch({
         trackeR::read_container(files[[i]])
       }, error = function(e) {
         warning("Kunde inte läsa: ", basename(files[[i]]),
                 " (", conditionMessage(e), ")", call. = FALSE)
         NULL
       })
-      if (is.null(myruns[[i]])) next
+      if (is.null(parsed)) next
+      myruns[[i]] <- parsed
       if (verbose) cat("OK\n")
       run_summary <- summary(myruns[[i]])
       run_summary <- add_my_columns(run_summary)
       summaries <- rbind(summaries, run_summary,
                          deparse.level = 0,
                          make.row.names = FALSE)
+      n_imported <- n_imported + 1
+
+      # Checkpoint: save every batch_size imports
+      if (n_imported %% batch_size == 0 &&
+          !is.null(db_summaries) && !is.null(db_myruns)) {
+        if (verbose) cat("  Checkpoint: ", n_imported, " importerade, sparar...\n", sep = "")
+        my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+      }
     }
   }
   my_templist <- list()
