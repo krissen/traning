@@ -211,10 +211,14 @@ def import_group():
 
 
 @import_group.command(name="garmin")
+@click.option("--repair", is_flag=True,
+              help="Repair NULL myruns entries (re-parse TCX files)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-def import_garmin(verbose):
+def import_garmin(repair, verbose):
     """Import TCX workouts into RData cache."""
     cmd = ["Rscript", str(CLI_R), "--import"]
+    if repair:
+        cmd.append("--repair")
     if verbose:
         cmd.append("--verbose")
     _exec(cmd)

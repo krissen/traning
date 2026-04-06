@@ -105,3 +105,76 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE) {
   my_templist[["myruns"]] <- myruns
   return(my_templist)
 }
+
+#' Repair myruns entries that are NULL despite having a summaries row
+#'
+#' Goes through all summaries rows and, for each one where the
+#' corresponding myruns entry is NULL or missing, attempts to re-parse
+#' the original TCX file.  This repairs the gap left when files were
+#' added to summaries but failed to parse into myruns on first import.
+#'
+#' @param files Character vector of TCX file paths (from \code{get_my_files()}).
+#' @param summaries Existing summaries data frame.
+#' @param myruns Existing myruns list.
+#' @param verbose Logical. Print progress messages.
+#' @return List with elements "summaries" and "myruns" (summaries unchanged,
+#'   myruns with repaired entries).
+#' @export
+repair_myruns <- function(files, summaries, myruns, verbose = FALSE) {
+  n_summaries <- nrow(summaries)
+  file_basenames <- basename(files)
+
+  # Hitta alla rader med saknad myruns
+  null_indices <- which(vapply(seq_len(n_summaries), function(i) {
+    i > length(myruns) || is.null(myruns[[i]])
+  }, logical(1)))
+
+  n_null <- length(null_indices)
+  if (n_null == 0) {
+    message("myruns: inga saknade poster att reparera.")
+    return(list(summaries = summaries, myruns = myruns))
+  }
+
+  message("myruns-reparation: ", n_null, " saknade poster, f\u00f6rs\u00f6ker reparera ...")
+  n_repaired <- 0L
+  n_failed <- 0L
+  n_no_file <- 0L
+
+  for (idx in seq_along(null_indices)) {
+    i <- null_indices[idx]
+
+    if (idx %% 200 == 0 || idx == 1) {
+      message("  ", idx, " / ", n_null, " ...")
+    }
+
+    summary_file <- summaries$file[i]
+    if (is.na(summary_file) || nchar(summary_file) == 0) {
+      n_no_file <- n_no_file + 1L
+      next
+    }
+
+    match_idx <- which(file_basenames == basename(summary_file))
+    if (length(match_idx) == 0) {
+      n_no_file <- n_no_file + 1L
+      next
+    }
+
+    file_path <- files[match_idx[1]]
+
+    myruns[[i]] <- tryCatch({
+      trackeR::read_container(file_path)
+    }, error = function(e) {
+      n_failed <<- n_failed + 1L
+      NULL
+    })
+
+    if (!is.null(myruns[[i]])) {
+      n_repaired <- n_repaired + 1L
+    }
+  }
+
+  message("myruns-reparation klar: ", n_repaired, " reparerade, ",
+          n_failed, " misslyckade, ", n_no_file, " utan matchande fil.")
+
+  list(summaries = summaries, myruns = myruns)
+}

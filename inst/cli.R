@@ -26,6 +26,9 @@ my_options <- list(
   make_option("--import",
     type = "logical", action = "store_true", default = FALSE,
     help = "Import new workouts (and save)"),
+  make_option("--repair",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Repair myruns entries with NULL data (re-parse TCX files)"),
   make_option("--total-pace",
     type = "logical", action = "store_true", default = FALSE,
     help = "Print summarization of pace (all-time)"),
@@ -112,6 +115,7 @@ opt_parser <- OptionParser(option_list = my_options)
 options <- parse_args(opt_parser)
 
 do_import       <- options$import
+do_repair       <- options$repair
 do_verbose      <- options$verbose
 do_month_top    <- options$`month-top`
 do_month_last   <- options$`month-last`
@@ -189,6 +193,15 @@ if (do_import) {
     summaries_mostrecent <- utils::tail(summaries, n = summaries_lengthdiff)
     report_mostrecent(summaries_mostrecent, summaries_lengthdiff)
   }
+}
+
+# --- Repair myruns ---
+if (do_repair) {
+  files <- get_my_files(mytcxpath)
+  my_templist <- repair_myruns(files, summaries, myruns, verbose = do_verbose)
+  myruns <- my_templist[["myruns"]]
+  rm(my_templist)
+  my_dbs_save(db_summaries, db_myruns, summaries, myruns)
 }
 
 # --- Augment with Garmin JSON data (if needed) ---
