@@ -5,7 +5,7 @@ Description=tRäning data repo git push
 Type=oneshot
 User=krisniem
 EnvironmentFile=/etc/traning/env
-WorkingDirectory=/home/krisniem/traning-data
+WorkingDirectory=/home/krisniem/dokument/traning-data
 ExecStart=/bin/bash -c 'unpushed=$(git rev-list @{u}..HEAD --count 2>/dev/null); if [ "$unpushed" -gt 0 ] 2>/dev/null; then git push && echo "Pushed $unpushed commits"; else echo "Nothing to push"; fi'
 StandardOutput=journal
 StandardError=journal

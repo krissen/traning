@@ -2,7 +2,7 @@
 # deploy.sh — deploy tRäning pipeline to kailash
 #
 # Usage:
-#   deploy.sh code      Sync code, install deps, restart services
+#   deploy.sh code      Pull code, install deps, restart services
 #   deploy.sh secrets   SCP credentials to kailash
 #   deploy.sh tokens    SCP Garmin auth tokens to kailash
 #   deploy.sh status    Show service status and recent logs
@@ -11,8 +11,8 @@
 set -euo pipefail
 
 REMOTE="kailash"
-REMOTE_CODE="/home/krisniem/traning"
-REMOTE_DATA="/home/krisniem/traning-data"
+REMOTE_CODE="~/dev/traning"
+REMOTE_DATA="~/dokument/traning-data"
 DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DEPLOY_DIR/../../../../" && pwd)"
 
@@ -23,17 +23,8 @@ _info()  { echo "==> $*"; }
 _warn()  { echo "WARN: $*" >&2; }
 
 cmd_code() {
-    _info "Syncing code to $REMOTE:$REMOTE_CODE ..."
-    rsync -az --delete \
-        --exclude '.venv/' \
-        --exclude '__pycache__/' \
-        --exclude '.git/' \
-        --exclude '*.egg-info/' \
-        --exclude '.Renviron' \
-        --exclude '.claude/' \
-        --exclude 'tmp/' \
-        --exclude 'traning-env.local' \
-        "$REPO_ROOT/" "$REMOTE:$REMOTE_CODE/"
+    _info "Pulling latest code on $REMOTE ..."
+    ssh "$REMOTE" "cd $REMOTE_CODE && git pull --ff-only"
 
     _info "Installing dependencies ..."
     ssh "$REMOTE" "cd $REMOTE_CODE && \
@@ -132,7 +123,7 @@ case "${1:-}" in
     *)
         echo "Usage: deploy.sh {code|secrets|tokens|status|all}"
         echo ""
-        echo "  code      Sync code, install deps, restart services"
+        echo "  code      Pull code, install deps, restart services"
         echo "  secrets   SCP credentials (traning-env.local) to kailash"
         echo "  tokens    SCP Garmin auth tokens to kailash"
         echo "  status    Show service status and recent logs"

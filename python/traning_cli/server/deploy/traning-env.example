@@ -2,7 +2,7 @@
 # Also keep a local copy as traning-env.local (gitignored) with real values
 
 # Required
-TRANING_DATA=/home/krisniem/traning-data
+TRANING_DATA=/home/krisniem/dokument/traning-data
 TRANING_API_KEY=<generate: openssl rand -hex 32>
 
 # Garmin Connect credentials
