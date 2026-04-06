@@ -8,6 +8,8 @@ dependencies = [
     "garminconnect>=0.3.1",
     "pirate-garmin @ git+https://github.com/jeffton/pirate-garmin.git",
     "requests>=2.28.0",
+    "fastapi>=0.100",
+    "uvicorn[standard]>=0.20",
 ]
 
 [project.scripts]

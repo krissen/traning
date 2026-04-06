@@ -1,0 +1,17 @@
+# tRäning server environment — copy to /etc/traning/env on kailash
+# Also keep a local copy as traning-env.local (gitignored) with real values
+
+# Required
+TRANING_DATA=/home/krisse/dokument/traning-data
+TRANING_API_KEY=<generate: openssl rand -hex 32>
+
+# Garmin Connect credentials
+GARMIN_EMAIL=
+GARMIN_PASSWORD=
+
+# Home Assistant (for notifications)
+HA_URL=http://localhost:8123
+HA_TOKEN=
+
+# Optional
+TRANING_OPEN=false

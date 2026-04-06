@@ -35,6 +35,9 @@ python/.venv/
 __pycache__/
 *.egg-info/
 
+# Deploy secrets (never commit credentials)
+python/traning_cli/server/deploy/traning-env.local
+
 # renv
 renv/library/
 renv/staging/
