@@ -42,50 +42,50 @@ shinyServer(function(input, output, session) {
 
   # ---------------------------------------------------------------- Löpande månad
   output$plot_monthstatus <- plotly::renderPlotly({
-    ply(plot_monthstatus(summaries_f()))
+    ply(plot_monthstatus(summaries, from = dr_from(), to = dr_to()))
   })
   output$table_monthstatus <- DT::renderDataTable({
-    report_monthstatus(summaries_f())
+    report_monthstatus(summaries, from = dr_from(), to = dr_to())
   })
 
   # ----------------------------------------------------------------- Denna månad
   output$plot_month_this <- plotly::renderPlotly({
-    ply(plot_runs_month(summaries_f()))
+    ply(plot_runs_month(summaries, from = dr_from(), to = dr_to()))
   })
   output$table_month_this <- DT::renderDataTable({
-    report_runs_year_month(summaries_f())
+    report_runs_year_month(summaries, from = dr_from(), to = dr_to())
   })
 
   # --------------------------------------------------------------- Förra månaden
   output$plot_monthlast <- plotly::renderPlotly({
-    ply(plot_monthlast(summaries_f()))
+    ply(plot_monthlast(summaries, from = dr_from(), to = dr_to()))
   })
   output$table_monthlast <- DT::renderDataTable({
-    report_monthlast(summaries_f())
+    report_monthlast(summaries, from = dr_from(), to = dr_to())
   })
 
   # --------------------------------------------------------------- Toppmånader
   output$plot_monthtop <- plotly::renderPlotly({
-    ply(plot_monthtop(summaries_f()))
+    ply(plot_monthtop(summaries, from = dr_from(), to = dr_to()))
   })
   output$table_monthtop <- DT::renderDataTable({
-    report_monthtop(summaries_f())
+    report_monthtop(summaries, from = dr_from(), to = dr_to())
   })
 
   # ----------------------------------------------------------------- Löpande år
   output$plot_yearstatus <- plotly::renderPlotly({
-    ply(plot_yearstatus(summaries_f()))
+    ply(plot_yearstatus(summaries, from = dr_from(), to = dr_to()))
   })
   output$table_yearstatus <- DT::renderDataTable({
-    report_yearstatus(summaries_f())
+    report_yearstatus(summaries, from = dr_from(), to = dr_to())
   })
 
   # -------------------------------------------------------------------- Hela år
   output$plot_yearstop <- plotly::renderPlotly({
-    ply(plot_yearstop(summaries_f()))
+    ply(plot_yearstop(summaries, from = dr_from(), to = dr_to()))
   })
   output$table_yearstop <- DT::renderDataTable({
-    report_yearstop(summaries_f())
+    report_yearstop(summaries, from = dr_from(), to = dr_to())
   })
 
   # ----------------------------------------------------------------------- Tempo

@@ -211,17 +211,7 @@ if (needs_garmin && dir.exists(gc_json_dir)) {
   summaries <- augment_summaries(summaries, garmin_data)
 }
 
-# --- Pre-filter by date range ---
-# For basic report commands (month/year comparisons, datesum), pre-filtering
-# limits which years are included while preserving internal comparison logic.
-# For time-series metrics (ef, hre, acwr, monotony, pmc, recovery-hr),
-# filtering happens AFTER computation to preserve rolling-window integrity.
 has_daterange <- !is.null(date_range$from) || !is.null(date_range$to)
-summaries_filtered <- if (has_daterange) {
-  filter_by_daterange(summaries, date_range)
-} else {
-  summaries
-}
 
 # --- Helpers: emit plot or table ---
 do_open <- if (do_no_open) FALSE else NULL  # NULL = use env default
@@ -240,28 +230,28 @@ emit_table <- function(tbl, default_name = "table") {
   }
 }
 
-# --- Reports: basic commands (pre-filtered data is fine) ---
+# --- Reports: basic commands ---
 if (do_month_top) {
   if (do_plot) {
-    emit_plot(plot_monthtop(summaries_filtered), "month-top")
+    emit_plot(plot_monthtop(summaries, from = date_range$from, to = date_range$to), "month-top")
   } else {
-    emit_table(report_monthtop(summaries_filtered, n = do_limit %||% 10L), "month-top")
+    emit_table(report_monthtop(summaries, n = do_limit %||% 10L, from = date_range$from, to = date_range$to), "month-top")
   }
 }
 
 if (do_month_running) {
   if (do_plot) {
-    emit_plot(plot_monthstatus(summaries_filtered), "month-running")
+    emit_plot(plot_monthstatus(summaries, from = date_range$from, to = date_range$to), "month-running")
   } else {
-    emit_table(report_monthstatus(summaries_filtered), "month-running")
+    emit_table(report_monthstatus(summaries, n = do_limit, from = date_range$from, to = date_range$to), "month-running")
   }
 }
 
 if (do_month_this) {
   if (do_plot) {
-    emit_plot(plot_runs_month(summaries_filtered), "month-this")
+    emit_plot(plot_runs_month(summaries, from = date_range$from, to = date_range$to), "month-this")
   } else {
-    month_summaries_this <- report_runs_year_month(summaries_filtered)
+    month_summaries_this <- report_runs_year_month(summaries, n = do_limit, from = date_range$from, to = date_range$to)
     emit_table(month_summaries_this, "month-this")
     if (is.null(do_output) && is.null(do_format)) {
       my_month_km <- round(sum(month_summaries_this$Km), digits = 2)
@@ -275,25 +265,25 @@ if (do_month_this) {
 
 if (do_month_last) {
   if (do_plot) {
-    emit_plot(plot_monthlast(summaries_filtered), "month-last")
+    emit_plot(plot_monthlast(summaries, from = date_range$from, to = date_range$to), "month-last")
   } else {
-    emit_table(report_monthlast(summaries_filtered), "month-last")
+    emit_table(report_monthlast(summaries, n = do_limit, from = date_range$from, to = date_range$to), "month-last")
   }
 }
 
 if (do_year_running) {
   if (do_plot) {
-    emit_plot(plot_yearstatus(summaries_filtered), "year-running")
+    emit_plot(plot_yearstatus(summaries, from = date_range$from, to = date_range$to), "year-running")
   } else {
-    emit_table(report_yearstatus(summaries_filtered), "year-running")
+    emit_table(report_yearstatus(summaries, n = do_limit, from = date_range$from, to = date_range$to), "year-running")
   }
 }
 
 if (do_year_top) {
   if (do_plot) {
-    emit_plot(plot_yearstop(summaries_filtered), "year-top")
+    emit_plot(plot_yearstop(summaries, from = date_range$from, to = date_range$to), "year-top")
   } else {
-    emit_table(report_yearstop(summaries_filtered), "year-top")
+    emit_table(report_yearstop(summaries, n = do_limit, from = date_range$from, to = date_range$to), "year-top")
   }
 }
 
@@ -319,11 +309,11 @@ if (!is.null(options$datesum) || (has_daterange && !any_report)) {
 }
 
 if (do_total_pace) {
+  pace_data <- if (has_daterange) filter_by_daterange(summaries, date_range) else summaries
   if (do_plot) {
-    mean_pace_data <- fetch.my.mean.pace(summaries_filtered)
-    emit_plot(fetch.plot.mean.pace(mean_pace_data), "total-pace")
+    emit_plot(fetch.plot.mean.pace(fetch.my.mean.pace(pace_data)), "total-pace")
   } else {
-    emit_table(fetch.my.mean.pace(summaries_filtered), "total-pace")
+    emit_table(fetch.my.mean.pace(pace_data), "total-pace")
   }
 }
 

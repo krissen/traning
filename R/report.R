@@ -40,19 +40,19 @@ report_datesum <- function(summaries, do_datesum_from, do_datesum_to) {
   datesum
 }
 
-#' Top 10 months by total distance
+#' Top months by total distance
 #' @param summaries Data frame of all workout summaries
-#' @return Tibble with top 10 months
+#' @param n Number of top months to return (default 10).
+#' @param from Date or NULL. Include only activities from this date (inclusive).
+#' @param to Date or NULL. Include only activities before this date (exclusive).
+#' @return Tibble with top months
 #' @export
-report_monthtop <- function(summaries, n = 10) {
-  summaries %>%
-    dplyr::filter(stringr::str_detect(sport, 'running')) -> month_summaries
+report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL) {
+  summaries <- .filter_input(summaries, from, to)
 
-  month_summaries %>%
-    dplyr::mutate(
-      day = as.numeric(format(sessionStart, "%d")),
-      `År-mån` = format(sessionStart, "%Y-%m")
-    ) %>%
+  summaries %>%
+    dplyr::filter(stringr::str_detect(sport, 'running')) %>%
+    dplyr::mutate(`År-mån` = format(sessionStart, "%Y-%m")) %>%
     dplyr::select(`År-mån`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År-mån`) %>%
     dplyr::summarise(
@@ -62,31 +62,32 @@ report_monthtop <- function(summaries, n = 10) {
       Turer = dplyr::n(),
       .groups = "keep") %>%
     dplyr::arrange(dplyr::desc(`Km, tot`)) %>%
-    utils::head(n = n) -> month_top
-
-  return(month_top)
+    utils::head(n = n)
 }
 
-#' List individual runs for a given year and month
+#' List individual runs within a date range
+#'
+#' Defaults to the current calendar month when neither \code{from} nor
+#' \code{to} is given.
+#'
 #' @param summaries Data frame of all workout summaries
-#' @param do_year Year as string (default: current year)
-#' @param do_month Month as string (default: current month)
+#' @param n Max rows to return, or NULL for all.
+#' @param from Date or NULL. Include only activities from this date (inclusive).
+#' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @return Tibble with individual runs
 #' @export
-report_runs_year_month <- function(summaries,
-                                   do_year = format(Sys.time(), "%Y"),
-                                   do_month = format(Sys.time(), "%m")) {
+report_runs_year_month <- function(summaries, n = NULL,
+                                   from = NULL, to = NULL) {
+  # Default to current month if no range specified
+  if (is.null(from) && is.null(to)) {
+    from <- as.Date(format(Sys.Date(), "%Y-%m-01"))
+    to <- from + lubridate::period(1, "month")
+  }
 
-  summaries %>%
-    dplyr::mutate(
-      month = as.numeric(format(sessionStart, "%m")),
-      year = as.numeric(format(sessionStart, "%Y"))) %>%
-    dplyr::filter(
-      month == as.numeric(do_month),
-      year == as.numeric(do_year),
-      stringr::str_detect(sport, 'running')) -> month_summaries
+  summaries <- .filter_input(summaries, from, to)
 
-  month_summaries %>%
+  result <- summaries %>%
+    dplyr::filter(stringr::str_detect(sport, 'running')) %>%
     dplyr::mutate(
       'År' = as.numeric(format(sessionStart, "%Y")),
       'Mån' = as.numeric(format(sessionStart, "%m")),
@@ -96,36 +97,30 @@ report_runs_year_month <- function(summaries,
       'HR' = round(avgHeartRateMoving, digits = 0)
     ) %>%
     dplyr::select(`År`, `Mån`, `Dag`, Km, Pace, HR) %>%
-    dplyr::arrange(dplyr::desc(`Dag`)) -> runs_year_month
+    dplyr::arrange(dplyr::desc(`Dag`))
 
-  return(runs_year_month)
+  if (!is.null(n)) result <- utils::head(result, n)
+  result
 }
 
 #' Compare last month across all years
 #' @param summaries Data frame of all workout summaries
+#' @param n Max rows to return, or NULL for all.
+#' @param from Date or NULL. Include only activities from this date (inclusive).
+#' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @return Tibble with per-year statistics for last month
 #' @export
-report_monthlast <- function(summaries) {
-  my_year <- as.numeric(format(Sys.time(), "%Y"))
+report_monthlast <- function(summaries, n = NULL, from = NULL, to = NULL) {
+  summaries <- .filter_input(summaries, from, to)
+
   my_month <- as.numeric(format(Sys.time(), "%m"))
-  if (my_month == 1) {
-    do_year <- my_year - 1
-    do_month <- 12
-  } else {
-    do_year <- my_year
-    do_month <- my_month - 1
-  }
-
-  print(paste("Visar data för ", month.name[do_month], sep = ""))
-
+  do_month <- if (my_month == 1) 12L else my_month - 1L
   my_day <- as.numeric(format(Sys.time(), "%d"))
 
-  summaries %>%
+  result <- summaries %>%
     dplyr::mutate(month = as.numeric(format(sessionStart, "%m"))) %>%
     dplyr::filter(month == do_month,
-                  stringr::str_detect(sport, 'running')) -> month_summaries
-
-  month_summaries %>%
+                  stringr::str_detect(sport, 'running')) %>%
     dplyr::mutate('År' = as.numeric(format(sessionStart, "%Y"))) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
@@ -136,24 +131,25 @@ report_monthlast <- function(summaries) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(dplyr::desc(`År`)) -> month_summaries_last
+    dplyr::arrange(dplyr::desc(`År`))
 
-  return(month_summaries_last)
+  if (!is.null(n)) result <- utils::head(result, n)
+  result
 }
 
 #' Year statistics — all time (full years, not truncated at current date)
 #' @param summaries Data frame of all workout summaries
+#' @param n Max rows to return, or NULL for all.
+#' @param from Date or NULL. Include only activities from this date (inclusive).
+#' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @return Tibble with per-year statistics
 #' @export
-report_yearstop <- function(summaries) {
+report_yearstop <- function(summaries, n = NULL, from = NULL, to = NULL) {
+  summaries <- .filter_input(summaries, from, to)
   my_dayyear <- as.numeric(format(Sys.time(), "%j"))
 
-  summaries %>%
-    dplyr::mutate(
-      day = as.numeric(format(sessionStart, "%d")),
-      dayyear = as.numeric(format(sessionStart, "%j")),
-      'År' = as.numeric(format(sessionStart, "%Y"))
-    ) %>%
+  result <- summaries %>%
+    dplyr::mutate('År' = as.numeric(format(sessionStart, "%Y"))) %>%
     dplyr::filter(stringr::str_detect(sport, 'running')) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
@@ -164,21 +160,25 @@ report_yearstop <- function(summaries) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(dplyr::desc(`År`)) -> year_summaries_til_day
+    dplyr::arrange(dplyr::desc(`År`))
 
-  return(year_summaries_til_day)
+  if (!is.null(n)) result <- utils::head(result, n)
+  result
 }
 
 #' Year statistics — truncated at current day-of-year for fair comparison
 #' @param summaries Data frame of all workout summaries
+#' @param n Max rows to return, or NULL for all.
+#' @param from Date or NULL. Include only activities from this date (inclusive).
+#' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @return Tibble with per-year statistics up to current day-of-year
 #' @export
-report_yearstatus <- function(summaries) {
+report_yearstatus <- function(summaries, n = NULL, from = NULL, to = NULL) {
+  summaries <- .filter_input(summaries, from, to)
   my_dayyear <- as.numeric(format(Sys.time(), "%j"))
 
-  summaries %>%
+  result <- summaries %>%
     dplyr::mutate(
-      day = as.numeric(format(sessionStart, "%d")),
       dayyear = as.numeric(format(sessionStart, "%j")),
       'År' = as.numeric(format(sessionStart, "%Y"))
     ) %>%
@@ -194,25 +194,28 @@ report_yearstatus <- function(summaries) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(dplyr::desc(`År`)) -> year_summaries_til_day
+    dplyr::arrange(dplyr::desc(`År`))
 
-  return(year_summaries_til_day)
+  if (!is.null(n)) result <- utils::head(result, n)
+  result
 }
 
 #' Current month compared across years (truncated at current day-of-month)
 #' @param summaries Data frame of all workout summaries
+#' @param n Max rows to return, or NULL for all.
+#' @param from Date or NULL. Include only activities from this date (inclusive).
+#' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @return Tibble with per-year statistics for current month
 #' @export
-report_monthstatus <- function(summaries) {
+report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL) {
+  summaries <- .filter_input(summaries, from, to)
   my_month <- as.numeric(format(Sys.time(), "%m"))
   my_day <- as.numeric(format(Sys.time(), "%d"))
 
-  summaries %>%
+  result <- summaries %>%
     dplyr::mutate(month = as.numeric(format(sessionStart, "%m"))) %>%
     dplyr::filter(month == my_month,
-                  stringr::str_detect(sport, 'running')) -> month_summaries
-
-  month_summaries %>%
+                  stringr::str_detect(sport, 'running')) %>%
     dplyr::mutate(
       day = as.numeric(format(sessionStart, "%d")),
       'År' = as.numeric(format(sessionStart, "%Y"))
@@ -227,9 +230,18 @@ report_monthstatus <- function(summaries) {
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
-    dplyr::arrange(dplyr::desc(`År`)) -> month_summaries_til_day
+    dplyr::arrange(dplyr::desc(`År`))
 
-  return(month_summaries_til_day)
+  if (!is.null(n)) result <- utils::head(result, n)
+  result
+}
+
+# --- Shared helpers ----------------------------------------------------------
+
+# Filter input summaries by date range on sessionStart.
+# Used by basic report functions that aggregate (month/year comparisons).
+.filter_input <- function(summaries, from = NULL, to = NULL) {
+  filter_by_daterange(summaries, list(from = from, to = to))
 }
 
 # --- Advanced metric reports ------------------------------------------------
