@@ -52,23 +52,22 @@
 
 ---
 
-## Phase 4f: HR zone distribution & polarization index
+## Fix: myruns import gap (2023+)
 
-**Goal:** Track training intensity distribution and flag the "moderate
-intensity trap" (excessive Zone 2 training).
+**Goal:** Repair the ~1600 running sessions (2023–2026) that have
+summaries entries but NULL myruns data, so per-second HR zone
+classification covers the full history.
+
+**Problem:** `get_new_workouts()` checks filenames against summaries
+and skips files already present — even when the myruns entry is NULL
+(failed parse on first import). No retry mechanism exists.
 
 **Deliverables:**
-- Collapse Garmin 5-zone to research 3-zone (Seiler: Z1 < VT1, Z2 = VT1-VT2, Z3 > VT2)
-- Per-second zone classification from myruns (covers full 20-year history)
-- Polarization Index (Treff 2019)
-- Stacked bar chart (monthly/yearly), PI trend line
-- Cross-validate Garmin hrTimeInZone (316 activities) against per-second results
-- CLI: `traning zones --after -1y`
+- Repair function: re-parse TCX files for sessions with NULL myruns
+- Guard against re-skipping: check myruns entry, not just summaries
+- Optionally: `traning import garmin --repair` CLI flag
 
-**Data sources:** Garmin JSON hrTimeInZone_1..5 (316 activities, Dec 2024+),
-per-second HR from myruns (3412 activities, full history).
-
-**Dependencies:** `R/garmin_json.R`, `R/physiology.R` (both done).
+**Dependencies:** None. Blocking accurate zone analysis for 2023+.
 
 ---
 

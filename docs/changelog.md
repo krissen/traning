@@ -1,5 +1,53 @@
 # tRäning — Changelog
 
+## 2026-04-06 — Phase 4f: HR zone distribution & polarization index
+
+### Zone computation (`R/hr_zones.R`)
+- Seiler 3-zone model: Z1 (low, <VT1), Z2 (threshold, VT1–VT2),
+  Z3 (high, ≥VT2) with configurable thresholds (default 80%/90% HRmax)
+- Two data sources with hybrid fallback:
+  - Per-second HR classification from myruns (2932 sessions, 2004–2022)
+  - Garmin JSON hrTimeInZone fallback for sessions without per-second
+    data (317 sessions, 2023+)
+- Treff (2019) Polarization Index: PI = log₁₀((Z1/Z2) × Z3 × 100)
+  with edge-case handling (Z2=0 uses Eq. 2, Z3=0 → PI=0)
+  - PI > 2.0 = polarized, PI ≤ 2.0 = non-polarized
+- Cross-validation function comparing Garmin device zones vs per-second
+- Incremental cache (`zone_distribution.RData`): first run ~8s for
+  4500 sessions, subsequent runs ~2s; caches both computed and skipped
+  sessions; `--force` clears cache
+
+### Time-varying HRmax (`R/physiology.R`)
+- `get_hr_max_at(date)` returns per-date HRmax that declines with age
+- Priority: BIRTH_YEAR env + Tanaka formula (208 − 0.7 × age), then
+  linear fit of yearly 98th percentile from garmin_maxHR, then fallback
+- Zone thresholds now per-session: a 2004 run (HRmax 192) gets different
+  VT1/VT2 than a 2026 run (HRmax 176)
+- `BIRTH_YEAR` added to `.Renviron` / `.Renviron.example`
+
+### Visualizations (`R/plot_zones.R`)
+- `fetch.plot.hr_zones()` — stacked bar chart (monthly zone distribution)
+  with 80% Z1 target line; auto-scaling x-axis for 1–20+ year spans
+- `fetch.plot.polarization()` — PI trend with polarized/non-polarized bands
+- `fetch.plot.zone_comparison()` — scatter cross-validation (Garmin vs
+  per-second) with identity line and deviation coloring
+
+### CLI
+- R CLI: `--hr-zones` flag (table or `--plot`)
+- Python CLI: `traning zones [--plot] [--force] [--after/--before]`
+
+### Report sorting
+- All `report_*()` tables now sort newest first (descending chronological)
+- Applies to all 15 report commands via `.tail_or_daterange()` and
+  individual `arrange(desc())` calls
+
+### Tests
+- 223 tests total (was 174), all passing
+- New `test-hr-zones.R` (49 tests): zone distribution, PI formula with
+  Treff 2019 reference values, report formatting, edge cases
+
+---
+
 ## 2026-04-06 — Phase 5a+: Health import performance
 
 ### Incremental health import (`R/health_export.R`)
