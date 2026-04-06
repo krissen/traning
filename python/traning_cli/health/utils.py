@@ -25,6 +25,13 @@ def health_metrics_dir(data_dir: Path | None = None) -> Path:
     return data_dir / "kristian" / "health_export" / "metrics"
 
 
+def health_workouts_dir(data_dir: Path | None = None) -> Path:
+    """Return the health_export/workouts/ directory."""
+    if data_dir is None:
+        data_dir = get_data_dir()
+    return data_dir / "kristian" / "health_export" / "workouts"
+
+
 def health_inbox_dir(data_dir: Path | None = None) -> Path:
     """Return the health_export/inbox/ directory."""
     if data_dir is None:

@@ -5,7 +5,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from ..health.utils import health_metrics_dir
+from ..health.utils import health_metrics_dir, health_workouts_dir
 from ..garmin.utils import get_data_dir
 
 log = logging.getLogger(__name__)
@@ -67,7 +67,49 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
     return n_written
 
 
-def commit_health_data(data_dir: Path | None = None, n_metrics: int = 0) -> bool:
+def save_workout_push(payload: dict, data_dir: Path | None = None) -> int:
+    """Save HAE workout JSON payload to workouts/ directory.
+
+    Each workout is saved as a separate JSON file named
+    {workout_name}_{start_timestamp}.json.
+
+    Returns the number of workout files written.
+    """
+    if data_dir is None:
+        data_dir = get_data_dir()
+
+    workouts_dir = health_workouts_dir(data_dir)
+    workouts_dir.mkdir(parents=True, exist_ok=True)
+
+    data = payload.get("data", {})
+    workouts = data.get("workouts", [])
+
+    if not workouts:
+        return 0
+
+    n_written = 0
+    for w in workouts:
+        name = w.get("name", "workout")
+        start = w.get("start", "")
+
+        # Build filename from name + start timestamp
+        # "2026-04-06 07:00:35 +0200" → "20260406_070035"
+        ts = start[:19].replace("-", "").replace(":", "").replace(" ", "_")
+        safe_name = name.replace(" ", "_").replace("/", "_")
+        filename = f"{safe_name}-{ts}.json"
+
+        filepath = workouts_dir / filename
+        with open(filepath, "w") as f:
+            json.dump({"data": {"workouts": [w]}}, f, ensure_ascii=False)
+
+        log.info("  %s", filename)
+        n_written += 1
+
+    return n_written
+
+
+def commit_health_data(data_dir: Path | None = None, n_metrics: int = 0,
+                       n_workouts: int = 0) -> bool:
     """Git add + commit new health metric files.
 
     Returns True if commit succeeded.
@@ -77,7 +119,8 @@ def commit_health_data(data_dir: Path | None = None, n_metrics: int = 0) -> bool
 
     try:
         subprocess.run(
-            ["git", "add", "kristian/health_export/metrics/"],
+            ["git", "add", "kristian/health_export/metrics/",
+             "kristian/health_export/workouts/"],
             cwd=data_dir, check=True, capture_output=True,
         )
         # Check if there's anything staged
@@ -89,12 +132,18 @@ def commit_health_data(data_dir: Path | None = None, n_metrics: int = 0) -> bool
             log.info("No new health data to commit")
             return False
 
+        parts = []
+        if n_metrics:
+            parts.append(f"{n_metrics} metrics")
+        if n_workouts:
+            parts.append(f"{n_workouts} workouts")
+        desc = " + ".join(parts) or "health data"
+
         subprocess.run(
-            ["git", "commit", "-m",
-             f"(health) Receive {n_metrics} metric updates via API"],
+            ["git", "commit", "-m", f"(health) Receive {desc} via API"],
             cwd=data_dir, check=True, capture_output=True,
         )
-        log.info("Committed %d health metric files", n_metrics)
+        log.info("Committed health data: %s", desc)
         return True
     except subprocess.CalledProcessError as e:
         log.warning("Git commit failed: %s", e.stderr.decode().strip())

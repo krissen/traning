@@ -8,7 +8,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 
 from .auth import require_api_key
 from .notify import notify
-from .storage import commit_health_data, save_health_push
+from .storage import commit_health_data, save_health_push, save_workout_push
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +76,41 @@ def create_app() -> FastAPI:
             "status": "ok",
             "metrics_saved": n,
             "total_samples": total_samples,
+        }
+
+    @application.post("/v1/workouts", dependencies=[Depends(require_api_key)])
+    async def receive_workouts(request: Request):
+        global _last_received, _total_received
+
+        try:
+            payload = await request.json()
+        except Exception:
+            raise HTTPException(status_code=422, detail="Invalid JSON")
+
+        data = payload.get("data")
+        if not isinstance(data, dict) or "workouts" not in data:
+            raise HTTPException(
+                status_code=422,
+                detail="Expected HAE format: {\"data\": {\"workouts\": [...]}}"
+            )
+
+        workouts = data["workouts"]
+        if not isinstance(workouts, list) or len(workouts) == 0:
+            raise HTTPException(status_code=422, detail="No workouts in payload")
+
+        n = save_workout_push(payload)
+        if n > 0:
+            commit_health_data(n_workouts=n)
+            notify("tRäning", f"Workouts: {n} mottagna")
+
+        _last_received = datetime.now()
+        _total_received += 1
+
+        log.info("Received %d workouts", n)
+
+        return {
+            "status": "ok",
+            "workouts_saved": n,
         }
 
     return application
