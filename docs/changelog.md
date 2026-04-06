@@ -1,5 +1,27 @@
 # tRäning — Changelog
 
+## 2026-04-06 — Phase 5a+: Health import performance
+
+### Incremental health import (`R/health_export.R`)
+- File manifest (`health_import_manifest.json`) tracks mtime and size per
+  imported JSON file in `$TRANING_DATA/cache/`
+- `import_health_export()` compares files against manifest and only parses
+  new or modified files — skips unchanged ones entirely
+- Typical incremental import: 2–3 new files instead of 120+
+- `--force` flag bypasses manifest and re-imports everything
+- Manifest updated atomically after successful cache save
+
+### CLI updates
+- R CLI: new `--force` flag on `--import-health`
+- Python CLI: `traning import health --force`, `traning sync health --force`
+
+### Tests
+- 174 tests total (was 159), all passing
+- New manifest tests: new file detection, unchanged skip, modified detection,
+  roundtrip save/load, force bypass
+
+---
+
 ## 0.4.0 — Apple Watch integration & readiness model
 
 ### Apple Watch health data pipeline (`R/health_export.R`)

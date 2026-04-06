@@ -131,3 +131,97 @@ test_that("get_readiness adds ln_rmssd column", {
   expect_true("ln_rmssd" %in% names(result))
   expect_equal(result$ln_rmssd, log(60), tolerance = 1e-6)
 })
+
+# --- Manifest tests ---
+
+test_that(".filter_changed_files detects new files", {
+  tmp <- tempfile(fileext = ".json")
+  writeLines("{}", tmp)
+  manifest <- list()  # empty = first run
+  result <- traning:::.filter_changed_files(tmp, manifest)
+  expect_equal(result, tmp)
+})
+
+test_that(".filter_changed_files skips unchanged files", {
+  tmp <- tempfile(fileext = ".json")
+  writeLines("{}", tmp)
+  info <- file.info(tmp)
+  manifest <- list()
+  manifest[[basename(tmp)]] <- list(
+    mtime = as.integer(as.numeric(info$mtime)),
+    size  = info$size
+  )
+  result <- traning:::.filter_changed_files(tmp, manifest)
+  expect_length(result, 0)
+})
+
+test_that(".filter_changed_files detects modified files (size change)", {
+  tmp <- tempfile(fileext = ".json")
+  writeLines("{}", tmp)
+  info <- file.info(tmp)
+  manifest <- list()
+  manifest[[basename(tmp)]] <- list(
+    mtime = as.integer(as.numeric(info$mtime)),
+    size  = info$size + 100  # mismatch
+  )
+  result <- traning:::.filter_changed_files(tmp, manifest)
+  expect_equal(result, tmp)
+})
+
+test_that(".build_manifest_entries captures mtime and size", {
+  tmp <- tempfile(fileext = ".json")
+  writeLines('{"key": "value"}', tmp)
+  entries <- traning:::.build_manifest_entries(tmp)
+  expect_true(basename(tmp) %in% names(entries))
+  entry <- entries[[basename(tmp)]]
+  expect_true(!is.null(entry$mtime))
+  expect_true(!is.null(entry$size))
+  info <- file.info(tmp)
+  expect_equal(entry$mtime, as.integer(as.numeric(info$mtime)))
+  expect_equal(entry$size, info$size)
+})
+
+test_that(".load_manifest returns empty list for missing file", {
+  result <- traning:::.load_manifest("/nonexistent/path/manifest.json")
+  expect_equal(result, list())
+})
+
+test_that(".save_manifest and .load_manifest roundtrip", {
+  tmp <- tempfile(fileext = ".json")
+  manifest <- list(
+    "file1.json" = list(mtime = 1000, size = 500),
+    "file2.json" = list(mtime = 2000, size = 1500)
+  )
+  traning:::.save_manifest(manifest, tmp)
+  loaded <- traning:::.load_manifest(tmp)
+  expect_equal(loaded[["file1.json"]]$mtime, 1000)
+  expect_equal(loaded[["file1.json"]]$size, 500)
+  expect_equal(loaded[["file2.json"]]$mtime, 2000)
+  expect_equal(loaded[["file2.json"]]$size, 1500)
+})
+
+test_that("import_health_export with force bypasses manifest", {
+  # Create a minimal JSON file
+  raw_json <- list(data = list(metrics = list(
+    list(name = "step_count", units = "count", data = list(
+      list(date = "2026-04-01 00:00:00 +0200", qty = 5000, source = "AW")
+    ))
+  )))
+  tmp_dir <- tempdir()
+  tmp_file <- file.path(tmp_dir, "test_force.json")
+  jsonlite::write_json(raw_json, tmp_file, auto_unbox = TRUE)
+  cache <- tempfile(fileext = ".RData")
+
+  # First import
+  result1 <- suppressMessages(
+    import_health_export(path = tmp_file, cache_path = cache, verbose = FALSE)
+  )
+  expect_equal(nrow(result1), 1)
+
+  # Second import with force — should still parse
+  result2 <- suppressMessages(
+    import_health_export(path = tmp_file, cache_path = cache,
+                          force = TRUE, verbose = FALSE)
+  )
+  expect_equal(nrow(result2), 1)
+})

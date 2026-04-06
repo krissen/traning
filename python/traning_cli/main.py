@@ -221,10 +221,14 @@ def import_garmin(verbose):
 
 
 @import_group.command(name="health")
+@click.option("--force", is_flag=True,
+              help="Re-import all files (bypass manifest)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-def import_health(verbose):
+def import_health(force, verbose):
     """Import health data (JSON) into RData cache."""
     cmd = ["Rscript", str(CLI_R), "--import-health"]
+    if force:
+        cmd.append("--force")
     if verbose:
         cmd.append("--verbose")
     _exec(cmd)
@@ -299,9 +303,11 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
               help="Re-fetch last N days")
 @click.option("--all", "fetch_all", is_flag=True,
               help="Full re-fetch from 2013")
+@click.option("--force", is_flag=True,
+              help="Force re-import of all files (bypass manifest)")
 @click.option("--dry-run", is_flag=True, help="Preview without action")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-def sync_health(server, inbox, days_back, fetch_all, dry_run, verbose):
+def sync_health(server, inbox, days_back, fetch_all, force, dry_run, verbose):
     """Fetch health data, then import into R cache."""
     from .garmin.utils import get_data_dir, setup_logging
     from .health import fetch_tcp, fetch_inbox, check_server
@@ -338,12 +344,14 @@ def sync_health(server, inbox, days_back, fetch_all, dry_run, verbose):
     if dry_run:
         click.echo("Dry-run — hoppar över import")
         return
-    if total == 0:
+    if total == 0 and not force:
         click.echo("Ingen ny hälsodata — hoppar över import")
         return
 
     click.echo("Importerar hälsodata till R-cache ...")
     cmd = ["Rscript", str(CLI_R), "--import-health"]
+    if force:
+        cmd.append("--force")
     if verbose:
         cmd.append("--verbose")
     rc = _run(cmd)

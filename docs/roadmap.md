@@ -1,24 +1,5 @@
 # tRäning — Roadmap
 
-## Phase 5a+: Health import performance
-
-**Goal:** Avoid re-parsing all 120+ JSON files on every `traning import health`.
-
-**Problem:** `import_health_export()` reads every file in `health_export/metrics/`
-on every run, even if they were already imported. With 120 files and growing,
-this takes ~10 seconds and produces noisy output.
-
-**Deliverables:**
-- File manifest (`imported_files.json` or similar) tracking which files have
-  been imported and their mtime/size at import time
-- `import_health_export()` only parses new or modified files
-- Merge new data onto cached `health_daily.RData` (already works)
-- `--force` flag to re-import everything (bypass manifest)
-
-**Dependencies:** Phase 5a (done), CLI sync redesign (done).
-
----
-
 ## Phase 5b: Automated health data pipeline
 
 **Goal:** Automate daily health data import from iPhone to server.
@@ -43,6 +24,13 @@ this takes ~10 seconds and produces noisy output.
   period comparison, taper planning, daily suggestion
 - Plot tools returning PNG
 - R bridge module for subprocess execution and result parsing
+
+**API capabilities:**
+- **Garmin download** — Trigger data fetch from Garmin Connect
+- **Stats** — Serve computed statistics (monthly/yearly summaries, pace trends, totals)
+- **Images** — Serve generated plots as PNG (cumulative distance, pace over time, etc.)
+- **Tables** — Serve report tables as structured data (JSON/JSONL ready via `save_table()`)
+- **Queries** — Date range summaries, month comparisons, year-over-year analysis
 
 **Dependencies:** Phase 5a readiness model (done), automated pipeline (5b).
 
@@ -98,33 +86,3 @@ aerobic fitness limitations within a single run.
 **Filters:** running, >45 min, easy pace (>5:00/km).
 
 **Dependencies:** Requires new `R/persecond.R` module for myruns access pattern.
-
----
-
-## Phase 5: MCP server
-
-**Goal:** Expose tRäning as an MCP (Model Context Protocol) server.
-
-**API capabilities:**
-- **Garmin download** — Trigger data fetch from Garmin Connect
-- **Stats** — Serve computed statistics (monthly/yearly summaries, pace trends, totals)
-- **Images** — Serve generated plots as PNG (cumulative distance, pace over time, etc.)
-- **Tables** — Serve report tables as structured data (JSON/JSONL ready via `save_table()`)
-- **Queries** — Date range summaries, month comparisons, year-over-year analysis
-
-**Groundwork done (v0.3.0):**
-- All report functions return tibbles — direct JSON serialization
-- `save_table(format="jsonl")` produces one JSON object per row
-- `save_plot(format="png")` for image responses
-- `get_output_defaults()` for configurable paths
-
-**Architecture considerations:**
-- R-based (plumber?) or Python-based server wrapping R functions
-- Reads from the same data store as CLI/Shiny
-- Stateless queries against cached summaries
-
-**References:**
-- [garmin-connect-mcp](https://github.com/etweisberg/garmin-connect-mcp) — existing MCP server for Garmin Connect with 27 tools. Routes API calls through headless Playwright. Worth studying for API design and tool surface.
-- `~/dev/vyasa` (Vyasa) — our most mature MCP server (research library). Best reference for patterns.
-- `~/dev/bifrost/scripts/mcp/` (Hermod) — bibliometric analysis MCP server. FastMCP-based, R data backend.
-- `~/dev/narada-mcp/` (Narada) — another of our MCP servers.

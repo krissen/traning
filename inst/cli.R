@@ -74,6 +74,9 @@ my_options <- list(
   make_option("--import-health",
     type = "logical", action = "store_true", default = FALSE,
     help = "Import Apple Watch health data from Health Auto Export JSON"),
+  make_option("--force",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Force re-import of all files (bypass manifest)"),
   # --- Date range flags ---
   make_option("--after",
     type = "character", default = NULL,
@@ -122,6 +125,7 @@ do_pmc          <- options$pmc
 do_recovery_hr  <- options$`recovery-hr`
 do_readiness    <- options$readiness
 do_import_health <- options$`import-health`
+do_force        <- options$force
 do_plot         <- options$plot
 do_output       <- options$output
 do_format       <- options$format
@@ -358,7 +362,7 @@ if (do_pmc) {
 
 # --- Health data import ---
 if (do_import_health) {
-  import_health_export(verbose = TRUE)
+  import_health_export(force = do_force, verbose = TRUE)
 }
 
 # --- Readiness (requires health data) ---

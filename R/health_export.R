@@ -27,6 +27,74 @@
   file.path(data_root, "cache", "health_daily.RData")
 }
 
+#' Resolve the health import manifest path
+#' @return Character path to health_import_manifest.json
+#' @keywords internal
+.hae_manifest_path <- function() {
+  data_root <- Sys.getenv("TRANING_DATA", unset = NA_character_)
+  if (is.na(data_root)) {
+    stop("TRANING_DATA env var not set")
+  }
+  file.path(data_root, "cache", "health_import_manifest.json")
+}
+
+#' Load the import manifest
+#' @param manifest_path Path to manifest JSON. NULL = default.
+#' @return Named list: filename -> list(mtime, size)
+#' @keywords internal
+.load_manifest <- function(manifest_path = NULL) {
+  if (is.null(manifest_path)) manifest_path <- .hae_manifest_path()
+  if (!file.exists(manifest_path)) return(list())
+  jsonlite::fromJSON(manifest_path, simplifyVector = FALSE)
+}
+
+#' Save the import manifest
+#' @param manifest Named list: filename -> list(mtime, size)
+#' @param manifest_path Path to manifest JSON. NULL = default.
+#' @keywords internal
+.save_manifest <- function(manifest, manifest_path = NULL) {
+  if (is.null(manifest_path)) manifest_path <- .hae_manifest_path()
+  cache_dir <- dirname(manifest_path)
+  if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+  jsonlite::write_json(manifest, manifest_path, auto_unbox = TRUE, pretty = TRUE)
+}
+
+#' Compare files against manifest and return only new/changed ones
+#' @param files Character vector of file paths
+#' @param manifest Named list from .load_manifest()
+#' @return Character vector of files that need importing
+#' @keywords internal
+.filter_changed_files <- function(files, manifest) {
+  changed <- vapply(files, function(f) {
+    key <- basename(f)
+    info <- file.info(f)
+    prev <- manifest[[key]]
+    if (is.null(prev)) return(TRUE)  # new file
+    prev_mtime <- as.integer(prev$mtime)
+    prev_size  <- as.numeric(prev$size)
+    cur_mtime  <- as.integer(as.numeric(info$mtime))
+    cur_size   <- info$size
+    cur_mtime != prev_mtime || cur_size != prev_size
+  }, logical(1))
+  files[changed]
+}
+
+#' Build manifest entries for a set of files
+#' @param files Character vector of file paths
+#' @return Named list: basename -> list(mtime, size)
+#' @keywords internal
+.build_manifest_entries <- function(files) {
+  entries <- list()
+  for (f in files) {
+    info <- file.info(f)
+    entries[[basename(f)]] <- list(
+      mtime = as.integer(as.numeric(info$mtime)),
+      size  = info$size
+    )
+  }
+  entries
+}
+
 # --- JSON parsing -------------------------------------------------------------
 
 #' Parse a single HAE metric entry into a long-format tibble
@@ -471,16 +539,23 @@ read_health_export <- function(path, verbose = FALSE) {
 #' specified file), merges with previously cached data, deduplicates on
 #' (date, metric), and saves the result.
 #'
+#' Uses a file manifest to track which files have been imported and their
+#' mtime/size. Only new or modified files are re-parsed, making repeated
+#' imports fast (skips unchanged files).
+#'
 #' @param path Optional path to a specific JSON file. If NULL, reads all
 #'   JSON files in the health_export/metrics/ directory.
 #' @param cache_path Optional path to the RData cache. Defaults to
 #'   \code{$TRANING_DATA/cache/health_daily.RData}.
+#' @param force Logical, re-import all files regardless of manifest.
+#'   Default FALSE.
 #' @param save Logical, save to cache after import. Default TRUE.
 #' @param verbose Logical, print progress. Default TRUE.
 #' @return A tibble of all health data (long format), invisibly.
 #' @export
 import_health_export <- function(path = NULL, cache_path = NULL,
-                                  save = TRUE, verbose = TRUE) {
+                                  force = FALSE, save = TRUE,
+                                  verbose = TRUE) {
   if (is.null(cache_path)) cache_path <- .hae_cache_path()
 
   # Load existing cache
@@ -505,9 +580,31 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     files <- path
   }
 
-  if (verbose) cat("Importerar", length(files), "fil(er)\n")
+  # Filter to new/changed files using manifest (unless forced or single file)
+  manifest <- if (is.null(path) && !force) .load_manifest() else list()
+  if (length(manifest) > 0) {
+    files_to_parse <- .filter_changed_files(files, manifest)
+    n_skipped <- length(files) - length(files_to_parse)
+    if (verbose) {
+      cat(length(files), "filer totalt,", n_skipped,
+          "oförändrade (hoppar över),", length(files_to_parse), "att importera\n")
+    }
+    if (length(files_to_parse) == 0) {
+      cat("Alla filer redan importerade — inget att göra\n")
+      return(invisible(existing))
+    }
+  } else {
+    files_to_parse <- files
+    if (verbose) {
+      if (force) {
+        cat("Tvångsimport:", length(files_to_parse), "fil(er)\n")
+      } else {
+        cat("Importerar", length(files_to_parse), "fil(er)\n")
+      }
+    }
+  }
 
-  new_data <- lapply(files, function(f) {
+  new_data <- lapply(files_to_parse, function(f) {
     read_health_export(f, verbose = verbose)
   })
   new_data <- dplyr::bind_rows(new_data)
@@ -536,6 +633,19 @@ import_health_export <- function(path = NULL, cache_path = NULL,
   if (save) {
     save_health_data(health_daily, cache_path)
     if (verbose) cat("Sparad:", cache_path, "\n")
+
+    # Update manifest with all files (both parsed and previously imported)
+    new_entries <- .build_manifest_entries(files_to_parse)
+    if (force || is.null(path)) {
+      # Full run: rebuild manifest from all files
+      all_entries <- .build_manifest_entries(files)
+      .save_manifest(all_entries)
+    } else {
+      # Single-file run: merge into existing manifest
+      for (k in names(new_entries)) manifest[[k]] <- new_entries[[k]]
+      .save_manifest(manifest)
+    }
+    if (verbose) cat("Manifest uppdaterad\n")
   }
 
   invisible(health_daily)
