@@ -1,10 +1,12 @@
 """FastAPI application for receiving HAE health data."""
 
 import logging
+import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 
 from .auth import require_api_key
 from .notify import notify
@@ -112,5 +114,23 @@ def create_app() -> FastAPI:
             "status": "ok",
             "workouts_saved": n,
         }
+
+    @application.post("/v1/trigger/garmin", dependencies=[Depends(require_api_key)])
+    async def trigger_garmin(background_tasks: BackgroundTasks):
+        """Trigger a Garmin fetch in the background."""
+        def _run_fetch():
+            traning_bin = Path(__file__).resolve().parent.parent.parent.parent / "python" / ".venv" / "bin" / "traning"
+            result = subprocess.run(
+                [str(traning_bin), "fetch", "garmin"],
+                capture_output=True, text=True, timeout=120,
+            )
+            if "fetched 0" not in result.stdout:
+                notify("tRäning", f"Garmin fetch: {result.stdout.strip().splitlines()[-1]}")
+            log.info("Garmin fetch: %s", result.stdout.strip())
+            if result.returncode != 0:
+                log.warning("Garmin fetch stderr: %s", result.stderr.strip())
+
+        background_tasks.add_task(_run_fetch)
+        return {"status": "ok", "message": "Garmin fetch triggered"}
 
     return application
