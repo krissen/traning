@@ -1,5 +1,60 @@
 # tRäning — Changelog
 
+## 2026-04-06 — Phase 4g: Aerobic decoupling
+
+### Aerobic decoupling metric (`R/advanced_metrics.R`)
+- `compute_decoupling()` — compares pace:HR efficiency between first and
+  second half of a run to quantify cardiac drift
+- Time-based processing: warmup exclusion, smoothing window and midpoint
+  split all use the `time` column, not row indices — critical because
+  older Garmin devices (pre-2017) log at 3–7 second intervals
+- Steady-state filter (`max_half_speed_diff_pct = 10`): rejects sessions
+  where mean speed differs >10% between halves. Without this, pacing
+  artefacts (warm-up progression, fartlek, negative splits) produce large
+  spurious negative values. Empirically retains ~79% of sessions while
+  eliminating virtually all extreme outliers
+- Threshold bands: <3% well-coupled, 3–5% acceptable, 5–8% moderate
+  drift, >8% significant aerobic limitation
+- `load_decoupling()` — incremental RData cache with parameter-aware
+  invalidation (duration, pace, warmup, smoothing, steady-state threshold)
+- 534 qualifying sessions from 2005–2026
+
+### HR data repair (`R/import.R`)
+- `repair_myruns_hr()` — finds sessions where summaries has avgHR > 0
+  but myruns per-second HR is all NA/zero, and re-parses the original
+  TCX file. Root cause: older trackeR version silently dropped HR data
+  during import for certain TCX format variants, despite the raw files
+  being intact
+- `--repair-hr` CLI flag
+- Recovered 358 sessions (2007–2020), bringing per-second HR coverage
+  from 3554 to 3904 running sessions
+
+### Plot fix (`R/plot.R`)
+- Fixed `xlim` crash when only `--after` or only `--before` is specified
+  (was `c(from, NULL)` → length 1; now `c(from %||% NA, to %||% NA)`)
+- Affects all plot functions with `from`/`to` parameters
+
+### Visualization (`R/plot.R`)
+- `fetch.plot.decoupling()` — two-panel faceted chart:
+  upper panel: scatter + loess + 28-day rolling mean + threshold bands;
+  lower panel: weekly km bars for volume context
+
+### Report (`R/report.R`)
+- `report_decoupling()` with columns: Datum, Km, Tempo, HR,
+  Dekopp %, Dekopp 28d, Temp
+
+### CLI
+- R CLI: `--decoupling` flag with `--force` for cache bypass
+- Python CLI: `traning decoupling [--plot] [--force] [--after/--before]`
+
+### Tests
+- 292 tests total (was 259), all passing
+- New `test-decoupling.R` (33 tests): known decoupling values, zero/negative
+  decoupling, sport/duration/pace filters, steady-state filter, NULL/missing
+  data handling, temperature annotation, report formatting, cache roundtrip
+
+---
+
 ## 2026-04-06 — Refactor: Unified report function signatures
 
 ### Unified `(summaries, n, from, to)` signature (`R/report.R`)

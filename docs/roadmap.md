@@ -51,18 +51,3 @@
 **Dependencies:** Phase 5a (done), Phase 5c (MCP).
 
 ---
-
-## Phase 4g: Aerobic decoupling
-
-**Goal:** Compare first-half vs second-half pace:HR ratio to quantify
-aerobic fitness limitations within a single run.
-
-**Deliverables:**
-- `compute_decoupling()` — per-second data extraction, first 10 min excluded,
-  midpoint split, 30s rolling mean on speed (GPS noise), temperature annotation
-- Trend plot with threshold bands (<3%, 3-5%, 5-8%, >8%)
-- CLI: `traning decoupling --after -1y`
-
-**Filters:** running, >45 min, easy pace (>5:00/km).
-
-**Dependencies:** Requires new `R/persecond.R` module for myruns access pattern.
