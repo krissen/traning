@@ -90,9 +90,14 @@ def cli():
     """tRäning — running data analysis tool."""
 
 
-# -- fetch (pure Python) ---------------------------------------------------
+# -- fetch group -----------------------------------------------------------
 
-@cli.command()
+@cli.group()
+def fetch():
+    """Fetch raw data from external sources."""
+
+
+@fetch.command(name="garmin")
 @click.option("--limit", type=int, default=50,
               help="Max number of new activities to fetch (default: 50)")
 @click.option("--all", "fetch_all", is_flag=True,
@@ -104,7 +109,7 @@ def cli():
 @click.option("--login-method", type=click.Choice(["browser", "native"]),
               default="browser", help="Login method (default: browser)")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
-def fetch(limit, fetch_all, dry_run, reauth, login_method, verbose):
+def fetch_garmin(limit, fetch_all, dry_run, reauth, login_method, verbose):
     """Fetch new activities from Garmin Connect."""
     from .garmin import authenticate, fetch_new_activities, get_data_dir, token_dir, setup_logging
 
@@ -134,6 +139,54 @@ def fetch(limit, fetch_all, dry_run, reauth, login_method, verbose):
         raise click.ClickException(f"Fetch failed: {e}")
 
 
+@fetch.command(name="health")
+@click.option("--server", is_flag=True, help="Only fetch from TCP server")
+@click.option("--inbox", is_flag=True, help="Only process inbox files")
+@click.option("--days-back", type=int, default=None,
+              help="Re-fetch last N days (instead of incremental)")
+@click.option("--all", "fetch_all", is_flag=True,
+              help="Full re-fetch from 2013 (slow)")
+@click.option("--dry-run", is_flag=True, help="Preview without downloading")
+@click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
+def fetch_health(server, inbox, days_back, fetch_all, dry_run, verbose):
+    """Fetch health data from Health Auto Export."""
+    from .garmin.utils import get_data_dir, setup_logging
+    from .health import fetch_tcp, fetch_inbox, check_server
+
+    setup_logging(verbose=verbose)
+
+    try:
+        data_dir = get_data_dir()
+    except (EnvironmentError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+
+    # Default: try both strategies
+    do_server = server or (not server and not inbox)
+    do_inbox = inbox or (not server and not inbox)
+
+    total = 0
+
+    if do_server:
+        if check_server():
+            click.echo("HAE-server nåbar, hämtar ...")
+            n = fetch_tcp(data_dir, days_back=days_back,
+                          fetch_all=fetch_all, dry_run=dry_run)
+            action = "would write" if dry_run else "wrote"
+            click.echo(f"TCP: {action} {n} metric files")
+            total += n
+        else:
+            click.echo("HAE-server inte nåbar — hoppar över TCP", err=True)
+
+    if do_inbox:
+        n = fetch_inbox(data_dir, dry_run=dry_run)
+        action = "would process" if dry_run else "processed"
+        click.echo(f"Inbox: {action} {n} files")
+        total += n
+
+    if total == 0 and not dry_run:
+        click.echo("Ingen ny hälsodata hittades")
+
+
 def _commit_data(data_dir, n: int) -> None:
     """Git add + commit new files in the data repo."""
     try:
@@ -150,21 +203,41 @@ def _commit_data(data_dir, n: int) -> None:
         log.warning("Git commit failed: %s", e.stderr.decode().strip())
 
 
-# -- import (R delegation) -------------------------------------------------
+# -- import group ----------------------------------------------------------
 
-@cli.command(name="import")
+@cli.group(name="import")
+def import_group():
+    """Import fetched data into R analysis cache."""
+
+
+@import_group.command(name="garmin")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-def import_cmd(verbose):
-    """Import new TCX workouts into RData cache."""
+def import_garmin(verbose):
+    """Import TCX workouts into RData cache."""
     cmd = ["Rscript", str(CLI_R), "--import"]
     if verbose:
         cmd.append("--verbose")
     _exec(cmd)
 
 
-# -- update (fetch + import) -----------------------------------------------
+@import_group.command(name="health")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+def import_health(verbose):
+    """Import health data (JSON) into RData cache."""
+    cmd = ["Rscript", str(CLI_R), "--import-health"]
+    if verbose:
+        cmd.append("--verbose")
+    _exec(cmd)
 
-@cli.command()
+
+# -- sync group ------------------------------------------------------------
+
+@cli.group()
+def sync():
+    """Fetch and import in one step."""
+
+
+@sync.command(name="garmin")
 @click.option("--all", "fetch_all", is_flag=True,
               help="Fetch all missing activities")
 @click.option("--dry-run", is_flag=True,
@@ -174,13 +247,12 @@ def import_cmd(verbose):
 @click.option("--login-method", type=click.Choice(["browser", "native"]),
               default="browser", help="Login method")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
-def update(fetch_all, dry_run, reauth, login_method, verbose):
-    """Fetch new activities, then import into R cache."""
+def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
+    """Fetch from Garmin Connect, then import into R cache."""
     from .garmin import authenticate, fetch_new_activities, get_data_dir, token_dir, setup_logging
 
     setup_logging(verbose=verbose)
 
-    # Step 1: Fetch
     try:
         data_dir = get_data_dir()
     except (EnvironmentError, FileNotFoundError) as e:
@@ -204,21 +276,151 @@ def update(fetch_all, dry_run, reauth, login_method, verbose):
     except Exception as e:
         raise click.ClickException(f"Fetch failed: {e}")
 
-    # Step 2: Import (skip if dry-run or nothing new)
     if dry_run:
-        click.echo("Dry-run mode — skipping import")
+        click.echo("Dry-run — hoppar över import")
         return
     if n == 0:
-        click.echo("No new activities — skipping import")
+        click.echo("Inga nya aktiviteter — hoppar över import")
         return
 
-    click.echo("Importing into R cache ...")
+    click.echo("Importerar till R-cache ...")
     cmd = ["Rscript", str(CLI_R), "--import"]
     if verbose:
         cmd.append("--verbose")
     rc = _run(cmd)
     if rc != 0:
-        raise click.ClickException(f"R import failed (exit code {rc})")
+        raise click.ClickException(f"R-import misslyckades (exit code {rc})")
+
+
+@sync.command(name="health")
+@click.option("--server", is_flag=True, help="Only fetch from TCP server")
+@click.option("--inbox", is_flag=True, help="Only process inbox files")
+@click.option("--days-back", type=int, default=None,
+              help="Re-fetch last N days")
+@click.option("--all", "fetch_all", is_flag=True,
+              help="Full re-fetch from 2013")
+@click.option("--dry-run", is_flag=True, help="Preview without action")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+def sync_health(server, inbox, days_back, fetch_all, dry_run, verbose):
+    """Fetch health data, then import into R cache."""
+    from .garmin.utils import get_data_dir, setup_logging
+    from .health import fetch_tcp, fetch_inbox, check_server
+
+    setup_logging(verbose=verbose)
+
+    try:
+        data_dir = get_data_dir()
+    except (EnvironmentError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+
+    do_server = server or (not server and not inbox)
+    do_inbox = inbox or (not server and not inbox)
+
+    total = 0
+
+    if do_server:
+        if check_server():
+            click.echo("HAE-server nåbar, hämtar ...")
+            n = fetch_tcp(data_dir, days_back=days_back,
+                          fetch_all=fetch_all, dry_run=dry_run)
+            action = "would write" if dry_run else "wrote"
+            click.echo(f"TCP: {action} {n} metric files")
+            total += n
+        else:
+            click.echo("HAE-server inte nåbar — hoppar över TCP", err=True)
+
+    if do_inbox:
+        n = fetch_inbox(data_dir, dry_run=dry_run)
+        action = "would process" if dry_run else "processed"
+        click.echo(f"Inbox: {action} {n} files")
+        total += n
+
+    if dry_run:
+        click.echo("Dry-run — hoppar över import")
+        return
+    if total == 0:
+        click.echo("Ingen ny hälsodata — hoppar över import")
+        return
+
+    click.echo("Importerar hälsodata till R-cache ...")
+    cmd = ["Rscript", str(CLI_R), "--import-health"]
+    if verbose:
+        cmd.append("--verbose")
+    rc = _run(cmd)
+    if rc != 0:
+        raise click.ClickException(f"R-import av hälsodata misslyckades (exit code {rc})")
+
+
+@sync.command(name="all")
+@click.option("--dry-run", is_flag=True, help="Preview without action")
+@click.option("--reauth", is_flag=True, help="Force Garmin re-authentication")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+def sync_all(dry_run, reauth, verbose):
+    """Fetch and import everything (Garmin + Health)."""
+    from .garmin import authenticate, fetch_new_activities, get_data_dir, token_dir, setup_logging
+    from .health import fetch_tcp, fetch_inbox, check_server
+
+    setup_logging(verbose=verbose)
+
+    try:
+        data_dir = get_data_dir()
+    except (EnvironmentError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+
+    # --- Garmin ---
+    click.echo("=== Garmin ===")
+    try:
+        tokens = token_dir(data_dir)
+        client = authenticate(tokens, force_reauth=reauth, method="browser")
+        n_garmin = fetch_new_activities(
+            client, data_dir, limit=50, fetch_all=False, dry_run=dry_run,
+        )
+        action = "would fetch" if dry_run else "fetched"
+        click.echo(f"Fetch: {action} {n_garmin} new activities")
+        if n_garmin > 0 and not dry_run:
+            _commit_data(data_dir, n_garmin)
+    except Exception as e:
+        click.echo(f"Garmin fetch misslyckades: {e}", err=True)
+        n_garmin = 0
+
+    if n_garmin > 0 and not dry_run:
+        click.echo("Importerar Garmin-data ...")
+        cmd = ["Rscript", str(CLI_R), "--import"]
+        if verbose:
+            cmd.append("--verbose")
+        rc = _run(cmd)
+        if rc != 0:
+            click.echo("Garmin R-import misslyckades", err=True)
+
+    # --- Health ---
+    click.echo("\n=== Health ===")
+    n_health = 0
+
+    if check_server():
+        click.echo("HAE-server nåbar, hämtar ...")
+        n = fetch_tcp(data_dir, dry_run=dry_run)
+        click.echo(f"TCP: {'would write' if dry_run else 'wrote'} {n} metric files")
+        n_health += n
+    else:
+        click.echo("HAE-server inte nåbar — hoppar över TCP", err=True)
+
+    n = fetch_inbox(data_dir, dry_run=dry_run)
+    click.echo(f"Inbox: {'would process' if dry_run else 'processed'} {n} files")
+    n_health += n
+
+    if n_health > 0 and not dry_run:
+        click.echo("Importerar hälsodata ...")
+        cmd = ["Rscript", str(CLI_R), "--import-health"]
+        if verbose:
+            cmd.append("--verbose")
+        rc = _run(cmd)
+        if rc != 0:
+            click.echo("Health R-import misslyckades", err=True)
+
+    if dry_run:
+        click.echo("\nDry-run — inga ändringar gjordes")
+    else:
+        click.echo(f"\nKlart — {n_garmin} Garmin-aktiviteter, {n_health} hälsofiler")
 
 
 # -- report group -----------------------------------------------------------
