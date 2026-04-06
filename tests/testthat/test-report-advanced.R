@@ -95,15 +95,6 @@ test_that("report_recovery_hr works with enriched data", {
   expect_true(all(c("Datum", "Km", "Recovery HR", "RHR 28d") %in% names(result)))
 })
 
-# --- report_monthtop with n parameter ---
-test_that("report_monthtop respects n parameter", {
-  result5 <- report_monthtop(test_summaries, n = 5)
-  expect_lte(nrow(result5), 5)
-
-  result3 <- report_monthtop(test_summaries, n = 3)
-  expect_lte(nrow(result3), 3)
-})
-
 # --- save_plot ---
 test_that("save_plot creates file with auto-generated name", {
   p <- ggplot2::ggplot(data.frame(x = 1:10, y = 1:10),

@@ -1,5 +1,49 @@
 # tRäning — Changelog
 
+## 2026-04-06 — Refactor: Unified report function signatures
+
+### Unified `(summaries, n, from, to)` signature (`R/report.R`)
+- All 6 basic report functions now accept `n`, `from`, `to` parameters:
+  `report_monthtop`, `report_monthstatus`, `report_monthlast`,
+  `report_yearstop`, `report_yearstatus`, `report_runs_year_month`
+- New `.filter_input()` helper filters raw summaries by `from`/`to`
+  on `sessionStart`, reusing `filter_by_daterange()` from `R/daterange.R`
+- `report_runs_year_month` no longer uses `do_year`/`do_month` — replaced
+  by `from`/`to` with default=current month
+- `report_monthlast` `print()` side effect removed
+
+### `--limit` on all commands (`inst/cli.R`)
+- All basic report commands now support `--limit` (`report_monthstatus`,
+  `report_monthlast`, `report_yearstop`, `report_yearstatus`,
+  `report_runs_year_month` — `report_monthtop` already had it)
+- `summaries_filtered` pre-filter variable removed — each function
+  handles its own filtering via `from`/`to`
+- `--total-pace` uses inline `filter_by_daterange()` call
+
+### Plot pass-through (`R/plot_reports.R`)
+- All 6 plot functions accept and forward `from`/`to` to their report functions
+- `plot_runs_month` no longer uses `do_year`/`do_month`
+
+### Shiny app (`app/tRanat/server.R`)
+- 12 call sites (6 report + 6 plot) switched from `summaries_f()` to
+  `summaries` + `from`/`to` from global date preset
+- `summaries_f()` kept for pace tab only
+
+### Tests
+- 259 tests total (was 223), all passing
+- New `test-report-basic.R` (38 tests): signature validation, `n` limiting,
+  `from`/`to` filtering, descending sort, no side effects
+
+---
+
+## 2026-04-06 — Remove Phase 4h (FIT & Polar import) from roadmap
+
+Data audit confirmed that all 2 093 FIT files (2012–2020) are already
+covered by corresponding TCX files (~1:1 per year). The 265 SRD files
+(2004–2006) were previously converted to TCX (in `tcx/srd-import/`).
+Cache covers 4 619 activities from 2004-12-31 to 2026-04-05 — no gaps.
+FIT/SRD import adds no new data; phase removed.
+
 ## 2026-04-06 — Phase 4f: HR zone distribution & polarization index
 
 ### Zone computation (`R/hr_zones.R`)

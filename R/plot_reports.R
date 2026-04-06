@@ -21,8 +21,8 @@
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_monthtop <- function(summaries) {
-  data <- report_monthtop(summaries)
+plot_monthtop <- function(summaries, from = NULL, to = NULL) {
+  data <- report_monthtop(summaries, from = from, to = to)
 
   data %>%
     dplyr::mutate(
@@ -48,17 +48,21 @@ plot_monthtop <- function(summaries) {
 #' lollipop; point colour encodes pace (green = fast, red = slow).
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
-#' @param do_year Year as string. Default: current year.
-#' @param do_month Month as string (zero-padded). Default: current month.
+#' @param from Start date passed to \code{report_runs_year_month()}. Used to
+#'   derive the month/year for the chart title. Default: \code{NULL} (current
+#'   month).
+#' @param to End date passed to \code{report_runs_year_month()}. Default:
+#'   \code{NULL}.
 #' @return ggplot2 object
 #' @export
-plot_runs_month <- function(summaries,
-                            do_year  = format(Sys.time(), "%Y"),
-                            do_month = format(Sys.time(), "%m")) {
-  data <- report_runs_year_month(summaries, do_year, do_month)
+plot_runs_month <- function(summaries, from = NULL, to = NULL) {
+  data <- report_runs_year_month(summaries, from = from, to = to)
 
+  ref_date  <- if (!is.null(from)) as.Date(from) else Sys.Date()
+  do_year   <- format(ref_date, "%Y")
+  do_month  <- as.integer(format(ref_date, "%m"))
   title <- stringr::str_glue(
-    "Löpturer {month.name[as.integer(do_month)]} {do_year}"
+    "Löpturer {month.name[do_month]} {do_year}"
   )
 
   data %>%
@@ -88,8 +92,8 @@ plot_runs_month <- function(summaries,
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_monthstatus <- function(summaries) {
-  data <- report_monthstatus(summaries)
+plot_monthstatus <- function(summaries, from = NULL, to = NULL) {
+  data <- report_monthstatus(summaries, from = from, to = to)
   .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år")
 }
 
@@ -101,8 +105,8 @@ plot_monthstatus <- function(summaries) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_monthlast <- function(summaries) {
-  data <- report_monthlast(summaries)
+plot_monthlast <- function(summaries, from = NULL, to = NULL) {
+  data <- report_monthlast(summaries, from = from, to = to)
 
   my_month <- as.numeric(format(Sys.time(), "%m"))
   do_month <- if (my_month == 1) 12L else my_month - 1L
@@ -121,8 +125,8 @@ plot_monthlast <- function(summaries) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_yearstatus <- function(summaries) {
-  data <- report_yearstatus(summaries)
+plot_yearstatus <- function(summaries, from = NULL, to = NULL) {
+  data <- report_yearstatus(summaries, from = from, to = to)
   .plot_year_bars(data, title = "Årssammanställning (t.o.m. idag)")
 }
 
@@ -134,8 +138,8 @@ plot_yearstatus <- function(summaries) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_yearstop <- function(summaries) {
-  data <- report_yearstop(summaries)
+plot_yearstop <- function(summaries, from = NULL, to = NULL) {
+  data <- report_yearstop(summaries, from = from, to = to)
   .plot_year_bars(data, title = "Årssammanställning (hela år)")
 }
 
