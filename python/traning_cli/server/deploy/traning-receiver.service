@@ -5,10 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=krisniem
+User=krisse
 EnvironmentFile=/etc/traning/env
-WorkingDirectory=/home/krisniem/dev/traning
-ExecStart=/home/krisniem/dev/traning/python/.venv/bin/traning serve --host 0.0.0.0 --port 8421
+WorkingDirectory=/home/krisse/dev/traning
+ExecStart=/home/krisse/dev/traning/python/.venv/bin/traning serve --host 0.0.0.0 --port 8421
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
