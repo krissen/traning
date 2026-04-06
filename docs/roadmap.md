@@ -1,19 +1,5 @@
 # tRäning — Roadmap
 
-## Phase 5b: Automated health data pipeline
-
-**Goal:** Automate daily health data import from iPhone to server.
-
-**Deliverables:**
-- FastAPI receiver on kailash (port 8421) accepting HAE JSON POST
-- HAE iOS automations: health metrics at 06:00, workouts at 06:30
-- Systemd service for receiver, Tailscale networking
-- Resting HR export without aggregation (separate automation)
-
-**Dependencies:** Health export pipeline (done), Tailscale (done).
-
----
-
 ## Phase 5c: MCP server
 
 **Goal:** Expose tRäning as an MCP server for AI-powered training analysis.

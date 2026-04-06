@@ -1,5 +1,43 @@
 # tRäning — Changelog
 
+## 2026-04-06 — Phase 5b: Automated health and training data pipeline
+
+### FastAPI health receiver (`python/traning_cli/server/`)
+- `POST /v1/health` accepts HAE JSON, saves to metrics/ directory, git commits
+- API key authentication (`X-API-Key` header)
+- `GET /v1/status` — uptime, last received, total pushes
+- `GET /health` — healthcheck
+- Reuses file format from `health/tcp.py` — same `{metric}_{first}_{last}.json`
+  naming, compatible with R-side manifest-based import
+- HA push notifications on data receipt via `notify.mobile_app_anandavani`
+- Commits only when data actually changed (`git diff --cached --quiet`)
+
+### CLI commands (`python/traning_cli/main.py`)
+- `traning serve` — start FastAPI receiver (port 8421)
+- `traning pull` — git pull data repo from GitHub remote
+- All `sync` commands auto-pull from remote before fetching when configured
+
+### Deployment (`python/traning_cli/server/deploy/`)
+- `deploy.sh` with subcommands: `code`, `secrets`, `tokens`, `status`, `all`
+- Code deployed via `git pull` on kailash (not rsync)
+- Credentials via SCP, never committed (`traning-env.local` gitignored)
+- Garmin tokens copied from kedar (auth done locally, valid ~1 year)
+
+### Systemd services on kailash (Arch Linux)
+- `traning-receiver.service` — FastAPI on :8421 (auto-start at boot)
+- `traning-garmin.timer` — fetch from Garmin Connect every 30 min, 06–22
+- `traning-push.timer` — daily git push to GitHub at 03:00
+
+### Data sync
+- Private GitHub repo (`krissen/traning-data`) for sync between kailash and kedar
+- HAE (Health Auto Export) iOS app pushes health data to kailash via REST API
+- Garmin activities fetched automatically by timer
+
+### Dependencies
+- `fastapi>=0.100` and `uvicorn[standard]>=0.20` added to `pyproject.toml`
+
+---
+
 ## 2026-04-06 — Phase 4g: Aerobic decoupling
 
 ### Aerobic decoupling metric (`R/advanced_metrics.R`)
