@@ -8,5 +8,6 @@ User=krisse
 EnvironmentFile=/etc/traning/env
 WorkingDirectory=/home/krisse/dev/traning
 ExecStart=/home/krisse/dev/traning/python/.venv/bin/traning fetch garmin --login-method browser
+ExecStartPost=/home/krisse/dev/traning/python/.venv/bin/traning import garmin
 StandardOutput=journal
 StandardError=journal
