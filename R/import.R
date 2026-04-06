@@ -73,7 +73,8 @@ get_my_files <- function(mytcxpath) {
 #' @export
 get_new_workouts <- function(files, summaries, myruns, verbose = FALSE) {
   # Match on basename to handle relative vs absolute path mismatches
-  existing_basenames <- basename(summaries$file[!is.na(summaries$file)])
+  existing_basenames <- if ("file" %in% names(summaries))
+    basename(summaries$file[!is.na(summaries$file)]) else character(0)
   for (i in 1:length(files)) {
     thefile <- files[[i]]
     if (basename(thefile) %in% existing_basenames) {
