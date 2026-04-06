@@ -68,6 +68,7 @@ cmd_secrets() {
 TRANING_DATA=/home/krisse/dokument/traning-data
 TRANING_OPEN=false
 R_LIBS_USER=~/R/library
+LANG=sv_SE.utf8
 RENV"
 
     _info "Secrets deployed"
