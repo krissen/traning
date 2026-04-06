@@ -1,5 +1,48 @@
 # tRäning — Changelog
 
+## 2026-04-06 — Phase 5c: Vayu MCP server
+
+### MCP server (`python/traning_cli/mcp/`)
+- **Vayu** — FastMCP server exposing tRäning as 15 MCP tools for Claude
+- Transport: stdio (Claude Code / Claude Desktop)
+- Entry points: `vayu` command and `traning mcp`
+- R bridge (`inst/mcp_bridge.R`): function dispatch with whitelisted
+  functions, conditional data loading, JSON/PNG output
+- Python bridge (`r_bridge.py`): subprocess helpers with input validation
+  (control char stripping, date format validation, timeout clamping)
+- Standardized response envelope: `{schema_version, summary, details, _meta}`
+
+### Tools (15)
+- **Health & Readiness:** `get_readiness`, `get_sleep`, `get_hrv`
+- **Training Load:** `get_training_load` (PMC/ACWR/monotony),
+  `get_efficiency` (EF/HRE), `get_zones` (Seiler 3-zone + PI)
+- **Sessions:** `get_sessions`, `get_monthly_summary`, `get_yearly_summary`
+- **Trends:** `get_decoupling`, `get_recovery_hr`, `get_resting_hr`,
+  `get_vo2max`
+- **Comparison:** `compare_periods` (two date ranges side by side)
+- **Reference:** `explain_metric` (definitions, thresholds, references)
+- All tools support `after`/`before` date filtering and `plot=True`
+  for PNG chart output (base64-encoded)
+
+### Resources
+- `vayu://metrics` — available metrics with descriptions
+- `vayu://thresholds` — reference thresholds for all metrics
+
+### Prompts (Swedish)
+- `daglig_check` — daily readiness + recent sessions + recommendation
+- `veckoutvardering` — weekly volume, intensity balance, trends
+- `konditionsbedomning` — 3-month fitness assessment (EF, CTL, zones)
+
+### Dependencies
+- `fastmcp>=2.0` added to `pyproject.toml`
+
+### Tests
+- 317 tests total (was 292), all passing
+- New `test-mcp-bridge.R` (25 tests): function whitelist, data/plot
+  output modes, date filtering, error handling
+
+---
+
 ## 2026-04-06 — Phase 5b: Automated health and training data pipeline
 
 ### FastAPI receiver (`python/traning_cli/server/`)
