@@ -29,6 +29,9 @@ my_options <- list(
   make_option("--repair",
     type = "logical", action = "store_true", default = FALSE,
     help = "Repair myruns entries with NULL data (re-parse TCX files)"),
+  make_option("--repair-hr",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Repair myruns entries with missing per-second HR (re-parse TCX)"),
   make_option("--total-pace",
     type = "logical", action = "store_true", default = FALSE,
     help = "Print summarization of pace (all-time)"),
@@ -71,6 +74,9 @@ my_options <- list(
   make_option("--recovery-hr",
     type = "logical", action = "store_true", default = FALSE,
     help = "Recovery Heart Rate trend (requires Garmin JSON import)"),
+  make_option("--decoupling",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Aerobic decoupling trend (pace:HR drift, requires per-second data)"),
   make_option("--hr-zones",
     type = "logical", action = "store_true", default = FALSE,
     help = "HR zone distribution and Polarization Index (Seiler 3-zone)"),
@@ -130,6 +136,7 @@ do_acwr         <- options$acwr
 do_monotony     <- options$monotony
 do_pmc          <- options$pmc
 do_recovery_hr  <- options$`recovery-hr`
+do_decoupling   <- options$decoupling
 do_hr_zones     <- options$`hr-zones`
 do_readiness    <- options$readiness
 do_import_health <- options$`import-health`
@@ -204,8 +211,17 @@ if (do_repair) {
   my_dbs_save(db_summaries, db_myruns, summaries, myruns)
 }
 
+do_repair_hr <- options$`repair-hr`
+if (do_repair_hr) {
+  files <- get_my_files(mytcxpath)
+  my_templist <- repair_myruns_hr(files, summaries, myruns, verbose = do_verbose)
+  myruns <- my_templist[["myruns"]]
+  rm(my_templist)
+  my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+}
+
 # --- Augment with Garmin JSON data (if needed) ---
-needs_garmin <- do_recovery_hr || do_hr_zones
+needs_garmin <- do_recovery_hr || do_decoupling || do_hr_zones
 if (needs_garmin && dir.exists(gc_json_dir)) {
   garmin_data <- load_garmin_json(gc_json_dir)
   summaries <- augment_summaries(summaries, garmin_data)
@@ -292,7 +308,7 @@ if (do_year_top) {
 any_report <- do_month_top || do_month_running || do_month_this ||
   do_month_last || do_year_running || do_year_top || do_total_pace ||
   do_ef || do_hre || do_acwr || do_monotony || do_pmc || do_recovery_hr ||
-  do_readiness || do_hr_zones
+  do_decoupling || do_readiness || do_hr_zones
 
 if (!is.null(options$datesum) || (has_daterange && !any_report)) {
   dr_from <- date_range$from
@@ -409,6 +425,19 @@ if (do_recovery_hr) {
   } else {
     emit_table(report_recovery_hr(summaries, n = do_limit %||% 28L,
                              from = date_range$from, to = date_range$to), "recovery-hr")
+  }
+}
+
+if (do_decoupling) {
+  decoupling_data <- load_decoupling(summaries, myruns, force = do_force)
+  if (do_plot) {
+    emit_plot(fetch.plot.decoupling(summaries, myruns,
+                from = date_range$from, to = date_range$to,
+                decoupling_data = decoupling_data), "decoupling")
+  } else {
+    emit_table(report_decoupling(n = do_limit %||% 28L,
+                  from = date_range$from, to = date_range$to,
+                  decoupling_data = decoupling_data), "decoupling")
   }
 }
 
