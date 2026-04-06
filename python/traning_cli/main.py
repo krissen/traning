@@ -562,6 +562,33 @@ def hr_zones(force, show_plot, after, before, span, output, fmt, no_open, limit)
     _exec(cmd)
 
 
+@cli.command()
+@click.option("--force", is_flag=True, help="Recompute all (bypass cache)")
+@report_options
+def decoupling(force, show_plot, after, before, span, output, fmt, no_open, limit):
+    """Aerobic decoupling trend (pace:HR drift)."""
+    cmd = ["Rscript", str(CLI_R), "--decoupling"]
+    if force:
+        cmd.append("--force")
+    if show_plot:
+        cmd.append("--plot")
+    if after:
+        cmd.append(f"--after={after}")
+    if before:
+        cmd.append(f"--before={before}")
+    if span:
+        cmd.append(f"--span={span}")
+    if limit is not None:
+        cmd.append(f"--limit={limit}")
+    if output:
+        cmd.append(f"--output={output}")
+    if fmt:
+        cmd.append(f"--format={fmt}")
+    if no_open:
+        cmd.append("--no-open")
+    _exec(cmd)
+
+
 # -- datesum ----------------------------------------------------------------
 
 @cli.command()

@@ -43,6 +43,15 @@ if (dir.exists(gc_json_dir)) {
   }
 }
 
+# --- Ladda decoupling-cache (per-second-beroende, tar tid utan cache) ---
+decoupling_data <- tryCatch(
+  load_decoupling(summaries, myruns),
+  error = function(e) {
+    warning("Kunde inte ladda decoupling-data: ", conditionMessage(e))
+    NULL
+  }
+)
+
 # --- Ladda Apple Watch hälsodata ---
 health_daily <- tryCatch(
   load_health_data(),
