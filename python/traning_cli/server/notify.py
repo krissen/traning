@@ -31,6 +31,7 @@ def notify(title: str, message: str) -> bool:
             },
             json={"title": title, "message": message},
             timeout=5,
+            verify=not ha_url.startswith("https://localhost"),
         )
         resp.raise_for_status()
         log.info("HA notification sent: %s", title)
