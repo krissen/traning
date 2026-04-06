@@ -7,6 +7,12 @@ TRANING_DATA=/Users/YOURNAME/Documents/traning-data
 GARMIN_EMAIL=
 GARMIN_PASSWORD=
 
+# Physiological parameters (used by HR zone analysis).
+# BIRTH_YEAR — enables time-varying HRmax via Tanaka formula (208 - 0.7 * age)
+# HR_MAX — fixed HRmax override (ignores age decline; use for lab-tested value)
+#BIRTH_YEAR=1980
+#HR_MAX=
+
 # Output defaults (all optional).
 # TRANING_OUTPUT_DIR — base directory for saved plots/tables (default: $TRANING_DATA/output)
 # TRANING_PLOT_FORMAT — default plot format: pdf, png (default: pdf)

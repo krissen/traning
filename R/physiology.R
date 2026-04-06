@@ -191,6 +191,81 @@ get_hr_rest <- function(date, rhr_data = NULL) {
   result
 }
 
+#' Get time-varying HRmax for a date vector
+#'
+#' Returns HRmax that declines with age, using one of these strategies:
+#' \enumerate{
+#'   \item \code{HR_MAX} env var → fixed value for all dates (user override)
+#'   \item \code{BIRTH_YEAR} env var + Tanaka formula (208 - 0.7 * age)
+#'   \item \code{garmin_maxHR} data → linear fit of yearly 98th percentile,
+#'     extrapolated for years without data
+#'   \item Fallback: fixed 185 bpm with warning
+#' }
+#'
+#' @param date Date vector (Date or character).
+#' @param summaries Optional summaries tibble with \code{garmin_maxHR}.
+#' @return Numeric vector of same length as \code{date} (bpm, rounded).
+#' @export
+get_hr_max_at <- function(date, summaries = NULL) {
+  date <- as.Date(date)
+
+  # 1. Explicit override → fixed for all dates
+  hr_max_env <- suppressWarnings(as.numeric(Sys.getenv("HR_MAX", unset = "")))
+  if (!is.na(hr_max_env) && hr_max_env > 0) {
+    return(rep(hr_max_env, length(date)))
+  }
+
+  target_years <- as.numeric(format(date, "%Y"))
+
+  # 2. BIRTH_YEAR + Tanaka formula (preferred — simple and physiologically sound)
+  birth_year <- suppressWarnings(
+    as.numeric(Sys.getenv("BIRTH_YEAR", unset = "")))
+  if (!is.na(birth_year) && birth_year > 1900) {
+    ages <- target_years - birth_year
+    result <- round(208 - 0.7 * ages)
+    return(result)
+  }
+
+  # 3. Data-driven: yearly 98th percentile with linear fit
+  if (!is.null(summaries) && "garmin_maxHR" %in% colnames(summaries)) {
+    yearly <- summaries %>%
+      dplyr::filter(
+        stringr::str_detect(sport, "running"),
+        as.numeric(duration, units = "mins") > 20
+      ) %>%
+      dplyr::mutate(
+        year     = as.numeric(format(sessionStart, "%Y")),
+        max_hr_v = as.numeric(garmin_maxHR)
+      ) %>%
+      dplyr::filter(!is.na(max_hr_v), max_hr_v > 0) %>%
+      dplyr::group_by(year) %>%
+      dplyr::filter(dplyr::n() >= 5) %>%
+      dplyr::summarise(
+        hr_max = stats::quantile(max_hr_v, probs = 0.98, names = FALSE),
+        .groups = "drop"
+      )
+
+    if (nrow(yearly) >= 2) {
+      fit <- stats::lm(hr_max ~ year, data = yearly)
+      predicted <- stats::predict(fit,
+                                  newdata = data.frame(year = target_years))
+      return(round(pmax(predicted, 150)))
+    }
+  }
+
+  # 4. AGE env → snapshot (not ideal for 20-year span)
+  age_env <- suppressWarnings(as.numeric(Sys.getenv("AGE", unset = "")))
+  if (!is.na(age_env) && age_env > 0) {
+    estimate <- round(208 - 0.7 * age_env)
+    return(rep(estimate, length(date)))
+  }
+
+  # 5. Fallback
+  warning("Kan inte ber\u00e4kna tidsvarierande HRmax. ",
+          "S\u00e4tt BIRTH_YEAR i .Renviron (t.ex. BIRTH_YEAR=1980).")
+  rep(185, length(date))
+}
+
 #' Cache resting HR data to an RData file
 #'
 #' Saves the tibble returned by \code{import_resting_hr()} so subsequent

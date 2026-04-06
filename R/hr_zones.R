@@ -376,7 +376,6 @@ load_zone_distribution <- function(summaries,
                                    force      = FALSE,
                                    cache_path = NULL) {
   if (is.null(cache_path)) cache_path <- .zone_cache_path()
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
 
   cached_activity <- NULL
   cached_skipped_dates <- as.Date(character(0))
@@ -418,10 +417,14 @@ load_zone_distribution <- function(summaries,
   } else {
     message("Ber\u00e4knar zoner f\u00f6r ", length(new_run_idx), " nya sessioner ...")
 
-    vt1 <- hr_max * vt1_pct
-    vt2 <- hr_max * vt2_pct
-    message("HRmax: ", hr_max, " bpm | VT1: ", round(vt1),
-            " bpm | VT2: ", round(vt2), " bpm")
+    # Per-session HRmax → per-session VT1/VT2
+    new_dates <- as.Date(summaries$sessionStart[new_run_idx])
+    hr_max_vec <- get_hr_max_at(new_dates, summaries)
+    vt1_vec <- hr_max_vec * vt1_pct
+    vt2_vec <- hr_max_vec * vt2_pct
+
+    hr_range <- range(hr_max_vec)
+    message("HRmax: ", hr_range[1], "-", hr_range[2], " bpm (tidsvarierande)")
 
     n_new <- length(new_run_idx)
     n_skip <- 0L
@@ -436,6 +439,8 @@ load_zone_distribution <- function(summaries,
       }
 
       skip_date <- as.Date(summaries$sessionStart[[i]])
+      vt1 <- vt1_vec[k]
+      vt2 <- vt2_vec[k]
 
       session <- tryCatch(myruns[[i]], error = function(e) NULL)
       if (is.null(session)) {
