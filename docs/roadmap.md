@@ -52,22 +52,35 @@
 
 ---
 
-## Fix: myruns import gap (2023+)
+## Phase 4h: FIT & Polar import
 
-**Goal:** Repair the ~1600 running sessions (2023–2026) that have
-summaries entries but NULL myruns data, so per-second HR zone
-classification covers the full history.
+**Goal:** Import the 2093 FIT files and 267 SRD (Polar) files that exist
+on disk but are not in summaries/myruns, extending coverage back toward
+1999.
 
-**Problem:** `get_new_workouts()` checks filenames against summaries
-and skips files already present — even when the myruns entry is NULL
-(failed parse on first import). No retry mechanism exists.
+**Problem:** `trackeR::read_container()` treats FIT as XML and fails
+(FIT is binary). The old pipeline used `fittotcx` (CLI tool) to convert
+FIT → TCX before import. SRD (Polar) files have no current parser.
+
+**Data inventory:**
+- 2093 FIT files (2012–2020, plus 136 with coded names), mostly
+  duplicates of existing TCX — dedup needed via timestamp matching
+- 267 SRD files (2006), Polar format
+- 2 HST files (2006), Polar logbook format (split via `split_logbook.pl`)
 
 **Deliverables:**
-- Repair function: re-parse TCX files for sessions with NULL myruns
-- Guard against re-skipping: check myruns entry, not just summaries
-- Optionally: `traning import garmin --repair` CLI flag
+- FIT reader using `FITfileR` R package (reads FIT binary natively)
+  or batch conversion via `fittotcx`/`gpsbabel`
+- Timestamp-based deduplication against existing summaries (±120 s)
+- SRD/HST parser or conversion pipeline
+- `traning import fit` and `traning import polar` CLI commands
+- Extend `get_my_files()` to scan FIT/SRD directories
 
-**Dependencies:** None. Blocking accurate zone analysis for 2023+.
+**References:** Old FIT code in git history (commit `6912a02`),
+conversion script `~/bin/scripts/gor_tankagarmin.sh` (uses `fittotcx`),
+`split_logbook.pl` for HST files.
+
+**Dependencies:** None.
 
 ---
 
