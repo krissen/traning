@@ -18,6 +18,8 @@ Imports:
     optparse
 Suggests:
     shiny,
+    bslib (>= 0.6.0),
+    bsicons,
     DT,
     plotly,
     patchwork,
