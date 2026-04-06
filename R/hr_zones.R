@@ -336,6 +336,210 @@ compute_zone_distribution_persecond <- function(summaries,
   list(per_activity = per_activity, monthly = monthly, skipped = n_skip)
 }
 
+# --- Cache helpers ---
+
+# Default cache path for zone distribution
+.zone_cache_path <- function() {
+  traning_data <- Sys.getenv("TRANING_DATA")
+  if (traning_data == "") return(NULL)
+  normalizePath(file.path(traning_data, "cache", "zone_distribution.RData"),
+                mustWork = FALSE)
+}
+
+#' Load zone distribution with incremental caching
+#'
+#' Wraps \code{compute_zone_distribution_persecond()} with RData caching.
+#' On first call, computes zones for all running sessions and saves the
+#' per-activity results.  On subsequent calls, only processes sessions
+#' not already in the cache (matched by \code{sessionStart}).
+#'
+#' The cache stores the per-activity tibble plus the HR thresholds used.
+#' If \code{vt1_pct} or \code{vt2_pct} change, the cache is invalidated
+#' and a full recomputation is triggered.
+#'
+#' @param summaries Summaries tibble.
+#' @param myruns List of trackeRdata objects.
+#' @param hr_max Numeric or NULL.  HRmax override.
+#' @param vt1_pct Numeric (0-1).  VT1 threshold (default 0.80).
+#' @param vt2_pct Numeric (0-1).  VT2 threshold (default 0.90).
+#' @param force Logical.  If TRUE, discard cache and recompute everything.
+#' @param cache_path Character or NULL.  Path to RData cache file.
+#'   NULL = auto-detect from TRANING_DATA.
+#' @return Named list with \code{$per_activity}, \code{$monthly},
+#'   \code{$skipped} — same as \code{compute_zone_distribution_persecond()}.
+#' @export
+load_zone_distribution <- function(summaries,
+                                   myruns,
+                                   hr_max     = NULL,
+                                   vt1_pct    = 0.80,
+                                   vt2_pct    = 0.90,
+                                   force      = FALSE,
+                                   cache_path = NULL) {
+  if (is.null(cache_path)) cache_path <- .zone_cache_path()
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
+
+  cached_activity <- NULL
+  cached_skipped_dates <- as.Date(character(0))
+  cache_valid <- FALSE
+
+  if (!force && !is.null(cache_path) && file.exists(cache_path)) {
+    load(cache_path)  # loads: zone_cache
+    # Invalidate if thresholds changed
+    if (exists("zone_cache") &&
+        identical(zone_cache$vt1_pct, vt1_pct) &&
+        identical(zone_cache$vt2_pct, vt2_pct)) {
+      cached_activity <- zone_cache$per_activity
+      cached_skipped_dates <- zone_cache$skipped_dates %||% as.Date(character(0))
+      cache_valid <- TRUE
+      message("Zoncache: ", nrow(cached_activity), " sessioner (",
+              length(cached_skipped_dates), " utan HR-data).")
+    } else {
+      message("Zoncache: tr\u00f6skelv\u00e4rden \u00e4ndrade, r\u00e4knar om allt.")
+    }
+  }
+
+  # Find running sessions not already cached or known-skipped
+  run_idx <- which(stringr::str_detect(summaries$sport, "running"))
+  run_dates <- as.Date(summaries$sessionStart[run_idx])
+
+  if (cache_valid) {
+    known_dates <- c(cached_activity$sessionStart, cached_skipped_dates)
+    new_mask <- !(run_dates %in% known_dates)
+    new_run_idx <- run_idx[new_mask]
+  } else {
+    new_run_idx <- run_idx
+  }
+
+  all_skipped <- cached_skipped_dates
+
+  if (length(new_run_idx) == 0) {
+    message("Zoncache: inga nya sessioner att ber\u00e4kna.")
+    per_activity <- cached_activity
+  } else {
+    message("Ber\u00e4knar zoner f\u00f6r ", length(new_run_idx), " nya sessioner ...")
+
+    vt1 <- hr_max * vt1_pct
+    vt2 <- hr_max * vt2_pct
+    message("HRmax: ", hr_max, " bpm | VT1: ", round(vt1),
+            " bpm | VT2: ", round(vt2), " bpm")
+
+    n_new <- length(new_run_idx)
+    n_skip <- 0L
+    new_results <- vector("list", n_new)
+    new_skipped <- as.Date(character(0))
+
+    for (k in seq_along(new_run_idx)) {
+      i <- new_run_idx[k]
+
+      if (k %% 500 == 0) {
+        message("  Bearbetar session ", k, " / ", n_new, " ...")
+      }
+
+      skip_date <- as.Date(summaries$sessionStart[[i]])
+
+      session <- tryCatch(myruns[[i]], error = function(e) NULL)
+      if (is.null(session)) {
+        n_skip <- n_skip + 1L; new_skipped <- c(new_skipped, skip_date); next
+      }
+
+      session_df <- tryCatch(as.data.frame(session), error = function(e) NULL)
+      if (is.null(session_df) || !"heart_rate" %in% names(session_df)) {
+        n_skip <- n_skip + 1L; new_skipped <- c(new_skipped, skip_date); next
+      }
+
+      hr_vals <- as.numeric(session_df[["heart_rate"]])
+      hr_vals <- hr_vals[!is.na(hr_vals) & hr_vals > 0]
+      if (length(hr_vals) == 0) {
+        n_skip <- n_skip + 1L; new_skipped <- c(new_skipped, skip_date); next
+      }
+
+      z1_sec <- sum(hr_vals < vt1)
+      z2_sec <- sum(hr_vals >= vt1 & hr_vals < vt2)
+      z3_sec <- sum(hr_vals >= vt2)
+      total_sec <- z1_sec + z2_sec + z3_sec
+      if (total_sec == 0) { n_skip <- n_skip + 1L; next }
+
+      new_results[[k]] <- tibble::tibble(
+        sessionStart = as.Date(summaries$sessionStart[[i]]),
+        distance_km  = as.numeric(summaries$distance[[i]]) / 1000,
+        z1_sec = as.numeric(z1_sec), z2_sec = as.numeric(z2_sec),
+        z3_sec = as.numeric(z3_sec), total_sec = as.numeric(total_sec),
+        z1_pct = 100 * z1_sec / total_sec,
+        z2_pct = 100 * z2_sec / total_sec,
+        z3_pct = 100 * z3_sec / total_sec
+      )
+    }
+
+    if (n_skip > 0) {
+      warning(n_skip, " sessioner hoppades \u00f6ver (NULL eller saknar HR-data).",
+              call. = FALSE)
+    }
+
+    new_activity <- dplyr::bind_rows(new_results)
+    message("Ber\u00e4knade zoner f\u00f6r ", nrow(new_activity), " sessioner.")
+
+    # Merge with cache
+    all_skipped <- c(cached_skipped_dates, new_skipped)
+
+    if (cache_valid && nrow(cached_activity) > 0) {
+      per_activity <- dplyr::bind_rows(cached_activity, new_activity) %>%
+        dplyr::arrange(sessionStart)
+    } else {
+      per_activity <- new_activity %>% dplyr::arrange(sessionStart)
+    }
+  }
+
+  per_activity <- per_activity %>%
+    dplyr::select(sessionStart, distance_km,
+                  z1_pct, z2_pct, z3_pct,
+                  z1_sec, z2_sec, z3_sec, total_sec)
+
+  # Save cache
+  if (!is.null(cache_path)) {
+    zone_cache <- list(
+      per_activity  = per_activity,
+      skipped_dates = all_skipped,
+      vt1_pct       = vt1_pct,
+      vt2_pct       = vt2_pct
+    )
+    save(zone_cache, file = cache_path)
+    message("Zoncache sparad: ", nrow(per_activity), " sessioner.")
+  }
+
+  # Build monthly aggregation
+  if (nrow(per_activity) == 0) {
+    monthly <- tibble::tibble(
+      year_month = character(0), z1_pct = numeric(0),
+      z2_pct = numeric(0), z3_pct = numeric(0),
+      n_activities = integer(0), total_min = numeric(0)
+    )
+  } else {
+    monthly <- per_activity %>%
+      dplyr::mutate(year_month = format(sessionStart, "%Y-%m")) %>%
+      dplyr::group_by(year_month) %>%
+      dplyr::summarise(
+        z1_sec_sum = sum(z1_sec, na.rm = TRUE),
+        z2_sec_sum = sum(z2_sec, na.rm = TRUE),
+        z3_sec_sum = sum(z3_sec, na.rm = TRUE),
+        total_sec  = sum(total_sec, na.rm = TRUE),
+        n_activities = dplyr::n(), .groups = "drop"
+      ) %>%
+      dplyr::filter(total_sec > 0) %>%
+      dplyr::mutate(
+        z1_pct = 100 * z1_sec_sum / total_sec,
+        z2_pct = 100 * z2_sec_sum / total_sec,
+        z3_pct = 100 * z3_sec_sum / total_sec,
+        total_min = total_sec / 60
+      ) %>%
+      dplyr::select(year_month, z1_pct, z2_pct, z3_pct,
+                    n_activities, total_min) %>%
+      dplyr::arrange(year_month)
+  }
+
+  list(per_activity = per_activity, monthly = monthly,
+       skipped = if (exists("n_skip")) n_skip else 0L)
+}
+
 #' Compute Polarization Index (Treff 2019)
 #'
 #' Calculates the Polarization Index (PI) proposed by Treff et al. (2019) for
@@ -396,15 +600,14 @@ compute_polarization_index <- function(zone_data, window = "monthly") {
       p3 = z3_pct / 100,
       # Markera edge cases
       has_zero_zone = (p2 == 0 | p3 == 0),
-      # Treff (2019) PI: tre fall
-      pi = dplyr::case_when(
-        # Z3 = 0 -> PI = 0 per definition
-        p3 == 0 ~ 0,
-        # Z2 = 0 -> Equation 2
-        p2 == 0 ~ log10((p1 / 0.01) * (p3 - 0.01) * 100),
-        # Standard formula (Equation 1)
-        TRUE    ~ log10((p1 / p2) * p3 * 100)
-      )
+      # Treff (2019) PI: beräkna råvärde, sedan log10
+      pi_raw = dplyr::case_when(
+        p3 == 0             ~ 0,
+        p2 == 0 & p3 < 0.01 ~ 0,
+        p2 == 0             ~ (p1 / 0.01) * (p3 - 0.01) * 100,
+        TRUE                ~ (p1 / p2) * p3 * 100
+      ),
+      pi = dplyr::if_else(pi_raw > 0, log10(pi_raw), 0)
     ) %>%
     dplyr::select(
       year_month, pi,

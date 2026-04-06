@@ -532,10 +532,30 @@ def recovery_hr(show_plot, after, before, span, output, fmt, no_open, limit):
 
 
 @cli.command(name="zones")
+@click.option("--force", is_flag=True, help="Recompute all zones (bypass cache)")
 @report_options
-def hr_zones(show_plot, after, before, span, output, fmt, no_open, limit):
+def hr_zones(force, show_plot, after, before, span, output, fmt, no_open, limit):
     """HR zone distribution and Polarization Index (Seiler 3-zone)."""
-    _r_report("--hr-zones", show_plot, after, before, span, limit, output, fmt, no_open)
+    cmd = ["Rscript", str(CLI_R), "--hr-zones"]
+    if force:
+        cmd.append("--force")
+    if show_plot:
+        cmd.append("--plot")
+    if after:
+        cmd.append(f"--after={after}")
+    if before:
+        cmd.append(f"--before={before}")
+    if span:
+        cmd.append(f"--span={span}")
+    if limit is not None:
+        cmd.append(f"--limit={limit}")
+    if output:
+        cmd.append(f"--output={output}")
+    if fmt:
+        cmd.append(f"--format={fmt}")
+    if no_open:
+        cmd.append("--no-open")
+    _exec(cmd)
 
 
 # -- datesum ----------------------------------------------------------------

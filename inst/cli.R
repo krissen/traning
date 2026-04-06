@@ -387,11 +387,16 @@ if (do_readiness) {
 }
 
 if (do_hr_zones) {
+  # Per-second zone computation with caching (accurate VT1/VT2 thresholds)
+  zone_data <- load_zone_distribution(summaries, myruns, force = do_force)
   if (do_plot) {
-    emit_plot(fetch.plot.hr_zones(summaries, from = date_range$from, to = date_range$to), "hr-zones")
+    emit_plot(fetch.plot.hr_zones(summaries,
+                from = date_range$from, to = date_range$to,
+                zone_data = zone_data), "hr-zones")
   } else {
     emit_table(report_hr_zones(summaries, n = do_limit %||% 12L,
-                  from = date_range$from, to = date_range$to), "hr-zones")
+                  from = date_range$from, to = date_range$to,
+                  zone_data = zone_data), "hr-zones")
   }
 }
 

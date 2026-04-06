@@ -368,8 +368,9 @@ report_recovery_hr <- function(summaries, n = 28, from = NULL, to = NULL) {
 #' @inheritParams report_ef
 #' @return Tibble with monthly zone distribution and PI
 #' @export
-report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL) {
-  zone_data <- compute_zone_distribution(summaries)
+report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
+                            zone_data = NULL) {
+  if (is.null(zone_data)) zone_data <- compute_zone_distribution(summaries)
 
   if (nrow(zone_data$monthly) == 0) {
     return(tibble::tibble(

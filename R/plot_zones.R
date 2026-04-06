@@ -24,8 +24,8 @@
 #' @return ggplot2 object.
 #' @export
 fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
-                                by = "monthly") {
-  zone_data <- compute_zone_distribution(summaries)
+                                by = "monthly", zone_data = NULL) {
+  if (is.null(zone_data)) zone_data <- compute_zone_distribution(summaries)
   monthly   <- zone_data$monthly
 
   # Optional date-range pre-filter — year_month is "YYYY-MM" character,
@@ -125,8 +125,9 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
 #' @param to Date or NULL. End of display window.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.polarization <- function(summaries, from = NULL, to = NULL) {
-  zone_data <- compute_zone_distribution(summaries)
+fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
+                                    zone_data = NULL) {
+  if (is.null(zone_data)) zone_data <- compute_zone_distribution(summaries)
   pi_data   <- compute_polarization_index(zone_data)
 
   pi_data <- pi_data %>%
