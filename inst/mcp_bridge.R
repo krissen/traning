@@ -146,8 +146,17 @@ if (needs("d")) {
 build_call_args <- function(func_name, func_args) {
   a <- list()
 
-  # Standard args present on most functions
-  if (!is.null(func_args$n))      a$n      <- as.integer(func_args$n)
+  # Functions that accept 'n' parameter (report functions, not plot functions)
+  n_funcs <- c(
+    "report_monthtop", "report_runs_year_month", "report_monthlast",
+    "report_yearstop", "report_yearstatus", "report_monthstatus",
+    "report_ef", "report_hre", "report_acwr", "report_monotony",
+    "report_pmc", "report_recovery_hr", "report_hr_zones",
+    "report_decoupling", "report_readiness"
+  )
+
+  if (!is.null(func_args$n) && func_name %in% n_funcs)
+    a$n <- as.integer(func_args$n)
   if (!is.null(func_args$from))   a$from   <- as.Date(func_args$from)
   if (!is.null(func_args$to))     a$to     <- as.Date(func_args$to)
   if (!is.null(func_args$hr_max)) a$hr_max <- as.numeric(func_args$hr_max)
