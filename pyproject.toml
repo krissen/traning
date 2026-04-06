@@ -10,10 +10,12 @@ dependencies = [
     "requests>=2.28.0",
     "fastapi>=0.100",
     "uvicorn[standard]>=0.20",
+    "fastmcp>=2.0",
 ]
 
 [project.scripts]
 traning = "traning_cli.main:cli"
+vayu = "traning_cli.mcp.server:main"
 
 [build-system]
 requires = ["setuptools>=64"]
