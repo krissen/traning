@@ -261,6 +261,39 @@ def import_health(force, verbose):
     _exec(cmd)
 
 
+@import_group.command(name="all")
+@click.option("--force", is_flag=True,
+              help="Re-import all health files (bypass manifest)")
+@click.option("--repair", is_flag=True,
+              help="Repair NULL myruns entries (re-parse TCX files)")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+def import_all(force, repair, verbose):
+    """Import everything (Garmin + Health)."""
+    click.echo("=== Garmin-import ===")
+    cmd_garmin = ["Rscript", str(CLI_R), "--import"]
+    if repair:
+        cmd_garmin.append("--repair")
+    if verbose:
+        cmd_garmin.append("--verbose")
+    rc = subprocess.run(cmd_garmin).returncode
+    if rc != 0:
+        click.echo("Garmin-import misslyckades", err=True)
+
+    click.echo("=== Health-import ===")
+    cmd_health = ["Rscript", str(CLI_R), "--import-health"]
+    if force:
+        cmd_health.append("--force")
+    if verbose:
+        cmd_health.append("--verbose")
+    rc2 = subprocess.run(cmd_health).returncode
+    if rc2 != 0:
+        click.echo("Health-import misslyckades", err=True)
+
+    if rc != 0 or rc2 != 0:
+        raise click.ClickException("En eller flera importer misslyckades")
+    click.echo("Klar!")
+
+
 # -- sync group ------------------------------------------------------------
 
 @cli.group()
@@ -696,3 +729,12 @@ def pull(verbose):
     if result.returncode != 0:
         raise click.ClickException("git pull misslyckades")
     click.echo("Data uppdaterad")
+
+
+# -- mcp --------------------------------------------------------------------
+
+@cli.command()
+def mcp():
+    """Start the Vayu MCP server (stdio transport)."""
+    from .mcp.server import main as mcp_main
+    mcp_main()
