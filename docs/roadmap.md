@@ -1,5 +1,24 @@
 # tRäning — Roadmap
 
+## Phase 5a+: Health import performance
+
+**Goal:** Avoid re-parsing all 120+ JSON files on every `traning import health`.
+
+**Problem:** `import_health_export()` reads every file in `health_export/metrics/`
+on every run, even if they were already imported. With 120 files and growing,
+this takes ~10 seconds and produces noisy output.
+
+**Deliverables:**
+- File manifest (`imported_files.json` or similar) tracking which files have
+  been imported and their mtime/size at import time
+- `import_health_export()` only parses new or modified files
+- Merge new data onto cached `health_daily.RData` (already works)
+- `--force` flag to re-import everything (bypass manifest)
+
+**Dependencies:** Phase 5a (done), CLI sync redesign (done).
+
+---
+
 ## Phase 5b: Automated health data pipeline
 
 **Goal:** Automate daily health data import from iPhone to server.
