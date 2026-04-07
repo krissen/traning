@@ -232,7 +232,7 @@
 )
 
 # Sources ranked by data quality (best first).
-# Used both for sleep staging dedup and general metric dedup.
+# General: Apple Watch for HR, HRV, etc.
 .source_priority <- c(
   "Apple Watch f\u00f6r Kristian", "kankad", "kankad ",
   "Oura", "AutoSleep",
@@ -240,8 +240,14 @@
   "Health Sync", "Health Import", "Klocka", "anandavani", "Connect"
 )
 
-# Legacy alias for sleep-specific code
-.sleep_source_priority <- .source_priority
+# Sleep: Sleep Cycle is more accurate (manually activated vs AW's
+# fixed schedule). AW kept as fallback for nights without SC.
+.sleep_source_priority <- c(
+  "Sleep Cycle",
+  "Apple Watch f\u00f6r Kristian", "kankad", "kankad ",
+  "Oura", "AutoSleep",
+  "Health Sync", "Health Import", "Klocka", "anandavani", "Connect"
+)
 
 #' Parse raw sleep segment samples into daily summaries
 #'
@@ -626,9 +632,15 @@ import_health_export <- function(path = NULL, cache_path = NULL,
   # Merge, clean sources, and deduplicate
   combined <- dplyr::bind_rows(existing, new_data)
   combined <- .clean_sources(combined)
-  # Rank sources: lower = better (Apple Watch preferred over Sleep Cycle etc.)
-  combined$.src_rank <- match(combined$source, .source_priority)
-  combined$.src_rank[is.na(combined$.src_rank)] <- length(.source_priority) + 1L
+  # Rank sources: sleep metrics use sleep-specific priority (Sleep Cycle
+  # preferred), everything else uses general priority (Apple Watch preferred).
+  is_sleep <- grepl("^sleep_", combined$metric)
+  combined$.src_rank <- NA_integer_
+  combined$.src_rank[is_sleep] <- match(
+    combined$source[is_sleep], .sleep_source_priority)
+  combined$.src_rank[!is_sleep] <- match(
+    combined$source[!is_sleep], .source_priority)
+  combined$.src_rank[is.na(combined$.src_rank)] <- 99L
   health_daily <- combined |>
     dplyr::arrange(date, metric, .src_rank) |>
     dplyr::distinct(date, metric, .keep_all = TRUE) |>
