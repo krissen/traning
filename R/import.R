@@ -104,6 +104,10 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       myruns[[i]] <- parsed
       if (verbose) cat("OK\n")
       run_summary <- summary(myruns[[i]])
+      # Strip trackeRdataSummary class before dplyr operations —
+      # its [ method conflicts with dplyr::mutate() and causes
+      # row expansion (1 row becomes 28)
+      class(run_summary) <- "data.frame"
       run_summary <- add_my_columns(run_summary)
       summaries <- rbind(summaries, run_summary,
                          deparse.level = 0,
