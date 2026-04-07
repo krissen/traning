@@ -15,6 +15,51 @@ report_mostrecent <- function(summaries, n_imported) {
   cat("Average duration: ", avg_duration, " minutes.\n", sep = "")
 }
 
+#' Generate a short insight text for the most recent session
+#'
+#' Compares the latest run against the current month's average.
+#' Output is a single line suitable for push notifications.
+#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @return Character string (one line).
+#' @export
+report_insight <- function(summaries) {
+  runs <- summaries %>%
+    dplyr::filter(stringr::str_detect(sport, "running")) %>%
+    dplyr::arrange(sessionStart)
+
+  if (nrow(runs) == 0) return("Ingen löpdata.")
+
+  latest <- utils::tail(runs, 1)
+  km <- round(as.numeric(latest$distance) / 1000, 1)
+  pace <- dec_to_mmss(as.numeric(latest$avgPaceMoving))
+  hr <- round(as.numeric(latest$avgHeartRateMoving), 0)
+
+  # Compare to current month average
+  this_month <- runs %>%
+    dplyr::filter(
+      format(sessionStart, "%Y-%m") == format(latest$sessionStart, "%Y-%m"),
+      sessionStart < latest$sessionStart
+    )
+
+  if (nrow(this_month) >= 2) {
+    avg_pace <- mean(as.numeric(this_month$avgPaceMoving), na.rm = TRUE)
+    diff_sec <- (as.numeric(latest$avgPaceMoving) - avg_pace) * 60
+    if (abs(diff_sec) < 5) {
+      cmp <- paste0("i linje med m\u00e5nadens snitt (", dec_to_mmss(avg_pace), ")")
+    } else if (diff_sec > 0) {
+      cmp <- paste0("lugnare \u00e4n m\u00e5nadens snitt (",
+                     dec_to_mmss(avg_pace), ")")
+    } else {
+      cmp <- paste0("snabbare \u00e4n m\u00e5nadens snitt (",
+                     dec_to_mmss(avg_pace), ")")
+    }
+    paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr, ". ",
+           toupper(substr(cmp, 1, 1)), substr(cmp, 2, nchar(cmp)), ".")
+  } else {
+    paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr, ".")
+  }
+}
+
 #' Summarise runs within a date range
 #' @param summaries Data frame of all workout summaries
 #' @param do_datesum_from Start date (Date object)

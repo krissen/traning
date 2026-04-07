@@ -24,12 +24,14 @@ def _run_import(kind: str = "all"):
     Args:
         kind: "garmin", "health", or "all".
     """
+    labels = {"--import": "garmin", "--import-health": "hälsa"}
     flags = {
         "garmin": ["--import"],
         "health": ["--import-health"],
         "all":    ["--import", "--import-health"],
     }
     for flag in flags.get(kind, flags["all"]):
+        label = labels.get(flag, flag)
         cmd = ["Rscript", str(_CLI_R), flag]
         try:
             result = subprocess.run(
@@ -37,10 +39,61 @@ def _run_import(kind: str = "all"):
             )
             if result.returncode != 0:
                 log.warning("Import %s failed: %s", flag, result.stderr.strip()[-300:])
+                notify("tRäning", f"Import {label}: MISSLYCKADES")
             else:
                 log.info("Import %s OK", flag)
+                # Extract summary from R output (last non-empty line)
+                lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
+                summary = lines[-1] if lines else "klart"
+                notify("tRäning", f"Import {label}: {summary}")
         except subprocess.TimeoutExpired:
             log.warning("Import %s timed out", flag)
+            notify("tRäning", f"Import {label}: timeout efter 5 min")
+
+
+def _run_insight(kind: str):
+    """Generate and send a short insight notification after import."""
+    if kind == "garmin":
+        cmd = ["Rscript", "-e", (
+            'devtools::load_all(".", quiet=TRUE); '
+            'td <- Sys.getenv("TRANING_DATA"); '
+            'tl <- my_dbs_load(file.path(td,"cache","summaries.RData"), '
+            'file.path(td,"cache","myruns.RData")); '
+            'cat(report_insight(tl[["summaries"]]))'
+        )]
+    elif kind == "health":
+        cmd = ["Rscript", "-e", (
+            'devtools::load_all(".", quiet=TRUE); '
+            'h <- load_health_data(); '
+            'if (!is.null(h) && nrow(h) > 0) { '
+            'latest <- h[which.max(h$date),]; '
+            'cat(sprintf("Hälsa: %s — vila %s bpm, HRV %s ms, sömn %s h", '
+            'format(latest$date), '
+            'ifelse(is.na(latest$resting_hr), "?", round(latest$resting_hr)), '
+            'ifelse(is.na(latest$hrv), "?", round(latest$hrv)), '
+            'ifelse(is.na(latest$sleep_hours), "?", round(latest$sleep_hours, 1)))) '
+            '} else cat("Hälsodata importerad.")'
+        )]
+    else:
+        return
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=120,
+            cwd=str(_CLI_R.parent.parent),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            notify("tRäning", result.stdout.strip())
+        else:
+            log.warning("Insight %s failed: %s", kind, result.stderr.strip()[-200:])
+    except subprocess.TimeoutExpired:
+        log.warning("Insight %s timed out", kind)
+
+def _import_and_insight(kind: str):
+    """Run import followed by insight notification."""
+    _run_import(kind)
+    _run_insight(kind)
+
 
 # Track state for /v1/status endpoint
 _start_time = time.time()
@@ -94,7 +147,7 @@ def create_app() -> FastAPI:
         n = save_health_push(payload)
         if n > 0:
             commit_health_data(n_metrics=n)
-            background_tasks.add_task(_run_import, "health")
+            background_tasks.add_task(_import_and_insight, "health")
             notify("tRäning", f"Hälsodata: {n} metrics mottagna")
 
         _last_received = datetime.now()
@@ -132,7 +185,7 @@ def create_app() -> FastAPI:
         n = save_workout_push(payload)
         if n > 0:
             commit_health_data(n_workouts=n)
-            background_tasks.add_task(_run_import, "health")
+            background_tasks.add_task(_import_and_insight, "health")
             notify("tRäning", f"Workouts: {n} mottagna")
 
         _last_received = datetime.now()
@@ -160,6 +213,7 @@ def create_app() -> FastAPI:
             if result.returncode != 0:
                 log.warning("Garmin fetch stderr: %s", result.stderr.strip())
             _run_import("garmin")
+            _run_insight("garmin")
 
         background_tasks.add_task(_run_fetch)
         return {"status": "ok", "message": "Garmin fetch triggered"}
