@@ -4,6 +4,7 @@ import json
 import logging
 import subprocess
 import unicodedata
+from datetime import datetime
 from pathlib import Path
 
 from ..health.utils import health_metrics_dir, health_workouts_dir
@@ -57,7 +58,8 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
             }
         }
 
-        filename = f"{name}_{first}_{last}.json"
+        received = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{name}_{first}_{last}_{received}.json"
         filepath = metrics_dir / filename
         with open(filepath, "w") as f:
             json.dump(output, f, ensure_ascii=False)

@@ -35,7 +35,7 @@ def _run_import(kind: str = "all"):
         cmd = ["Rscript", str(_CLI_R), flag]
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300,
+                cmd, capture_output=True, text=True, timeout=600,
             )
             if result.returncode != 0:
                 log.warning("Import %s failed: %s", flag, result.stderr.strip()[-300:])
@@ -54,7 +54,7 @@ def _run_import(kind: str = "all"):
                 notify("tRäning", f"Import {label}: {summary}")
         except subprocess.TimeoutExpired:
             log.warning("Import %s timed out", flag)
-            notify("tRäning", f"Import {label}: timeout efter 5 min")
+            notify("tRäning", f"Import {label}: timeout efter 10 min")
 
 
 def _run_insight(kind: str):
