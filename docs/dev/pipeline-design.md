@@ -96,6 +96,40 @@ traning-data repo
 **Fallback:** `traning-garmin.timer` polls every 2h during 06–22.
 Catches activities if HA/Strava webhook misses them.
 
+**HA automation filter:** The automation triggers on Strava sensor state
+changes, but filters out `unavailable` and `unknown` states to avoid
+spurious fetches on sensor reconnect.
+
+### Notification chain
+
+Each data path triggers three notifications in sequence:
+
+```
+1. Receive    "Hälsodata: 28 metrics mottagna"
+2. Import     "Import hälsa: klart"
+3. Insight    "Hälsa 2026-04-07: vila 64 bpm, HRV 107 ms, sömn 6.2 h"
+```
+
+Garmin variant:
+```
+1. Trigger    "Garmin fetch triggered by Strava: ..."   (from HA)
+2. Fetch      "Garmin fetch: Fetched 1 new activities"  (from receiver)
+3. Import     "Import garmin: 1 workouts imported..."   (from _run_import)
+4. Insight    "Löpning 8.1 km, 5:00/km, TRIMP 63..."   (from _run_insight)
+```
+
+Import and insight run as background tasks; failures are logged and
+notified but never block the HTTP response.
+
+### Cache portability
+
+`summaries.RData` can be copied from kedar to kailash. The import
+function matches on `basename(summaries$file)`, not full paths, so
+kedar-specific paths in the file column don't prevent matching.
+
+Strategy for bulk changes: build cache on kedar (fast), `scp` to
+kailash, run `--import` to pick up any new files (seconds).
+
 **Why not shell_command?** HA runs in Docker. Even with host networking,
 shell_commands execute inside the container where the Python venv doesn't
 exist. The REST command to our FastAPI server (which runs on the host via

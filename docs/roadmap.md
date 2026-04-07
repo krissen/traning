@@ -35,3 +35,21 @@ each invocation pays SSH handshake cost and R session startup.
 - More robust over Tailscale than SSH tunneled stdio
 
 ---
+
+## Smart insight notifications
+
+**Goal:** Post-import push notifications that are contextually relevant
+and actionable, not just raw numbers.
+
+**Current state:** Basic one-liner with km, pace, HR, TRIMP, and
+month comparison (always positive framing).
+
+**Future examples:**
+- "Löpning 6 km. Långsammare än snittet men längre — månadens total: 45 km."
+- "Sovtimmar (6) registrerade. HRV sjunkande trend — ta det lugnt idag?"
+- "Första löpningen på 5 dagar. ACWR 0.6 — bra återhämtning."
+- Health: flag red metrics (HRV below baseline, sleep < 6h)
+
+**Depends on:** Readiness model (Phase 5a), PMC data.
+
+---

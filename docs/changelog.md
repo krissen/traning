@@ -1,5 +1,50 @@
 # tRäning — Changelog
 
+## 2026-04-07 — Import correctness, notifications, cache portability
+
+### trackeRdataSummary fix (root cause)
+- **Root cause found:** `dplyr::mutate()` on a `trackeRdataSummary`
+  object triggers the class's broken `[` method, expanding 1 row to 28
+  (one per column). Same trackeR version (1.6.1) on both machines — the
+  issue is the class, not the version.
+- **Fix:** Strip `trackeRdataSummary` class immediately after
+  `summary()` in `get_new_workouts()`, before any dplyr operations.
+  Combined with the existing strip in `my_dbs_load()`, summaries are
+  always plain data.frames.
+- **Summaries sorted on save:** `my_dbs_save()` now sorts by
+  `sessionStart` before writing. Gconnect files (T-format names) were
+  sorted by filename, not chronologically.
+
+### Push notifications (3-step pipeline)
+Each data receive now triggers three notifications:
+1. **Receive:** "Hälsodata: N metrics mottagna" / "Garmin fetch: ..."
+2. **Import:** "Import garmin/hälsa: ..." (success or failure)
+3. **Insight:** session summary or health snapshot
+
+Garmin insight example:
+  `Löpning 8.1 km, 5:00/km, puls 141, TRIMP 63. Snabbare än månadens snitt (5:07).`
+
+Health insight example:
+  `Hälsa 2026-04-07: vila 64 bpm, HRV 107 ms, sömn 6.2 h`
+
+Insight always ends on a positive note: faster → longer → monthly total.
+
+### HA automation
+- Strava trigger now filters out `unavailable` and `unknown` states,
+  preventing spurious Garmin fetches on sensor reconnect.
+
+### Cache portability (kedar → kailash)
+- `summaries.RData` is portable between machines: `get_new_workouts()`
+  matches on `basename()`, not full paths. Copying kedar's cache to
+  kailash lets it skip all known files and only import new ones.
+- Verified: 4491 files matched as "Redan inläst", 1 new file imported
+  (seconds instead of hours).
+
+### Other
+- `DESCRIPTION`: author email added
+
+---
+
 ## 2026-04-06 — Pipeline and deploy fixes
 
 ### Import pipeline

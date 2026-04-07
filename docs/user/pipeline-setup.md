@@ -42,6 +42,17 @@ traning import garmin         # R-parse new TCX files
 traning sync all              # pull + import everything
 ```
 
+### Seed kailash cache from kedar
+
+After major import changes (e.g., reimport from scratch), build
+the cache on kedar (fast) and copy to kailash:
+
+```bash
+Rscript inst/cli.R --import             # build locally
+scp ~/Documents/traning-data/cache/summaries.RData kailash:~/dokument/traning-data/cache/
+ssh kailash "cd ~/dev/traning && Rscript inst/cli.R --import"   # picks up only new files
+```
+
 ### Deploy code changes
 
 ```bash
