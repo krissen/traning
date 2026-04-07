@@ -231,12 +231,17 @@
   "Sova"          = "asleep"
 )
 
-# Sources ranked by sleep staging quality (best first)
-.sleep_source_priority <- c(
+# Sources ranked by data quality (best first).
+# Used both for sleep staging dedup and general metric dedup.
+.source_priority <- c(
   "Apple Watch f\u00f6r Kristian", "kankad", "kankad ",
-  "Sleep Cycle", "AutoSleep", "Oura",
+  "Oura", "AutoSleep",
+  "Sleep Cycle",
   "Health Sync", "Health Import", "Klocka", "anandavani", "Connect"
 )
+
+# Legacy alias for sleep-specific code
+.sleep_source_priority <- .source_priority
 
 #' Parse raw sleep segment samples into daily summaries
 #'
@@ -424,6 +429,10 @@
 #' @return Filtered tibble.
 #' @keywords internal
 .clean_sources <- function(df) {
+  # Normalize non-breaking spaces (U+00A0) to regular spaces in source names.
+  # HAE sometimes writes "Apple\u00a0Watch" with NBSP.
+  df$source <- gsub("\u00a0", " ", df$source)
+
   is_contaminated <- df$metric %in% .connect_contaminated_metrics &
     grepl("Connect", df$source, fixed = TRUE)
   n_dropped <- sum(is_contaminated)
@@ -617,9 +626,13 @@ import_health_export <- function(path = NULL, cache_path = NULL,
   # Merge, clean sources, and deduplicate
   combined <- dplyr::bind_rows(existing, new_data)
   combined <- .clean_sources(combined)
+  # Rank sources: lower = better (Apple Watch preferred over Sleep Cycle etc.)
+  combined$.src_rank <- match(combined$source, .source_priority)
+  combined$.src_rank[is.na(combined$.src_rank)] <- length(.source_priority) + 1L
   health_daily <- combined |>
-    dplyr::arrange(date, metric) |>
-    dplyr::distinct(date, metric, .keep_all = TRUE)
+    dplyr::arrange(date, metric, .src_rank) |>
+    dplyr::distinct(date, metric, .keep_all = TRUE) |>
+    dplyr::select(-".src_rank")
 
   n_new <- nrow(health_daily) - nrow(existing)
   if (verbose) {
