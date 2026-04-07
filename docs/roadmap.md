@@ -13,3 +13,25 @@
 **Dependencies:** Phase 5a (done), Phase 5c (MCP).
 
 ---
+
+## MCP transport: SSH → SSE over Tailscale
+
+**Goal:** Replace current SSH stdio transport with persistent SSE server
+accessible over Tailscale, reducing latency and improving reliability.
+
+**Current state:** Vayu runs via `ssh kailash` with stdio transport —
+each invocation pays SSH handshake cost and R session startup.
+
+**Plan:**
+1. Add SSE transport support to Vayu entrypoint (`--transport sse --port <port>`)
+2. Validate that FastMCP SSE mode works with the existing R bridge
+3. Create systemd unit for persistent Vayu service on kailash
+4. Update Claude Code MCP config: `"type": "sse", "url": "http://kailash:<port>/sse"`
+5. Keep SSH config as fallback until SSE is proven stable
+
+**Benefits:**
+- No SSH overhead per tool call
+- Persistent R session (faster repeated queries)
+- More robust over Tailscale than SSH tunneled stdio
+
+---
