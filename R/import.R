@@ -23,6 +23,7 @@
 #' @export
 my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
   summaries <- dplyr::arrange(summaries, sessionStart)
+  summaries <- dplyr::distinct(summaries, sessionStart, .keep_all = TRUE)
   save(myruns, file = db_myruns)
   save(summaries, file = db_summaries)
 }
