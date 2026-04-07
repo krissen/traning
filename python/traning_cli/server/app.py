@@ -42,9 +42,15 @@ def _run_import(kind: str = "all"):
                 notify("tRäning", f"Import {label}: MISSLYCKADES")
             else:
                 log.info("Import %s OK", flag)
-                # Extract summary from R output (last non-empty line)
+                # Extract meaningful summary from R output
                 lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
-                summary = lines[-1] if lines else "klart"
+                # Prefer lines about imports/distance; skip manifest noise
+                summary = "klart"
+                for line in reversed(lines):
+                    low = line.lower()
+                    if any(w in low for w in ["import", "distance", "redan", "inget att"]):
+                        summary = line.strip()
+                        break
                 notify("tRäning", f"Import {label}: {summary}")
         except subprocess.TimeoutExpired:
             log.warning("Import %s timed out", flag)
@@ -68,12 +74,19 @@ def _run_insight(kind: str):
             'if (!is.null(h) && nrow(h) > 0) { '
             'latest_date <- max(h$date); '
             'today <- h[h$date == latest_date,]; '
-            'get_val <- function(m) { v <- today$value[today$metric == m]; '
-            'if (length(v) == 0 || is.na(v[1])) "?" else round(v[1], 1) }; '
-            'cat(sprintf("Hälsa %s: vila %s bpm, HRV %s ms, sömn %s h", '
-            'format(latest_date), get_val("resting_heart_rate"), '
-            'get_val("heart_rate_variability"), '
-            'get_val("sleep_totalSleep"))) '
+            'get_val <- function(m, d=today) { v <- d$value[d$metric == m]; '
+            'if (length(v) == 0 || is.na(v[1])) NA else round(v[1], 1) }; '
+            'sleep <- get_val("sleep_totalSleep"); '
+            'sleep_lbl <- ""; '
+            'if (is.na(sleep) || sleep < 4) { '
+            'yesterday <- h[h$date == latest_date - 1,]; '
+            'sleep <- get_val("sleep_totalSleep", yesterday); '
+            'sleep_lbl <- " (ig\\u00e5r)" }; '
+            'cat(sprintf("H\\u00e4lsa %s: vila %s bpm, HRV %s ms, s\\u00f6mn %s h%s", '
+            'format(latest_date), '
+            'ifelse(is.na(get_val("resting_heart_rate")), "?", get_val("resting_heart_rate")), '
+            'ifelse(is.na(get_val("heart_rate_variability")), "?", get_val("heart_rate_variability")), '
+            'ifelse(is.na(sleep), "?", sleep), sleep_lbl)) '
             '} else cat("Hälsodata importerad.")'
         )]
     else:
