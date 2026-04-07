@@ -33,6 +33,15 @@ report_insight <- function(summaries) {
   km <- round(as.numeric(latest$distance) / 1000, 1)
   pace <- dec_to_mmss(as.numeric(latest$avgPaceMoving))
   hr <- round(as.numeric(latest$avgHeartRateMoving), 0)
+  dur_min <- as.numeric(latest$durationMoving, units = "mins")
+
+  # TRIMP (Banister): duration * deltaHR * 0.64 * exp(1.92 * deltaHR)
+  hr_max <- get_hr_max(summaries)
+  hr_rest <- get_hr_rest(as.Date(latest$sessionStart))
+  delta_hr <- (as.numeric(latest$avgHeartRateMoving) - hr_rest) /
+              (hr_max - hr_rest)
+  delta_hr <- max(0, min(1, delta_hr))
+  trimp <- round(dur_min * delta_hr * 0.64 * exp(1.92 * delta_hr))
 
   # Compare to current month average
   this_month <- runs %>%
@@ -40,6 +49,9 @@ report_insight <- function(summaries) {
       format(sessionStart, "%Y-%m") == format(latest$sessionStart, "%Y-%m"),
       sessionStart < latest$sessionStart
     )
+
+  base <- paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr,
+                 ", TRIMP ", trimp)
 
   if (nrow(this_month) >= 2) {
     avg_pace <- mean(as.numeric(this_month$avgPaceMoving), na.rm = TRUE)
@@ -53,10 +65,10 @@ report_insight <- function(summaries) {
       cmp <- paste0("snabbare \u00e4n m\u00e5nadens snitt (",
                      dec_to_mmss(avg_pace), ")")
     }
-    paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr, ". ",
+    paste0(base, ". ",
            toupper(substr(cmp, 1, 1)), substr(cmp, 2, nchar(cmp)), ".")
   } else {
-    paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr, ".")
+    paste0(base, ".")
   }
 }
 
