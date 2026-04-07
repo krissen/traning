@@ -53,23 +53,36 @@ report_insight <- function(summaries) {
   base <- paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr,
                  ", TRIMP ", trimp)
 
+  # Find something positive to highlight
+  positive <- NULL
+
   if (nrow(this_month) >= 2) {
     avg_pace <- mean(as.numeric(this_month$avgPaceMoving), na.rm = TRUE)
+    avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
     diff_sec <- (as.numeric(latest$avgPaceMoving) - avg_pace) * 60
-    if (abs(diff_sec) < 5) {
-      cmp <- paste0("i linje med m\u00e5nadens snitt (", dec_to_mmss(avg_pace), ")")
-    } else if (diff_sec > 0) {
-      cmp <- paste0("lugnare \u00e4n m\u00e5nadens snitt (",
-                     dec_to_mmss(avg_pace), ")")
-    } else {
-      cmp <- paste0("snabbare \u00e4n m\u00e5nadens snitt (",
-                     dec_to_mmss(avg_pace), ")")
+
+    if (diff_sec < -5) {
+      # Faster than average
+      positive <- paste0("Snabbare \u00e4n m\u00e5nadens snitt (",
+                         dec_to_mmss(avg_pace), ")")
+    } else if (km > avg_km * 1.1) {
+      # Longer than average
+      positive <- paste0("L\u00e4ngre \u00e4n m\u00e5nadens snitt (",
+                         round(avg_km, 1), " km)")
     }
-    paste0(base, ". ",
-           toupper(substr(cmp, 1, 1)), substr(cmp, 2, nchar(cmp)), ".")
-  } else {
-    paste0(base, ".")
   }
+
+  # Fallback: monthly total
+  if (is.null(positive)) {
+    month_runs <- runs %>%
+      dplyr::filter(
+        format(sessionStart, "%Y-%m") == format(latest$sessionStart, "%Y-%m")
+      )
+    month_km <- round(sum(as.numeric(month_runs$distance) / 1000), 0)
+    positive <- paste0("M\u00e5nadens total: ", month_km, " km")
+  }
+
+  paste0(base, ". ", positive, ".")
 }
 
 #' Summarise runs within a date range
