@@ -1,7 +1,7 @@
 Package: traning
 Title: Personal Running Data Analysis
 Version: 0.3.0
-Authors@R: person("Kristian", "Niemi", role = c("aut", "cre"))
+Authors@R: person("Kristian", "Niemi", role = c("aut", "cre"), email = "kristian.niemi@gmail.com")
 Description: Read Garmin TCX workout files, compute running statistics,
     and produce reports and visualizations.
 License: file LICENSE
