@@ -130,6 +130,11 @@ kedar-specific paths in the file column don't prevent matching.
 Strategy for bulk changes: build cache on kedar (fast), `scp` to
 kailash, run `--import` to pick up any new files (seconds).
 
+**Important:** Do NOT copy `health_import_manifest.json` between
+machines. It contains mtime values that are machine-specific (files
+have different mtimes after git pull). Each machine must build its
+own manifest. Copy only `*.RData` cache files.
+
 **Why not shell_command?** HA runs in Docker. Even with host networking,
 shell_commands execute inside the container where the Python venv doesn't
 exist. The REST command to our FastAPI server (which runs on the host via

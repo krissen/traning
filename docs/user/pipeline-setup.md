@@ -48,9 +48,17 @@ After major import changes (e.g., reimport from scratch), build
 the cache on kedar (fast) and copy to kailash:
 
 ```bash
-Rscript inst/cli.R --import             # build locally
+# Garmin (summaries):
+Rscript inst/cli.R --import
 scp ~/Documents/traning-data/cache/summaries.RData kailash:~/dokument/traning-data/cache/
 ssh kailash "cd ~/dev/traning && Rscript inst/cli.R --import"   # picks up only new files
+
+# Health:
+Rscript inst/cli.R --import-health --force
+scp ~/Documents/traning-data/cache/health_daily.RData kailash:~/dokument/traning-data/cache/
+# Do NOT copy health_import_manifest.json — it contains kedar-specific
+# mtime values. Kailash builds its own manifest on next import.
+ssh kailash "cd ~/dev/traning && Rscript inst/cli.R --import-health"
 ```
 
 ### Deploy code changes
