@@ -22,6 +22,7 @@
 #' @param myruns List of trackeR run objects
 #' @export
 my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
+  summaries <- dplyr::arrange(summaries, sessionStart)
   save(myruns, file = db_myruns)
   save(summaries, file = db_summaries)
 }
