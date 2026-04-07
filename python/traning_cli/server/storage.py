@@ -3,6 +3,7 @@
 import json
 import logging
 import subprocess
+import unicodedata
 from pathlib import Path
 
 from ..health.utils import health_metrics_dir, health_workouts_dir
@@ -95,7 +96,10 @@ def save_workout_push(payload: dict, data_dir: Path | None = None) -> int:
         # Build filename from name + start timestamp
         # "2026-04-06 07:00:35 +0200" → "20260406_070035"
         ts = start[:19].replace("-", "").replace(":", "").replace(" ", "_")
-        safe_name = name.replace(" ", "_").replace("/", "_")
+        # Normalize: å→a, ö→o, ä→a, strip remaining non-ASCII
+        safe_name = unicodedata.normalize("NFKD", name)
+        safe_name = safe_name.encode("ascii", "ignore").decode("ascii")
+        safe_name = safe_name.replace(" ", "_").replace("/", "_")
         filename = f"{safe_name}-{ts}.json"
 
         filepath = workouts_dir / filename
