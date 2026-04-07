@@ -240,14 +240,11 @@
   "Health Sync", "Health Import", "Klocka", "anandavani", "Connect"
 )
 
-# Sleep: Sleep Cycle is more accurate (manually activated vs AW's
-# fixed schedule). AW kept as fallback for nights without SC.
-.sleep_source_priority <- c(
-  "Sleep Cycle",
-  "Apple Watch f\u00f6r Kristian", "kankad", "kankad ",
-  "Oura", "AutoSleep",
-  "Health Sync", "Health Import", "Klocka", "anandavani", "Connect"
-)
+# Sleep: Apple Watch aggregated data is most reliable — Sleep Cycle
+# has known bugs (duplicate sessions 2013-2015 giving 22.9h, and
+# staging fragments assigned to wrong night giving 0.3h from 2025+).
+# SC average is ~0.5h lower than AW but AW is consistently correct.
+.sleep_source_priority <- .source_priority
 
 #' Parse raw sleep segment samples into daily summaries
 #'
@@ -446,7 +443,40 @@
     message("  Filtrerade bort ", n_dropped,
             " Connect-kontaminerade värden (resting_heart_rate)")
   }
-  df[!is_contaminated, ]
+  df <- df[!is_contaminated, ]
+
+  # Drop implausible sleep values:
+  # - totalSleep > 16 h (SC duplicate sessions, 2013-2015)
+  # - totalSleep < 2 h when inBed > 4 h (SC lost contact during night)
+  is_total <- df$metric == "sleep_totalSleep"
+  if (any(is_total)) {
+    # Check for matching inBed values on same date/source
+    inbed_lookup <- df[df$metric == "sleep_inBed",
+                       c("date", "source", "value")]
+    names(inbed_lookup)[3] <- "inbed_val"
+    total_df <- df[is_total, c("date", "source", "value")]
+    merged <- merge(total_df, inbed_lookup, by = c("date", "source"),
+                    all.x = TRUE)
+    too_long <- is_total & df$value > 16
+    too_short <- is_total &
+      df$value < 2 &
+      df$date %in% merged$date[!is.na(merged$inbed_val) & merged$inbed_val > 4]
+
+    n_sleep_dropped <- sum(too_long | too_short)
+    if (n_sleep_dropped > 0) {
+      # Drop all sleep_* metrics for these (date, source) pairs
+      bad_keys <- paste(df$date[too_long | too_short],
+                        df$source[too_long | too_short])
+      is_bad_sleep <- grepl("^sleep_", df$metric) &
+        paste(df$date, df$source) %in% bad_keys
+      message("  Filtrerade bort ", sum(is_bad_sleep),
+              " rader fr\u00e5n ", n_sleep_dropped,
+              " orimliga s\u00f6mnn\u00e4tter (>16h eller <2h med >4h i s\u00e4ngen)")
+      df <- df[!is_bad_sleep, ]
+    }
+  }
+
+  df
 }
 
 # --- Daily aggregation --------------------------------------------------------
