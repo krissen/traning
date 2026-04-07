@@ -76,10 +76,13 @@ def _run_insight(kind: str):
             'today <- h[h$date == latest_date,]; '
             'get_val <- function(m, d=today) { v <- d$value[d$metric == m]; '
             'if (length(v) == 0 || is.na(v[1])) NA else round(v[1], 1) }; '
-            'cat(sprintf("H\\u00e4lsa %s: vila %s bpm, HRV %s ms", '
+            'sleep_val <- get_val("sleep_totalSleep"); '
+            'sleep_txt <- if (!is.na(sleep_val)) paste0(", s\\u00f6mn ", sleep_val, " h") else ""; '
+            'cat(sprintf("H\\u00e4lsa %s: vila %s bpm, HRV %s ms%s", '
             'format(latest_date), '
             'ifelse(is.na(get_val("resting_heart_rate")), "?", get_val("resting_heart_rate")), '
-            'ifelse(is.na(get_val("heart_rate_variability")), "?", get_val("heart_rate_variability")))) '
+            'ifelse(is.na(get_val("heart_rate_variability")), "?", get_val("heart_rate_variability")), '
+            'sleep_txt)) '
             '} else cat("Hälsodata importerad.")'
         )]
     else:
