@@ -1,5 +1,31 @@
 # tRäning — Changelog
 
+## 2026-04-08 — Adaptive plot granularity
+
+### Plots adapt to date range
+All time-series plots now respond to the span between `from` and `to`:
+- **Short spans (< 60 days):** larger points, no loess smoother, no
+  rolling average, angled date labels, daily/weekly aggregation
+- **Medium spans (2–12 months):** weekly aggregation for zones,
+  rolling averages shown, moderate loess span
+- **Long spans (> 1 year):** monthly aggregation, sparse tick marks,
+  small points with full smoothing
+
+Affected plots: EF, HRE, decoupling, recovery HR, PMC, resting HR,
+HRV, sleep stages, zone distribution, polarization index.
+
+Shared helpers in `plot.R`: `.compute_span_days()`,
+`.adaptive_date_scale()`, `.adaptive_datetime_scale()`,
+`.filter_date_range()`.
+
+### Test fixes
+- Wrapped expected-warning calls in `expect_warning()` /
+  `suppressWarnings()` (decoupling, MCP bridge)
+- Set `HR_MAX` envvar in PMC test to avoid missing-envvar warning
+- Test suite: 319 PASS, 0 WARN
+
+---
+
 ## 2026-04-07 — Import correctness, notifications, cache portability
 
 ### trackeRdataSummary fix (root cause)

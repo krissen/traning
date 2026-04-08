@@ -12,15 +12,17 @@ run_bridge <- function(func, args = "{}", plot = FALSE) {
 # --- Function whitelist ---
 
 test_that("unknown function returns error", {
-  out <- run_bridge("nonexistent_function")
+  out <- suppressWarnings(run_bridge("nonexistent_function"))
   expect_equal(out$type, "error")
   expect_match(out$message, "Unknown")
 })
 
 test_that("NULL function returns error", {
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
-  result <- system2("Rscript", args = c(bridge, paste0("--args=", shQuote("{}"))),
-                    stdout = TRUE, stderr = NULL)
+  result <- suppressWarnings(
+    system2("Rscript", args = c(bridge, paste0("--args=", shQuote("{}"))),
+            stdout = TRUE, stderr = NULL)
+  )
   out <- jsonlite::fromJSON(paste(result, collapse = "\n"), simplifyVector = FALSE)
   expect_equal(out$type, "error")
 })

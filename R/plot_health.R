@@ -1,4 +1,6 @@
 # Health data visualizations — each returns a ggplot2 object
+# Uses adaptive helpers from R/plot.R: .compute_span_days(),
+# .adaptive_date_scale(), .filter_date_range()
 
 # --- Resting Heart Rate trend ------------------------------------------------
 
@@ -26,28 +28,51 @@ fetch.plot.resting_hr <- function(health_daily, summaries = NULL,
     return(ggplot2::ggplot())
   }
 
+  span_days <- .compute_span_days(from, to)
+
   rhr$year <- factor(format(rhr$date, "%Y"))
 
-  # Annual means for reference lines
+  # Adapt point size and loess span to date range
+  pt_size  <- if (span_days <= 30) 2 else 0.8
+  pt_alpha <- if (span_days <= 30) 0.5 else 0.15
+  loess_span <- if (span_days <= 30) 0.75 else if (span_days <= 90) 0.3 else 0.1
+
+  # Annual means for reference lines (only meaningful for longer spans)
   annual <- rhr |>
     dplyr::group_by(year) |>
     dplyr::summarise(mean_rhr = mean(value, na.rm = TRUE),
                      mid_date = mean(date), .groups = "drop")
 
   p <- ggplot2::ggplot(rhr, ggplot2::aes(x = date, y = value)) +
-    ggplot2::geom_point(alpha = 0.15, size = 0.8, colour = "grey50") +
-    ggplot2::geom_smooth(method = "loess", span = 0.1, se = FALSE,
-                         colour = "firebrick", linewidth = 1) +
-    ggplot2::geom_point(data = annual,
-                        ggplot2::aes(x = mid_date, y = mean_rhr),
-                        size = 3, colour = "firebrick", shape = 18) +
-    ggplot2::geom_text(data = annual,
-                       ggplot2::aes(x = mid_date, y = mean_rhr,
-                                    label = round(mean_rhr, 0)),
-                       vjust = -1, size = 3, colour = "firebrick") +
+    ggplot2::geom_point(alpha = pt_alpha, size = pt_size, colour = "grey50")
+
+  if (nrow(rhr) >= 5) {
+    p <- p + ggplot2::geom_smooth(method = "loess", span = loess_span,
+                                   se = FALSE, colour = "firebrick",
+                                   linewidth = 1)
+  }
+
+  if (span_days > 90) {
+    p <- p +
+      ggplot2::geom_point(data = annual,
+                          ggplot2::aes(x = mid_date, y = mean_rhr),
+                          size = 3, colour = "firebrick", shape = 18) +
+      ggplot2::geom_text(data = annual,
+                         ggplot2::aes(x = mid_date, y = mean_rhr,
+                                      label = round(mean_rhr, 0)),
+                         vjust = -1, size = 3, colour = "firebrick")
+  }
+
+  p <- p +
+    .adaptive_date_scale(span_days) +
     ggplot2::labs(title = "Vilopuls (Apple Watch)",
                   x = NULL, y = "bpm") +
-    ggplot2::theme_minimal()
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(
+        angle = if (span_days <= 60) 45 else 0,
+        hjust = if (span_days <= 60) 1 else 0.5)
+    )
 
   p
 }
@@ -75,6 +100,10 @@ fetch.plot.hrv <- function(health_daily, from = NULL, to = NULL) {
     return(ggplot2::ggplot())
   }
 
+  span_days <- .compute_span_days(from, to)
+  pt_size  <- if (span_days <= 30) 2 else 0.8
+  pt_alpha <- if (span_days <= 30) 0.5 else 0.2
+
   # 7-day rolling mean and SD
   hrv <- hrv |>
     dplyr::mutate(
@@ -88,12 +117,18 @@ fetch.plot.hrv <- function(health_daily, from = NULL, to = NULL) {
     ggplot2::geom_ribbon(ggplot2::aes(ymin = lower, ymax = upper),
                          fill = "steelblue", alpha = 0.2, na.rm = TRUE) +
     ggplot2::geom_point(ggplot2::aes(y = ln_rmssd),
-                        alpha = 0.2, size = 0.8, colour = "grey50") +
+                        alpha = pt_alpha, size = pt_size, colour = "grey50") +
     ggplot2::geom_line(ggplot2::aes(y = roll_mean),
                        colour = "steelblue", linewidth = 0.8, na.rm = TRUE) +
+    .adaptive_date_scale(span_days) +
     ggplot2::labs(title = "HRV — Ln(RMSSD) med 7-dagars baseline",
                   x = NULL, y = "Ln(RMSSD)") +
-    ggplot2::theme_minimal()
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(
+        angle = if (span_days <= 60) 45 else 0,
+        hjust = if (span_days <= 60) 1 else 0.5)
+    )
 
   p
 }
@@ -120,6 +155,8 @@ fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
     return(ggplot2::ggplot())
   }
 
+  span_days <- .compute_span_days(from, to)
+
   # Total sleep as line
   total <- sleep |> dplyr::filter(metric == "sleep_totalSleep")
 
@@ -144,27 +181,52 @@ fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
   stages$stage <- factor(stage_labels[stages$metric],
                           levels = c("Vaken", "Kärnsömn", "REM", "Djupsömn"))
 
-  p <- ggplot2::ggplot() +
-    ggplot2::geom_smooth(data = total,
-                         ggplot2::aes(x = date, y = value),
-                         method = "loess", span = 0.15, se = FALSE,
-                         colour = "grey30", linewidth = 1)
+  # Adapt loess span to date range
+  loess_span <- if (span_days <= 30) 0.75 else if (span_days <= 90) 0.3 else 0.15
+
+  p <- ggplot2::ggplot()
+
+  if (nrow(total) >= 5) {
+    p <- p + ggplot2::geom_smooth(data = total,
+                                   ggplot2::aes(x = date, y = value),
+                                   method = "loess", span = loess_span,
+                                   se = FALSE, colour = "grey30", linewidth = 1)
+  }
 
   if (nrow(stages) > 0) {
-    # Monthly averages for stacked bars
-    stages_monthly <- stages |>
-      dplyr::mutate(month = lubridate::floor_date(date, "month")) |>
-      dplyr::group_by(month, stage) |>
-      dplyr::summarise(value = mean(value, na.rm = TRUE), .groups = "drop")
+    # Adaptive aggregation: daily / weekly / monthly
+    if (span_days < 60) {
+      # Daily bars — show each day individually
+      stages_agg <- stages |>
+        dplyr::group_by(date, stage) |>
+        dplyr::summarise(value = mean(value, na.rm = TRUE), .groups = "drop") |>
+        dplyr::rename(period = date)
+      bar_width <- 0.8
+    } else if (span_days < 365) {
+      # Weekly bars
+      stages_agg <- stages |>
+        dplyr::mutate(period = lubridate::floor_date(date, "week")) |>
+        dplyr::group_by(period, stage) |>
+        dplyr::summarise(value = mean(value, na.rm = TRUE), .groups = "drop")
+      bar_width <- 5
+    } else {
+      # Monthly bars
+      stages_agg <- stages |>
+        dplyr::mutate(period = lubridate::floor_date(date, "month")) |>
+        dplyr::group_by(period, stage) |>
+        dplyr::summarise(value = mean(value, na.rm = TRUE), .groups = "drop")
+      bar_width <- 25
+    }
 
     p <- p +
-      ggplot2::geom_col(data = stages_monthly,
-                        ggplot2::aes(x = month, y = value, fill = stage),
-                        width = 25, alpha = 0.7) +
+      ggplot2::geom_col(data = stages_agg,
+                        ggplot2::aes(x = period, y = value, fill = stage),
+                        width = bar_width, alpha = 0.7) +
       ggplot2::scale_fill_manual(values = stage_colours)
   }
 
   p <- p +
+    .adaptive_date_scale(span_days) +
     ggplot2::labs(title = "Sömn — total och faser",
                   x = NULL, y = "Timmar", fill = NULL) +
     ggplot2::geom_hline(yintercept = 7, linetype = "dashed",
@@ -172,7 +234,12 @@ fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
     ggplot2::annotate("text", x = min(total$date), y = 7.15,
                       label = "7h mål", hjust = 0, size = 3,
                       colour = "darkgreen") +
-    ggplot2::theme_minimal()
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(
+        angle = if (span_days <= 60) 45 else 0,
+        hjust = if (span_days <= 60) 1 else 0.5)
+    )
 
   p
 }
@@ -198,14 +265,31 @@ fetch.plot.vo2max <- function(health_daily, from = NULL, to = NULL) {
     return(ggplot2::ggplot())
   }
 
+  span_days <- .compute_span_days(from, to)
+  pt_size  <- if (span_days <= 30) 2.5 else 0.8
+  pt_alpha <- if (span_days <= 30) 0.6 else 0.15
+  loess_span <- if (span_days <= 30) 0.75 else if (span_days <= 90) 0.3 else 0.15
+
   p <- ggplot2::ggplot(vo2, ggplot2::aes(x = date, y = value)) +
-    ggplot2::geom_point(alpha = 0.15, size = 0.8, colour = "grey50") +
-    ggplot2::geom_smooth(method = "loess", span = 0.15, se = FALSE,
-                         colour = "darkorange", linewidth = 1) +
+    ggplot2::geom_point(alpha = pt_alpha, size = pt_size, colour = "grey50")
+
+  if (nrow(vo2) >= 5) {
+    p <- p + ggplot2::geom_smooth(method = "loess", span = loess_span,
+                                   se = FALSE, colour = "darkorange",
+                                   linewidth = 1)
+  }
+
+  p <- p +
+    .adaptive_date_scale(span_days) +
     ggplot2::labs(title = "VO2max (Apple Watch-estimat)",
                   x = NULL,
                   y = "ml/(kg\u00b7min)") +
-    ggplot2::theme_minimal()
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(
+        angle = if (span_days <= 60) 45 else 0,
+        hjust = if (span_days <= 60) 1 else 0.5)
+    )
 
   p
 }
@@ -272,9 +356,16 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
     return(ggplot2::ggplot())
   }
 
+  span_days <- .compute_span_days(from, to)
+  date_scale <- .adaptive_date_scale(span_days)
+  pt_size  <- if (span_days <= 30) 2.5 else 1.5
+
   theme_panel <- ggplot2::theme_minimal() +
     ggplot2::theme(axis.title.x = ggplot2::element_blank(),
-                   plot.title = ggplot2::element_text(size = 10, face = "bold"))
+                   plot.title = ggplot2::element_text(size = 10, face = "bold"),
+                   axis.text.x = ggplot2::element_text(
+                     angle = if (span_days <= 60) 45 else 0,
+                     hjust = if (span_days <= 60) 1 else 0.5))
 
   # Panel 1: Readiness score
   r_score <- r |> dplyr::filter(!is.na(readiness_score))
@@ -286,7 +377,7 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
     ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
                       ymin = 0, ymax = 40, fill = "#F44336", alpha = 0.1) +
     ggplot2::geom_line(colour = "grey40", linewidth = 0.4) +
-    ggplot2::geom_point(ggplot2::aes(colour = readiness_status), size = 1.5) +
+    ggplot2::geom_point(ggplot2::aes(colour = readiness_status), size = pt_size) +
     ggplot2::scale_colour_manual(
       values = c("Grön" = "#4CAF50", "Gul" = "#FFC107",
                  "Röd" = "#F44336"),
@@ -295,6 +386,7 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
     ggplot2::geom_hline(yintercept = c(40, 70), linetype = "dashed",
                         alpha = 0.3) +
     ggplot2::scale_y_continuous(limits = c(0, 100)) +
+    date_scale +
     ggplot2::labs(title = "Beredskap", y = "Po\u00e4ng") +
     theme_panel
 
@@ -306,12 +398,15 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
                    ymax = ln_rmssd_7d_mean + ln_rmssd_7d_sd),
       fill = "steelblue", alpha = 0.2, na.rm = TRUE) +
     ggplot2::geom_point(ggplot2::aes(y = ln_rmssd),
-                        alpha = 0.3, size = 0.8, colour = "grey50") +
+                        alpha = if (span_days <= 30) 0.5 else 0.3,
+                        size = if (span_days <= 30) 2 else 0.8,
+                        colour = "grey50") +
     ggplot2::geom_line(ggplot2::aes(y = ln_rmssd_7d_mean),
                        colour = "steelblue", linewidth = 0.7, na.rm = TRUE) +
     ggplot2::geom_point(
       data = r_hrv |> dplyr::filter(hrv_flag),
       ggplot2::aes(y = ln_rmssd), colour = "red", shape = 17, size = 2) +
+    date_scale +
     ggplot2::labs(title = "HRV — Ln(RMSSD)", y = "Ln(RMSSD)") +
     theme_panel
 
@@ -326,6 +421,7 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
       guide = "none") +
     ggplot2::geom_hline(yintercept = 7, linetype = "dashed",
                         colour = "darkgreen", alpha = 0.5) +
+    date_scale +
     ggplot2::labs(title = "S\u00f6mn", y = "Timmar") +
     theme_panel
 
@@ -339,6 +435,7 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
     ggplot2::geom_line(ggplot2::aes(y = ctl, colour = "CTL"),
                        linewidth = 0.7, na.rm = TRUE) +
     ggplot2::scale_colour_manual(values = c("ATL" = "tomato", "CTL" = "steelblue")) +
+    date_scale +
     ggplot2::labs(title = "Tr\u00e4ningsbelastning", y = "TRIMP",
                   colour = NULL) +
     theme_panel +

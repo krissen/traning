@@ -35,22 +35,80 @@
 fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
                                 by = "monthly", zone_data = NULL) {
   if (is.null(zone_data)) zone_data <- compute_zone_distribution(summaries)
-  monthly   <- zone_data$monthly
 
-  # Optional date-range pre-filter — year_month is "YYYY-MM" character,
+  span_days <- .compute_span_days(from, to)
 
-  # convert to first-of-month Date for comparison
-  if (!is.null(from)) {
-    monthly <- monthly %>%
-      dplyr::filter(as.Date(paste0(year_month, "-01")) >= as.Date(from))
+  # Adaptive aggregation: per-activity / weekly / monthly
+  if (span_days < 60 && !is.null(zone_data$per_activity) &&
+      nrow(zone_data$per_activity) > 0) {
+    # Use per-activity data, aggregate by week
+    pa <- zone_data$per_activity
+    if (!is.null(from)) pa <- pa %>% dplyr::filter(sessionStart >= as.Date(from))
+    if (!is.null(to))   pa <- pa %>% dplyr::filter(sessionStart <= as.Date(to))
+
+    if (nrow(pa) == 0) {
+      return(ggplot2::ggplot() +
+        ggplot2::ggtitle("Ingen zondata i intervallet"))
+    }
+
+    agg <- pa %>%
+      dplyr::mutate(period = lubridate::floor_date(sessionStart, "week")) %>%
+      dplyr::group_by(period) %>%
+      dplyr::summarise(
+        z1_pct = 100 * sum(z1_sec) / sum(total_sec),
+        z2_pct = 100 * sum(z2_sec) / sum(total_sec),
+        z3_pct = 100 * sum(z3_sec) / sum(total_sec),
+        .groups = "drop"
+      )
+    bar_width <- 5
+    x_title <- "Zonf\u00f6rdelning per vecka (Seiler 3-zon)"
+  } else if (span_days < 365 && !is.null(zone_data$per_activity) &&
+             nrow(zone_data$per_activity) > 0) {
+    # Weekly aggregation for medium spans
+    pa <- zone_data$per_activity
+    if (!is.null(from)) pa <- pa %>% dplyr::filter(sessionStart >= as.Date(from))
+    if (!is.null(to))   pa <- pa %>% dplyr::filter(sessionStart <= as.Date(to))
+
+    if (nrow(pa) == 0) {
+      return(ggplot2::ggplot() +
+        ggplot2::ggtitle("Ingen zondata i intervallet"))
+    }
+
+    agg <- pa %>%
+      dplyr::mutate(period = lubridate::floor_date(sessionStart, "week")) %>%
+      dplyr::group_by(period) %>%
+      dplyr::summarise(
+        z1_pct = 100 * sum(z1_sec) / sum(total_sec),
+        z2_pct = 100 * sum(z2_sec) / sum(total_sec),
+        z3_pct = 100 * sum(z3_sec) / sum(total_sec),
+        .groups = "drop"
+      )
+    bar_width <- 5
+    x_title <- "Zonf\u00f6rdelning per vecka (Seiler 3-zon)"
+  } else {
+    # Monthly aggregation (original behaviour)
+    monthly <- zone_data$monthly
+    if (!is.null(from)) {
+      monthly <- monthly %>%
+        dplyr::filter(as.Date(paste0(year_month, "-01")) >= as.Date(from))
+    }
+    if (!is.null(to)) {
+      monthly <- monthly %>%
+        dplyr::filter(as.Date(paste0(year_month, "-01")) <= as.Date(to))
+    }
+    agg <- monthly %>%
+      dplyr::mutate(period = as.Date(paste0(year_month, "-01")))
+    bar_width <- 25
+    x_title <- "Zonf\u00f6rdelning per m\u00e5nad (Seiler 3-zon)"
   }
-  if (!is.null(to)) {
-    monthly <- monthly %>%
-      dplyr::filter(as.Date(paste0(year_month, "-01")) <= as.Date(to))
+
+  if (nrow(agg) == 0) {
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle("Ingen zondata i intervallet"))
   }
 
   # Pivot to long format so ggplot2 can stack the three zones
-  long <- monthly %>%
+  long <- agg %>%
     tidyr::pivot_longer(
       cols      = c(z1_pct, z2_pct, z3_pct),
       names_to  = "zon",
@@ -64,8 +122,7 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
       ),
       zon = factor(zon,
         levels = c("L\u00e5gintensiv (Z1)", "Tr\u00f6skel (Z2)", "H\u00f6gintensiv (Z3)")
-      ),
-      year_month = as.Date(paste0(year_month, "-01"))
+      )
     )
 
   zon_farger <- c(
@@ -76,11 +133,11 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
 
   long %>%
     ggplot2::ggplot(
-      ggplot2::aes(x = year_month, y = pct, fill = zon)
+      ggplot2::aes(x = period, y = pct, fill = zon)
     ) +
     ggplot2::geom_col(
       position = ggplot2::position_stack(reverse = TRUE),
-      width     = 25
+      width     = bar_width
     ) +
     # 80 % reference line for ideal Z1 proportion
     ggplot2::geom_hline(
@@ -91,7 +148,7 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
     ) +
     ggplot2::annotate(
       "text",
-      x     = min(long$year_month, na.rm = TRUE),
+      x     = min(long$period, na.rm = TRUE),
       y     = 81.5,
       label = "80 % m\u00e5l",
       hjust = 0,
@@ -106,11 +163,8 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
       labels = function(x) paste0(x, " %")
     ) +
     ggplot2::coord_cartesian(ylim = c(0, 100)) +
-    ggplot2::scale_x_date(
-      date_labels = "%Y-%m",
-      date_breaks = .auto_date_breaks(long$year_month)
-    ) +
-    ggplot2::ggtitle("Zonf\u00f6rdelning per m\u00e5nad (Seiler 3-zon)") +
+    .adaptive_date_scale(span_days) +
+    ggplot2::ggtitle(x_title) +
     ggplot2::labs(x = NULL, y = "Andel (%)") +
     ggplot2::theme(
       axis.text.x     = ggplot2::element_text(angle = 45, hjust = 1),
@@ -202,10 +256,7 @@ fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
       linewidth = 0.7,
       na.rm     = TRUE
     ) +
-    ggplot2::scale_x_date(
-      date_labels = "%Y-%m",
-      date_breaks = .auto_date_breaks(pi_data$year_month)
-    ) +
+    .adaptive_date_scale(.compute_span_days(from, to)) +
     ggplot2::ggtitle("Polariseringsindex (Treff 2019)") +
     ggplot2::labs(x = NULL, y = "PI") +
     ggplot2::theme(
