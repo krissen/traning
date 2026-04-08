@@ -134,10 +134,10 @@ def _import_files(files: list, kind: str = "health"):
             notify("tRäning", "Import hälsa: MISSLYCKADES")
         else:
             log.info("Import %d files OK (%ds)", len(files), elapsed)
+            _run_insight(kind)
     except subprocess.TimeoutExpired:
         elapsed = int(time.time() - t0)
         log.warning("Import timed out after %ds", elapsed)
-    _run_insight(kind)
 
 
 def _import_and_insight(kind: str):
