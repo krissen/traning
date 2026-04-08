@@ -1,5 +1,6 @@
 """Vayu — MCP server for tRäning (personal running analysis)."""
 
+import os
 import sys
 
 from fastmcp import FastMCP
@@ -53,9 +54,12 @@ mcp.resource("vayu://thresholds")(tools.resource_thresholds)
 def main():
     """Entry point for the vayu command."""
     transport = "stdio"
+    kwargs = {}
     if "--sse" in sys.argv:
         transport = "sse"
-    mcp.run(transport=transport)
+        kwargs["host"] = os.environ.get("VAYU_HOST", "0.0.0.0")
+        kwargs["port"] = int(os.environ.get("VAYU_PORT", "8422"))
+    mcp.run(transport=transport, **kwargs)
 
 
 if __name__ == "__main__":

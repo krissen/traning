@@ -1,0 +1,21 @@
+[Unit]
+Description=Vayu MCP server (tRäning running analysis)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=krisse
+EnvironmentFile=/etc/traning/env
+Environment=VAYU_HOST=0.0.0.0
+Environment=VAYU_PORT=8422
+Environment=BIRTH_YEAR=1981
+WorkingDirectory=/home/krisse/dev/traning
+ExecStart=/home/krisse/dev/traning/python/.venv/bin/vayu --sse
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
