@@ -117,6 +117,13 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
     n_written = 0
     all_changed: list[Path] = []
 
+    # Sleep segments span midnight — per-day canonical files would break
+    # the R sleep parser which needs to see whole nights together.
+    _LEGACY_METRICS = {"sleep_analysis"}
+
+    metrics_dir = health_metrics_dir(data_dir)
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+
     for m in metrics:
         name = m.get("name")
         samples = m.get("data", [])
@@ -124,11 +131,27 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
             continue
 
         units = m.get("units", "")
-        changed = canonicalize_metric(name, units, samples, data_dir)
-        all_changed.extend(changed)
 
-        log.info("  %s: %d samples, %d canonical files updated",
-                 name, len(samples), len(changed))
+        if name in _LEGACY_METRICS:
+            # Save in legacy metrics/ format (whole date range per file)
+            dates = [s.get("date", s.get("startDate", ""))[:10]
+                     for s in samples if s.get("date") or s.get("startDate")]
+            if not dates:
+                continue
+            first, last = min(dates), max(dates)
+            output = {"data": {"metrics": [
+                {"name": name, "units": units, "data": samples}
+            ]}}
+            filepath = metrics_dir / f"{name}_{first}_{last}.json"
+            with open(filepath, "w") as f:
+                json.dump(output, f, ensure_ascii=False)
+            log.info("  %s: %d samples (legacy)", name, len(samples))
+        else:
+            changed = canonicalize_metric(name, units, samples, data_dir)
+            all_changed.extend(changed)
+            log.info("  %s: %d samples, %d canonical files updated",
+                     name, len(samples), len(changed))
+
         n_written += 1
 
     return n_written
@@ -191,6 +214,7 @@ def commit_health_data(data_dir: Path | None = None, n_metrics: int = 0,
         subprocess.run(
             ["git", "add",
              "kristian/health_export/canonical/",
+             "kristian/health_export/metrics/",
              "kristian/health_export/workouts/"],
             cwd=data_dir, check=True, capture_output=True,
         )

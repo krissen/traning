@@ -124,6 +124,9 @@ def main():
         for name, units, samples in entries:
             metrics_seen.add(name)
             total_samples += len(samples)
+            # Sleep spans midnight — keep in legacy format, skip canonical
+            if name == "sleep_analysis":
+                continue
             changed = canonicalize_metric(name, units, samples, data_dir)
             total_canonical += len(changed)
 

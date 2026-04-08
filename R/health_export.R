@@ -572,16 +572,7 @@ read_canonical_file <- function(path, verbose = FALSE) {
         nrow(result), "rader\n")
   }
 
-  # Clean sources and aggregate
-  result <- .clean_sources(result)
-  dup_count <- result |>
-    dplyr::count(date, metric) |>
-    dplyr::filter(n > 1) |>
-    nrow()
-  if (dup_count > 0) {
-    result <- .aggregate_daily(result)
-  }
-
+  # No per-file cleaning/aggregation — the global pipeline handles that
   result
 }
 
@@ -690,10 +681,18 @@ import_health_export <- function(path = NULL, cache_path = NULL,
 
   if (is.null(path)) {
     if (use_canonical) {
-      files <- list.files(canonical_dir, pattern = "\\.json$",
-                          full.names = TRUE, recursive = TRUE)
-      if (verbose) cat("Importerar fr\u00e5n canonical/ (", length(files),
-                       " filer)\n")
+      canonical_files <- list.files(canonical_dir, pattern = "\\.json$",
+                                     full.names = TRUE, recursive = TRUE)
+      # Also include legacy metrics/ files (sleep spans midnight,
+      # kept in legacy format)
+      metrics_dir <- file.path(.hae_dir(), "metrics")
+      legacy_files <- if (dir.exists(metrics_dir)) {
+        list.files(metrics_dir, pattern = "\\.json$",
+                   full.names = TRUE, recursive = FALSE)
+      } else character(0)
+      files <- c(canonical_files, legacy_files)
+      if (verbose) cat("Importerar fr\u00e5n canonical/ (", length(canonical_files),
+                       ") + metrics/ (", length(legacy_files), ")\n")
     } else {
       metrics_dir <- file.path(.hae_dir(), "metrics")
       files <- list.files(metrics_dir, pattern = "\\.json$",
@@ -731,9 +730,12 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     }
   }
 
-  read_fn <- if (use_canonical) read_canonical_file else read_health_export
   new_data <- lapply(files_to_parse, function(f) {
-    read_fn(f, verbose = verbose)
+    if (grepl("/canonical/", f, fixed = TRUE)) {
+      read_canonical_file(f, verbose = verbose)
+    } else {
+      read_health_export(f, verbose = verbose)
+    }
   })
   new_data <- dplyr::bind_rows(new_data)
 
