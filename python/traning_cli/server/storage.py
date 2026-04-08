@@ -1,33 +1,113 @@
-"""Save incoming HAE health data to the metrics directory."""
+"""Save incoming HAE health data with content-level deduplication.
+
+Incoming pushes are canonicalized into per-metric-per-day files under
+canonical/{metric}/{YYYY-MM-DD}.json.  All known samples for a given
+(metric, date) are merged and deduplicated by (timestamp, source).
+"""
 
 import json
 import logging
 import subprocess
 import unicodedata
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-from ..health.utils import health_metrics_dir, health_workouts_dir
+from ..health.utils import (
+    health_canonical_dir, health_incoming_dir,
+    health_metrics_dir, health_workouts_dir,
+)
 from ..garmin.utils import get_data_dir
 
 log = logging.getLogger(__name__)
 
 
+# --- Canonical deduplication ------------------------------------------------
+
+def _sample_key(sample: dict) -> str:
+    """Return a dedup key for a single HAE sample.
+
+    Standard metrics: (full_timestamp, source).
+    Sleep raw segments: (full_timestamp, stage_value, source).
+    """
+    ts = sample.get("date", sample.get("startDate", ""))
+    src = sample.get("source", "")
+    stage = sample.get("value", "")  # sleep stage name, empty for others
+    return f"{ts}|{stage}|{src}"
+
+
+def canonicalize_metric(
+    metric_name: str,
+    units: str,
+    samples: list[dict],
+    data_dir: Path,
+) -> list[Path]:
+    """Merge incoming samples into per-day canonical files.
+
+    Returns list of canonical file paths that were created or updated.
+    """
+    canonical_dir = health_canonical_dir(data_dir) / metric_name
+    canonical_dir.mkdir(parents=True, exist_ok=True)
+
+    # Group incoming samples by date
+    by_date: dict[str, list[dict]] = defaultdict(list)
+    for s in samples:
+        date_str = s.get("date", s.get("startDate", ""))[:10]
+        if date_str:
+            by_date[date_str].append(s)
+
+    changed: list[Path] = []
+    for date_str, new_samples in by_date.items():
+        canonical_path = canonical_dir / f"{date_str}.json"
+
+        # Load existing canonical samples
+        existing_samples: list[dict] = []
+        if canonical_path.exists():
+            with open(canonical_path) as f:
+                doc = json.load(f)
+            existing_samples = doc.get("samples", [])
+
+        # Merge: existing keys take precedence, new samples added
+        seen = {_sample_key(s) for s in existing_samples}
+        merged = list(existing_samples)
+        n_added = 0
+        for s in new_samples:
+            key = _sample_key(s)
+            if key not in seen:
+                seen.add(key)
+                merged.append(s)
+                n_added += 1
+
+        if n_added == 0 and existing_samples:
+            continue  # no change
+
+        doc = {
+            "metric": metric_name,
+            "date": date_str,
+            "units": units,
+            "samples": merged,
+        }
+        with open(canonical_path, "w") as f:
+            json.dump(doc, f, ensure_ascii=False)
+
+        changed.append(canonical_path)
+
+    return changed
+
+
+# --- Public API -------------------------------------------------------------
+
 def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
-    """Save HAE JSON payload to metrics/ directory.
+    """Save HAE JSON payload via canonical deduplication.
 
-    Follows the same file format as health/tcp.py — one file per metric,
-    named {metric}_{first_date}_{last_date}.json.
+    1. Canonicalize each metric into per-day files under canonical/.
+    2. Track changed files for downstream import.
 
-    Returns the number of metric files written.
+    Returns the number of metric groups processed.
     """
     if data_dir is None:
         data_dir = get_data_dir()
 
-    metrics_dir = health_metrics_dir(data_dir)
-    metrics_dir.mkdir(parents=True, exist_ok=True)
-
-    # Extract metrics from HAE payload
     data = payload.get("data", {})
     metrics = data.get("metrics", [])
 
@@ -35,35 +115,20 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
         return 0
 
     n_written = 0
+    all_changed: list[Path] = []
+
     for m in metrics:
         name = m.get("name")
         samples = m.get("data", [])
         if not name or not samples:
             continue
 
-        dates = [s["date"][:10] for s in samples if "date" in s]
-        if not dates:
-            continue
-
-        first, last = min(dates), max(dates)
         units = m.get("units", "")
+        changed = canonicalize_metric(name, units, samples, data_dir)
+        all_changed.extend(changed)
 
-        output = {
-            "data": {
-                "metrics": [{
-                    "name": name,
-                    "units": units,
-                    "data": samples,
-                }]
-            }
-        }
-
-        filename = f"{name}_{first}_{last}.json"
-        filepath = metrics_dir / filename
-        with open(filepath, "w") as f:
-            json.dump(output, f, ensure_ascii=False)
-
-        log.info("  %s: %d samples", filename, len(samples))
+        log.info("  %s: %d samples, %d canonical files updated",
+                 name, len(samples), len(changed))
         n_written += 1
 
     return n_written
@@ -124,7 +189,8 @@ def commit_health_data(data_dir: Path | None = None, n_metrics: int = 0,
 
     try:
         subprocess.run(
-            ["git", "add", "kristian/health_export/metrics/",
+            ["git", "add",
+             "kristian/health_export/canonical/",
              "kristian/health_export/workouts/"],
             cwd=data_dir, check=True, capture_output=True,
         )

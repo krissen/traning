@@ -64,9 +64,25 @@
 #' @param manifest Named list from .load_manifest()
 #' @return Character vector of files that need importing
 #' @keywords internal
+#' Generate a manifest key for a file path.
+#'
+#' For canonical files (path contains /canonical/), uses "metric/date.json".
+#' For legacy files, uses basename.
+#' @param path Character file path.
+#' @return Character key.
+#' @keywords internal
+.manifest_key <- function(path) {
+  if (grepl("/canonical/", path, fixed = TRUE)) {
+    # canonical: metric_name/YYYY-MM-DD.json
+    paste0(basename(dirname(path)), "/", basename(path))
+  } else {
+    basename(path)
+  }
+}
+
 .filter_changed_files <- function(files, manifest) {
   changed <- vapply(files, function(f) {
-    key <- basename(f)
+    key <- .manifest_key(f)
     prev <- manifest[[key]]
     if (is.null(prev)) return(TRUE)  # new file
     tools::md5sum(f) != prev$md5
@@ -76,12 +92,12 @@
 
 #' Build manifest entries for a set of files
 #' @param files Character vector of file paths
-#' @return Named list: basename -> list(md5)
+#' @return Named list: key -> list(md5)
 #' @keywords internal
 .build_manifest_entries <- function(files) {
   entries <- list()
   for (f in files) {
-    entries[[basename(f)]] <- list(
+    entries[[.manifest_key(f)]] <- list(
       md5 = unname(tools::md5sum(f))
     )
   }
@@ -523,6 +539,53 @@
     )
 }
 
+# --- Canonical reader ---------------------------------------------------------
+
+#' Read a canonical per-metric-per-day JSON file
+#'
+#' Canonical files have the format:
+#' \code{{"metric": "...", "date": "...", "units": "...", "samples": [...]}}
+#'
+#' @param path Path to the canonical JSON file.
+#' @param verbose Logical, print progress. Default FALSE.
+#' @return A tibble with columns: \code{date}, \code{metric}, \code{value},
+#'   \code{source}.
+#' @export
+read_canonical_file <- function(path, verbose = FALSE) {
+  if (!file.exists(path)) stop("Filen finns inte: ", path)
+
+  raw <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+
+  # Canonical format: {metric, date, units, samples}
+  metric_name <- raw$metric
+  samples <- raw$samples
+  if (is.null(metric_name) || is.null(samples) || length(samples) == 0) {
+    return(tibble::tibble())
+  }
+
+  # Convert to HAE-compatible format for .parse_metric()
+  metric_obj <- list(name = metric_name, data = samples)
+  result <- .parse_metric(metric_obj)
+
+  if (verbose && nrow(result) > 0) {
+    cat("  ", basename(dirname(path)), "/", basename(path), ":",
+        nrow(result), "rader\n")
+  }
+
+  # Clean sources and aggregate
+  result <- .clean_sources(result)
+  dup_count <- result |>
+    dplyr::count(date, metric) |>
+    dplyr::filter(n > 1) |>
+    nrow()
+  if (dup_count > 0) {
+    result <- .aggregate_daily(result)
+  }
+
+  result
+}
+
+
 # --- Main reader --------------------------------------------------------------
 
 #' Read a Health Auto Export JSON file
@@ -621,13 +684,23 @@ import_health_export <- function(path = NULL, cache_path = NULL,
         as.character(max(existing$date)), "\n")
   }
 
-  # Find files to import
+  # Find files to import — prefer canonical/ if it exists, else metrics/
+  canonical_dir <- file.path(.hae_dir(), "canonical")
+  use_canonical <- is.null(path) && dir.exists(canonical_dir)
+
   if (is.null(path)) {
-    metrics_dir <- file.path(.hae_dir(), "metrics")
-    files <- list.files(metrics_dir, pattern = "\\.json$",
-                        full.names = TRUE, recursive = FALSE)
+    if (use_canonical) {
+      files <- list.files(canonical_dir, pattern = "\\.json$",
+                          full.names = TRUE, recursive = TRUE)
+      if (verbose) cat("Importerar fr\u00e5n canonical/ (", length(files),
+                       " filer)\n")
+    } else {
+      metrics_dir <- file.path(.hae_dir(), "metrics")
+      files <- list.files(metrics_dir, pattern = "\\.json$",
+                          full.names = TRUE, recursive = FALSE)
+    }
     if (length(files) == 0) {
-      cat("Inga JSON-filer i", metrics_dir, "\n")
+      cat("Inga JSON-filer att importera\n")
       return(invisible(existing))
     }
   } else {
@@ -658,8 +731,9 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     }
   }
 
+  read_fn <- if (use_canonical) read_canonical_file else read_health_export
   new_data <- lapply(files_to_parse, function(f) {
-    read_health_export(f, verbose = verbose)
+    read_fn(f, verbose = verbose)
   })
   new_data <- dplyr::bind_rows(new_data)
 
