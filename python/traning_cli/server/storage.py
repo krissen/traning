@@ -58,8 +58,7 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
             }
         }
 
-        received = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{name}_{first}_{last}_{received}.json"
+        filename = f"{name}_{first}_{last}.json"
         filepath = metrics_dir / filename
         with open(filepath, "w") as f:
             json.dump(output, f, ensure_ascii=False)
