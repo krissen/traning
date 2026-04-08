@@ -34,8 +34,8 @@ def notify(title: str, message: str) -> bool:
             verify=not ha_url.startswith("https://localhost"),
         )
         resp.raise_for_status()
-        log.info("HA notification sent: %s", title)
+        log.info("Avisering skickad: [%s] %s", title, message)
         return True
     except Exception as e:
-        log.warning("HA notification failed: %s", e)
+        log.warning("Avisering misslyckades: [%s] %s — %s", title, message, e)
         return False
