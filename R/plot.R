@@ -1,5 +1,59 @@
 # Plot functions — each returns a ggplot2 object
 
+# --- Adaptive granularity helpers --------------------------------------------
+
+# Compute span in days from from/to, with a fallback default
+.compute_span_days <- function(from, to, fallback_days = 365) {
+  if (!is.null(from) && !is.null(to)) {
+    as.numeric(as.Date(to) - as.Date(from))
+  } else {
+    fallback_days
+  }
+}
+
+# Return a scale_x_date() layer with appropriate breaks/labels for the span
+.adaptive_date_scale <- function(span_days) {
+  if (span_days <= 14) {
+    ggplot2::scale_x_date(date_labels = "%d %b", date_breaks = "1 day")
+  } else if (span_days <= 60) {
+    ggplot2::scale_x_date(date_labels = "%d %b", date_breaks = "1 week")
+  } else if (span_days <= 365) {
+    ggplot2::scale_x_date(date_labels = "%b %Y", date_breaks = "1 month")
+  } else if (span_days <= 365 * 3) {
+    ggplot2::scale_x_date(date_labels = "%b %Y", date_breaks = "3 months")
+  } else {
+    ggplot2::scale_x_date(date_labels = "%Y", date_breaks = "1 year")
+  }
+}
+
+# Same as above but for POSIXct x-axis (sessionStart columns)
+.adaptive_datetime_scale <- function(span_days) {
+  if (span_days <= 14) {
+    ggplot2::scale_x_datetime(date_labels = "%d %b", date_breaks = "1 day")
+  } else if (span_days <= 60) {
+    ggplot2::scale_x_datetime(date_labels = "%d %b", date_breaks = "1 week")
+  } else if (span_days <= 365) {
+    ggplot2::scale_x_datetime(date_labels = "%b %Y", date_breaks = "1 month")
+  } else if (span_days <= 365 * 3) {
+    ggplot2::scale_x_datetime(date_labels = "%b %Y", date_breaks = "3 months")
+  } else {
+    ggplot2::scale_x_datetime(date_labels = "%Y", date_breaks = "1 year")
+  }
+}
+
+# Filter a data frame by from/to on a date-like column
+.filter_date_range <- function(data, date_col, from, to) {
+  if (!is.null(from)) {
+    data <- data[as.Date(data[[date_col]]) >= as.Date(from), , drop = FALSE]
+  }
+  if (!is.null(to)) {
+    data <- data[as.Date(data[[date_col]]) <= as.Date(to), , drop = FALSE]
+  }
+  data
+}
+
+# -------------------------------------------------------------------------
+
 #' Bar + line plot of monthly distance and pace
 #' @param month_summaries_til_day Tibble from report_monthstatus()
 #' @return ggplot2 object
@@ -93,6 +147,16 @@ fetch.plot.mean.pace <- function(mean.pace) {
 fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
   ef_data <- compute_efficiency_factor(summaries)
 
+  # Filter to date range
+  ef_data <- .filter_date_range(ef_data, "sessionStart", from, to)
+  if (nrow(ef_data) == 0) {
+    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen EF-data i intervallet"))
+  }
+
+  span <- .compute_span_days(from, to)
+  show_smooth <- nrow(ef_data) >= 8 && span > 60
+  show_rolling <- span > 35
+
   # Weekly km for volume panel
   acwr_data <- compute_acwr(summaries) %>%
     dplyr::filter(
@@ -100,11 +164,12 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
       date <= max(ef_data$sessionStart)
     )
 
-  # EF panel data
+  # EF panel data — only include rolling if we'll show it
+  ef_cols <- if (show_rolling) c("ef", "ef_rolling28") else "ef"
   ef_panel <- ef_data %>%
-    dplyr::select(sessionStart, ef, ef_rolling28) %>%
+    dplyr::select(sessionStart, dplyr::all_of(ef_cols)) %>%
     tidyr::pivot_longer(
-      cols = c(ef, ef_rolling28),
+      cols = dplyr::all_of(ef_cols),
       names_to = "metrik", values_to = "value"
     ) %>%
     dplyr::mutate(panel = factor("EF", levels = c("EF", "Veckokilometer")))
@@ -122,27 +187,37 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
 
   combined <- dplyr::bind_rows(ef_panel, km_panel)
 
-  combined %>%
+  # Adapt point size for short spans
+  pt_size <- if (span <= 30) 3 else 1.5
+  pt_alpha <- if (span <= 30) 0.7 else 0.4
+
+  p <- combined %>%
     ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
-    # EF points (only in EF panel)
+    # EF points
     ggplot2::geom_point(
       data = dplyr::filter(combined, metrik == "ef"),
       ggplot2::aes(y = value),
-      alpha = 0.4, size = 1.5, colour = "grey40"
-    ) +
-    # EF loess smoother
-    ggplot2::geom_smooth(
+      alpha = pt_alpha, size = pt_size, colour = "grey40"
+    )
+
+  if (show_smooth) {
+    p <- p + ggplot2::geom_smooth(
       data = dplyr::filter(combined, metrik == "ef"),
       ggplot2::aes(y = value),
       method = "loess", formula = "y ~ x",
       colour = "steelblue", se = FALSE, linewidth = 0.8
-    ) +
-    # EF 28-day rolling mean
-    ggplot2::geom_line(
+    )
+  }
+
+  if (show_rolling) {
+    p <- p + ggplot2::geom_line(
       data = dplyr::filter(combined, metrik == "ef_rolling28"),
       ggplot2::aes(y = value),
       colour = "firebrick", linewidth = 0.9, na.rm = TRUE
-    ) +
+    )
+  }
+
+  p <- p +
     # Weekly km bars
     ggplot2::geom_col(
       data = dplyr::filter(combined, metrik == "weekly_km"),
@@ -154,15 +229,14 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
       scales = "free_y",
       space = "fixed"
     ) +
+    .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Effektivitetsfaktor (EF) över tid") +
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold")
-    ) -> p
-  if (!is.null(from) || !is.null(to)) {
-    xlim <- as.Date(c(from %||% NA, to %||% NA))
-    p <- p + ggplot2::coord_cartesian(xlim = xlim)
-  }
+      strip.text = ggplot2::element_text(face = "bold"),
+      axis.text.x = ggplot2::element_text(
+        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
+    )
   return(p)
 }
 
@@ -179,7 +253,19 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
 fetch.plot.hre <- function(summaries, from = NULL, to = NULL) {
   hre_data <- compute_hre(summaries)
 
-  hre_data %>%
+  # Filter to date range
+  hre_data <- .filter_date_range(hre_data, "sessionStart", from, to)
+  if (nrow(hre_data) == 0) {
+    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen HRE-data i intervallet"))
+  }
+
+  span <- .compute_span_days(from, to)
+  show_smooth <- nrow(hre_data) >= 8 && span > 60
+  show_rolling <- span > 35
+  pt_size <- if (span <= 30) 3 else 1.5
+  pt_alpha <- if (span <= 30) 0.7 else 0.4
+
+  p <- hre_data %>%
     ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
     # Votyakov threshold bands
     ggplot2::annotate("rect",
@@ -199,26 +285,35 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL) {
     ) +
     ggplot2::geom_point(
       ggplot2::aes(y = hre),
-      alpha = 0.4, size = 1.5, colour = "grey40"
-    ) +
-    ggplot2::geom_smooth(
+      alpha = pt_alpha, size = pt_size, colour = "grey40"
+    )
+
+  if (show_smooth) {
+    p <- p + ggplot2::geom_smooth(
       ggplot2::aes(y = hre),
       method = "loess", formula = "y ~ x",
       colour = "steelblue", se = FALSE, linewidth = 0.8
-    ) +
-    ggplot2::geom_line(
+    )
+  }
+
+  if (show_rolling) {
+    p <- p + ggplot2::geom_line(
       ggplot2::aes(y = hre_rolling28),
       colour = "firebrick", linewidth = 0.9, na.rm = TRUE
-    ) +
+    )
+  }
+
+  p <- p +
+    .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Hjärtslagskostnad (HRE) över tid") +
     ggplot2::labs(
       x = NULL,
       y = "Hjärtslagskostnad (slag/km)"
-    ) -> p
-  if (!is.null(from) || !is.null(to)) {
-    xlim <- as.Date(c(from %||% NA, to %||% NA))
-    p <- p + ggplot2::coord_cartesian(xlim = xlim)
-  }
+    ) +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(
+        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
+    )
   return(p)
 }
 
@@ -349,12 +444,26 @@ fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL) {
       scales = "free_y",
       space  = "fixed"
     ) +
+    .adaptive_date_scale(.compute_span_days(from, to)) +
     ggplot2::ggtitle("Akut:kronisk belastningskvot") +
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
       strip.text   = ggplot2::element_text(face = "bold"),
-      legend.position = "bottom"
+      legend.position = "bottom",
+      axis.text.x = ggplot2::element_text(
+        angle = if (.compute_span_days(from, to) <= 60) 45 else 0,
+        hjust = if (.compute_span_days(from, to) <= 60) 1 else 0.5)
     ) -> p
+
+  # Show individual data points at short spans
+  span <- .compute_span_days(from, to)
+  if (span <= 60) {
+    p <- p + ggplot2::geom_point(
+      data = dplyr::filter(combined, panel == "ACWR"),
+      ggplot2::aes(x = date, y = value),
+      size = 2, alpha = 0.7, colour = "grey30"
+    )
+  }
   return(p)
 }
 
@@ -405,7 +514,9 @@ fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL) {
     metrik = factor("Monotoni", levels = c("Monotoni", "Belastning"))
   )
 
-  long %>%
+  span <- .compute_span_days(from, to)
+
+  p <- long %>%
     ggplot2::ggplot(ggplot2::aes(x = date, y = value)) +
     # Overtraining threshold line for monotony
     ggplot2::geom_hline(
@@ -421,11 +532,20 @@ fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL) {
       scales = "free_y",
       space  = "fixed"
     ) +
+    .adaptive_date_scale(span) +
     ggplot2::ggtitle("Träningsmonotoni och belastning") +
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold")
-    ) -> p
+      strip.text = ggplot2::element_text(face = "bold"),
+      axis.text.x = ggplot2::element_text(
+        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
+    )
+
+  # Show individual data points at short spans
+  if (span <= 60) {
+    p <- p + ggplot2::geom_point(size = 2, alpha = 0.7, colour = "steelblue")
+  }
+
   return(p)
 }
 
@@ -545,6 +665,7 @@ fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
       scales = "free_y",
       space = "fixed"
     ) +
+    .adaptive_date_scale(.compute_span_days(from, to)) +
     ggplot2::ggtitle("Performance Management Chart (PMC)") +
     ggplot2::labs(
       x = NULL, y = NULL,
@@ -552,7 +673,10 @@ fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
     ) +
     ggplot2::theme(
       strip.text      = ggplot2::element_text(face = "bold"),
-      legend.position = "bottom"
+      legend.position = "bottom",
+      axis.text.x = ggplot2::element_text(
+        angle = if (.compute_span_days(from, to) <= 60) 45 else 0,
+        hjust = if (.compute_span_days(from, to) <= 60) 1 else 0.5)
     )
 }
 
@@ -567,6 +691,18 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen recovery HR-data"))
   }
 
+  # Filter to date range
+  rhr_data <- .filter_date_range(rhr_data, "sessionStart", from, to)
+  if (nrow(rhr_data) == 0) {
+    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen recovery HR-data i intervallet"))
+  }
+
+  span <- .compute_span_days(from, to)
+  show_smooth <- nrow(rhr_data) >= 8 && span > 60
+  show_rolling <- span > 35
+  pt_size <- if (span <= 30) 3 else 1.5
+  pt_alpha <- if (span <= 30) 0.7 else 0.4
+
   has_avg_hr <- "avg_hr" %in% names(rhr_data) &&
     any(!is.na(rhr_data$avg_hr))
 
@@ -574,19 +710,25 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL) {
     ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
     ggplot2::geom_point(
       ggplot2::aes(y = recovery_hr),
-      alpha = 0.4, size = 1.5, colour = "grey40"
-    ) +
-    ggplot2::geom_smooth(
+      alpha = pt_alpha, size = pt_size, colour = "grey40"
+    )
+
+  if (show_smooth) {
+    p <- p + ggplot2::geom_smooth(
       ggplot2::aes(y = recovery_hr),
       method = "loess", formula = "y ~ x",
       colour = "steelblue", se = FALSE, linewidth = 0.8
-    ) +
-    ggplot2::geom_line(
+    )
+  }
+
+  if (show_rolling) {
+    p <- p + ggplot2::geom_line(
       ggplot2::aes(y = recovery_hr_rolling28),
       colour = "firebrick", linewidth = 0.9, na.rm = TRUE
     )
+  }
 
-  if (has_avg_hr) {
+  if (has_avg_hr && show_smooth) {
     # Scale avgHR onto recovery HR range for dual-axis display
     rhr_range <- range(rhr_data$recovery_hr, na.rm = TRUE)
     ahr_range <- range(rhr_data$avg_hr, na.rm = TRUE)
@@ -614,13 +756,13 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL) {
   }
 
   p <- p +
+    .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Recovery HR efter löpning") +
-    ggplot2::labs(x = NULL)
-
-  if (!is.null(from) || !is.null(to)) {
-    xlim <- as.Date(c(from %||% NA, to %||% NA))
-    p <- p + ggplot2::coord_cartesian(xlim = xlim)
-  }
+    ggplot2::labs(x = NULL) +
+    ggplot2::theme(
+      axis.text.x = ggplot2::element_text(
+        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
+    )
 
   return(p)
 }
@@ -652,6 +794,18 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen decoupling-data"))
   }
 
+  # Filter to date range
+  decoupling_data <- .filter_date_range(decoupling_data, "sessionStart", from, to)
+  if (nrow(decoupling_data) == 0) {
+    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen decoupling-data i intervallet"))
+  }
+
+  span <- .compute_span_days(from, to)
+  show_smooth <- nrow(decoupling_data) >= 8 && span > 60
+  show_rolling <- span > 35
+  pt_size <- if (span <= 30) 3 else 1.5
+  pt_alpha <- if (span <= 30) 0.7 else 0.4
+
   # Weekly km for volume panel
   acwr_data <- compute_acwr(summaries) %>%
     dplyr::filter(
@@ -659,11 +813,16 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
       date <= max(decoupling_data$sessionStart)
     )
 
-  # Decoupling panel data
+  # Decoupling panel data — only include rolling if we'll show it
+  dc_cols <- if (show_rolling) {
+    c("decoupling_pct", "decoupling_rolling28")
+  } else {
+    "decoupling_pct"
+  }
   dc_panel <- decoupling_data %>%
-    dplyr::select(sessionStart, decoupling_pct, decoupling_rolling28) %>%
+    dplyr::select(sessionStart, dplyr::all_of(dc_cols)) %>%
     tidyr::pivot_longer(
-      cols = c(decoupling_pct, decoupling_rolling28),
+      cols = dplyr::all_of(dc_cols),
       names_to = "metrik", values_to = "value"
     ) %>%
     dplyr::mutate(
@@ -685,7 +844,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
 
   combined <- dplyr::bind_rows(dc_panel, km_panel)
 
-  combined %>%
+  p <- combined %>%
     ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
     # Threshold bands (only visible in decoupling panel)
     ggplot2::annotate("rect",
@@ -711,21 +870,27 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     ggplot2::geom_point(
       data = dplyr::filter(combined, metrik == "decoupling_pct"),
       ggplot2::aes(y = value),
-      alpha = 0.4, size = 1.5, colour = "grey40"
-    ) +
-    # Loess smoother
-    ggplot2::geom_smooth(
+      alpha = pt_alpha, size = pt_size, colour = "grey40"
+    )
+
+  if (show_smooth) {
+    p <- p + ggplot2::geom_smooth(
       data = dplyr::filter(combined, metrik == "decoupling_pct"),
       ggplot2::aes(y = value),
       method = "loess", formula = "y ~ x",
       colour = "steelblue", se = FALSE, linewidth = 0.8
-    ) +
-    # 28-day rolling mean
-    ggplot2::geom_line(
+    )
+  }
+
+  if (show_rolling) {
+    p <- p + ggplot2::geom_line(
       data = dplyr::filter(combined, metrik == "decoupling_rolling28"),
       ggplot2::aes(y = value),
       colour = "firebrick", linewidth = 0.9, na.rm = TRUE
-    ) +
+    )
+  }
+
+  p <- p +
     # Weekly km bars
     ggplot2::geom_col(
       data = dplyr::filter(combined, metrik == "weekly_km"),
@@ -737,16 +902,14 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
       scales = "free_y",
       space = "fixed"
     ) +
+    .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Aerob decoupling \u00f6ver tid") +
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold")
-    ) -> p
-
-  if (!is.null(from) || !is.null(to)) {
-    xlim <- as.Date(c(from %||% NA, to %||% NA))
-    p <- p + ggplot2::coord_cartesian(xlim = xlim)
-  }
+      strip.text = ggplot2::element_text(face = "bold"),
+      axis.text.x = ggplot2::element_text(
+        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
+    )
 
   return(p)
 }
