@@ -75,6 +75,7 @@ test_that("report_monotony returns tibble with expected columns", {
 
 # --- report_pmc ---
 test_that("report_pmc returns tibble with expected columns", {
+  withr::local_envvar(HR_MAX = "185")
   result <- report_pmc(test_summaries)
   expect_s3_class(result, "tbl_df")
   expect_true(all(c("Datum", "TRIMP", "CTL", "ATL", "TSB") %in% names(result)))

@@ -177,8 +177,11 @@ test_that("compute_decoupling excludes non-steady-state sessions", {
   # First half at 2.0 m/s, second half at 3.5 m/s → 43% difference → excluded
   myruns <- make_dc_myruns(test_summaries_dc,
                            first_speed = 2.0, second_speed = 3.5, hr = 150)
-  result <- compute_decoupling(test_summaries_dc, myruns,
-                               max_half_speed_diff_pct = 10)
+  expect_warning(
+    result <- compute_decoupling(test_summaries_dc, myruns,
+                                 max_half_speed_diff_pct = 10),
+    "sessioner hoppades"
+  )
   expect_equal(nrow(result), 0)
 })
 
@@ -196,8 +199,11 @@ test_that("compute_decoupling max_half_speed_diff_pct is adjustable", {
   myruns <- make_dc_myruns(test_summaries_dc,
                            first_speed = 3.0, second_speed = 2.5, hr = 150)
   # strict: should exclude (17% diff)
-  strict <- compute_decoupling(test_summaries_dc, myruns,
-                               max_half_speed_diff_pct = 10)
+  expect_warning(
+    strict <- compute_decoupling(test_summaries_dc, myruns,
+                                 max_half_speed_diff_pct = 10),
+    "sessioner hoppades"
+  )
   # relaxed: should include
   relaxed <- compute_decoupling(test_summaries_dc, myruns,
                                 max_half_speed_diff_pct = 20)
