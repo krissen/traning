@@ -97,13 +97,26 @@ bash python/traning_cli/server/deploy/deploy.sh secrets
 ### Troubleshooting
 
 ```bash
-# Service status
+# Service status (start here)
 bash python/traning_cli/server/deploy/deploy.sh status
 
 # Specific logs
-ssh kailash journalctl -u traning-receiver --since '1h ago'
-ssh kailash journalctl -u traning-garmin --since '24h ago'
-ssh kailash 'systemctl list-timers traning-*'
+ssh kailash 'sudo journalctl -u traning-receiver --since "1h ago"'
+ssh kailash 'sudo journalctl -u traning-garmin --since "24h ago"'
+ssh kailash 'sudo systemctl list-timers traning-*'
+
+# Notifications — what was sent?
+ssh kailash 'sudo journalctl -u traning-receiver --since "24h ago" | grep "Avisering"'
+
+# HA log (automations, errors — not individual notify calls)
+ssh kailash 'grep -i "garmin_fetch\|rest_command" /var/local/docker/ha-stack/homeassistant/home-assistant.log'
+
+# HA logbook (Strava sensor changes, automation triggers)
+hass-cli --server https://niemi.cc:8123 --output json \
+  raw get '/api/logbook/2026-04-07T19:00:00'
+
+# Data repo — what was actually saved?
+ssh kailash 'cd ~/dokument/traning-data && git log --since="24h ago" --format="%ai %s"'
 
 # Manual Garmin fetch on kailash
 ssh kailash 'TRANING_DATA=~/dokument/traning-data ~/dev/traning/python/.venv/bin/traning fetch garmin -v'

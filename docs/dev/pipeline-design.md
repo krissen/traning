@@ -179,6 +179,49 @@ Calls HA REST API `notify.mobile_app_anandavani` on:
 
 Fail-safe: notification errors are logged but never block data operations.
 
+Each call logs the full message to stderr (→ systemd journal):
+```
+INFO traning_cli.server.notify: Avisering skickad: [tRäning] Hälsodata: 29 metrics mottagna
+```
+
+### Debugging notifications
+
+To verify what notifications were sent and when, check these sources
+in order:
+
+1. **systemd journal** (primary) — contains the actual notification
+   text logged by `notify.py`:
+   ```bash
+   ssh kailash 'sudo journalctl -u traning-receiver --since "1h ago" --no-pager'
+   ```
+   Look for lines matching `Avisering skickad:` (success) or
+   `Avisering misslyckades:` (failure).
+
+2. **HA log file** on kailash — useful for verifying the Strava
+   trigger automation fired, but does NOT log individual notify
+   service calls at default log level:
+   ```bash
+   ssh kailash 'grep -i "garmin_fetch\|rest_command" /var/local/docker/ha-stack/homeassistant/home-assistant.log'
+   ```
+   Rotated logs: `.log.1`, `.log.crash`, `.log.fault` in the same dir.
+
+3. **HA logbook** via hass-cli from kedar — shows automation
+   triggers and entity state changes:
+   ```bash
+   hass-cli --server https://niemi.cc:8123 --output json \
+     raw get '/api/logbook/2026-04-07T19:00:00' \
+     | python3 -c "import json,sys; [print(f'{e[\"when\"]}  {e[\"name\"]}: {e.get(\"message\",\"\")}') for e in json.load(sys.stdin) if any(k in (e.get('name','')+e.get('entity_id','')).lower() for k in ['strava','garmin','traning'])]"
+   ```
+
+4. **data repo git log** — confirms what data was actually saved
+   (complements notification log):
+   ```bash
+   ssh kailash 'cd ~/dokument/traning-data && git log --since="24h ago" --format="%ai %s"'
+   ```
+
+5. **iPhone notification history** — last resort if journal is
+   unavailable or logging was not yet configured.
+
 ## Deploy workflow
 
 All operations from kedar via `deploy.sh`:
