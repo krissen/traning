@@ -47,7 +47,7 @@
     data <- data[as.Date(data[[date_col]]) >= as.Date(from), , drop = FALSE]
   }
   if (!is.null(to)) {
-    data <- data[as.Date(data[[date_col]]) <= as.Date(to), , drop = FALSE]
+    data <- data[as.Date(data[[date_col]]) < as.Date(to), , drop = FALSE]
   }
   data
 }

@@ -778,7 +778,7 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
     dplyr::filter(metric %in% readiness_metrics)
 
   if (!is.null(after))  df <- df |> dplyr::filter(date >= as.Date(after))
-  if (!is.null(before)) df <- df |> dplyr::filter(date <= as.Date(before))
+  if (!is.null(before)) df <- df |> dplyr::filter(date < as.Date(before))
 
   wide <- df |>
     dplyr::select(date, metric, value) |>

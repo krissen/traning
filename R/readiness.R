@@ -262,7 +262,7 @@ compute_readiness <- function(health_daily, summaries,
 
   # 12. Filter output
   if (!is.null(after))  result <- result |> dplyr::filter(date >= as.Date(after))
-  if (!is.null(before)) result <- result |> dplyr::filter(date <= as.Date(before))
+  if (!is.null(before)) result <- result |> dplyr::filter(date < as.Date(before))
 
   result
 }
