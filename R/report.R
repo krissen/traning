@@ -5,14 +5,15 @@
 #' @param n_imported Number of workouts imported
 #' @export
 report_mostrecent <- function(summaries, n_imported) {
-  tot_distance <- round(sum(summaries$distance, na.rm = TRUE) / 1000, digits = 2)
-  avg_distance <- round(mean(summaries$distance, na.rm = TRUE) / 1000, digits = 2)
-  avg_duration <- round(
-    mean(as.numeric(summaries$durationMoving), na.rm = TRUE), digits = 0)
-  cat(n_imported, " workouts imported.\n", sep = "")
-  cat("Distance: ", tot_distance,
-      "km total; ", avg_distance, "km on average.\n", sep = "")
-  cat("Average duration: ", avg_duration, " minutes.\n", sep = "")
+  tot_km <- round(sum(summaries$distance, na.rm = TRUE) / 1000, 1)
+  dates <- range(as.Date(summaries$sessionStart))
+  date_str <- if (dates[1] == dates[2]) {
+    format(dates[1], "%d %b")
+  } else {
+    paste(format(dates[1], "%d %b"), format(dates[2], "%d %b"), sep = "\u2013")
+  }
+  cat("Import: ", n_imported, " pass (", date_str, "), ",
+      tot_km, " km totalt.\n", sep = "")
 }
 
 #' Generate a short insight text for the most recent session
@@ -27,21 +28,12 @@ report_insight <- function(summaries) {
     dplyr::filter(stringr::str_detect(sport, "running")) %>%
     dplyr::arrange(sessionStart)
 
-  if (nrow(runs) == 0) return("Ingen löpdata.")
+  if (nrow(runs) == 0) return("Ingen l\u00f6pdata.")
 
   latest <- utils::tail(runs, 1)
   km <- round(as.numeric(latest$distance) / 1000, 1)
   pace <- dec_to_mmss(as.numeric(latest$avgPaceMoving))
   hr <- round(as.numeric(latest$avgHeartRateMoving), 0)
-  dur_min <- as.numeric(latest$durationMoving, units = "mins")
-
-  # TRIMP (Banister): duration * deltaHR * 0.64 * exp(1.92 * deltaHR)
-  hr_max <- get_hr_max(summaries)
-  hr_rest <- get_hr_rest(as.Date(latest$sessionStart))
-  delta_hr <- (as.numeric(latest$avgHeartRateMoving) - hr_rest) /
-              (hr_max - hr_rest)
-  delta_hr <- max(0, min(1, delta_hr))
-  trimp <- round(dur_min * delta_hr * 0.64 * exp(1.92 * delta_hr))
 
   # Compare to current month average
   this_month <- runs %>%
@@ -50,8 +42,7 @@ report_insight <- function(summaries) {
       sessionStart < latest$sessionStart
     )
 
-  base <- paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr,
-                 ", TRIMP ", trimp)
+  base <- paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr)
 
   # Find something positive to highlight
   positive <- NULL

@@ -25,6 +25,7 @@ def _run_import(kind: str = "all"):
         kind: "garmin", "health", or "all".
     """
     labels = {"--import": "garmin", "--import-health": "hälsa"}
+    timeouts = {"--import": 300, "--import-health": None}
     flags = {
         "garmin": ["--import"],
         "health": ["--import-health"],
@@ -33,28 +34,32 @@ def _run_import(kind: str = "all"):
     for flag in flags.get(kind, flags["all"]):
         label = labels.get(flag, flag)
         cmd = ["Rscript", str(_CLI_R), flag]
+        t0 = time.time()
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=600,
+                cmd, capture_output=True, text=True,
+                timeout=timeouts.get(flag, 600),
             )
+            elapsed = int(time.time() - t0)
             if result.returncode != 0:
-                log.warning("Import %s failed: %s", flag, result.stderr.strip()[-300:])
+                log.warning("Import %s failed (%ds): %s",
+                            flag, elapsed, result.stderr.strip()[-300:])
                 notify("tRäning", f"Import {label}: MISSLYCKADES")
             else:
-                log.info("Import %s OK", flag)
-                # Extract meaningful summary from R output
+                log.info("Import %s OK (%ds)", flag, elapsed)
+                # Extract last meaningful line from R output
                 lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
-                # Prefer lines about imports/distance; skip manifest noise
                 summary = "klart"
                 for line in reversed(lines):
                     low = line.lower()
-                    if any(w in low for w in ["import", "distance", "redan", "inget att"]):
+                    if any(w in low for w in ["import", "inget att"]):
                         summary = line.strip()
                         break
                 notify("tRäning", f"Import {label}: {summary}")
         except subprocess.TimeoutExpired:
-            log.warning("Import %s timed out", flag)
-            notify("tRäning", f"Import {label}: timeout efter 10 min")
+            elapsed = int(time.time() - t0)
+            log.warning("Import %s timed out after %ds", flag, elapsed)
+            notify("tRäning", f"Import {label}: timeout efter {elapsed // 60} min")
 
 
 def _run_insight(kind: str):
@@ -74,16 +79,21 @@ def _run_insight(kind: str):
             'if (!is.null(h) && nrow(h) > 0) { '
             'latest_date <- max(h$date); '
             'today <- h[h$date == latest_date,]; '
-            'get_val <- function(m, d=today) { v <- d$value[d$metric == m]; '
+            'get_val <- function(m) { v <- today$value[today$metric == m]; '
             'if (length(v) == 0 || is.na(v[1])) NA else round(v[1], 1) }; '
-            'sleep_val <- get_val("sleep_totalSleep"); '
-            'sleep_txt <- if (!is.na(sleep_val)) paste0(", s\\u00f6mn ", sleep_val, " h") else ""; '
-            'cat(sprintf("H\\u00e4lsa %s: vila %s bpm, HRV %s ms%s", '
-            'format(latest_date), '
-            'ifelse(is.na(get_val("resting_heart_rate")), "?", get_val("resting_heart_rate")), '
-            'ifelse(is.na(get_val("heart_rate_variability")), "?", get_val("heart_rate_variability")), '
-            'sleep_txt)) '
-            '} else cat("Hälsodata importerad.")'
+            'parts <- c(); '
+            'rhr <- get_val("resting_heart_rate"); '
+            'if (!is.na(rhr)) parts <- c(parts, paste0("vila ", rhr, " bpm")); '
+            'hrv <- get_val("heart_rate_variability"); '
+            'if (!is.na(hrv)) parts <- c(parts, paste0("HRV ", hrv, " ms")); '
+            'slp <- get_val("sleep_totalSleep"); '
+            'if (!is.na(slp)) parts <- c(parts, paste0("s\\u00f6mn ", slp, " h")); '
+            'if (length(parts) > 0) { '
+            'cat(paste0("H\\u00e4lsa ", format(latest_date), ": ", '
+            'paste(parts, collapse = ", "))) '
+            '} else cat("H\\u00e4lsodata importerad, inga nyckelm\\u00e4tvärden f\\u00f6r ", '
+            'format(latest_date), ".")'
+            '} else cat("H\\u00e4lsodata importerad.")'
         )]
     else:
         return
