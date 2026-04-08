@@ -418,8 +418,9 @@
 #'
 #' For certain metrics (e.g. resting_heart_rate), HAE daily aggregation
 #' averages Apple Watch (~50 bpm) with Garmin Connect (~100 bpm), producing
-#' misleading values. This function drops those mixed-source rows, keeping
-#' only pure Apple Watch data.
+#' misleading values. This function drops Connect-contaminated rows only when
+#' pure Apple Watch data exists for the same (date, metric). When Connect is
+#' the only source, it is kept as fallback — imperfect data beats no data.
 #'
 #' @param df Tibble with columns: date, metric, value, source.
 #' @return Filtered tibble.
@@ -429,14 +430,22 @@
   # HAE sometimes writes "Apple\u00a0Watch" with NBSP.
   df$source <- gsub("\u00a0", " ", df$source)
 
-  is_contaminated <- df$metric %in% .connect_contaminated_metrics &
-    grepl("Connect", df$source, fixed = TRUE)
-  n_dropped <- sum(is_contaminated)
+  # Drop Connect-contaminated rows only when pure AW data exists for the
+  # same (date, metric). Keep Connect as fallback when AW is absent.
+  n_dropped <- 0L
+  for (m in .connect_contaminated_metrics) {
+    is_metric <- df$metric == m
+    is_connect <- is_metric & grepl("Connect", df$source, fixed = TRUE)
+    is_pure <- is_metric & !grepl("Connect", df$source, fixed = TRUE)
+    dates_with_pure <- unique(df$date[is_pure])
+    drop <- is_connect & df$date %in% dates_with_pure
+    n_dropped <- n_dropped + sum(drop)
+    df <- df[!drop, ]
+  }
   if (n_dropped > 0) {
     message("  Filtrerade bort ", n_dropped,
-            " Connect-kontaminerade värden (resting_heart_rate)")
+            " Connect-kontaminerade värden (ren AW-data fanns)")
   }
-  df <- df[!is_contaminated, ]
 
   # Drop implausible sleep values:
   # - totalSleep > 16 h (SC duplicate sessions, 2013-2015)

@@ -56,19 +56,33 @@ test_that(".parse_metric handles sleep_analysis nested format", {
   expect_equal(result$value[result$metric == "sleep_totalSleep"], 7.0)
 })
 
-test_that(".clean_sources removes Connect-contaminated resting HR", {
+test_that(".clean_sources drops Connect when pure AW exists for same date", {
   df <- tibble::tibble(
-    date   = as.Date(c("2026-01-05", "2026-01-06", "2026-01-05")),
+    date   = as.Date(c("2026-01-05", "2026-01-05", "2026-01-05")),
     metric = c("resting_heart_rate", "resting_heart_rate", "step_count"),
-    value  = c(77, 51, 10000),
+    value  = c(77, 50, 10000),
     source = c("AW | Connect", "AW", "AW | Connect")
   )
   result <- suppressMessages(traning:::.clean_sources(df))
   expect_equal(nrow(result), 2)
-  # The Connect-contaminated resting HR (77 bpm) should be removed
-  expect_equal(result$value[result$metric == "resting_heart_rate"], 51)
-  # step_count with Connect source should be kept (not in contaminated list)
+  # Connect-contaminated RHR dropped because pure AW exists for same date
+  expect_equal(result$value[result$metric == "resting_heart_rate"], 50)
+  # step_count with Connect source kept (not in contaminated list)
   expect_equal(result$value[result$metric == "step_count"], 10000)
+})
+
+test_that(".clean_sources keeps Connect as fallback when no pure AW exists", {
+  df <- tibble::tibble(
+    date   = as.Date(c("2026-01-05", "2026-01-06")),
+    metric = c("resting_heart_rate", "resting_heart_rate"),
+    value  = c(77, 51),
+    source = c("AW | Connect", "AW")
+  )
+  result <- suppressMessages(traning:::.clean_sources(df))
+  # Jan 5: only Connect → kept as fallback. Jan 6: pure AW → kept.
+  expect_equal(nrow(result), 2)
+  expect_equal(result$value[result$date == as.Date("2026-01-05")], 77)
+  expect_equal(result$value[result$date == as.Date("2026-01-06")], 51)
 })
 
 test_that(".parse_metric returns empty tibble for empty data", {
