@@ -145,37 +145,33 @@ test_that(".filter_changed_files detects new files", {
 test_that(".filter_changed_files skips unchanged files", {
   tmp <- tempfile(fileext = ".json")
   writeLines("{}", tmp)
-  info <- file.info(tmp)
   manifest <- list()
   manifest[[basename(tmp)]] <- list(
-    mtime = as.integer(as.numeric(info$mtime)),
-    size  = info$size
+    md5 = unname(tools::md5sum(tmp))
   )
   result <- traning:::.filter_changed_files(tmp, manifest)
   expect_length(result, 0)
 })
 
-test_that(".filter_changed_files detects modified files (size change)", {
+test_that(".filter_changed_files detects modified files", {
   tmp <- tempfile(fileext = ".json")
   writeLines("{}", tmp)
-  info <- file.info(tmp)
   manifest <- list()
   manifest[[basename(tmp)]] <- list(
-    mtime = as.integer(as.numeric(info$mtime)),
-    size  = info$size + 100  # mismatch
+    md5 = "0000000000000000000000000000dead"
   )
   result <- traning:::.filter_changed_files(tmp, manifest)
   expect_equal(result, tmp)
 })
 
-test_that(".build_manifest_entries captures size", {
+test_that(".build_manifest_entries captures md5", {
   tmp <- tempfile(fileext = ".json")
   writeLines('{"key": "value"}', tmp)
   entries <- traning:::.build_manifest_entries(tmp)
   expect_true(basename(tmp) %in% names(entries))
   entry <- entries[[basename(tmp)]]
-  expect_true(!is.null(entry$size))
-  expect_equal(entry$size, file.size(tmp))
+  expect_true(!is.null(entry$md5))
+  expect_equal(entry$md5, unname(tools::md5sum(tmp)))
 })
 
 test_that(".load_manifest returns empty list for missing file", {

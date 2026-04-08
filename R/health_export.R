@@ -69,20 +69,20 @@
     key <- basename(f)
     prev <- manifest[[key]]
     if (is.null(prev)) return(TRUE)  # new file
-    file.size(f) != as.numeric(prev$size)
+    tools::md5sum(f) != prev$md5
   }, logical(1))
   files[changed]
 }
 
 #' Build manifest entries for a set of files
 #' @param files Character vector of file paths
-#' @return Named list: basename -> list(size)
+#' @return Named list: basename -> list(md5)
 #' @keywords internal
 .build_manifest_entries <- function(files) {
   entries <- list()
   for (f in files) {
     entries[[basename(f)]] <- list(
-      size = file.size(f)
+      md5 = unname(tools::md5sum(f))
     )
   }
   entries
