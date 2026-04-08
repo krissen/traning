@@ -110,6 +110,36 @@ def _run_insight(kind: str):
     except subprocess.TimeoutExpired:
         log.warning("Insight %s timed out", kind)
 
+def _import_files(files: list, kind: str = "health"):
+    """Import specific changed files into the R cache, then run insight."""
+    if not files:
+        return
+    # Pass file paths to R for targeted import
+    paths_str = ", ".join(f'"{f}"' for f in files)
+    r_expr = (
+        'devtools::load_all(".", quiet=TRUE); '
+        f'import_health_export(path = c({paths_str}))'
+    )
+    cmd = ["Rscript", "-e", r_expr]
+    t0 = time.time()
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=120,
+            cwd=str(_CLI_R.parent.parent),
+        )
+        elapsed = int(time.time() - t0)
+        if result.returncode != 0:
+            log.warning("Import %d files failed (%ds): %s",
+                        len(files), elapsed, result.stderr.strip()[-300:])
+            notify("tRäning", "Import hälsa: MISSLYCKADES")
+        else:
+            log.info("Import %d files OK (%ds)", len(files), elapsed)
+    except subprocess.TimeoutExpired:
+        elapsed = int(time.time() - t0)
+        log.warning("Import timed out after %ds", elapsed)
+    _run_insight(kind)
+
+
 def _import_and_insight(kind: str):
     """Run import followed by insight notification."""
     _run_import(kind)
@@ -165,10 +195,10 @@ def create_app() -> FastAPI:
         if not isinstance(metrics, list) or len(metrics) == 0:
             raise HTTPException(status_code=422, detail="No metrics in payload")
 
-        n = save_health_push(payload)
+        n, changed_files = save_health_push(payload)
         if n > 0:
             commit_health_data(n_metrics=n)
-            background_tasks.add_task(_import_and_insight, "health")
+            background_tasks.add_task(_import_files, changed_files, "health")
             notify("tRäning", f"Hälsodata: {n} metrics mottagna")
 
         _last_received = datetime.now()

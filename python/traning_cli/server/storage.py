@@ -97,13 +97,13 @@ def canonicalize_metric(
 
 # --- Public API -------------------------------------------------------------
 
-def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
+def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, list[Path]]:
     """Save HAE JSON payload via canonical deduplication.
 
     1. Canonicalize each metric into per-day files under canonical/.
     2. Track changed files for downstream import.
 
-    Returns the number of metric groups processed.
+    Returns (n_metrics, changed_files).
     """
     if data_dir is None:
         data_dir = get_data_dir()
@@ -112,7 +112,7 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
     metrics = data.get("metrics", [])
 
     if not metrics:
-        return 0
+        return 0, []
 
     n_written = 0
     all_changed: list[Path] = []
@@ -145,6 +145,7 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
             filepath = metrics_dir / f"{name}_{first}_{last}.json"
             with open(filepath, "w") as f:
                 json.dump(output, f, ensure_ascii=False)
+            all_changed.append(filepath)
             log.info("  %s: %d samples (legacy)", name, len(samples))
         else:
             changed = canonicalize_metric(name, units, samples, data_dir)
@@ -154,7 +155,7 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> int:
 
         n_written += 1
 
-    return n_written
+    return n_written, all_changed
 
 
 def save_workout_push(payload: dict, data_dir: Path | None = None) -> int:
