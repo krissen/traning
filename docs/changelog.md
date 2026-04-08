@@ -1,6 +1,31 @@
 # tRäning — Changelog
 
-## 2026-04-08 — Adaptive plot granularity
+## 2026-04-08 — Adaptive plot granularity, notification improvements
+
+### Notification logging
+- App-level logging now reaches systemd journal (`logging.basicConfig`
+  in server `__init__.py`). Previously only uvicorn access logs were
+  visible.
+- `notify.py` logs full notification text: title + message on both
+  success and failure.
+
+### Notification quality
+- **Import message:** now shows count, date range and total km
+  ("Import: 1 pass (08 apr), 6.4 km totalt") instead of contextless
+  "Distance: 169.83km total; 33.97km on average".
+- **Garmin insight:** removed TRIMP (meaningless without context).
+  Keeps km, pace, HR, and monthly comparison.
+- **Health insight:** only shows metrics present in the import. Missing
+  values are omitted entirely instead of showing "?".
+- **Timeout:** `--import-health` now unlimited (background task, was
+  600s and timed out after deploy). `--import` (garmin) set to 300s.
+  Elapsed time logged as watchdog.
+
+### Notification debugging docs
+- New section in `docs/dev/pipeline-design.md`: ordered checklist of
+  where to look (journal → HA log → HA logbook → data repo → iPhone).
+- Updated troubleshooting in `docs/user/pipeline-setup.md` with
+  concrete commands for each source.
 
 ### Plots adapt to date range
 All time-series plots now respond to the span between `from` and `to`:
