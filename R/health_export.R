@@ -67,29 +67,22 @@
 .filter_changed_files <- function(files, manifest) {
   changed <- vapply(files, function(f) {
     key <- basename(f)
-    info <- file.info(f)
     prev <- manifest[[key]]
     if (is.null(prev)) return(TRUE)  # new file
-    prev_mtime <- as.integer(prev$mtime)
-    prev_size  <- as.numeric(prev$size)
-    cur_mtime  <- as.integer(as.numeric(info$mtime))
-    cur_size   <- info$size
-    cur_mtime != prev_mtime || cur_size != prev_size
+    file.size(f) != as.numeric(prev$size)
   }, logical(1))
   files[changed]
 }
 
 #' Build manifest entries for a set of files
 #' @param files Character vector of file paths
-#' @return Named list: basename -> list(mtime, size)
+#' @return Named list: basename -> list(size)
 #' @keywords internal
 .build_manifest_entries <- function(files) {
   entries <- list()
   for (f in files) {
-    info <- file.info(f)
     entries[[basename(f)]] <- list(
-      mtime = as.integer(as.numeric(info$mtime)),
-      size  = info$size
+      size = file.size(f)
     )
   }
   entries

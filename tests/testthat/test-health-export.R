@@ -168,17 +168,14 @@ test_that(".filter_changed_files detects modified files (size change)", {
   expect_equal(result, tmp)
 })
 
-test_that(".build_manifest_entries captures mtime and size", {
+test_that(".build_manifest_entries captures size", {
   tmp <- tempfile(fileext = ".json")
   writeLines('{"key": "value"}', tmp)
   entries <- traning:::.build_manifest_entries(tmp)
   expect_true(basename(tmp) %in% names(entries))
   entry <- entries[[basename(tmp)]]
-  expect_true(!is.null(entry$mtime))
   expect_true(!is.null(entry$size))
-  info <- file.info(tmp)
-  expect_equal(entry$mtime, as.integer(as.numeric(info$mtime)))
-  expect_equal(entry$size, info$size)
+  expect_equal(entry$size, file.size(tmp))
 })
 
 test_that(".load_manifest returns empty list for missing file", {
