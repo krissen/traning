@@ -1,6 +1,8 @@
 """Vayu MCP tools — curated training analysis functions."""
 
+import os
 from datetime import date, timedelta
+from pathlib import Path
 from typing import Optional
 
 from .r_bridge import r_report, r_plot
@@ -358,10 +360,14 @@ def get_health_metric(
 ) -> dict:
     """Return time series for any health metric from the database.
 
-    Use the vayu://metrics resource to discover available metric names.
+    Common metrics: weight_body_mass, body_fat_percentage, body_mass_index,
+    resting_heart_rate, heart_rate_variability, vo2_max, step_count,
+    active_energy, respiratory_rate, blood_oxygen_saturation,
+    apple_sleeping_wrist_temperature, walking_speed, running_power.
+    Use vayu://metrics resource for the full list.
 
     Args:
-        metric: Metric name (e.g. 'resting_heart_rate', 'vo2_max', 'step_count').
+        metric: Metric name (e.g. 'weight_body_mass', 'step_count', 'vo2_max').
         after: Start date filter.
         before: End date filter.
         n: Number of recent values (default 30). Ignored when date range given.
@@ -464,6 +470,88 @@ _METRIC_DEFINITIONS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Health metric discovery
+# ---------------------------------------------------------------------------
+
+_HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
+    # (category, human-readable description)
+    # Body
+    "weight_body_mass":       ("Body", "Body weight (kg)"),
+    "body_mass_index":        ("Body", "BMI"),
+    "body_fat_percentage":    ("Body", "Body fat (%)"),
+    "lean_body_mass":         ("Body", "Lean body mass (kg)"),
+    "height":                 ("Body", "Height (cm)"),
+    "body_temperature":       ("Body", "Body temperature"),
+    # Heart
+    "heart_rate":             ("Heart", "Heart rate (avg/min/max per day)"),
+    "heart_rate_variability": ("Heart", "HRV as Ln(RMSSD)"),
+    "resting_heart_rate":     ("Heart", "Resting heart rate"),
+    "walking_heart_rate_average": ("Heart", "Walking heart rate average"),
+    "cardio_recovery":        ("Heart", "Cardio recovery HR after exercise"),
+    # Respiratory
+    "respiratory_rate":       ("Respiratory", "Respiratory rate (breaths/min)"),
+    "blood_oxygen_saturation": ("Respiratory", "SpO2 (%)"),
+    "vo2_max":                ("Fitness", "VO2max estimate"),
+    "six_minute_walking_test_distance": ("Fitness", "6-minute walk test distance"),
+    # Activity
+    "active_energy":          ("Activity", "Active calories burned (kcal)"),
+    "basal_energy_burned":    ("Activity", "Basal metabolic energy (kcal)"),
+    "step_count":             ("Activity", "Daily steps"),
+    "walking_running_distance": ("Activity", "Walking + running distance (km)"),
+    "flights_climbed":        ("Activity", "Flights of stairs climbed"),
+    "apple_exercise_time":    ("Activity", "Exercise minutes (Apple Watch ring)"),
+    "apple_stand_hour":       ("Activity", "Stand hours"),
+    "apple_stand_time":       ("Activity", "Stand time (min)"),
+    "cycling_distance":       ("Activity", "Cycling distance (km)"),
+    "swimming_distance":      ("Activity", "Swimming distance (m)"),
+    "swimming_stroke_count":  ("Activity", "Swimming stroke count"),
+    "physical_effort":        ("Activity", "Physical effort (AppleExerciseIntensity)"),
+    "mindful_minutes":        ("Activity", "Mindfulness minutes"),
+    # Running mechanics
+    "running_ground_contact_time": ("Running", "Ground contact time (ms)"),
+    "running_power":          ("Running", "Running power (W)"),
+    "running_speed":          ("Running", "Running speed (m/s)"),
+    "running_stride_length":  ("Running", "Stride length (m)"),
+    "running_vertical_oscillation": ("Running", "Vertical oscillation (cm)"),
+    # Sleep
+    "apple_sleeping_wrist_temperature": ("Sleep", "Wrist temperature deviation during sleep"),
+    # Walking / Gait
+    "walking_speed":          ("Walking", "Walking speed (km/h)"),
+    "walking_step_length":    ("Walking", "Walking step length (cm)"),
+    "walking_asymmetry_percentage": ("Walking", "Walking asymmetry (%)"),
+    "walking_double_support_percentage": ("Walking", "Double support time (%)"),
+    "stair_speed_up":         ("Walking", "Stair ascent speed (m/s)"),
+    "stair_speed_down":       ("Walking", "Stair descent speed (m/s)"),
+    # Environment
+    "environmental_audio_exposure": ("Environment", "Environmental noise (dB)"),
+    "headphone_audio_exposure": ("Environment", "Headphone audio level (dB)"),
+    "time_in_daylight":       ("Environment", "Time in daylight (min)"),
+    # Other
+    "handwashing":            ("Other", "Handwashing events"),
+    "number_of_times_fallen": ("Other", "Fall detection events"),
+    "distance_downhill_snow_sports": ("Other", "Downhill snow sports distance"),
+}
+
+
+def _discover_health_metrics() -> list[str]:
+    """Return sorted list of health metric names from the canonical directory."""
+    data_dir = os.environ.get("TRANING_DATA")
+    if not data_dir:
+        try:
+            from ..garmin.utils import get_data_dir
+            data_dir = str(get_data_dir())
+        except Exception:
+            return sorted(_HEALTH_METRIC_INFO.keys())
+    canonical = Path(data_dir) / "kristian" / "health_export" / "canonical"
+    if not canonical.is_dir():
+        return sorted(_HEALTH_METRIC_INFO.keys())
+    return sorted(
+        d.name for d in canonical.iterdir()
+        if d.is_dir() and not d.name.startswith(".")
+    )
+
+
 def explain_metric(metric_name: str) -> dict:
     """Explain a training metric: definition, formula, thresholds, and references.
 
@@ -495,10 +583,37 @@ def explain_metric(metric_name: str) -> dict:
 # ---------------------------------------------------------------------------
 
 def resource_metrics() -> str:
-    """List of available training metrics with descriptions."""
-    lines = []
+    """List of all available metrics (training + health) with descriptions."""
+    lines = ["# Training metrics (dedicated tools)\n"]
     for key, defn in _METRIC_DEFINITIONS.items():
         lines.append(f"## {defn['name']} ({key})\n{defn['description']}\n")
+
+    # Health metrics (via get_health_metric)
+    available = _discover_health_metrics()
+    by_category: dict[str, list[str]] = {}
+    uncategorized: list[str] = []
+    for m in available:
+        if m in _HEALTH_METRIC_INFO:
+            cat, desc = _HEALTH_METRIC_INFO[m]
+            by_category.setdefault(cat, []).append(f"- **{m}**: {desc}")
+        else:
+            uncategorized.append(f"- {m}")
+
+    lines.append("\n# Health metrics (use get_health_metric)\n")
+    lines.append("All metrics below are queried via `get_health_metric(metric='name')`.\n")
+    for cat in [
+        "Body", "Heart", "Respiratory", "Fitness", "Activity",
+        "Running", "Sleep", "Walking", "Environment", "Other",
+    ]:
+        if cat in by_category:
+            lines.append(f"## {cat}")
+            lines.extend(by_category[cat])
+            lines.append("")
+    if uncategorized:
+        lines.append("## Other metrics")
+        lines.extend(uncategorized)
+        lines.append("")
+
     return "\n".join(lines)
 
 
