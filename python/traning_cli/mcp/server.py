@@ -38,6 +38,7 @@ mcp.tool()(tools.get_decoupling)
 mcp.tool()(tools.get_recovery_hr)
 mcp.tool()(tools.get_resting_hr)
 mcp.tool()(tools.get_vo2max)
+mcp.tool()(tools.get_health_metric)
 mcp.tool()(tools.compare_periods)
 mcp.tool()(tools.explain_metric)
 

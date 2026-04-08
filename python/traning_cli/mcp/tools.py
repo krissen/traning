@@ -1,5 +1,6 @@
 """Vayu MCP tools — curated training analysis functions."""
 
+from datetime import date, timedelta
 from typing import Optional
 
 from .r_bridge import r_report, r_plot
@@ -32,7 +33,15 @@ def _build_args(
     if after is not None:
         args["from"] = after
     if before is not None:
-        args["to"] = before
+        # R functions use exclusive upper bound (< to), so add 1 day
+        # to make the user-facing "before" parameter inclusive.
+        try:
+            d = date.fromisoformat(before)
+            args["to"] = (d + timedelta(days=1)).isoformat()
+        except ValueError:
+            # Relative dates like "-2w" are passed through as-is;
+            # the R layer handles them and already adds +1 internally.
+            args["to"] = before
     if n is not None:
         args["n"] = n
     args.update({k: v for k, v in extra.items() if v is not None})
@@ -339,6 +348,26 @@ def get_vo2max(
         return r_plot("fetch.plot.vo2max", args)
     args.setdefault("n", 30)
     return r_report("report_readiness", args)
+
+
+def get_health_metric(
+    metric: str,
+    after: Optional[str] = None,
+    before: Optional[str] = None,
+    n: int = 30,
+) -> dict:
+    """Return time series for any health metric from the database.
+
+    Use the vayu://metrics resource to discover available metric names.
+
+    Args:
+        metric: Metric name (e.g. 'resting_heart_rate', 'vo2_max', 'step_count').
+        after: Start date filter.
+        before: End date filter.
+        n: Number of recent values (default 30). Ignored when date range given.
+    """
+    args = _build_args(after, before, n, metric=metric)
+    return r_report("report_metric", args)
 
 
 def compare_periods(

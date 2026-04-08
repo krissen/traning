@@ -65,6 +65,7 @@ func_registry <- list(
   report_decoupling      = "smgd",
   # Health reports
   report_readiness       = "sh",
+  report_metric          = "h",
   # Basic plots (summaries only)
   plot_monthtop          = "s",
   plot_runs_month        = "s",
@@ -152,15 +153,16 @@ build_call_args <- function(func_name, func_args) {
     "report_yearstop", "report_yearstatus", "report_monthstatus",
     "report_ef", "report_hre", "report_acwr", "report_monotony",
     "report_pmc", "report_recovery_hr", "report_hr_zones",
-    "report_decoupling", "report_readiness"
+    "report_decoupling", "report_readiness", "report_metric"
   )
 
   if (!is.null(func_args$n) && func_name %in% n_funcs)
     a$n <- as.integer(func_args$n)
-  if (!is.null(func_args$from))   a$from   <- as.Date(func_args$from)
-  if (!is.null(func_args$to))     a$to     <- as.Date(func_args$to)
-  if (!is.null(func_args$hr_max)) a$hr_max <- as.numeric(func_args$hr_max)
+  if (!is.null(func_args$from))    a$from   <- as.Date(func_args$from)
+  if (!is.null(func_args$to))      a$to     <- as.Date(func_args$to)
+  if (!is.null(func_args$hr_max))  a$hr_max <- as.numeric(func_args$hr_max)
   if (!is.null(func_args$hr_rest)) a$hr_rest <- as.numeric(func_args$hr_rest)
+  if (!is.null(func_args$metric))  a$metric <- func_args$metric
 
   # Inject required data objects
   d <- func_registry[[func_name]]
@@ -216,7 +218,8 @@ build_call_args <- function(func_name, func_args) {
   if (func_name == "fetch.plot.resting_hr") {
     a <- c(list(health_daily = health_daily, summaries = summaries), a)
   }
-  if (func_name %in% c("fetch.plot.hrv", "fetch.plot.sleep", "fetch.plot.vo2max")) {
+  if (func_name %in% c("fetch.plot.hrv", "fetch.plot.sleep", "fetch.plot.vo2max",
+                        "report_metric")) {
     a <- c(list(health_daily = health_daily), a)
   }
 

@@ -25,6 +25,7 @@ _KNOWN_FUNCTIONS = frozenset({
     "report_datesum", "report_ef", "report_hre", "report_acwr",
     "report_monotony", "report_pmc", "report_recovery_hr",
     "report_hr_zones", "report_decoupling", "report_readiness",
+    "report_metric",
     # Report plots
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
     "plot_monthlast", "plot_yearstatus", "plot_yearstop", "plot_datesum",

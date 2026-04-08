@@ -553,3 +553,31 @@ report_readiness <- function(health_daily, summaries, n = 14,
                   Kvalitet) |>
     .tail_or_daterange(n, from, to, "Datum")
 }
+
+#' Generic health metric time series
+#'
+#' Returns a simple date/value series for any metric in health_daily.
+#'
+#' @param health_daily Long-format tibble from \code{load_health_data()}.
+#' @param metric Character metric name (e.g. "resting_heart_rate").
+#' @param n Number of rows (default 30). Ignored when from/to given.
+#' @param from Date or NULL. Start of display window (inclusive).
+#' @param to Date or NULL. End of display window (exclusive).
+#' @return Tibble with Datum, Värde columns, newest first.
+#' @export
+report_metric <- function(health_daily, metric, n = 30,
+                           from = NULL, to = NULL) {
+  df <- health_daily |>
+    dplyr::filter(.data$metric == .env$metric) |>
+    dplyr::transmute(
+      Datum  = date,
+      "V\u00e4rde" = round(value, 2)
+    )
+
+  if (nrow(df) == 0) {
+    return(tibble::tibble(Datum = as.Date(character(0)),
+                          "V\u00e4rde" = numeric(0)))
+  }
+
+  .tail_or_daterange(df, n, from, to, "Datum")
+}
