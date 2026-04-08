@@ -489,11 +489,17 @@
   "time_in_daylight"
 )
 
+# Metrics where daily minimum is the correct aggregate.
+# Resting HR: the lowest reading represents true resting state;
+# later readings are inflated by activity, caffeine, stress etc.
+.min_metrics <- c("resting_heart_rate")
+
 #' Aggregate non-aggregated health data to daily values
 #'
 #' When HAE exports raw (non-aggregated) data, there may be multiple
 #' samples per day per metric. This function reduces them to one value
-#' per day: sum for accumulative metrics, mean for everything else.
+#' per day: sum for accumulative metrics, min for resting heart rate
+#' (true resting state), mean for everything else.
 #' Heart rate min/max use min/max respectively.
 #'
 #' @param df Tibble with columns: date, metric, value, source.
@@ -505,6 +511,7 @@
     dplyr::summarise(
       value = dplyr::case_when(
         dplyr::first(metric) %in% .sum_metrics ~ sum(value, na.rm = TRUE),
+        dplyr::first(metric) %in% .min_metrics ~ min(value, na.rm = TRUE),
         dplyr::first(metric) == "heart_rate_min" ~ min(value, na.rm = TRUE),
         dplyr::first(metric) == "heart_rate_max" ~ max(value, na.rm = TRUE),
         .default = mean(value, na.rm = TRUE)

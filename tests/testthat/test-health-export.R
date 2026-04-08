@@ -90,7 +90,7 @@ test_that("pivot_health_wide produces one row per date", {
   expect_true("vo2_max" %in% names(wide))
 })
 
-test_that(".aggregate_daily sums step_count and averages resting HR", {
+test_that(".aggregate_daily sums step_count and takes min resting HR", {
   df <- tibble::tibble(
     date   = as.Date(c("2026-04-01", "2026-04-01", "2026-04-01",
                         "2026-04-01")),
@@ -101,7 +101,7 @@ test_that(".aggregate_daily sums step_count and averages resting HR", {
   )
   result <- traning:::.aggregate_daily(df)
   expect_equal(result$value[result$metric == "step_count"], 10000)
-  expect_equal(result$value[result$metric == "resting_heart_rate"], 50)
+  expect_equal(result$value[result$metric == "resting_heart_rate"], 48)
 })
 
 test_that("read_health_export filters Connect and aggregates raw data", {
