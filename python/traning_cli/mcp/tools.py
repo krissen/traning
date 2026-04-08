@@ -360,20 +360,23 @@ def get_health_metric(
 ) -> dict:
     """Return time series for any health metric from the database.
 
-    Common metrics: weight_body_mass, body_fat_percentage, body_mass_index,
-    resting_heart_rate, heart_rate_variability, vo2_max, step_count,
-    active_energy, respiratory_rate, blood_oxygen_saturation,
-    apple_sleeping_wrist_temperature, walking_speed, running_power.
+    Accepts common names and abbreviations — e.g. 'weight', 'vikt', 'bmi',
+    'hrv', 'steps', 'spo2', 'vo2max'. Also accepts the canonical names like
+    'weight_body_mass', 'heart_rate_variability', etc.
     Use vayu://metrics resource for the full list.
 
     Args:
-        metric: Metric name (e.g. 'weight_body_mass', 'step_count', 'vo2_max').
+        metric: Metric name or alias (e.g. 'weight', 'steps', 'hrv', 'vo2max').
         after: Start date filter.
         before: End date filter.
         n: Number of recent values (default 30). Ignored when date range given.
     """
-    args = _build_args(after, before, n, metric=metric)
-    return r_report("report_metric", args)
+    resolved = _resolve_metric(metric)
+    args = _build_args(after, before, n, metric=resolved)
+    result = r_report("report_metric", args)
+    if resolved != metric:
+        result.setdefault("_meta", {})["resolved_metric"] = resolved
+    return result
 
 
 def compare_periods(
@@ -532,6 +535,118 @@ _HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
     "number_of_times_fallen": ("Other", "Fall detection events"),
     "distance_downhill_snow_sports": ("Other", "Downhill snow sports distance"),
 }
+
+
+# Aliases: common names / abbreviations / Swedish → canonical metric name
+_METRIC_ALIASES: dict[str, str] = {
+    # Weight
+    "weight": "weight_body_mass",
+    "body_weight": "weight_body_mass",
+    "body_mass": "weight_body_mass",
+    "mass": "weight_body_mass",
+    "vikt": "weight_body_mass",
+    "kroppsvikt": "weight_body_mass",
+    # BMI
+    "bmi": "body_mass_index",
+    # Body fat
+    "body_fat": "body_fat_percentage",
+    "fat": "body_fat_percentage",
+    "fettprocent": "body_fat_percentage",
+    "fett": "body_fat_percentage",
+    # Heart rate
+    "hr": "heart_rate",
+    "heart": "heart_rate",
+    "puls": "heart_rate",
+    "hjärtfrekvens": "heart_rate",
+    # HRV
+    "hrv": "heart_rate_variability",
+    # Resting HR
+    "rhr": "resting_heart_rate",
+    "resting_hr": "resting_heart_rate",
+    "vilopuls": "resting_heart_rate",
+    # VO2max
+    "vo2": "vo2_max",
+    "vo2max": "vo2_max",
+    "kondition": "vo2_max",
+    # Steps
+    "steps": "step_count",
+    "steg": "step_count",
+    # SpO2
+    "spo2": "blood_oxygen_saturation",
+    "oxygen": "blood_oxygen_saturation",
+    "syre": "blood_oxygen_saturation",
+    "syremättnad": "blood_oxygen_saturation",
+    # Respiratory
+    "breathing": "respiratory_rate",
+    "andning": "respiratory_rate",
+    "andningsfrekvens": "respiratory_rate",
+    # Sleep temperature
+    "wrist_temp": "apple_sleeping_wrist_temperature",
+    "wrist_temperature": "apple_sleeping_wrist_temperature",
+    "sleep_temp": "apple_sleeping_wrist_temperature",
+    "sleep_temperature": "apple_sleeping_wrist_temperature",
+    "sovtemperatur": "apple_sleeping_wrist_temperature",
+    # Activity
+    "calories": "active_energy",
+    "kalorier": "active_energy",
+    "energy": "active_energy",
+    "energi": "active_energy",
+    "exercise": "apple_exercise_time",
+    "exercise_time": "apple_exercise_time",
+    "träning": "apple_exercise_time",
+    "träningstid": "apple_exercise_time",
+    "stand": "apple_stand_hour",
+    "flights": "flights_climbed",
+    "trappor": "flights_climbed",
+    "distance": "walking_running_distance",
+    "distans": "walking_running_distance",
+    "cycling": "cycling_distance",
+    "cykling": "cycling_distance",
+    "swimming": "swimming_distance",
+    "simning": "swimming_distance",
+    # Walking
+    "walking": "walking_speed",
+    "gånghastighet": "walking_speed",
+    "asymmetry": "walking_asymmetry_percentage",
+    # Running
+    "ground_contact": "running_ground_contact_time",
+    "gct": "running_ground_contact_time",
+    "power": "running_power",
+    "stride": "running_stride_length",
+    "oscillation": "running_vertical_oscillation",
+    # Environment
+    "noise": "environmental_audio_exposure",
+    "buller": "environmental_audio_exposure",
+    "daylight": "time_in_daylight",
+    "dagsljus": "time_in_daylight",
+    # Body temp
+    "temp": "body_temperature",
+    "temperatur": "body_temperature",
+    # Lean mass
+    "lean_mass": "lean_body_mass",
+    "muskelmassa": "lean_body_mass",
+    # Recovery
+    "recovery": "cardio_recovery",
+    "recovery_hr": "cardio_recovery",
+    "återhämtning": "cardio_recovery",
+}
+
+
+def _resolve_metric(name: str) -> str:
+    """Resolve a metric name, trying exact match, alias, then substring."""
+    key = name.lower().strip()
+    # Exact match
+    available = _discover_health_metrics()
+    if key in available:
+        return key
+    # Alias
+    if key in _METRIC_ALIASES:
+        return _METRIC_ALIASES[key]
+    # Substring: if exactly one metric contains the query
+    matches = [m for m in available if key in m]
+    if len(matches) == 1:
+        return matches[0]
+    return key  # pass through, let R return empty if unknown
 
 
 def _discover_health_metrics() -> list[str]:
