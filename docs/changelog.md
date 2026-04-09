@@ -1,5 +1,21 @@
 # tRäning — Changelog
 
+## 2026-04-09 — Withings backfill, HAE hostname fix
+
+### Backfill from external exports
+- New `traning backfill <zipfile>` CLI command: auto-detects archive
+  type and writes canonical per-day JSON files for missing dates.
+- First supported format: Withings data export (weight, body fat %,
+  lean body mass). Extensible dispatcher for future formats.
+- Backfilled 597 canonical files from Withings export (2012–2026),
+  filling the HAE gap (2025-03 → 2026-04) and adding early data.
+
+### HAE TCP host
+- Default `HAE_HOST` changed from hardcoded LAN IP to Tailscale
+  hostname, making TCP fetch work regardless of network.
+
+---
+
 ## 2026-04-08 — Adaptive plot granularity, notification improvements
 
 ### Notification logging
