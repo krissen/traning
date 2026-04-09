@@ -30,12 +30,12 @@ cat(paste(unique(c(imports, suggests)), collapse = "\n"))
 ')
 
 # --- Check what is missing ---
-MISSING=$(Rscript -e '
-deps <- readLines(stdin())
+MISSING=$(echo "$DEPS" | Rscript -e '
+deps <- readLines(file("stdin"))
 installed <- rownames(installed.packages())
 missing <- setdiff(deps, installed)
 cat(paste(missing, collapse = "\n"))
-' <<< "$DEPS")
+')
 
 INSTALLED_COUNT=$(echo "$DEPS" | wc -l | tr -d ' ')
 if [ -z "$MISSING" ]; then
@@ -107,11 +107,11 @@ fi
 
 # --- Verify ---
 echo ""
-STILL_MISSING=$(Rscript -e '
-deps <- readLines(stdin())
+STILL_MISSING=$(echo "$MISSING" | Rscript -e '
+deps <- readLines(file("stdin"))
 missing <- setdiff(deps, rownames(installed.packages()))
 cat(paste(missing, collapse = "\n"))
-' <<< "$(echo "$MISSING")")
+')
 
 if [ -n "$STILL_MISSING" ]; then
     echo "FAILED to install: $STILL_MISSING"
