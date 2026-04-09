@@ -161,8 +161,7 @@ def _import_and_notify(files: list, kind: str = "health"):
             elif result.stdout.strip():
                 message = result.stdout.strip()
             else:
-                message = (f"{len(files)} filer importerade, "
-                           "inga anmärkningsvärda ändringar")
+                message = f"{len(files)} filer importerade \u2705"
 
         except subprocess.TimeoutExpired:
             elapsed = int(time.time() - t0)
