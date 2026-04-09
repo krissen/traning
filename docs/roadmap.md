@@ -36,6 +36,20 @@ each invocation pays SSH handshake cost and R session startup.
 
 ---
 
+## Shiny import UI
+
+**Goal:** Upload zip exports (Withings, etc.) via browser for backfill
+into canonical health storage.
+
+**Deliverables:**
+- New Shiny page with file upload widget
+- Auto-detect archive type from contents (reuse `identify_archive()`)
+- Preview: show date range, metrics found, new vs existing counts
+- Confirm → write canonical files
+- Builds on `traning backfill` CLI infrastructure (`health/backfill.py`)
+
+---
+
 ## Smart insight notifications
 
 **Goal:** Post-import push notifications that are contextually relevant
