@@ -33,6 +33,14 @@
 - Covers all notify points: health push, workout, garmin trigger,
   import, insight.
 
+### Import performance
+- Health import now only parses metrics that are actually consumed by
+  R functions, reports, and MCP tools (~19 metrics). High-volume but
+  unused metrics (active_energy, basal_energy_burned, etc.) are skipped
+  — reducing import time from ~60s to ~5s on kailash.
+- Canonical files remain on disk; add metric to `.import_metrics` and
+  run `--import-health --force` to include.
+
 ### Withings backfill, HAE hostname fix
 
 ### Backfill from external exports

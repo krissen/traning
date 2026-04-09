@@ -50,6 +50,25 @@ into canonical health storage.
 
 ---
 
+## Daily pre-aggregation for high-volume metrics
+
+**Goal:** Import high-volume metrics (active_energy, basal_energy_burned,
+walking_running_distance) without parsing thousands of intra-day samples.
+
+**Current state:** These metrics are excluded from import because their
+canonical files contain minute-level data (25K+ samples/day for
+basal_energy_burned). step_count is included but parses 1100+ samples
+to produce one daily row.
+
+**Approach:** Pre-aggregate to daily totals at the canonical file level
+(in Python's `save_health_push()` or a new post-save step), or add a
+fast-path in `read_canonical_file()` that sums without full parsing.
+
+**Outcome:** Could add step_count, active_energy, walking_running_distance
+to the cache at near-zero cost, useful for daily activity dashboards.
+
+---
+
 ## Smart insight notifications
 
 **Goal:** Post-import push notifications that are contextually relevant

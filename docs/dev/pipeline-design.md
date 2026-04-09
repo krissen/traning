@@ -156,6 +156,29 @@ All notification events are logged to `$TRANING_DATA/logs/notifications.jsonl`
 Import and insight run as background tasks; failures are logged and
 notified but never block the HTTP response.
 
+### Import metric filter
+
+`import_health_export()` only imports metrics listed in `.import_metrics`
+(defined in `R/health_export.R`). This avoids parsing high-volume but
+unused metrics (e.g., `basal_energy_burned` with 25K+ samples/day).
+
+Currently imported (~19 metrics):
+`resting_heart_rate`, `heart_rate_variability`, `sleep_totalSleep`,
+`sleep_deep`, `sleep_rem`, `sleep_core`, `sleep_awake`, `vo2_max`,
+`blood_oxygen_saturation`, `cardio_recovery`, `respiratory_rate`,
+`apple_sleeping_wrist_temperature`, `running_ground_contact_time`,
+`running_power`, `running_speed`, `running_stride_length`,
+`running_vertical_oscillation`, `step_count`, `weight_body_mass`
+
+To add a metric:
+1. Add it to `.import_metrics` in `R/health_export.R`
+2. Run `Rscript inst/cli.R --import-health --force` to reimport
+3. Deploy to kailash + seed cache
+
+Canonical files are always saved to disk by `save_health_push()`
+regardless of the import filter. The filter only affects what ends up
+in `health_daily.RData`.
+
 ### Cache portability
 
 `summaries.RData` can be copied from kedar to kailash. The import
