@@ -5,13 +5,15 @@ from pathlib import Path
 
 from ..garmin.utils import get_data_dir
 
-DEFAULT_HAE_HOST = "anandavani"
 DEFAULT_HAE_PORT = 9000
 DEFAULT_TIMEOUT = 10
 
 
 def hae_host() -> str:
-    return os.environ.get("HAE_HOST", DEFAULT_HAE_HOST)
+    host = os.environ.get("HAE_HOST", "")
+    if not host:
+        raise RuntimeError("HAE_HOST is not set. Set it to the HAE TCP server hostname.")
+    return host
 
 
 def hae_port() -> int:

@@ -13,6 +13,11 @@ GARMIN_PASSWORD=
 #BIRTH_YEAR=1980
 #HR_MAX=
 
+# Health Auto Export TCP server (used by `traning fetch health`).
+# Set to the hostname or IP of the device running HAE.
+#HAE_HOST=
+#HAE_PORT=9000
+
 # Output defaults (all optional).
 # TRANING_OUTPUT_DIR — base directory for saved plots/tables (default: $TRANING_DATA/output)
 # TRANING_PLOT_FORMAT — default plot format: pdf, png (default: pdf)
