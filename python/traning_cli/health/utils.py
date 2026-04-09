@@ -5,7 +5,7 @@ from pathlib import Path
 
 from ..garmin.utils import get_data_dir
 
-DEFAULT_HAE_HOST = "192.168.0.146"
+DEFAULT_HAE_HOST = "anandavani"
 DEFAULT_HAE_PORT = 9000
 DEFAULT_TIMEOUT = 10
 
