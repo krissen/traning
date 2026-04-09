@@ -42,8 +42,9 @@ cmd_code() {
         /etc/systemd/system/ && \
         sudo systemctl daemon-reload"
 
-    _info "Restarting traning-receiver ..."
-    ssh "$REMOTE" "sudo systemctl restart traning-receiver.service"
+    _info "Restarting traning-receiver and traning-shiny ..."
+    ssh "$REMOTE" "sudo systemctl restart traning-receiver.service && \
+        sudo systemctl restart traning-shiny.service"
 
     _info "Code deployed"
 }
@@ -94,11 +95,17 @@ cmd_status() {
         echo '--- traning-receiver ---'
         systemctl status traning-receiver.service --no-pager 2>&1 || true
         echo ''
+        echo '--- traning-shiny ---'
+        systemctl status traning-shiny.service --no-pager 2>&1 || true
+        echo ''
         echo '--- timers ---'
         systemctl list-timers 'traning-*' --no-pager 2>&1 || true
         echo ''
         echo '--- recent receiver logs ---'
         journalctl -u traning-receiver --since '1h ago' --no-pager -n 20 2>&1 || true
+        echo ''
+        echo '--- recent shiny logs ---'
+        journalctl -u traning-shiny --since '1h ago' --no-pager -n 10 2>&1 || true
         echo ''
         echo '--- recent garmin logs ---'
         journalctl -u traning-garmin --since '24h ago' --no-pager -n 10 2>&1 || true
@@ -113,6 +120,7 @@ cmd_all() {
     _info "Enabling services and timers ..."
     ssh "$REMOTE" "
         sudo systemctl enable --now traning-receiver.service
+        sudo systemctl enable --now traning-shiny.service
         sudo systemctl enable --now traning-garmin.timer
         sudo systemctl enable --now traning-push.timer
     "

@@ -1,0 +1,19 @@
+[Unit]
+Description=tRanat Shiny dashboard (tRäning)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=krisse
+EnvironmentFile=/etc/traning/env
+Environment=R_LIBS_USER=/home/krisse/R/library
+WorkingDirectory=/home/krisse/dev/traning
+ExecStart=/usr/bin/Rscript -e "shiny::runApp('app/tRanat', host='0.0.0.0', port=8423)"
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

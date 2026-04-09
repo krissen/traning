@@ -24,7 +24,7 @@ parse <- function(f) {
   sub("\\s*\\(.*\\)", "", trimws(unlist(strsplit(raw, ","))))
 }
 imports <- parse("Imports")
-server_suggests <- c("devtools", "patchwork")
+server_suggests <- c("devtools", "patchwork", "shiny", "bslib", "bsicons", "DT", "plotly")
 suggests <- intersect(parse("Suggests"), server_suggests)
 cat(paste(unique(c(imports, suggests)), collapse = "\n"))
 ')
