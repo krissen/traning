@@ -33,7 +33,17 @@ metric_panel_server <- function(id, plot_fn, report_fn = NULL,
   shiny::moduleServer(id, function(input, output, session) {
     ply <- function(p, mobile = FALSE) {
       pp <- plotly::ggplotly(p) |>
-        plotly::config(displayModeBar = !mobile)
+        plotly::config(
+          displayModeBar = !mobile,
+          modeBarButtonsToRemove = c("lasso2d", "select2d", "autoScale2d")
+        ) |>
+        plotly::layout(
+          title = list(x = 0.01, xanchor = "left", y = 0.99,
+                       font = list(size = 13)),
+          margin = list(t = 40, b = 60, l = 50, r = 30),
+          legend = list(orientation = "h", x = 0, y = -0.12,
+                        xanchor = "left", font = list(size = 10))
+        )
       if (mobile) {
         pp <- pp |> plotly::layout(
           dragmode = FALSE,
