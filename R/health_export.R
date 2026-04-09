@@ -772,6 +772,15 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     dplyr::distinct(date, metric, .keep_all = TRUE) |>
     dplyr::select(-".src_rank")
 
+  # Filter to actively used metrics (legacy files may bring in extras)
+  all_sleep <- grepl("^sleep_", health_daily$metric)
+  keep <- health_daily$metric %in% .import_metrics | all_sleep
+  n_dropped <- sum(!keep)
+  if (n_dropped > 0 && verbose) {
+    cat("Filtrerade bort", n_dropped, "rader (oanv\u00e4nda metrics)\n")
+  }
+  health_daily <- health_daily[keep, ]
+
   n_new <- nrow(health_daily) - nrow(existing)
   if (verbose) {
     cat("Resultat:", nrow(health_daily), "rader",
