@@ -207,6 +207,113 @@ test_that(".save_manifest and .load_manifest roundtrip", {
   expect_equal(loaded[["file2.json"]]$size, 1500)
 })
 
+# --- health_insight_delta tests ---
+
+# Helper: build a health tibble with 7 days of stable data
+.make_stable_history <- function(metric, value, n_days = 7,
+                                  start = as.Date("2026-04-01")) {
+  tibble::tibble(
+    date   = start + seq_len(n_days) - 1,
+    metric = metric,
+    value  = value,
+    source = "AW"
+  )
+}
+
+test_that("health_insight_delta reports HRV change above threshold", {
+  before <- .make_stable_history("heart_rate_variability", 60)
+  after  <- dplyr::bind_rows(
+    before,
+    tibble::tibble(date = as.Date("2026-04-08"),
+                   metric = "heart_rate_variability", value = 72, source = "AW")
+  )
+  result <- health_insight_delta(before, after)
+  expect_match(result, "HRV")
+  expect_match(result, "72")
+  expect_match(result, "\\+12")
+})
+
+test_that("health_insight_delta ignores HRV change below threshold", {
+  before <- .make_stable_history("heart_rate_variability", 60)
+  after  <- dplyr::bind_rows(
+    before,
+    tibble::tibble(date = as.Date("2026-04-08"),
+                   metric = "heart_rate_variability", value = 62, source = "AW")
+  )
+  result <- health_insight_delta(before, after)
+  expect_equal(result, "")
+})
+
+test_that("health_insight_delta always reports tier 1 metrics", {
+  before <- .make_stable_history("vo2_max", 57.0)
+  after  <- dplyr::bind_rows(
+    before,
+    tibble::tibble(date = as.Date("2026-04-08"),
+                   metric = "vo2_max", value = 57.5, source = "AW")
+  )
+  result <- health_insight_delta(before, after)
+  expect_match(result, "VO2max")
+  expect_match(result, "57.5")
+})
+
+test_that("health_insight_delta ignores tier 3 metrics", {
+  before <- .make_stable_history("step_count", 10000)
+  after  <- dplyr::bind_rows(
+    before,
+    tibble::tibble(date = as.Date("2026-04-08"),
+                   metric = "step_count", value = 15000, source = "AW")
+  )
+  result <- health_insight_delta(before, after)
+  expect_equal(result, "")
+})
+
+test_that("health_insight_delta handles empty before (first import)", {
+  before <- tibble::tibble(
+    date = as.Date(character()), metric = character(),
+    value = numeric(), source = character()
+  )
+  after <- tibble::tibble(
+    date   = as.Date("2026-04-08"),
+    metric = c("resting_heart_rate", "heart_rate_variability"),
+    value  = c(52, 65),
+    source = c("AW", "AW")
+  )
+  result <- health_insight_delta(before, after)
+  expect_match(result, "vila")
+  expect_match(result, "HRV")
+})
+
+test_that("health_insight_delta flags short sleep", {
+  before <- .make_stable_history("sleep_totalSleep", 7.0)
+  after  <- dplyr::bind_rows(
+    before,
+    tibble::tibble(date = as.Date("2026-04-08"),
+                   metric = "sleep_totalSleep", value = 4.8, source = "AW")
+  )
+  result <- health_insight_delta(before, after)
+  expect_match(result, "kort natt")
+})
+
+test_that("health_insight_delta treats unknown metrics as tier 1", {
+  before <- tibble::tibble(
+    date = as.Date(character()), metric = character(),
+    value = numeric(), source = character()
+  )
+  after <- tibble::tibble(
+    date = as.Date("2026-04-08"),
+    metric = "some_future_metric", value = 42, source = "AW"
+  )
+  result <- health_insight_delta(before, after)
+  expect_match(result, "some_future_metric")
+  expect_match(result, "42")
+})
+
+test_that("health_insight_delta returns empty when nothing changed", {
+  data <- .make_stable_history("resting_heart_rate", 52)
+  result <- health_insight_delta(data, data)
+  expect_equal(result, "")
+})
+
 test_that("import_health_export with force bypasses manifest", {
   # Create a minimal JSON file
   raw_json <- list(data = list(metrics = list(

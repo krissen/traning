@@ -878,3 +878,182 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
 
   wide
 }
+
+# --- Delta-based insight ----------------------------------------------------
+
+# Tier 1: rare metrics — always report any change
+.tier1_metrics <- c(
+  "vo2_max", "blood_oxygen_saturation", "cardio_recovery",
+  "respiratory_rate", "apple_sleeping_wrist_temperature",
+  "running_ground_contact_time", "running_power", "running_speed",
+  "running_stride_length", "running_vertical_oscillation"
+)
+
+# Tier 2: daily metrics — report if significant vs 7d average
+.tier2_thresholds <- list(
+  heart_rate_variability = 5,    # ms
+  resting_heart_rate     = 4,    # bpm
+  sleep_totalSleep       = 0.5,  # hours
+  sleep_deep             = 0.3   # hours
+)
+
+# Tier 3: high-frequency, low-insight — never report
+.tier3_metrics <- c(
+  "step_count", "active_energy", "basal_energy_burned", "flights_climbed",
+  "apple_exercise_time", "walking_running_distance", "heart_rate",
+  "heart_rate_min", "heart_rate_avg", "heart_rate_max",
+  "environmental_audio_exposure", "headphone_audio_exposure",
+  "physical_effort", "apple_stand_hour", "apple_stand_time",
+  "stair_speed_up", "stair_speed_down", "time_in_daylight",
+  "walking_speed", "walking_step_length",
+  "walking_asymmetry_percentage", "walking_double_support_percentage",
+  "walking_heart_rate_average",
+  # Nutritional
+  "dietary_energy", "dietary_sugar", "dietary_water", "protein",
+  "carbohydrates", "total_fat", "fiber", "saturated_fat",
+  "monounsaturated_fat", "polyunsaturated_fat", "sodium", "potassium",
+  "calcium", "iron", "zinc", "magnesium", "manganese", "copper",
+  "phosphorus", "selenium", "iodine", "caffeine",
+  "vitamin_a", "vitamin_b6", "vitamin_c", "vitamin_e", "vitamin_k",
+  "folate", "niacin", "riboflavin", "thiamin", "pantothenic_acid",
+  # Other low-signal
+  "body_fat_percentage", "body_mass_index", "lean_body_mass",
+  "weight_body_mass", "height", "handwashing",
+  "mindful_minutes", "number_of_times_fallen",
+  "cycling_distance", "swimming_distance", "swimming_stroke_count",
+  "distance_downhill_snow_sports", "six_minute_walking_test_distance",
+  # Sleep sub-metrics (total and deep handled in tier 2)
+  "sleep_rem", "sleep_core", "sleep_awake", "sleep_inBed",
+  "sleep_asleep", "sleep_inBedStart", "sleep_inBedEnd",
+  "sleep_sleepStart", "sleep_sleepEnd", "sleep_analysis",
+  "basal_body_temperature"
+)
+
+# Human-readable labels for metrics (Swedish)
+.metric_labels <- c(
+  heart_rate_variability           = "HRV",
+  resting_heart_rate               = "vila",
+  sleep_totalSleep                 = "s\u00f6mn",
+  sleep_deep                       = "djups\u00f6mn",
+  vo2_max                          = "VO2max",
+  blood_oxygen_saturation          = "SpO2",
+  cardio_recovery                  = "cardio recovery",
+  respiratory_rate                 = "andningsfrekvens",
+  apple_sleeping_wrist_temperature = "handledstemperatur",
+  running_ground_contact_time      = "markkontakt",
+  running_power                    = "l\u00f6peffekt",
+  running_speed                    = "l\u00f6phastighet",
+  running_stride_length            = "stegl\u00e4ngd",
+  running_vertical_oscillation     = "vertikal oscillation"
+)
+
+# Units for metrics
+.metric_units <- c(
+  heart_rate_variability           = "ms",
+  resting_heart_rate               = "bpm",
+  sleep_totalSleep                 = "h",
+  sleep_deep                       = "h",
+  vo2_max                          = "",
+  blood_oxygen_saturation          = "%",
+  cardio_recovery                  = "bpm",
+  respiratory_rate                 = "/min",
+  apple_sleeping_wrist_temperature = "\u00b0C",
+  running_ground_contact_time      = "ms",
+  running_power                    = "W",
+  running_speed                    = "m/s",
+  running_stride_length            = "m",
+  running_vertical_oscillation     = "cm"
+)
+
+
+#' Generate delta-based health insight text
+#'
+#' Compares before/after health data tibbles and produces Swedish-language
+#' insight text about meaningful changes only.
+#'
+#' @param before Tibble of health data before import (long format:
+#'   date, metric, value, source).
+#' @param after Same format, after import.
+#' @return Character string. Empty string if no meaningful changes.
+#' @export
+health_insight_delta <- function(before, after) {
+  if (is.null(after) || nrow(after) == 0) return("")
+
+  # Find changed (date, metric) pairs
+  after_key <- after |>
+    dplyr::select(date, metric, value)
+  before_key <- if (nrow(before) > 0) {
+    before |> dplyr::select(date, metric, value)
+  } else {
+    tibble::tibble(date = as.Date(character()), metric = character(),
+                   value = numeric())
+  }
+
+  changed <- dplyr::anti_join(after_key, before_key,
+                               by = c("date", "metric", "value"))
+  if (nrow(changed) == 0) return("")
+
+  # Focus on latest date
+
+  focus_date <- max(changed$date)
+  changed <- changed |> dplyr::filter(date == focus_date)
+
+  parts <- character()
+
+  for (i in seq_len(nrow(changed))) {
+    m <- changed$metric[i]
+    v <- changed$value[i]
+
+    # Tier 3: skip
+    if (m %in% .tier3_metrics) next
+
+    label <- if (m %in% names(.metric_labels)) .metric_labels[[m]] else m
+    unit  <- if (m %in% names(.metric_units)) .metric_units[[m]] else ""
+    unit_str <- if (nzchar(unit)) paste0(" ", unit) else ""
+
+    if (m %in% .tier1_metrics) {
+      # Tier 1: always report
+      parts <- c(parts, paste0(label, " ", round(v, 1), unit_str))
+    } else if (m %in% names(.tier2_thresholds)) {
+      # Tier 2: compare against 7d rolling average from before
+      threshold <- .tier2_thresholds[[m]]
+      hist_vals <- before |>
+        dplyr::filter(
+          metric == m,
+          date >= focus_date - 7,
+          date < focus_date
+        ) |>
+        dplyr::pull(value)
+
+      avg7d <- if (length(hist_vals) >= 2) mean(hist_vals, na.rm = TRUE) else NA
+
+      # Sleep < 5.5h always flags
+      if (m == "sleep_totalSleep" && !is.na(v) && v < 5.5) {
+        parts <- c(parts, paste0(label, " ", round(v, 1), unit_str,
+                                  " (kort natt)"))
+        next
+      }
+
+      if (!is.na(avg7d)) {
+        delta <- v - avg7d
+        if (abs(delta) >= threshold) {
+          sign_str <- if (delta > 0) "+" else ""
+          parts <- c(parts, paste0(label, " ", round(v, 1), unit_str,
+                                    " (", sign_str, round(delta, 1),
+                                    " vs 7d)"))
+        }
+      } else {
+        # No history — report as new
+        parts <- c(parts, paste0(label, " ", round(v, 1), unit_str))
+      }
+    } else {
+      # Unknown metric (not in any tier) — treat as tier 1
+      parts <- c(parts, paste0(label, " ", round(v, 1), unit_str))
+    }
+  }
+
+  if (length(parts) == 0) return("")
+
+  date_str <- format(focus_date, "%e %b") |> trimws()
+  paste0("H\u00e4lsa ", date_str, ": ", paste(parts, collapse = ", "))
+}
