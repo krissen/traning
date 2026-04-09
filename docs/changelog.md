@@ -1,6 +1,39 @@
 # tRäning — Changelog
 
-## 2026-04-09 — Withings backfill, HAE hostname fix
+## 2026-04-09 — Delta-based health insights, notification logging
+
+### Delta-based health insights
+- Health insight notifications now report **only what changed** in the
+  specific push, compared against a 7-day rolling average. Previously
+  the same HRV/sleep/resting HR values were repeated every push.
+- Three-tier metric classification:
+  - **Tier 1 (always report):** VO2max, SpO2, cardio recovery,
+    respiratory rate, running biomechanics (stride, ground contact,
+    power, vertical oscillation), wrist temperature.
+  - **Tier 2 (report if significant):** HRV (>=5 ms vs 7d), resting HR
+    (>=4 bpm vs 7d), sleep total (>=30 min vs 7d or <5h30), deep sleep
+    (>=18 min vs 7d).
+  - **Tier 3 (ignore):** steps, active energy, flights climbed, heart
+    rate min/avg/max, nutritional metrics, etc.
+- Unknown metrics default to tier 1 (always report).
+- Import + insight merged into a single atomic R process — eliminates
+  the race where the insight script couldn't see pre-import state.
+- Concurrent health pushes serialized via threading lock.
+
+### Never-silent notifications
+- The system **always** sends a notification after health import,
+  regardless of outcome. Fallback messages for: no meaningful changes,
+  import failure, timeout.
+- Previously, insight R script failures were silently swallowed.
+
+### Notification log
+- All notifications (sent and failed) logged to
+  `$TRANING_DATA/logs/notifications.jsonl` (JSONL, one line per event).
+- Fields: timestamp, trigger type, title, message, sent status, error.
+- Covers all notify points: health push, workout, garmin trigger,
+  import, insight.
+
+### Withings backfill, HAE hostname fix
 
 ### Backfill from external exports
 - New `traning backfill <zipfile>` CLI command: auto-detects archive

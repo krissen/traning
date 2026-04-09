@@ -105,7 +105,11 @@ ssh kailash 'sudo journalctl -u traning-receiver --since "1h ago"'
 ssh kailash 'sudo journalctl -u traning-garmin --since "24h ago"'
 ssh kailash 'sudo systemctl list-timers traning-*'
 
-# Notifications — what was sent?
+# Notifications — what was sent? (notification log, preferred)
+ssh kailash 'cat ~/dokument/traning-data/logs/notifications.jsonl | python -m json.tool'
+ssh kailash 'tail -5 ~/dokument/traning-data/logs/notifications.jsonl'
+
+# Notifications — systemd journal (fallback)
 ssh kailash 'sudo journalctl -u traning-receiver --since "24h ago" | grep "Avisering"'
 
 # HA log (automations, errors — not individual notify calls)

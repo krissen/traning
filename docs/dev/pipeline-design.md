@@ -102,20 +102,55 @@ spurious fetches on sensor reconnect.
 
 ### Notification chain
 
-Each data path triggers three notifications in sequence:
+**Health data** — single delta-based notification per push:
 
 ```
-1. Receive    "Hälsodata: 28 metrics mottagna"
-2. Import     "Import hälsa: klart"
-3. Insight    "Hälsa 2026-04-07: vila 64 bpm, HRV 107 ms, sömn 6.2 h"
+POST /v1/health
+  → save + git commit (synchronous)
+  → background: _import_and_notify()
+    1. before = load_health_data()          # snapshot cache
+    2. after  = import_health_export(...)    # import new files
+    3. text   = health_insight_delta(before, after)  # compare
+    4. notify(text) or fallback message      # always sends
 ```
 
-Garmin variant:
+Example notifications:
+- `"Hälsa 9 apr.: HRV 55 ms (-12 vs 7d), sömn 4.2 h (kort natt)"`
+- `"15 filer importerade, inga anmärkningsvärda ändringar"`
+- `"Hälsoimport: MISSLYCKADES (3s)"`
+
+Import + insight run in a single R process (atomic — the before/after
+comparison happens in the same session). A `threading.Lock` serializes
+concurrent pushes to avoid RData cache corruption.
+
+**Garmin** — unchanged, multi-step:
 ```
 1. Trigger    "Garmin fetch triggered by Strava: ..."   (from HA)
 2. Fetch      "Garmin fetch: Fetched 1 new activities"  (from receiver)
 3. Import     "Import garmin: 1 workouts imported..."   (from _run_import)
-4. Insight    "Löpning 8.1 km, 5:00/km, TRIMP 63..."   (from _run_insight)
+4. Insight    "Löpning 8.1 km, 5:00/km ..."             (from _run_insight)
+```
+
+### Metric tier classification
+
+The delta insight function classifies health metrics into three tiers:
+
+| Tier | Trigger | Metrics |
+|------|---------|---------|
+| 1 — rare, high signal | Any change | VO2max, SpO2, cardio recovery, respiratory rate, running biomechanics, wrist temp |
+| 2 — daily, threshold | Significant vs 7d avg | HRV (>=5ms), resting HR (>=4bpm), sleep total (>=30min or <5h30), deep sleep (>=18min) |
+| 3 — noise, ignore | Never | Steps, energy, flights, heart rate, audio exposure, nutritional, etc. |
+
+Unknown metrics default to tier 1.
+
+### Notification logging
+
+All notification events are logged to `$TRANING_DATA/logs/notifications.jsonl`
+(JSONL, one line per event). Both sent and failed notifications are recorded.
+
+```json
+{"ts":"2026-04-09T07:15:07","trigger":"health_push","title":"tRäning",
+ "message":"Hälsa 9 apr.: HRV 55 ms (-12 vs 7d)","sent":true}
 ```
 
 Import and insight run as background tasks; failures are logged and
