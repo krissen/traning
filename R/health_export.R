@@ -730,6 +730,17 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     }
   }
 
+  # Filter to actively used metrics (canonical files only; legacy always kept)
+  n_before_filter <- length(files_to_parse)
+  files_to_parse <- Filter(function(f) {
+    if (!grepl("/canonical/", f, fixed = TRUE)) return(TRUE)
+    basename(dirname(f)) %in% .import_metrics
+  }, files_to_parse)
+  n_filtered <- n_before_filter - length(files_to_parse)
+  if (verbose && n_filtered > 0) {
+    cat(n_filtered, "filer filtrerade (oanv\u00e4nda metrics)\n")
+  }
+
   new_data <- lapply(files_to_parse, function(f) {
     if (grepl("/canonical/", f, fixed = TRUE)) {
       read_canonical_file(f, verbose = verbose)
@@ -878,6 +889,27 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
 
   wide
 }
+
+# --- Import metric filter ----------------------------------------------------
+# Only these metrics are parsed into health_daily.RData. Canonical files
+# for all metrics remain on disk — add a metric here and run
+# --import-health --force to include it in the cache.
+.import_metrics <- c(
+  # Readiness core (tier 2)
+  "resting_heart_rate", "heart_rate_variability",
+  "sleep_totalSleep", "sleep_deep",
+  # Sleep stages (used by get_readiness, plot_health, Shiny)
+  "sleep_rem", "sleep_core", "sleep_awake",
+  # Rare / high signal (tier 1)
+  "vo2_max", "blood_oxygen_saturation", "cardio_recovery",
+  "respiratory_rate", "apple_sleeping_wrist_temperature",
+  "running_ground_contact_time", "running_power", "running_speed",
+  "running_stride_length", "running_vertical_oscillation",
+  # Activity
+  "step_count",
+  # Body composition
+  "weight_body_mass"
+)
 
 # --- Delta-based insight ----------------------------------------------------
 
