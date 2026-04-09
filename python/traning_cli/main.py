@@ -226,6 +226,39 @@ def _commit_data(data_dir, n: int) -> None:
         log.warning("Git commit failed: %s", e.stderr.decode().strip())
 
 
+# -- backfill --------------------------------------------------------------
+
+@cli.command()
+@click.argument("zipfile", type=click.Path(exists=True))
+@click.option("--dry-run", is_flag=True,
+              help="Show what would be written without writing")
+def backfill(zipfile, dry_run):
+    """Backfill canonical health metrics from an export archive.
+
+    Auto-detects the archive type (Withings, etc.) and writes
+    canonical per-day JSON files for dates not already present.
+    """
+    from .health.backfill import backfill_archive
+
+    logging.basicConfig(level=logging.INFO, format="%(message)s")
+    try:
+        counts = backfill_archive(zipfile, dry_run=dry_run)
+    except ValueError as e:
+        raise click.ClickException(str(e))
+
+    action = "Would write" if dry_run else "Wrote"
+    for metric, n in sorted(counts.items()):
+        click.echo(f"  {metric}: {action} {n} new files")
+
+    total = sum(counts.values())
+    if total == 0:
+        click.echo("Inga nya datum att backfilla.")
+    elif dry_run:
+        click.echo(f"Totalt: {total} nya filer (dry run)")
+    else:
+        click.echo(f"Klart! {total} nya filer.")
+
+
 # -- import group ----------------------------------------------------------
 
 @cli.group(name="import")
