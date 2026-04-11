@@ -877,7 +877,8 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   readiness_metrics <- c("resting_heart_rate", "heart_rate_variability",
                           "sleep_totalSleep", "sleep_deep", "sleep_rem",
                           "sleep_core", "sleep_awake",
-                          "blood_oxygen_saturation", "respiratory_rate")
+                          "blood_oxygen_saturation", "respiratory_rate",
+                          "apple_sleeping_wrist_temperature")
 
   df <- health_daily |>
     dplyr::filter(metric %in% readiness_metrics)

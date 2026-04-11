@@ -534,7 +534,8 @@ report_readiness <- function(health_daily, summaries, n = 14,
   if (nrow(r) == 0) {
     return(tibble::tibble(Datum = as.Date(character(0))))
   }
-  r |>
+  has_wt <- "wrist_temp" %in% names(r)
+  out <- r |>
     dplyr::mutate(
       Datum       = date,
       Beredskap   = round(readiness_score, 0),
@@ -547,10 +548,19 @@ report_readiness <- function(health_daily, summaries, n = 14,
       TRIMP       = round(daily_trimp, 0),
       TSB         = round(tsb, 1),
       Kvalitet    = data_quality
-    ) |>
-    dplyr::select(Datum, Beredskap, Status, `Ln RMSSD`, `HRV z`,
-                  Vilopuls, `VP avvik`, `Sömn`, TRIMP, TSB,
-                  Kvalitet) |>
+    )
+  cols <- c("Datum", "Beredskap", "Status", "Ln RMSSD", "HRV z",
+            "Vilopuls", "VP avvik", "Sömn", "TRIMP", "TSB")
+  if (has_wt) {
+    out <- out |>
+      dplyr::mutate(
+        `Temp avvik` = round(wrist_temp_deviation, 2)
+      )
+    cols <- c(cols, "Temp avvik")
+  }
+  cols <- c(cols, "Kvalitet")
+  out |>
+    dplyr::select(dplyr::all_of(cols)) |>
     .tail_or_daterange(n, from, to, "Datum")
 }
 

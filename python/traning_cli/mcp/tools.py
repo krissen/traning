@@ -60,16 +60,17 @@ def get_readiness(
     before: Optional[str] = None,
     plot: bool = False,
 ) -> dict | list:
-    """Daily readiness score with component breakdown (HRV, sleep, resting HR, training load).
+    """Daily readiness score with component breakdown (HRV, sleep, resting HR, training load, wrist temp).
 
-    Returns a composite score (0-100) fusing Apple Watch health data with
+    Returns a composite score (0-100) fusing Apple Watch health data
+    (including sleeping wrist temperature as illness early-warning) with
     Garmin training load. Status: Gron (>=70), Gul (40-69), Rod (<40).
 
     Args:
         n: Number of recent days to show (default 14).
         after: Start date filter (e.g. '2025-01-01', '-2w').
         before: End date filter.
-        plot: If True, return a 4-panel readiness dashboard (PNG).
+        plot: If True, return readiness dashboard (PNG).
     """
     args = _build_args(after, before, n)
     return _data_or_plot("report_readiness", "fetch.plot.readiness_score", args, plot)
@@ -338,12 +339,14 @@ def get_vo2max(
     before: Optional[str] = None,
     plot: bool = False,
 ) -> dict | list:
-    """VO2max estimate trend from Apple Watch.
+    """VO2max estimate trend (Apple Watch daily + Garmin per-activity).
+
+    When plotting, overlays both sources for comparison.
 
     Args:
         after: Start date filter.
         before: End date filter.
-        plot: If True, return VO2max trend chart (PNG).
+        plot: If True, return dual-source VO2max trend chart (PNG).
     """
     args = _build_args(after, before)
     if plot:
@@ -418,8 +421,8 @@ def compare_periods(
 _METRIC_DEFINITIONS = {
     "readiness": {
         "name": "Readiness Score",
-        "description": "Daily composite score (0-100) fusing HRV, sleep, resting HR, and training load.",
-        "components": "HRV 35%, Sleep 30%, Resting HR 20%, Training load 15%",
+        "description": "Daily composite score (0-100) fusing HRV, sleep, resting HR, training load, and wrist temperature.",
+        "components": "HRV 30%, Sleep 25%, Resting HR 20%, Training load 15%, Wrist temp 10% (falls back to 4-component model without wrist temp)",
         "thresholds": {"green": ">=70", "yellow": "40-69", "red": "<40"},
         "references": ["Seshadri 2019", "Plews 2013", "Buchheit 2014"],
     },
