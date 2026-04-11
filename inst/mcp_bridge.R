@@ -88,7 +88,7 @@ func_registry <- list(
   fetch.plot.resting_hr  = "sh",
   fetch.plot.hrv         = "h",
   fetch.plot.sleep       = "h",
-  fetch.plot.vo2max      = "h",
+  fetch.plot.vo2max      = "shg",
   fetch.plot.readiness_score = "sh"
 )
 
@@ -218,7 +218,10 @@ build_call_args <- function(func_name, func_args) {
   if (func_name == "fetch.plot.resting_hr") {
     a <- c(list(health_daily = health_daily, summaries = summaries), a)
   }
-  if (func_name %in% c("fetch.plot.hrv", "fetch.plot.sleep", "fetch.plot.vo2max",
+  if (func_name == "fetch.plot.vo2max") {
+    a <- c(list(health_daily = health_daily, summaries = summaries), a)
+  }
+  if (func_name %in% c("fetch.plot.hrv", "fetch.plot.sleep",
                         "report_metric")) {
     a <- c(list(health_daily = health_daily), a)
   }

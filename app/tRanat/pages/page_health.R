@@ -99,7 +99,8 @@ page_health_server <- function(id, summaries, health_daily, dates, is_mobile) {
     metric_panel_server("vo2max",
       plot_fn = shiny::reactive({
         shiny::req(health_daily)
-        fetch.plot.vo2max(health_daily, from = dr_from(), to = dr_to())
+        fetch.plot.vo2max(health_daily, summaries = summaries,
+                          from = dr_from(), to = dr_to())
       }),
       report_fn = shiny::reactive({
         shiny::req(health_daily)

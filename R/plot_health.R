@@ -248,19 +248,39 @@ fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
 
 #' VO2max trend over time
 #'
+#' Plots Apple Watch VO2max estimates. If \code{summaries} are provided and
+#' contain \code{garmin_vO2MaxValue}, overlays Garmin per-activity estimates
+#' for a dual-source comparison.
+#'
 #' @param health_daily Long-format tibble from \code{import_health_export()}.
+#' @param summaries Optional Garmin summaries tibble (with garmin_vO2MaxValue).
 #' @param from Start date. NULL = all data.
 #' @param to End date. NULL = all data.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.vo2max <- function(health_daily, from = NULL, to = NULL) {
+fetch.plot.vo2max <- function(health_daily, summaries = NULL,
+                               from = NULL, to = NULL) {
   vo2 <- health_daily |>
     dplyr::filter(metric == "vo2_max")
 
   if (!is.null(from)) vo2 <- vo2 |> dplyr::filter(date >= as.Date(from))
   if (!is.null(to))   vo2 <- vo2 |> dplyr::filter(date < as.Date(to))
 
-  if (nrow(vo2) == 0) {
+  # Extract Garmin VO2max from summaries if available
+  garmin_vo2 <- NULL
+  if (!is.null(summaries) && "garmin_vO2MaxValue" %in% names(summaries)) {
+    garmin_vo2 <- summaries |>
+      dplyr::filter(!is.na(garmin_vO2MaxValue)) |>
+      dplyr::transmute(
+        date = as.Date(sessionStart),
+        value = garmin_vO2MaxValue
+      )
+    if (!is.null(from)) garmin_vo2 <- garmin_vo2 |> dplyr::filter(date >= as.Date(from))
+    if (!is.null(to))   garmin_vo2 <- garmin_vo2 |> dplyr::filter(date < as.Date(to))
+    if (nrow(garmin_vo2) == 0) garmin_vo2 <- NULL
+  }
+
+  if (nrow(vo2) == 0 && is.null(garmin_vo2)) {
     message("Ingen VO2max-data i intervallet")
     return(ggplot2::ggplot())
   }
@@ -269,19 +289,48 @@ fetch.plot.vo2max <- function(health_daily, from = NULL, to = NULL) {
   pt_size  <- if (span_days <= 30) 2.5 else 0.8
   pt_alpha <- if (span_days <= 30) 0.6 else 0.15
   loess_span <- if (span_days <= 30) 0.75 else if (span_days <= 90) 0.3 else 0.15
+  has_both <- nrow(vo2) > 0 && !is.null(garmin_vo2)
 
-  p <- ggplot2::ggplot(vo2, ggplot2::aes(x = date, y = value)) +
-    ggplot2::geom_point(alpha = pt_alpha, size = pt_size, colour = "grey50")
+  p <- ggplot2::ggplot()
 
-  if (nrow(vo2) >= 5) {
-    p <- p + ggplot2::geom_smooth(method = "loess", span = loess_span,
-                                   se = FALSE, colour = "darkorange",
-                                   linewidth = 1)
+  # Apple Watch series
+  if (nrow(vo2) > 0) {
+    aw_colour <- if (has_both) "#E69F00" else "grey50"
+    p <- p +
+      ggplot2::geom_point(data = vo2,
+                          ggplot2::aes(x = date, y = value, colour = "Apple Watch"),
+                          alpha = pt_alpha, size = pt_size)
+    if (nrow(vo2) >= 5) {
+      p <- p + ggplot2::geom_smooth(data = vo2,
+                                     ggplot2::aes(x = date, y = value),
+                                     method = "loess", span = loess_span,
+                                     se = FALSE, colour = "#E69F00",
+                                     linewidth = 1)
+    }
   }
+
+  # Garmin series
+  if (!is.null(garmin_vo2)) {
+    p <- p +
+      ggplot2::geom_point(data = garmin_vo2,
+                          ggplot2::aes(x = date, y = value, colour = "Garmin"),
+                          alpha = if (span_days <= 30) 0.7 else 0.4,
+                          size = if (span_days <= 30) 2.5 else 1.2,
+                          shape = 17)
+    if (nrow(garmin_vo2) >= 5) {
+      p <- p + ggplot2::geom_smooth(data = garmin_vo2,
+                                     ggplot2::aes(x = date, y = value),
+                                     method = "loess", span = loess_span,
+                                     se = FALSE, colour = "#56B4E9",
+                                     linewidth = 1)
+    }
+  }
+
+  title <- if (has_both) "VO2max (Apple Watch + Garmin)" else "VO2max (Apple Watch-estimat)"
 
   p <- p +
     .adaptive_date_scale(span_days) +
-    ggplot2::labs(title = "VO2max (Apple Watch-estimat)",
+    ggplot2::labs(title = title,
                   x = NULL,
                   y = "ml/(kg\u00b7min)") +
     ggplot2::theme_minimal() +
@@ -290,6 +339,17 @@ fetch.plot.vo2max <- function(health_daily, from = NULL, to = NULL) {
         angle = if (span_days <= 60) 45 else 0,
         hjust = if (span_days <= 60) 1 else 0.5)
     )
+
+  if (has_both) {
+    p <- p +
+      ggplot2::scale_colour_manual(
+        values = c("Apple Watch" = "#E69F00", "Garmin" = "#56B4E9"),
+        name = NULL
+      ) +
+      ggplot2::theme(legend.position = "bottom")
+  } else {
+    p <- p + ggplot2::guides(colour = "none")
+  }
 
   p
 }
