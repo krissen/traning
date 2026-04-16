@@ -282,8 +282,14 @@
     sources[i]     <- s$source %||% NA_character_
   }
 
-  # Assign sleep date from end timestamp (wake-up date)
-  sleep_date <- as.Date(substr(end_dates, 1, 10))
+  # Assign sleep date: segments starting >= 18:00 belong to the NEXT calendar
+
+  # day's sleep (the wake-up date). Without this, pre-midnight segments get
+  # assigned to the evening's date, splitting a single night across two days.
+  end_date <- as.Date(substr(end_dates, 1, 10))
+  start_date <- as.Date(substr(start_dates, 1, 10))
+  start_hour <- as.integer(substr(start_dates, 12, 13))
+  sleep_date <- dplyr::if_else(start_hour >= 18L, start_date + 1L, end_date)
 
   df <- tibble::tibble(
     date   = sleep_date,
@@ -301,6 +307,10 @@
   # Deduplicate identical segments (Sleep Cycle often reports duplicates)
   df <- dplyr::distinct(df, date, stage, hours, source, start_ts, end_ts,
                          .keep_all = TRUE)
+
+  # Normalize NBSP (U+00A0) before priority matching — HAE JSON writes
+  # "Apple\u00a0Watch" with NBSP but the priority list uses regular space.
+  df$source <- gsub("\u00a0", " ", df$source)
 
   # Source priority: rank each source
   df$src_rank <- match(df$source, .sleep_source_priority)
@@ -755,11 +765,10 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     return(invisible(existing))
   }
 
-  # Merge, clean sources, and deduplicate
-  combined <- dplyr::bind_rows(existing, new_data)
+  # Merge: new_data first so fresher values win when source rank is tied
+  combined <- dplyr::bind_rows(new_data, existing)
   combined <- .clean_sources(combined)
-  # Rank sources: sleep metrics use sleep-specific priority (Sleep Cycle
-  # preferred), everything else uses general priority (Apple Watch preferred).
+  # Rank sources: Apple Watch preferred for both sleep and general metrics.
   is_sleep <- grepl("^sleep_", combined$metric)
   combined$.src_rank <- NA_integer_
   combined$.src_rank[is_sleep] <- match(
