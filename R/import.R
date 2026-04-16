@@ -84,7 +84,10 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   # Match on basename to handle relative vs absolute path mismatches
   existing_basenames <- if ("file" %in% names(summaries))
     basename(summaries$file[!is.na(summaries$file)]) else character(0)
+  existing_starts <- if ("sessionStart" %in% names(summaries))
+    summaries$sessionStart else as.POSIXct(character(0))
   n_imported <- 0
+  n_updated <- 0
   for (i in seq_along(files)) {
     thefile <- files[[i]]
     if (basename(thefile) %in% existing_basenames) {
@@ -103,17 +106,43 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
         NULL
       })
       if (is.null(parsed)) next
+
+      run_summary <- summary(parsed)
+      class(run_summary) <- "data.frame"
+
+      # Dedup by sessionStart: same activity may exist under a different
+      # filename (renamed TCX, symlink mismatch, etc.). If the timestamp
+      # matches within 2 s, skip the file. Only update the cached filename
+      # if the old file no longer exists (actual rename vs. two copies).
+      ss <- run_summary$sessionStart
+      dup_idx <- which(abs(difftime(existing_starts, ss, units = "secs")) < 2)
+      if (length(dup_idx) > 0) {
+        existing_basenames <- c(existing_basenames, basename(thefile))
+        old_path <- summaries$file[dup_idx[1]]
+        if (!file.exists(old_path)) {
+          summaries$file[dup_idx[1]] <- thefile
+          n_updated <- n_updated + 1
+          if (verbose) {
+            cat("dublett av ", basename(old_path),
+                " (saknas), uppdaterar filnamn\n", sep = "")
+          }
+        } else if (verbose) {
+          cat("dublett av ", basename(old_path), ", hoppar över\n", sep = "")
+        }
+        next
+      }
+
       myruns[[i]] <- parsed
       if (verbose) cat("OK\n")
-      run_summary <- summary(myruns[[i]])
       # Strip trackeRdataSummary class before dplyr operations —
       # its [ method conflicts with dplyr::mutate() and causes
       # row expansion (1 row becomes 28)
-      class(run_summary) <- "data.frame"
       run_summary <- add_my_columns(run_summary)
       summaries <- rbind(summaries, run_summary,
                          deparse.level = 0,
                          make.row.names = FALSE)
+      existing_basenames <- c(existing_basenames, basename(thefile))
+      existing_starts <- c(existing_starts, ss)
       n_imported <- n_imported + 1
 
       # Checkpoint: save every batch_size imports
@@ -127,6 +156,7 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   my_templist <- list()
   my_templist[["summaries"]] <- summaries
   my_templist[["myruns"]] <- myruns
+  my_templist[["n_updated"]] <- n_updated
   return(my_templist)
 }
 

@@ -192,14 +192,20 @@ if (do_import) {
                                   db_summaries = db_summaries, db_myruns = db_myruns)
   summaries <- my_templist[["summaries"]]
   myruns <- my_templist[["myruns"]]
+  n_updated <- my_templist[["n_updated"]]
   rm(my_templist)
   summaries_newlength <- dplyr::count(summaries)
   summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
 
-  if (summaries_oldlength != summaries_newlength) {
+  # Save if new rows were added OR existing filenames were corrected
+  if (summaries_lengthdiff > 0 || n_updated > 0) {
     my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+  }
+  if (summaries_lengthdiff > 0) {
     summaries_mostrecent <- utils::tail(summaries, n = summaries_lengthdiff)
     report_mostrecent(summaries_mostrecent, summaries_lengthdiff)
+  } else if (n_updated > 0) {
+    cat("Inget att importera (", n_updated, " filnamn uppdaterade).\n", sep = "")
   }
 }
 
