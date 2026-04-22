@@ -8,6 +8,8 @@ from pathlib import Path
 
 import click
 
+from .git_utils import git_lock
+
 TRANING_ROOT = Path(__file__).resolve().parent.parent.parent
 CLI_R = TRANING_ROOT / "inst" / "cli.R"
 APP_DIR = TRANING_ROOT / "app" / "tRanat"
@@ -213,14 +215,15 @@ def fetch_health(server, inbox, days_back, fetch_all, dry_run, verbose):
 def _commit_data(data_dir, n: int) -> None:
     """Git add + commit new files in the data repo."""
     try:
-        subprocess.run(
-            ["git", "add", "kristian/filer/gconnect/", "kristian/filer/tcx/"],
-            cwd=data_dir, check=True, capture_output=True,
-        )
-        subprocess.run(
-            ["git", "commit", "-m", f"(import) Fetch {n} new activities from Garmin Connect"],
-            cwd=data_dir, check=True, capture_output=True,
-        )
+        with git_lock(data_dir):
+            subprocess.run(
+                ["git", "add", "kristian/filer/gconnect/", "kristian/filer/tcx/"],
+                cwd=data_dir, check=True, capture_output=True,
+            )
+            subprocess.run(
+                ["git", "commit", "-m", f"(import) Fetch {n} new activities from Garmin Connect"],
+                cwd=data_dir, check=True, capture_output=True,
+            )
         log.info("Committed %d new activities to data repo", n)
     except subprocess.CalledProcessError as e:
         log.warning("Git commit failed: %s", e.stderr.decode().strip())
