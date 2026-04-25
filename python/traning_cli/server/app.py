@@ -174,13 +174,15 @@ _pending_lock = threading.Lock()
 
 def _flush_pending_health() -> None:
     """Run the accumulated import. Called by the debounce timer."""
-    global _pending_timer
+    global _pending_timer, _last_import_ts, _last_import_files
     with _pending_lock:
         files = list(_pending_files)
         _pending_files.clear()
         _pending_timer = None
     if files:
         _import_and_notify(files, "health")
+        _last_import_ts = datetime.now()
+        _last_import_files = len(files)
 
 
 def _schedule_health_import(files: list[str]) -> None:
@@ -201,6 +203,8 @@ def _schedule_health_import(files: list[str]) -> None:
 _start_time = time.time()
 _last_received: datetime | None = None
 _total_received: int = 0
+_last_import_ts: datetime | None = None
+_last_import_files: int = 0
 
 
 def create_app() -> FastAPI:
@@ -219,10 +223,18 @@ def create_app() -> FastAPI:
 
     @application.get("/v1/status", dependencies=[Depends(require_api_key)])
     async def status():
+        with _pending_lock:
+            pending_count = len(_pending_files)
+            timer_armed = _pending_timer is not None
         return {
             "uptime_seconds": int(time.time() - _start_time),
             "last_received": _last_received.isoformat() if _last_received else None,
             "total_pushes": _total_received,
+            "last_import": _last_import_ts.isoformat() if _last_import_ts else None,
+            "last_import_files": _last_import_files,
+            "pending_files": pending_count,
+            "pending_timer_armed": timer_armed,
+            "debounce_seconds": _DEBOUNCE_SECS,
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])

@@ -160,6 +160,38 @@ to a per-session insight, not the daily digest. Their labels/units are
 kept in `health_export.R` for that future use. Unknown metrics default
 to tier 1.
 
+### Status endpoint
+
+`GET /v1/status` (API-key required) returns the receiver's runtime
+state — the canonical "did the import run?" diagnosis source now that
+empty-delta imports are silent:
+
+```json
+{
+  "uptime_seconds": 8421,
+  "last_received": "2026-04-25T22:09:17",
+  "total_pushes": 142,
+  "last_import": "2026-04-25T22:19:41",
+  "last_import_files": 19,
+  "pending_files": 0,
+  "pending_timer_armed": false,
+  "debounce_seconds": 600
+}
+```
+
+- `last_received` — most recent `POST /v1/health` or `/v1/workouts`.
+- `last_import` / `last_import_files` — when the last debounce flush
+  finished and how many files it covered. Updated for every flush,
+  including silent ones (empty delta).
+- `pending_files` / `pending_timer_armed` — current debounce window:
+  non-zero / true means new pushes have arrived and an import is
+  scheduled for `<= debounce_seconds` from `last_received`.
+- `debounce_seconds` — current value of `TRANING_HEALTH_DEBOUNCE`.
+
+If `last_import` is older than `last_received + debounce_seconds`,
+something blocked the flush (timer cancelled, R subprocess hung). In
+the normal case the gap is exactly the debounce window.
+
 ### Notification logging
 
 All notification events are logged to `$TRANING_DATA/logs/notifications.jsonl`
