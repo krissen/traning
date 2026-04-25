@@ -42,9 +42,10 @@ cmd_code() {
         /etc/systemd/system/ && \
         sudo systemctl daemon-reload"
 
-    _info "Restarting traning-receiver and traning-shiny ..."
+    _info "Restarting traning-receiver, traning-shiny, traning-vayu ..."
     ssh "$REMOTE" "sudo systemctl restart traning-receiver.service && \
-        sudo systemctl restart traning-shiny.service"
+        sudo systemctl restart traning-shiny.service && \
+        sudo systemctl restart traning-vayu.service"
 
     _info "Code deployed"
 }

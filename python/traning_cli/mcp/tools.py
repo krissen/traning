@@ -1,9 +1,11 @@
 """Vayu MCP tools — curated training analysis functions."""
 
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional
+
+import requests
 
 from .r_bridge import r_report, r_plot
 
@@ -694,6 +696,70 @@ def explain_metric(metric_name: str) -> dict:
         "details": defn,
         "_meta": {},
     }
+
+
+# ---------------------------------------------------------------------------
+# Pipeline status
+# ---------------------------------------------------------------------------
+
+def _cache_mtime(filename: str) -> Optional[str]:
+    """Return ISO timestamp of a cache file's mtime, or None if missing."""
+    data_dir = os.environ.get("TRANING_DATA")
+    if not data_dir:
+        return None
+    p = Path(data_dir) / "cache" / filename
+    if not p.exists():
+        return None
+    return datetime.fromtimestamp(p.stat().st_mtime).isoformat(timespec="seconds")
+
+
+def get_pipeline_status() -> dict:
+    """Pipeline status — was the latest sync read in?
+
+    Use this when the user asks whether automatic data ingestion is
+    working, especially when no notification appeared (which is normal
+    when the delta is empty under the new silent-on-noop behavior).
+
+    Returns receiver state from /v1/status (last_received, last_import,
+    pending debounce window) plus filesystem cross-check (cache mtimes
+    for the health and Garmin caches).
+
+    The receiver runs on the same host (kailash) and is queried via
+    localhost using the API key from the environment. If the receiver
+    is unreachable, the function still returns the cache mtimes plus
+    an `error` field.
+    """
+    receiver_url = os.environ.get(
+        "TRANING_RECEIVER_URL", "http://localhost:8421"
+    )
+    api_key = os.environ.get("TRANING_API_KEY")
+
+    receiver: dict = {}
+    error: Optional[str] = None
+
+    if not api_key:
+        error = "TRANING_API_KEY not set in environment"
+    else:
+        try:
+            r = requests.get(
+                f"{receiver_url}/v1/status",
+                headers={"X-API-Key": api_key},
+                timeout=3,
+            )
+            r.raise_for_status()
+            receiver = r.json()
+        except requests.RequestException as e:
+            error = f"receiver unreachable: {e}"
+
+    out: dict = {
+        "receiver": receiver,
+        "cache_health_daily": _cache_mtime("health_daily.RData"),
+        "cache_health_metrics_long": _cache_mtime("health_metrics_long.RData"),
+        "cache_summaries": _cache_mtime("summaries.RData"),
+    }
+    if error:
+        out["error"] = error
+    return out
 
 
 # ---------------------------------------------------------------------------

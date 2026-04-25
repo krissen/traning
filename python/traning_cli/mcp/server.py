@@ -41,6 +41,7 @@ mcp.tool()(tools.get_vo2max)
 mcp.tool()(tools.get_health_metric)
 mcp.tool()(tools.compare_periods)
 mcp.tool()(tools.explain_metric)
+mcp.tool()(tools.get_pipeline_status)
 
 # --- Register prompts ---
 mcp.prompt()(prompts.daglig_check)
