@@ -96,6 +96,114 @@ def canonicalize_metric(
     return changed
 
 
+# --- Legacy metric merge (sleep_analysis) -----------------------------------
+
+def _parse_legacy_filename(path: Path, metric_name: str) -> tuple[str, str] | None:
+    """Extract (first, last) date from a legacy metric filename.
+
+    Filenames look like ``{metric}_{first}_{last}.json``. Returns None if
+    the name does not match (e.g., a TCP-backfill file with a suffix).
+    """
+    stem = path.stem
+    prefix = f"{metric_name}_"
+    if not stem.startswith(prefix):
+        return None
+    rest = stem[len(prefix):]
+    parts = rest.rsplit("_", 1)
+    if len(parts) != 2:
+        return None
+    first, last = parts[0], parts[1]
+    if len(first) != 10 or len(last) != 10:
+        return None
+    return first, last
+
+
+def _save_legacy_metric(
+    metric_name: str,
+    units: str,
+    samples: list[dict],
+    metrics_dir: Path,
+) -> list[Path]:
+    """Merge incoming samples for a legacy metric (e.g., sleep_analysis).
+
+    HAE pushes vary in window size and date range. To prevent shrinking
+    pushes from overwriting larger prior files (which corrupted today's
+    sleep data), this:
+
+    1. Computes the new push's date range.
+    2. Reads samples from any existing legacy files whose filename-encoded
+       range overlaps the new push range.
+    3. Dedupes existing + new samples via ``_sample_key``.
+    4. Writes the merged set to a single file named after the merged range.
+    5. Removes the now-superseded overlapping files.
+
+    Non-overlapping files are left untouched.
+    """
+    dates = [s.get("date", s.get("startDate", ""))[:10]
+             for s in samples if s.get("date") or s.get("startDate")]
+    if not dates:
+        return []
+    push_first, push_last = min(dates), max(dates)
+
+    overlapping: list[tuple[Path, str, str]] = []
+    for f in metrics_dir.glob(f"{metric_name}_*.json"):
+        rng = _parse_legacy_filename(f, metric_name)
+        if rng is None:
+            continue  # skip files like sleep_analysis_tcp_*.json
+        f_first, f_last = rng
+        if f_first <= push_last and f_last >= push_first:
+            overlapping.append((f, f_first, f_last))
+
+    existing_samples: list[dict] = []
+    for f, _, _ in overlapping:
+        try:
+            with open(f) as fp:
+                doc = json.load(fp)
+            for m in doc.get("data", {}).get("metrics", []):
+                if m.get("name") == metric_name:
+                    existing_samples.extend(m.get("data", []))
+                    break
+        except (json.JSONDecodeError, OSError) as e:
+            log.warning("Kunde inte läsa befintlig %s: %s", f, e)
+
+    seen = {_sample_key(s) for s in existing_samples}
+    merged = list(existing_samples)
+    n_added = 0
+    for s in samples:
+        key = _sample_key(s)
+        if key not in seen:
+            seen.add(key)
+            merged.append(s)
+            n_added += 1
+
+    if not merged:
+        return []
+
+    merged_dates = [s.get("date", s.get("startDate", ""))[:10] for s in merged
+                    if s.get("date") or s.get("startDate")]
+    new_first, new_last = min(merged_dates), max(merged_dates)
+    new_path = metrics_dir / f"{metric_name}_{new_first}_{new_last}.json"
+
+    output = {"data": {"metrics": [
+        {"name": metric_name, "units": units, "data": merged}
+    ]}}
+    tmp_path = new_path.with_suffix(".json.tmp")
+    with open(tmp_path, "w") as fp:
+        json.dump(output, fp, ensure_ascii=False)
+    tmp_path.replace(new_path)
+
+    # Remove superseded overlapping files (skip the one we just wrote)
+    for f, _, _ in overlapping:
+        if f.resolve() != new_path.resolve() and f.exists():
+            f.unlink()
+
+    log.info("  %s: %d new + %d existing → %d total (legacy, range %s..%s, "
+             "consolidated %d file(s))",
+             metric_name, n_added, len(existing_samples), len(merged),
+             new_first, new_last, len(overlapping))
+    return [new_path]
+
+
 # --- Public API -------------------------------------------------------------
 
 def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, list[Path]]:
@@ -134,20 +242,8 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, 
         units = m.get("units", "")
 
         if name in _LEGACY_METRICS:
-            # Save in legacy metrics/ format (whole date range per file)
-            dates = [s.get("date", s.get("startDate", ""))[:10]
-                     for s in samples if s.get("date") or s.get("startDate")]
-            if not dates:
-                continue
-            first, last = min(dates), max(dates)
-            output = {"data": {"metrics": [
-                {"name": name, "units": units, "data": samples}
-            ]}}
-            filepath = metrics_dir / f"{name}_{first}_{last}.json"
-            with open(filepath, "w") as f:
-                json.dump(output, f, ensure_ascii=False)
-            all_changed.append(filepath)
-            log.info("  %s: %d samples (legacy)", name, len(samples))
+            changed = _save_legacy_metric(name, units, samples, metrics_dir)
+            all_changed.extend(changed)
         else:
             changed = canonicalize_metric(name, units, samples, data_dir)
             all_changed.extend(changed)
