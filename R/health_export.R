@@ -934,8 +934,16 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
 
 # Tier 1: rare metrics — always report any change
 .tier1_metrics <- c(
-  "vo2_max", "blood_oxygen_saturation", "cardio_recovery",
-  "respiratory_rate", "apple_sleeping_wrist_temperature",
+  "vo2_max", "blood_oxygen_saturation",
+  "respiratory_rate", "apple_sleeping_wrist_temperature"
+)
+
+# Workout-only metrics — recorded by the watch during a session, not daily
+# values. They belong to a per-session insight, not to the daily health
+# digest. health_insight_delta() skips these; future workout-insight code
+# can surface them. Labels/units below are kept for that future use.
+.pass_metrics <- c(
+  "cardio_recovery",
   "running_ground_contact_time", "running_power", "running_speed",
   "running_stride_length", "running_vertical_oscillation"
 )
@@ -1055,8 +1063,9 @@ health_insight_delta <- function(before, after) {
     m <- changed$metric[i]
     v <- changed$value[i]
 
-    # Tier 3: skip
+    # Tier 3 and per-session metrics: skip
     if (m %in% .tier3_metrics) next
+    if (m %in% .pass_metrics) next
 
     label <- if (m %in% names(.metric_labels)) .metric_labels[[m]] else m
     unit  <- if (m %in% names(.metric_units)) .metric_units[[m]] else ""

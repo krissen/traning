@@ -1,5 +1,25 @@
 # tRäning — Changelog
 
+## 2026-04-25 — Notification noise reduction
+
+Trim push notifications to the signals that carry information:
+- **Workouts** are saved silently. The receipt push (`Workouts: N
+  mottagna`) was pure ack noise; the downstream health delta is the
+  actual signal.
+- **Garmin chain** collapses into a single combined notification per
+  fetch. Was: trigger ack + import line + insight (3 pushes per run);
+  now: insight only for single-pass batches, "Import: N pass …"
+  prefixed for multi-pass batches.
+- **Health pushes** are debounced. Multiple HAE batches arriving within
+  `TRANING_HEALTH_DEBOUNCE` seconds (default 600) collapse into one
+  import and at most one notification. An empty delta produces no
+  notification (the old `"X filer importerade ✅"` fallback is gone).
+- **Pass-only metrics** (cardio recovery, ground contact, power, speed,
+  stride length, vertical oscillation) are no longer surfaced in the
+  daily health delta — they belong to a per-session insight that does
+  not yet exist. Labels/units are kept for that future use.
+- Error notifications (import MISSLYCKADES, timeouts) are unchanged.
+
 ## 2026-04-09 — Delta-based health insights, notification logging
 
 ### Delta-based health insights

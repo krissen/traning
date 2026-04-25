@@ -1,6 +1,7 @@
 """FastAPI application for receiving HAE health data."""
 
 import logging
+import os
 import subprocess
 import threading
 import time
@@ -19,8 +20,13 @@ log = logging.getLogger(__name__)
 _CLI_R = Path(__file__).resolve().parent.parent.parent.parent / "inst" / "cli.R"
 
 
-def _run_import_garmin():
-    """Run R import to rebuild Garmin summaries.RData cache."""
+def _run_import_garmin() -> tuple[str, str | None]:
+    """Run R import to rebuild Garmin summaries.RData cache.
+
+    Returns (summary, error). On success, summary is the human-readable
+    import line ("Import: 1 pass (22 apr), 6.5 km totalt.") or "klart".
+    On failure, error contains a short reason and summary is "".
+    """
     cmd = ["Rscript", str(_CLI_R), "--import"]
     t0 = time.time()
     try:
@@ -31,31 +37,24 @@ def _run_import_garmin():
         if result.returncode != 0:
             log.warning("Import garmin failed (%ds): %s",
                         elapsed, result.stderr.strip()[-300:])
-            msg = "Import garmin: MISSLYCKADES"
-            sent = notify("tRäning", msg)
-            log_notification("import", "tRäning", msg, sent)
-        else:
-            log.info("Import garmin OK (%ds)", elapsed)
-            lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
-            summary = "klart"
-            for line in reversed(lines):
-                low = line.lower()
-                if any(w in low for w in ["import", "inget att"]):
-                    summary = line.strip()
-                    break
-            msg = f"Import garmin: {summary}"
-            sent = notify("tRäning", msg)
-            log_notification("import", "tRäning", msg, sent)
+            return "", "MISSLYCKADES"
+        log.info("Import garmin OK (%ds)", elapsed)
+        lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
+        summary = "klart"
+        for line in reversed(lines):
+            low = line.lower()
+            if any(w in low for w in ["import", "inget att"]):
+                summary = line.strip()
+                break
+        return summary, None
     except subprocess.TimeoutExpired:
         elapsed = int(time.time() - t0)
         log.warning("Import garmin timed out after %ds", elapsed)
-        msg = f"Import garmin: timeout efter {elapsed // 60} min"
-        sent = notify("tRäning", msg)
-        log_notification("import", "tRäning", msg, sent)
+        return "", f"timeout efter {elapsed // 60} min"
 
 
-def _run_insight_garmin():
-    """Generate and send a short insight notification after Garmin import."""
+def _run_insight_garmin() -> str:
+    """Generate a short insight string from cached summaries. Returns "" on failure."""
     cmd = ["Rscript", "-e", (
         'devtools::load_all(".", quiet=TRUE); '
         'td <- Sys.getenv("TRANING_DATA"); '
@@ -63,34 +62,50 @@ def _run_insight_garmin():
         'file.path(td,"cache","myruns.RData")); '
         'cat(report_insight(tl[["summaries"]]))'
     )]
-
     try:
         result = subprocess.run(
             cmd, capture_output=True, text=True, timeout=120,
             cwd=str(_CLI_R.parent.parent),
         )
         if result.returncode == 0 and result.stdout.strip():
-            msg = result.stdout.strip()
-            sent = notify("tRäning", msg)
-            log_notification("insight_garmin", "tRäning", msg, sent)
-        else:
-            log.warning("Insight garmin failed: %s", result.stderr.strip()[-200:])
-            log_notification(
-                "insight_garmin", "tRäning", "(insight failed)",
-                False, error=result.stderr.strip()[-200:],
-            )
+            return result.stdout.strip()
+        log.warning("Insight garmin failed: %s", result.stderr.strip()[-200:])
+        return ""
     except subprocess.TimeoutExpired:
         log.warning("Insight garmin timed out")
-        log_notification(
-            "insight_garmin", "tRäning", "(insight timeout)", False,
-            error="timeout",
-        )
+        return ""
+
+
+def _compose_garmin_message(import_summary: str, insight: str) -> str:
+    """Combine the import summary and insight into one notification line.
+
+    For a single-pass import the summary duplicates the insight, so the
+    insight alone is used. For multi-pass batches the import line is kept
+    as a prefix to give the bulk context. Returns "" when there is nothing
+    informative to say (caller should skip the notification).
+    """
+    summary_low = import_summary.lower()
+    nothing_imported = (
+        not import_summary
+        or import_summary == "klart"
+        or "inget att" in summary_low
+    )
+    if not insight:
+        return "" if nothing_imported else import_summary
+    if nothing_imported or summary_low.startswith("import: 1 pass"):
+        return insight
+    return f"{import_summary} {insight}"
 
 _import_lock = threading.Lock()
 
 
 def _import_and_notify(files: list, kind: str = "health"):
-    """Import files via R, generate delta insight, always send notification."""
+    """Import files via R and notify only if there is something to report.
+
+    No notification when the delta insight is empty — silent success
+    avoids spamming "X filer importerade" when nothing meaningful changed.
+    Errors and timeouts always notify (and log).
+    """
     if not files:
         return
 
@@ -105,6 +120,7 @@ def _import_and_notify(files: list, kind: str = "health"):
         cmd = ["Rscript", "-e", r_expr]
         t0 = time.time()
         title = "tRäning"
+        message: str | None = None
 
         try:
             result = subprocess.run(
@@ -120,15 +136,19 @@ def _import_and_notify(files: list, kind: str = "health"):
             elif result.stdout.strip():
                 message = result.stdout.strip()
             else:
-                message = f"{len(files)} filer importerade \u2705"
+                log.info("Import+insight: no meaningful delta from %d files",
+                         len(files))
 
         except subprocess.TimeoutExpired:
             elapsed = int(time.time() - t0)
             log.warning("Import+insight timed out after %ds", elapsed)
             message = f"Hälsoimport: timeout efter {elapsed // 60} min"
-        except Exception as e:
+        except Exception:
             log.exception("Import+insight unexpected error")
             message = "Hälsoimport: oväntat fel"
+
+        if message is None:
+            return
 
         sent = notify(title, message)
         log_notification(
@@ -137,6 +157,44 @@ def _import_and_notify(files: list, kind: str = "health"):
             message=message,
             sent=sent,
         )
+
+
+# --- Debounced health import ------------------------------------------------
+#
+# HAE drops metrics in several batches across the day. Running the R import
+# (and notifying) on every push is noisy. We accumulate changed files in a
+# pending set and (re)start a debounce timer; the import runs once after the
+# pushes go quiet for a while.
+
+_DEBOUNCE_SECS = int(os.environ.get("TRANING_HEALTH_DEBOUNCE", "600"))
+_pending_files: set[str] = set()
+_pending_timer: threading.Timer | None = None
+_pending_lock = threading.Lock()
+
+
+def _flush_pending_health() -> None:
+    """Run the accumulated import. Called by the debounce timer."""
+    global _pending_timer
+    with _pending_lock:
+        files = list(_pending_files)
+        _pending_files.clear()
+        _pending_timer = None
+    if files:
+        _import_and_notify(files, "health")
+
+
+def _schedule_health_import(files: list[str]) -> None:
+    """Add files to the pending set and (re)start the debounce timer."""
+    global _pending_timer
+    if not files:
+        return
+    with _pending_lock:
+        _pending_files.update(files)
+        if _pending_timer is not None:
+            _pending_timer.cancel()
+        _pending_timer = threading.Timer(_DEBOUNCE_SECS, _flush_pending_health)
+        _pending_timer.daemon = True
+        _pending_timer.start()
 
 
 # Track state for /v1/status endpoint
@@ -168,7 +226,7 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])
-    async def receive_health(request: Request, background_tasks: BackgroundTasks):
+    async def receive_health(request: Request):
         global _last_received, _total_received
 
         try:
@@ -191,7 +249,7 @@ def create_app() -> FastAPI:
         n, changed_files = save_health_push(payload)
         if n > 0:
             commit_health_data(n_metrics=n)
-            background_tasks.add_task(_import_and_notify, changed_files, "health")
+            _schedule_health_import(changed_files)
 
         _last_received = datetime.now()
         _total_received += 1
@@ -206,7 +264,7 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/workouts", dependencies=[Depends(require_api_key)])
-    async def receive_workouts(request: Request, background_tasks: BackgroundTasks):
+    async def receive_workouts(request: Request):
         global _last_received, _total_received
 
         try:
@@ -228,9 +286,6 @@ def create_app() -> FastAPI:
         n = save_workout_push(payload)
         if n > 0:
             commit_health_data(n_workouts=n)
-            msg = f"Workouts: {n} mottagna"
-            sent = notify("tRäning", msg)
-            log_notification("workout", "tRäning", msg, sent)
 
         _last_received = datetime.now()
         _total_received += 1
@@ -251,15 +306,26 @@ def create_app() -> FastAPI:
                 [str(traning_bin), "fetch", "garmin"],
                 capture_output=True, text=True, timeout=120,
             )
-            if "fetched 0" not in result.stdout:
-                msg = f"Garmin fetch: {result.stdout.strip().splitlines()[-1]}"
-                sent = notify("tRäning", msg)
-                log_notification("garmin_trigger", "tRäning", msg, sent)
             log.info("Garmin fetch: %s", result.stdout.strip())
             if result.returncode != 0:
                 log.warning("Garmin fetch stderr: %s", result.stderr.strip())
-            _run_import_garmin()
-            _run_insight_garmin()
+
+            # No new activities → no notification, no re-import needed.
+            if "fetched 0" in result.stdout:
+                return
+
+            import_summary, import_error = _run_import_garmin()
+            if import_error:
+                msg = f"Garmin import: {import_error}"
+                sent = notify("tRäning", msg)
+                log_notification("garmin", "tRäning", msg, sent)
+                return
+
+            insight = _run_insight_garmin()
+            msg = _compose_garmin_message(import_summary, insight)
+            if msg:
+                sent = notify("tRäning", msg)
+                log_notification("garmin", "tRäning", msg, sent)
 
         background_tasks.add_task(_run_fetch)
         return {"status": "ok", "message": "Garmin fetch triggered"}

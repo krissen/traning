@@ -102,46 +102,63 @@ spurious fetches on sensor reconnect.
 
 ### Notification chain
 
-**Health data** — single delta-based notification per push:
+**Health data** — debounced, delta-based, silent on no-op:
 
 ```
 POST /v1/health
   → save + git commit (synchronous)
-  → background: _import_and_notify()
-    1. before = load_health_data()          # snapshot cache
-    2. after  = import_health_export(...)    # import new files
-    3. text   = health_insight_delta(before, after)  # compare
-    4. notify(text) or fallback message      # always sends
+  → _schedule_health_import(): add files to pending set, (re)arm timer
+  ...                          (more pushes extend the set, reset timer)
+  → after TRANING_HEALTH_DEBOUNCE seconds quiet (default 600):
+    _flush_pending_health() → _import_and_notify()
+      1. before = load_health_data()
+      2. after  = import_health_export(pending_files)
+      3. text   = health_insight_delta(before, after)
+      4. notify(text)  if text is non-empty; otherwise stay silent
 ```
+
+Multiple HAE batches that arrive within the debounce window collapse
+into one import and at most one notification. An empty delta produces
+no notification at all (silent success). Errors and timeouts always
+notify.
 
 Example notifications:
 - `"Hälsa 9 apr.: HRV 55 ms (-12 vs 7d), sömn 4.2 h (kort natt)"`
-- `"15 filer importerade, inga anmärkningsvärda ändringar"`
 - `"Hälsoimport: MISSLYCKADES (3s)"`
 
-Import + insight run in a single R process (atomic — the before/after
-comparison happens in the same session). A `threading.Lock` serializes
-concurrent pushes to avoid RData cache corruption.
+A `threading.Lock` serializes the import call to avoid RData cache
+corruption when the timer fires concurrently with anything else.
 
-**Garmin** — unchanged, multi-step:
+**Workouts** — saved silently. The downstream health-push delta is
+the actual signal; the workout receipt is not surfaced.
+
+**Garmin** — single combined notification per fetch:
 ```
-1. Trigger    "Garmin fetch triggered by Strava: ..."   (from HA)
-2. Fetch      "Garmin fetch: Fetched 1 new activities"  (from receiver)
-3. Import     "Import garmin: 1 workouts imported..."   (from _run_import)
-4. Insight    "Löpning 8.1 km, 5:00/km ..."             (from _run_insight)
+1. Fetch      (silent unless 0 new — then nothing fires)
+2. Import     captured as "Import: N pass (..., Y km totalt.)"
+3. Insight    captured as "Löpning K km, P/km, puls H. ..."
+4. Notify     one of:
+                insight only          (single-pass batch)
+                import + insight      (multi-pass batch)
+                import only           (insight failed)
+                "Garmin import: …"    (import failed/timed out)
 ```
 
 ### Metric tier classification
 
-The delta insight function classifies health metrics into three tiers:
+The delta insight function classifies health metrics:
 
 | Tier | Trigger | Metrics |
 |------|---------|---------|
-| 1 — rare, high signal | Any change | VO2max, SpO2, cardio recovery, respiratory rate, running biomechanics, wrist temp |
+| 1 — rare, high signal | Any change | VO2max, SpO2, respiratory rate, wrist temp |
 | 2 — daily, threshold | Significant vs 7d avg | HRV (>=5ms), resting HR (>=4bpm), sleep total (>=30min or <5h30), deep sleep (>=18min) |
+| Pass-only | Never (in daily delta) | Cardio recovery, running ground contact / power / speed / stride / vertical osc. |
 | 3 — noise, ignore | Never | Steps, energy, flights, heart rate, audio exposure, nutritional, etc. |
 
-Unknown metrics default to tier 1.
+Pass-only metrics are recorded by the watch during a session and belong
+to a per-session insight, not the daily digest. Their labels/units are
+kept in `health_export.R` for that future use. Unknown metrics default
+to tier 1.
 
 ### Notification logging
 
