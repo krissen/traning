@@ -754,8 +754,8 @@ def get_pipeline_status() -> dict:
     out: dict = {
         "receiver": receiver,
         "cache_health_daily": _cache_mtime("health_daily.RData"),
-        "cache_health_metrics_long": _cache_mtime("health_metrics_long.RData"),
         "cache_summaries": _cache_mtime("summaries.RData"),
+        "cache_myruns": _cache_mtime("myruns.RData"),
     }
     if error:
         out["error"] = error
