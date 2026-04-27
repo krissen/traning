@@ -287,7 +287,7 @@ save_resting_hr <- function(rhr_data, cache_path = NULL) {
     dir.create(cache_dir, recursive = TRUE)
     message("Created cache directory: ", cache_dir)
   }
-  save(rhr_data, file = cache_path)
+  save_atomic(rhr_data, file = cache_path)
   message("Resting HR cache saved to: ", cache_path)
   invisible(cache_path)
 }

@@ -354,7 +354,7 @@ load_garmin_json <- function(gc_dir,
   if (!file.exists(cache_path)) {
     # Cold start — read everything
     garmin_data <- import_garmin_json(gc_dir)
-    save(garmin_data, file = cache_path)
+    save_atomic(garmin_data, file = cache_path)
     return(garmin_data)
   }
 
@@ -407,6 +407,6 @@ load_garmin_json <- function(gc_dir,
             " aktiviteter (inga nya unika).")
   }
 
-  save(garmin_data, file = cache_path)
+  save_atomic(garmin_data, file = cache_path)
   garmin_data
 }

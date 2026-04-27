@@ -851,7 +851,7 @@ save_health_data <- function(health_daily, cache_path = NULL) {
   if (is.null(cache_path)) cache_path <- .hae_cache_path()
   cache_dir <- dirname(cache_path)
   if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
-  save(health_daily, file = cache_path)
+  save_atomic(health_daily, file = cache_path)
 }
 
 # --- Convenience accessors ----------------------------------------------------

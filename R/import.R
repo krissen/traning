@@ -24,8 +24,8 @@
 my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
   summaries <- dplyr::arrange(summaries, sessionStart)
   summaries <- dplyr::distinct(summaries, sessionStart, .keep_all = TRUE)
-  save(myruns, file = db_myruns)
-  save(summaries, file = db_summaries)
+  save_atomic(myruns, file = db_myruns)
+  save_atomic(summaries, file = db_summaries)
 }
 
 #' Load summaries and myruns from RData files

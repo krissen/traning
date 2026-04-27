@@ -507,7 +507,7 @@ load_zone_distribution <- function(summaries,
       vt1_pct       = vt1_pct,
       vt2_pct       = vt2_pct
     )
-    save(zone_cache, file = cache_path)
+    save_atomic(zone_cache, file = cache_path)
     message("Zoncache sparad: ", nrow(per_activity), " sessioner (per-sekund).")
   }
 

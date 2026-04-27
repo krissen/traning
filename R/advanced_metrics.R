@@ -918,7 +918,7 @@ load_decoupling <- function(summaries, myruns,
       smooth_window           = smooth_window,
       max_half_speed_diff_pct = max_half_speed_diff_pct
     )
-    save(decoupling_cache, file = cache_path)
+    save_atomic(decoupling_cache, file = cache_path)
     message("Decoupling-cache sparad: ", nrow(per_run), " sessioner.")
   }
 

@@ -142,6 +142,30 @@ save_table <- function(tbl, output = NULL, default_name = "table",
   invisible(output)
 }
 
+# --- Atomic save -------------------------------------------------------------
+
+#' Atomically save R objects to a file
+#'
+#' Wraps \code{base::save()} with a write-then-rename pattern so concurrent
+#' readers never observe a half-written file. Writes to \code{<file>.tmp} and
+#' then renames atomically (POSIX guarantee on the same filesystem). On rename
+#' failure the partial temp file is removed.
+#'
+#' @param ... Objects to save (passed through to \code{save()}).
+#' @param file Destination path.
+#' @param envir Environment to look up names in (default: caller).
+#' @return The destination path (invisibly).
+#' @export
+save_atomic <- function(..., file, envir = parent.frame()) {
+  tmp <- paste0(file, ".tmp.", Sys.getpid())
+  on.exit(if (file.exists(tmp)) unlink(tmp), add = TRUE)
+  save(..., file = tmp, envir = envir)
+  if (!file.rename(tmp, file)) {
+    stop("save_atomic: rename failed for ", file)
+  }
+  invisible(file)
+}
+
 # --- Utility -----------------------------------------------------------------
 
 #' Convert decimal minutes to M:SS format
