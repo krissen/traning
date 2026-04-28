@@ -36,6 +36,8 @@ _KNOWN_FUNCTIONS = frozenset({
     # Health plots
     "fetch.plot.resting_hr", "fetch.plot.hrv", "fetch.plot.sleep",
     "fetch.plot.vo2max", "fetch.plot.readiness_score",
+    # State-based health insights + data inspection
+    "health_insight_readiness", "recent_data_dump", "latest_known_metrics",
 })
 
 

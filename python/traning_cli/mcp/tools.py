@@ -7,7 +7,7 @@ from typing import Optional
 
 import requests
 
-from .r_bridge import r_report, r_plot
+from .r_bridge import _run_r, r_report, r_plot
 
 
 # ---------------------------------------------------------------------------
@@ -696,6 +696,92 @@ def explain_metric(metric_name: str) -> dict:
         "details": defn,
         "_meta": {},
     }
+
+
+# ---------------------------------------------------------------------------
+# Form / state-based insight + raw data inspection
+# ---------------------------------------------------------------------------
+
+def get_form(date: Optional[str] = None) -> dict:
+    """Today's form ("dagsform") in Swedish prose, with structured drivers.
+
+    Returns a state-based interpretation of today's readiness: status
+    (Grön/Gul/Röd), score (0-100), and what is driving it (sleep, HRV, RHR,
+    training load, wrist temp) — each with absolute value, delta vs the
+    natural baseline (7d for HRV/sleep, 30d for RHR, 14d for wrist temp),
+    and a flag indicating whether it pulls the form down.
+
+    Args:
+        date: ISO date (default = today). Pass an older date for historical
+              form, e.g. '2026-04-15'.
+    """
+    args: dict = {}
+    if date:
+        args["on_date"] = date
+    raw = _run_r("health_insight_readiness", args)
+    if raw.get("type") == "error":
+        return raw
+    payload = raw.get("data", {})
+    if not isinstance(payload, dict):
+        return {"type": "error", "message": "Unexpected form payload"}
+    return {
+        "schema_version": "1.0",
+        "summary": {
+            "status": "ok",
+            "datum": payload.get("datum"),
+            "form": payload.get("status"),
+            "score": payload.get("score"),
+            "kvalitet": payload.get("kvalitet"),
+            "prosa": payload.get("prosa") or "",
+        },
+        "details": payload.get("components") or {},
+        "_meta": {"func": "health_insight_readiness"},
+    }
+
+
+def get_recent_data(hours: int = 24) -> dict:
+    """All metrics, sessions and pushes seen in the last N hours.
+
+    Use as a "what do we know right now" dump. Note that health metric
+    values are stored at date resolution, so the metrics-side window is
+    rounded up to whole days; sessions and push events are timestamp-precise.
+
+    Args:
+        hours: Window size in hours (default 24).
+    """
+    raw = _run_r("recent_data_dump", {"hours": hours})
+    if raw.get("type") == "error":
+        return raw
+    payload = raw.get("data", {})
+    if not isinstance(payload, dict):
+        return {"type": "error", "message": "Unexpected recent-data payload"}
+    return {
+        "schema_version": "1.0",
+        "summary": {
+            "status": "ok",
+            "since": payload.get("since"),
+            "until": payload.get("until"),
+            "hours": payload.get("hours"),
+            "metric_count": len(payload.get("metrics") or {}),
+            "session_count": len(payload.get("sessions") or []),
+            "push_count": len(payload.get("last_pushes") or []),
+        },
+        "details": {
+            "metrics": payload.get("metrics") or {},
+            "sessions": payload.get("sessions") or [],
+            "last_pushes": payload.get("last_pushes") or [],
+        },
+        "_meta": {"func": "recent_data_dump"},
+    }
+
+
+def get_latest_known() -> dict:
+    """Latest known value per metric — useful as a data-quality check.
+
+    Returns one row per metric with the most recent date, value, and age in
+    hours. Sorted oldest → newest so any stale metrics surface at the top.
+    """
+    return r_report("latest_known_metrics", {})
 
 
 # ---------------------------------------------------------------------------

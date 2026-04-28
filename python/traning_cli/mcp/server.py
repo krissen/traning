@@ -42,6 +42,9 @@ mcp.tool()(tools.get_health_metric)
 mcp.tool()(tools.compare_periods)
 mcp.tool()(tools.explain_metric)
 mcp.tool()(tools.get_pipeline_status)
+mcp.tool()(tools.get_form)
+mcp.tool()(tools.get_recent_data)
+mcp.tool()(tools.get_latest_known)
 
 # --- Register prompts ---
 mcp.prompt()(prompts.daglig_check)

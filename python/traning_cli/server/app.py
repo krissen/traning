@@ -1,8 +1,10 @@
 """FastAPI application for receiving HAE health data."""
 
+import json
 import logging
 import os
 import subprocess
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -12,12 +14,21 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 
 from .auth import require_api_key
 from .notify import log_notification, notify
+from .state import (
+    load_notify_state,
+    mark_morning_sent,
+    mark_update_sent,
+    save_notify_state,
+)
 from .storage import commit_health_data, save_health_push, save_workout_push
 
 log = logging.getLogger(__name__)
 
-# Path to Rscript CLI
+# Path to Rscript CLI + notify helper
 _CLI_R = Path(__file__).resolve().parent.parent.parent.parent / "inst" / "cli.R"
+_NOTIFY_HELPER_R = (
+    Path(__file__).resolve().parent.parent.parent.parent / "inst" / "notify_helper.R"
+)
 
 
 def _run_import_garmin() -> tuple[str, str | None]:
@@ -100,63 +111,124 @@ _import_lock = threading.Lock()
 
 
 def _import_and_notify(files: list, kind: str = "health"):
-    """Import files via R and notify only if there is something to report.
+    """Import files via R and emit a state-aware notification.
 
-    No notification when the delta insight is empty — silent success
-    avoids spamming "X filer importerade" when nothing meaningful changed.
-    Errors and timeouts always notify (and log).
+    First flush of the day → readiness/state notification.
+    Subsequent flushes → silent unless an update trigger fires (re-render
+    after partial morning, or a tier-1 metric not yet reported).
+    Errors always notify.
     """
     if not files:
         return
 
     with _import_lock:
-        paths_str = ", ".join(f'"{f}"' for f in files)
-        r_expr = (
-            'devtools::load_all(".", quiet=TRUE); '
-            'before <- load_health_data(); '
-            f'after <- import_health_export(path = c({paths_str}), verbose = FALSE); '
-            'cat(health_insight_delta(before, after))'
-        )
-        cmd = ["Rscript", "-e", r_expr]
+        state = load_notify_state()
+
+        prev_path: str | None = None
+        if state.get("morning_sent"):
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False, encoding="utf-8"
+            ) as tf:
+                json.dump(state, tf, ensure_ascii=False)
+                prev_path = tf.name
+
+        cmd = [
+            "Rscript", str(_NOTIFY_HELPER_R),
+            f"--files={','.join(files)}",
+        ]
+        if prev_path:
+            cmd.append(f"--prev-state={prev_path}")
+
         t0 = time.time()
         title = "tRäning"
         message: str | None = None
+        result_dict: dict | None = None
+        trigger_label = (
+            "health_morning" if not state.get("morning_sent") else "health_update"
+        )
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=120,
+                cmd, capture_output=True, text=True, timeout=180,
                 cwd=str(_CLI_R.parent.parent),
             )
             elapsed = int(time.time() - t0)
 
             if result.returncode != 0:
-                log.warning("Import+insight failed (%ds): %s",
+                log.warning("notify_helper failed (%ds): %s",
                             elapsed, result.stderr.strip()[-300:])
                 message = f"Hälsoimport: MISSLYCKADES ({elapsed}s)"
-            elif result.stdout.strip():
-                message = result.stdout.strip()
             else:
-                log.info("Import+insight: no meaningful delta from %d files",
-                         len(files))
+                stdout = result.stdout.strip()
+                if not stdout:
+                    log.info("notify_helper: empty output (%ds)", elapsed)
+                else:
+                    try:
+                        result_dict = json.loads(stdout)
+                    except Exception:
+                        log.warning("notify_helper: failed to parse JSON: %.300s",
+                                    stdout)
+                    if result_dict:
+                        kind_field = result_dict.get("kind")
+                        if kind_field == "error":
+                            err = result_dict.get("error", "okänt fel")
+                            log.warning("notify_helper R error: %s", err)
+                            message = f"Hälsoimport: {err[:120]}"
+                        else:
+                            prosa = (result_dict.get("prosa") or "").strip()
+                            if prosa:
+                                message = prosa
+                            elif kind_field == "update":
+                                log.info(
+                                    "notify_helper: silent flush (no update trigger)"
+                                )
+                            else:
+                                log.info(
+                                    "notify_helper: empty readiness prose (no data)"
+                                )
 
         except subprocess.TimeoutExpired:
             elapsed = int(time.time() - t0)
-            log.warning("Import+insight timed out after %ds", elapsed)
+            log.warning("notify_helper timed out after %ds", elapsed)
             message = f"Hälsoimport: timeout efter {elapsed // 60} min"
         except Exception:
-            log.exception("Import+insight unexpected error")
+            log.exception("notify_helper unexpected error")
             message = "Hälsoimport: oväntat fel"
+        finally:
+            if prev_path:
+                try:
+                    os.unlink(prev_path)
+                except OSError:
+                    pass
 
         if message is None:
+            # Successful silent flush — nothing to send, log empty notification
+            log_notification(
+                trigger=trigger_label,
+                title=title,
+                message="",
+                sent=False,
+            )
             return
 
         sent = notify(title, message)
         log_notification(
-            trigger="health_push",
+            trigger=trigger_label,
             title=title,
             message=message,
             sent=sent,
         )
+
+        # Update state if R returned a structured result
+        if result_dict and result_dict.get("kind") in ("readiness", "update"):
+            try:
+                if result_dict.get("kind") == "readiness":
+                    mark_morning_sent(state, result_dict)
+                else:
+                    mark_update_sent(state, result_dict)
+                save_notify_state(state)
+            except Exception:
+                log.exception("notify_helper: failed to update notify state")
 
 
 # --- Debounced health import ------------------------------------------------

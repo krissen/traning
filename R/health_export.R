@@ -1117,3 +1117,534 @@ health_insight_delta <- function(before, after) {
   date_str <- format(focus_date, "%e %b") |> trimws()
   paste0("H\u00e4lsa ", date_str, ": ", paste(parts, collapse = ", "))
 }
+
+
+# --- Tillst\u00e5nds-baserad insight (state notification) -------------------------
+
+# Component spec used by the readiness/update insight functions:
+# label  = Swedish text
+# unit   = printed unit (no leading space)
+# fmt    = sprintf format for the numeric value
+# baseline_label = "vs 7d" / "vs normalt" / etc., printed alongside the delta
+.readiness_components <- list(
+  hrv = list(
+    label_neg = "svag HRV", label_pos = "stark HRV", label_ok = "HRV",
+    unit = "ms", fmt = "%.0f", baseline_label = "vs 7d"
+  ),
+  sleep = list(
+    label_neg = "kort s\u00f6mn", label_pos = "bra s\u00f6mn", label_ok = "s\u00f6mn",
+    unit = "h", fmt = "%.1f", baseline_label = "vs normalt"
+  ),
+  rhr = list(
+    label_neg = "f\u00f6rh\u00f6jd vilopuls", label_pos = "l\u00e5g vilopuls", label_ok = "vilopuls",
+    unit = "bpm", fmt = "%.0f", baseline_label = "vs baseline"
+  ),
+  load = list(
+    label_neg = "h\u00f6g belastning", label_pos = "l\u00e5g belastning", label_ok = "belastning",
+    unit = "", fmt = "%.1f", baseline_label = "TSB"
+  ),
+  wrist_temp = list(
+    label_neg = "f\u00f6rh\u00f6jd handledstemp", label_pos = "l\u00e5g handledstemp",
+    label_ok = "handledstemp",
+    unit = "\u00b0C", fmt = "%.1f", baseline_label = "vs 14d"
+  )
+)
+
+#' Pull today's readiness row + raw-value baselines for prose rendering
+#'
+#' Internal helper. Takes the same inputs as compute_readiness() but augments
+#' the latest day with raw HRV (ms) and a 7d HRV-ms baseline, plus the raw
+#' sleep 7d baseline. Returns NULL if no readiness row can be produced.
+#'
+#' @keywords internal
+.readiness_for_insight <- function(health_daily, summaries, on_date = NULL,
+                                    hr_max = NULL, hr_rest = NULL) {
+  if (is.null(health_daily) || nrow(health_daily) == 0) return(NULL)
+  r <- tryCatch(
+    compute_readiness(health_daily, summaries,
+                       hr_max = hr_max, hr_rest = hr_rest),
+    error = function(e) NULL
+  )
+  if (is.null(r) || nrow(r) == 0) return(NULL)
+
+  if (is.null(on_date)) on_date <- max(r$date)
+  on_date <- as.Date(on_date)
+  row <- r[r$date == on_date, , drop = FALSE]
+  if (nrow(row) == 0) return(NULL)
+
+  # Raw HRV in ms (prose uses ms, not ln_rmssd)
+  hrv_today <- health_daily |>
+    dplyr::filter(metric == "heart_rate_variability", date == on_date) |>
+    dplyr::pull(value)
+  hrv_today <- if (length(hrv_today) >= 1) mean(hrv_today, na.rm = TRUE) else NA_real_
+
+  hrv_7d <- health_daily |>
+    dplyr::filter(metric == "heart_rate_variability",
+                  date >= on_date - 7, date < on_date) |>
+    dplyr::pull(value)
+  hrv_7d_mean <- if (length(hrv_7d) >= 2) mean(hrv_7d, na.rm = TRUE) else NA_real_
+
+  # Raw sleep 7d mean
+  sleep_7d <- health_daily |>
+    dplyr::filter(metric == "sleep_totalSleep",
+                  date >= on_date - 7, date < on_date) |>
+    dplyr::pull(value)
+  sleep_7d_mean <- if (length(sleep_7d) >= 2) mean(sleep_7d, na.rm = TRUE) else NA_real_
+
+  list(
+    row = row,
+    hrv_ms = hrv_today,
+    hrv_ms_7d = hrv_7d_mean,
+    sleep_7d = sleep_7d_mean
+  )
+}
+
+#' Build component summary for prose rendering
+#'
+#' @keywords internal
+.readiness_component_summary <- function(ctx) {
+  row <- ctx$row
+  list(
+    hrv = list(
+      value = if (is.finite(ctx$hrv_ms)) round(ctx$hrv_ms, 0) else NA_real_,
+      delta = if (is.finite(ctx$hrv_ms) && is.finite(ctx$hrv_ms_7d))
+                round(ctx$hrv_ms - ctx$hrv_ms_7d, 0) else NA_real_,
+      flag  = isTRUE(row$hrv_flag),
+      score = row$hrv_score
+    ),
+    sleep = list(
+      value = if (is.finite(row$sleep_total)) round(row$sleep_total, 1) else NA_real_,
+      delta = if (is.finite(row$sleep_total) && is.finite(ctx$sleep_7d))
+                round(row$sleep_total - ctx$sleep_7d, 1) else NA_real_,
+      flag  = isTRUE(row$sleep_flag),
+      score = row$sleep_score
+    ),
+    rhr = list(
+      value = if (is.finite(row$resting_hr)) round(row$resting_hr, 0) else NA_real_,
+      delta = if (is.finite(row$rhr_deviation)) round(row$rhr_deviation, 1) else NA_real_,
+      flag  = isTRUE(row$rhr_flag),
+      score = row$rhr_score
+    ),
+    load = list(
+      value = if (is.finite(row$tsb)) round(row$tsb, 1) else NA_real_,
+      delta = NA_real_,
+      flag  = isTRUE(row$load_flag),
+      score = row$trimp_score
+    ),
+    wrist_temp = if ("wrist_temp" %in% names(row) && is.finite(row$wrist_temp)) {
+      list(
+        value = round(row$wrist_temp, 1),
+        delta = if (is.finite(row$wrist_temp_deviation))
+                  round(row$wrist_temp_deviation, 2) else NA_real_,
+        flag  = isTRUE(row$wrist_temp_flag),
+        score = row$wrist_temp_score
+      )
+    } else NULL
+  )
+}
+
+#' Render one component as Swedish prose with optional delta
+#'
+#' @keywords internal
+.render_component <- function(name, c, kind = c("neg", "pos", "ok")) {
+  kind <- match.arg(kind)
+  spec <- .readiness_components[[name]]
+  if (is.null(spec) || is.null(c) || is.na(c$value)) return(NA_character_)
+
+  # Load: always neutral label unless flagged. "L\u00e5g belastning" can mean rest,
+  # which doesn't necessarily warrant a positive callout.
+  if (name == "load" && kind != "neg") kind <- "ok"
+
+  label <- spec[[paste0("label_", kind)]]
+  unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
+  val_str <- sprintf(spec$fmt, c$value)
+
+  if (name == "load") {
+    sign_str <- if (!is.na(c$value) && c$value > 0) "+" else ""
+    return(paste0(label, " (", spec$baseline_label, " ", sign_str, val_str, ")"))
+  }
+
+  # Drop the "vs Xd" suffix when delta rounds to zero \u2014 adds no information
+  delta_meaningful <- !is.na(c$delta) &&
+    abs(c$delta) >= switch(name, hrv = 1, sleep = 0.1, rhr = 0.5,
+                            wrist_temp = 0.05, 0)
+  if (delta_meaningful) {
+    sign_str <- if (c$delta > 0) "+" else ""
+    paste0(label, " (", val_str, unit_str, ", ", sign_str,
+           sprintf(spec$fmt, c$delta), " ", spec$baseline_label, ")")
+  } else {
+    paste0(label, " (", val_str, unit_str, ")")
+  }
+}
+
+#' Generate state-based health insight notification
+#'
+#' Produces Swedish prose describing today's readiness state and the components
+#' driving it (good or bad). Output is suitable for a morning notification.
+#'
+#' @param health_daily Long-format tibble from \code{load_health_data()}.
+#' @param summaries Garmin summaries.
+#' @param hr_max,hr_rest Optional overrides for HRmax / HRrest.
+#' @param on_date Date to render (default = latest in health_daily).
+#' @return A list with elements: \code{prosa} (character, possibly ""),
+#'   \code{datum} (Date), \code{status} (character), \code{score} (numeric),
+#'   \code{kvalitet} (character), \code{components} (named list of per-metric
+#'   value/delta/flag/score), \code{components_present} (named logical for
+#'   notify-state tracking).
+#' @export
+health_insight_readiness <- function(health_daily, summaries,
+                                      hr_max = NULL, hr_rest = NULL,
+                                      on_date = NULL) {
+  ctx <- .readiness_for_insight(health_daily, summaries, on_date,
+                                 hr_max, hr_rest)
+  if (is.null(ctx)) {
+    return(list(prosa = "", datum = NA, status = NA_character_,
+                score = NA_real_, kvalitet = NA_character_,
+                components = list(), components_present = list()))
+  }
+  row <- ctx$row
+  comps <- .readiness_component_summary(ctx)
+
+  date_str <- format(row$date, "%e %b") |> trimws() |> sub("\\.$", "", x = _)
+  status <- row$readiness_status
+  score <- if (is.finite(row$readiness_score)) round(row$readiness_score, 0) else NA_real_
+  kvalitet <- row$data_quality
+
+  # Header
+  if (!is.na(status) && !is.na(score)) {
+    header <- paste0("H\u00e4lsa ", date_str, " \u2014 ", status, " ", score)
+    if (isTRUE(kvalitet %in% c("partial", "minimal"))) {
+      missing <- character()
+      if (is.na(comps$hrv$value))   missing <- c(missing, "HRV")
+      if (is.na(comps$sleep$value)) missing <- c(missing, "s\u00f6mn")
+      if (is.na(comps$rhr$value))   missing <- c(missing, "vilopuls")
+      if (length(missing) > 0) {
+        header <- paste0(header, " (", kvalitet, ", ",
+                          paste(missing, collapse = "/"), " saknas \u00e4n)")
+      } else {
+        header <- paste0(header, " (", kvalitet, ")")
+      }
+    }
+    header <- paste0(header, ".")
+  } else {
+    # No score computable; degrade gracefully
+    header <- paste0("H\u00e4lsa ", date_str, " \u2014 otillr\u00e4ckligt underlag.")
+  }
+
+  # Drar ner: flagged components
+  drar_ner <- character()
+  for (name in names(comps)) {
+    c <- comps[[name]]
+    if (!is.null(c) && isTRUE(c$flag) && !is.na(c$value)) {
+      drar_ner <- c(drar_ner, .render_component(name, c, "neg"))
+    }
+  }
+
+  # OK: present, not-flagged components, ordered by importance
+  ok_parts <- character()
+  for (name in c("hrv", "sleep", "rhr", "load", "wrist_temp")) {
+    c <- comps[[name]]
+    if (!is.null(c) && !isTRUE(c$flag) && !is.na(c$value)) {
+      kind <- if (!is.na(c$score) && c$score >= 80) "pos" else "ok"
+      ok_parts <- c(ok_parts, .render_component(name, c, kind))
+    }
+  }
+
+  parts <- c(header)
+  if (length(drar_ner) > 0)
+    parts <- c(parts, paste0("Drar ner: ", paste(drar_ner, collapse = ", "), "."))
+  if (length(ok_parts) > 0)
+    parts <- c(parts, paste0("OK: ", paste(ok_parts, collapse = ", "), "."))
+
+  prosa <- paste(parts, collapse = " ")
+
+  components_present <- list(
+    hrv        = !is.na(comps$hrv$value),
+    sleep      = !is.na(comps$sleep$value),
+    rhr        = !is.na(comps$rhr$value),
+    load       = !is.na(comps$load$value),
+    wrist_temp = !is.null(comps$wrist_temp) && !is.na(comps$wrist_temp$value)
+  )
+
+  list(
+    prosa              = prosa,
+    datum              = row$date,
+    status             = status,
+    score              = score,
+    kvalitet           = kvalitet,
+    components         = comps,
+    components_present = components_present
+  )
+}
+
+# Tier-1 metric thresholds for afternoon update notifications. Delta is
+# computed against the 7d rolling mean; abs(delta) >= threshold triggers.
+.tier1_update_thresholds <- list(
+  vo2_max                          = 0.5,
+  apple_sleeping_wrist_temperature = 0.4,
+  respiratory_rate                 = 2,
+  blood_oxygen_saturation          = 2
+)
+
+#' Determine whether a follow-up notification is warranted
+#'
+#' Compares today's readiness state against \code{prev_state} (the morning
+#' notification snapshot from \code{.notify_state.json}) and decides whether
+#' something has materially changed.
+#'
+#' Triggers (in order):
+#' \enumerate{
+#'   \item Morning was partial/minimal AND a previously missing component is
+#'         now present → re-render today's state.
+#'   \item A tier-1 metric (VO2max, wrist temp, respiratory rate, SpO2) has a
+#'         new value not yet reported, with abs(delta vs 7d-mean) above
+#'         threshold.
+#' }
+#'
+#' Empty string = no notification.
+#'
+#' @param health_daily Long-format tibble.
+#' @param summaries Garmin summaries.
+#' @param prev_state List parsed from \code{.notify_state.json} (or NULL).
+#' @param hr_max,hr_rest Optional overrides.
+#' @param on_date Date to evaluate (default = latest).
+#' @return List with \code{prosa} (character, possibly ""),
+#'   \code{trigger} (character: "rerender" / "tier1" / ""),
+#'   plus the same fields as \code{health_insight_readiness} when re-rendering.
+#' @export
+health_insight_update <- function(health_daily, summaries, prev_state,
+                                   hr_max = NULL, hr_rest = NULL,
+                                   on_date = NULL) {
+  empty <- list(prosa = "", trigger = "", datum = NA, status = NA_character_,
+                score = NA_real_, kvalitet = NA_character_,
+                components = list(), components_present = list(),
+                tier1_metric = NA_character_)
+
+  if (is.null(prev_state) || is.null(prev_state$date)) return(empty)
+  current <- health_insight_readiness(health_daily, summaries,
+                                       hr_max, hr_rest, on_date)
+  if (is.na(current$datum)) return(empty)
+
+  prev_date <- as.Date(prev_state$date)
+  if (current$datum != prev_date) return(empty)  # different day → caller handles
+
+  # --- Trigger 1: re-render after partial morning -------------------------
+  was_partial <- isTRUE(prev_state$morning_kvalitet %in% c("partial", "minimal"))
+  if (was_partial) {
+    prev_present <- prev_state$morning_components %||% list()
+    new_keys <- character()
+    for (k in names(current$components_present)) {
+      now <- isTRUE(current$components_present[[k]])
+      then <- isTRUE(prev_present[[k]])
+      if (now && !then) new_keys <- c(new_keys, k)
+    }
+    if (length(new_keys) > 0) {
+      date_str <- format(current$datum, "%e %b") |> trimws() |> sub("\\.$", "", x = _)
+      added_parts <- character()
+      for (k in new_keys) {
+        c <- current$components[[k]]
+        spec <- .readiness_components[[k]]
+        if (!is.null(c) && !is.na(c$value) && !is.null(spec)) {
+          unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
+          added_parts <- c(added_parts,
+                            paste0(spec$label_ok, " ",
+                                   sprintf(spec$fmt, c$value), unit_str))
+        }
+      }
+      transition <- ""
+      prev_status <- prev_state$morning_status
+      prev_score  <- prev_state$morning_score
+      if (!is.null(prev_status) && !is.na(current$status) &&
+          length(prev_status) == 1 && !is.na(prev_status)) {
+        if (prev_status != current$status ||
+            (!is.null(prev_score) && length(prev_score) == 1 &&
+             !is.na(prev_score) && abs(prev_score - current$score) >= 5)) {
+          transition <- paste0(" ", prev_status, " ", prev_score,
+                                " ⇒ ", current$status, " ", current$score, ".")
+        } else {
+          transition <- paste0(" ", current$status, " ", current$score, ".")
+        }
+      }
+      prosa <- paste0("Hälsa ", date_str, " — uppdaterad: ",
+                      paste(added_parts, collapse = ", "), ".",
+                      transition)
+      out <- current
+      out$prosa <- prosa
+      out$trigger <- "rerender"
+      out$tier1_metric <- NA_character_
+      return(out)
+    }
+  }
+
+  # --- Trigger 2: tier-1 metric not yet reported --------------------------
+  already_sent <- prev_state$afternoon_updates_sent %||% character()
+  for (m in names(.tier1_update_thresholds)) {
+    if (m %in% already_sent) next
+    today <- health_daily |>
+      dplyr::filter(metric == m, date == current$datum) |>
+      dplyr::pull(value)
+    if (length(today) == 0 || all(is.na(today))) next
+    val <- mean(today, na.rm = TRUE)
+    hist <- health_daily |>
+      dplyr::filter(metric == m,
+                    date >= current$datum - 7, date < current$datum) |>
+      dplyr::pull(value)
+    if (length(hist) < 2) next
+    avg7d <- mean(hist, na.rm = TRUE)
+    delta <- val - avg7d
+    if (!is.finite(delta) || abs(delta) < .tier1_update_thresholds[[m]]) next
+
+    label <- if (m %in% names(.metric_labels)) .metric_labels[[m]] else m
+    unit  <- if (m %in% names(.metric_units))  .metric_units[[m]]  else ""
+    unit_str <- if (nzchar(unit)) paste0(" ", unit) else ""
+    sign_str <- if (delta > 0) "+" else ""
+    prosa <- paste0(toupper(substr(label, 1, 1)), substr(label, 2, nchar(label)),
+                    " ", round(val, 1), unit_str,
+                    " (", sign_str, round(delta, 1), " vs 7d).")
+    out <- current
+    out$prosa <- prosa
+    out$trigger <- "tier1"
+    out$tier1_metric <- m
+    return(out)
+  }
+
+  # Nothing to say
+  empty$datum <- current$datum
+  empty
+}
+
+# Null-coalescing helper
+`%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
+
+
+# --- Vayu data-inspection helpers --------------------------------------------
+
+#' Recent data dump for the last N hours
+#'
+#' Returns all health metrics and Garmin sessions in the recent window,
+#' plus the last push entries from \code{notifications.jsonl}. Designed for
+#' the Vayu MCP \code{get_recent_data} tool — gives the model a structured
+#' snapshot of what we know right now.
+#'
+#' @param health_daily Long-format tibble.
+#' @param summaries Garmin summaries.
+#' @param hours Window size in hours (default 24).
+#' @return A list with: \code{since}, \code{until}, \code{metrics} (named list,
+#'   one entry per metric with date/value points), \code{sessions} (data
+#'   frame), \code{last_pushes} (data frame from notifications.jsonl, may be
+#'   empty).
+#' @export
+recent_data_dump <- function(health_daily, summaries, hours = 24) {
+  now <- Sys.time()
+  cutoff_ts <- now - hours * 3600
+  cutoff_date <- as.Date(cutoff_ts)
+
+  # Health metrics — date-resolution only (not timestamped per row)
+  recent_h <- health_daily |>
+    dplyr::filter(date >= cutoff_date) |>
+    dplyr::arrange(metric, date)
+  metrics <- list()
+  if (nrow(recent_h) > 0) {
+    by_metric <- split(recent_h[, c("date", "value")], recent_h$metric)
+    for (m in names(by_metric)) {
+      df <- by_metric[[m]]
+      metrics[[m]] <- list(
+        date  = format(df$date, "%Y-%m-%d"),
+        value = round(df$value, 3)
+      )
+    }
+  }
+
+  # Sessions — sessionStart is timestamped
+  sess_cols <- c("sessionStart", "sport", "duration", "distance",
+                 "avgPace", "avgHeartRate")
+  available <- intersect(sess_cols, names(summaries))
+  sessions <- summaries
+  if ("sessionStart" %in% names(sessions)) {
+    sessions <- sessions[as.POSIXct(sessions$sessionStart) >= cutoff_ts, ,
+                          drop = FALSE]
+    if (length(available) > 0 && nrow(sessions) > 0) {
+      sessions <- sessions[, available, drop = FALSE]
+    }
+  } else {
+    sessions <- sessions[0, , drop = FALSE]
+  }
+
+  # Last pushes — read from notifications.jsonl if present
+  last_pushes <- .read_recent_pushes(cutoff_ts)
+
+  list(
+    since       = format(cutoff_ts, "%Y-%m-%dT%H:%M:%S"),
+    until       = format(now, "%Y-%m-%dT%H:%M:%S"),
+    hours       = hours,
+    metrics     = metrics,
+    sessions    = sessions,
+    last_pushes = last_pushes
+  )
+}
+
+#' Latest known value per metric
+#'
+#' Per-metric most recent value, with timestamp and age in hours. Sorted from
+#' oldest to newest so any data-quality gaps surface at the top.
+#'
+#' @param health_daily Long-format tibble.
+#' @return Tibble with columns metric, date, value, age_hours.
+#' @export
+latest_known_metrics <- function(health_daily) {
+  if (nrow(health_daily) == 0) {
+    return(tibble::tibble(metric = character(), date = as.Date(character()),
+                          value = numeric(), age_hours = numeric()))
+  }
+  now <- Sys.time()
+  health_daily |>
+    dplyr::filter(!is.na(value)) |>
+    dplyr::group_by(metric) |>
+    dplyr::summarise(
+      date  = max(date),
+      value = round(value[which.max(date)], 3),
+      .groups = "drop"
+    ) |>
+    dplyr::mutate(
+      age_hours = round(
+        as.numeric(difftime(now, as.POSIXct(date), units = "hours")), 1
+      )
+    ) |>
+    dplyr::arrange(date)
+}
+
+#' Read recent push events from notifications.jsonl
+#' @keywords internal
+.read_recent_pushes <- function(cutoff_ts) {
+  data_dir <- Sys.getenv("TRANING_DATA", "")
+  empty <- tibble::tibble(ts = character(), trigger = character(),
+                          title = character(), sent = logical())
+  if (data_dir == "") return(empty)
+  log_path <- file.path(data_dir, "logs", "notifications.jsonl")
+  if (!file.exists(log_path)) return(empty)
+  lines <- tryCatch(readLines(log_path, warn = FALSE),
+                     error = function(e) character())
+  if (length(lines) == 0) return(empty)
+  # Tail efficiently: only consider the last N lines, recent ones at end
+  tail_lines <- utils::tail(lines, 200)
+  parsed <- lapply(tail_lines, function(ln) {
+    tryCatch(jsonlite::fromJSON(ln), error = function(e) NULL)
+  })
+  parsed <- parsed[!vapply(parsed, is.null, logical(1))]
+  if (length(parsed) == 0) return(empty)
+  df <- do.call(rbind, lapply(parsed, function(x) {
+    data.frame(
+      ts      = x$ts %||% NA_character_,
+      trigger = x$trigger %||% NA_character_,
+      title   = x$title %||% NA_character_,
+      sent    = isTRUE(x$sent),
+      stringsAsFactors = FALSE
+    )
+  }))
+  df <- df[!is.na(df$ts), , drop = FALSE]
+  if (nrow(df) == 0) return(empty)
+  df$ts_parsed <- as.POSIXct(df$ts, format = "%Y-%m-%dT%H:%M:%S")
+  df <- df[!is.na(df$ts_parsed) & df$ts_parsed >= cutoff_ts, , drop = FALSE]
+  df$ts_parsed <- NULL
+  tibble::as_tibble(df)
+}

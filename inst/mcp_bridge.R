@@ -66,6 +66,10 @@ func_registry <- list(
   # Health reports
   report_readiness       = "sh",
   report_metric          = "h",
+  health_insight_readiness = "sh",
+  health_insight_update    = "sh",
+  recent_data_dump         = "sh",
+  latest_known_metrics     = "h",
   # Basic plots (summaries only)
   plot_monthtop          = "s",
   plot_runs_month        = "s",
@@ -223,6 +227,30 @@ build_call_args <- function(func_name, func_args) {
   }
   if (func_name %in% c("fetch.plot.hrv", "fetch.plot.sleep",
                         "report_metric")) {
+    a <- c(list(health_daily = health_daily), a)
+  }
+
+  # New health-insight + data-dump functions
+  if (func_name %in% c("health_insight_readiness", "recent_data_dump")) {
+    a <- c(list(health_daily = health_daily, summaries = summaries), a)
+    if (func_name == "recent_data_dump" && !is.null(func_args$hours)) {
+      a$hours <- as.numeric(func_args$hours)
+    }
+    if (func_name == "health_insight_readiness" &&
+        !is.null(func_args$on_date)) {
+      a$on_date <- as.Date(func_args$on_date)
+    }
+  }
+  if (func_name == "health_insight_update") {
+    a <- c(list(health_daily = health_daily, summaries = summaries), a)
+    if (!is.null(func_args$prev_state)) {
+      a$prev_state <- func_args$prev_state
+    }
+    if (!is.null(func_args$on_date)) {
+      a$on_date <- as.Date(func_args$on_date)
+    }
+  }
+  if (func_name == "latest_known_metrics") {
     a <- c(list(health_daily = health_daily), a)
   }
 
