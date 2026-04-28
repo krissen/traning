@@ -1309,11 +1309,17 @@ health_insight_readiness <- function(health_daily, summaries,
   score <- if (is.finite(row$readiness_score)) round(row$readiness_score, 0) else NA_real_
   kvalitet <- row$data_quality
 
-  # Header \u2014 "Dagsform <Status> <score>." (date is implicit; the iPhone push
-  # carries its own timestamp). On partial/minimal quality we list the
-  # missing inputs so the user knows what's still pending.
+  # Header \u2014 "Dagsform <ball> <Status> <score>." (date is implicit; the
+  # iPhone push carries its own timestamp). Coloured ball matches the
+  # Status word so the state is readable at a glance.
+  ball <- switch(status %||% "",
+                 "Gr\u00f6n" = "\U0001F7E2",
+                 "Gul"  = "\U0001F7E1",
+                 "R\u00f6d"  = "\U0001F534",
+                 "")
   if (!is.na(status) && !is.na(score)) {
-    header <- paste0("Dagsform ", status, " ", score)
+    header <- paste0("Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
+                      status, " ", score)
     if (isTRUE(kvalitet %in% c("partial", "minimal"))) {
       missing <- character()
       if (is.na(comps$hrv$value))   missing <- c(missing, "HRV")
