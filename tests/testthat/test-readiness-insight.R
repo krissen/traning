@@ -60,7 +60,7 @@ test_that("health_insight_readiness returns prosa with status and score", {
   expect_type(res, "list")
   expect_true("prosa" %in% names(res))
   expect_true("components_present" %in% names(res))
-  expect_true(grepl("Hälsa", res$prosa))
+  expect_true(grepl("Dagsform", res$prosa))
   # Header includes one of the status strings
   expect_true(grepl("Grön|Gul|Röd", res$prosa))
 })

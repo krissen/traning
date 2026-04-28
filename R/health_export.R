@@ -1305,14 +1305,15 @@ health_insight_readiness <- function(health_daily, summaries,
   row <- ctx$row
   comps <- .readiness_component_summary(ctx)
 
-  date_str <- format(row$date, "%e %b") |> trimws() |> sub("\\.$", "", x = _)
   status <- row$readiness_status
   score <- if (is.finite(row$readiness_score)) round(row$readiness_score, 0) else NA_real_
   kvalitet <- row$data_quality
 
-  # Header
+  # Header \u2014 "Dagsform <Status> <score>." (date is implicit; the iPhone push
+  # carries its own timestamp). On partial/minimal quality we list the
+  # missing inputs so the user knows what's still pending.
   if (!is.na(status) && !is.na(score)) {
-    header <- paste0("H\u00e4lsa ", date_str, " \u2014 ", status, " ", score)
+    header <- paste0("Dagsform ", status, " ", score)
     if (isTRUE(kvalitet %in% c("partial", "minimal"))) {
       missing <- character()
       if (is.na(comps$hrv$value))   missing <- c(missing, "HRV")
@@ -1328,7 +1329,7 @@ health_insight_readiness <- function(health_daily, summaries,
     header <- paste0(header, ".")
   } else {
     # No score computable; degrade gracefully
-    header <- paste0("H\u00e4lsa ", date_str, " \u2014 otillr\u00e4ckligt underlag.")
+    header <- "Dagsform \u2014 otillr\u00e4ckligt underlag."
   }
 
   # Drar ner: flagged components
@@ -1439,7 +1440,6 @@ health_insight_update <- function(health_daily, summaries, prev_state,
       if (now && !then) new_keys <- c(new_keys, k)
     }
     if (length(new_keys) > 0) {
-      date_str <- format(current$datum, "%e %b") |> trimws() |> sub("\\.$", "", x = _)
       added_parts <- character()
       for (k in new_keys) {
         c <- current$components[[k]]
@@ -1465,7 +1465,7 @@ health_insight_update <- function(health_daily, summaries, prev_state,
           transition <- paste0(" ", current$status, " ", current$score, ".")
         }
       }
-      prosa <- paste0("Hälsa ", date_str, " — uppdaterad: ",
+      prosa <- paste0("Dagsform uppdaterad: ",
                       paste(added_parts, collapse = ", "), ".",
                       transition)
       out <- current
