@@ -1575,6 +1575,13 @@ recent_data_dump <- function(health_daily, summaries, hours = 24) {
   } else {
     sessions <- sessions[0, , drop = FALSE]
   }
+  # difftime columns (e.g. duration, avgPace from trackeR) don't serialize
+  # to JSON — coerce to numeric in their stored units.
+  for (col in names(sessions)) {
+    if (inherits(sessions[[col]], "difftime")) {
+      sessions[[col]] <- as.numeric(sessions[[col]])
+    }
+  }
 
   # Last pushes — read from notifications.jsonl if present
   last_pushes <- .read_recent_pushes(cutoff_ts)
