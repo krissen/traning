@@ -23,7 +23,14 @@
 #' @export
 my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
   summaries <- dplyr::arrange(summaries, sessionStart)
-  summaries <- dplyr::distinct(summaries, sessionStart, .keep_all = TRUE)
+  # Dedup within a source (exact-second match). Cross-source dedup runs
+  # at import time (with a tolerance window) — see import_hae_workouts().
+  if ("source" %in% names(summaries)) {
+    summaries <- dplyr::distinct(summaries, sessionStart, source,
+                                 .keep_all = TRUE)
+  } else {
+    summaries <- dplyr::distinct(summaries, sessionStart, .keep_all = TRUE)
+  }
   save_atomic(myruns, file = db_myruns)
   save_atomic(summaries, file = db_summaries)
 }
@@ -48,6 +55,12 @@ my_dbs_load <- function(db_summaries, db_myruns) {
   # Strip trackeRdataSummary class — its [ method conflicts with dplyr
   if (inherits(summaries, "trackeRdataSummary")) {
     class(summaries) <- "data.frame"
+  }
+
+  # Backfill source column for caches predating multi-source support.
+  if (is.data.frame(summaries) && nrow(summaries) > 0 &&
+      !"source" %in% names(summaries)) {
+    summaries$source <- "tcx"
   }
 
   my_templist <- list()
@@ -138,9 +151,13 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       # its [ method conflicts with dplyr::mutate() and causes
       # row expansion (1 row becomes 28)
       run_summary <- add_my_columns(run_summary)
-      summaries <- rbind(summaries, run_summary,
-                         deparse.level = 0,
-                         make.row.names = FALSE)
+      run_summary$source <- "tcx"
+      # If summaries is empty we may not yet have the same columns; align.
+      if (nrow(summaries) == 0) {
+        summaries <- run_summary
+      } else {
+        summaries <- .rbind_align(summaries, run_summary)
+      }
       existing_basenames <- c(existing_basenames, basename(thefile))
       existing_starts <- c(existing_starts, ss)
       n_imported <- n_imported + 1
@@ -201,6 +218,10 @@ repair_myruns <- function(files, summaries, myruns, verbose = FALSE) {
       message("  ", idx, " / ", n_null, " ...")
     }
 
+    # HAE rows have no on-disk TCX to re-parse; skip silently.
+    if ("source" %in% names(summaries) &&
+        isTRUE(summaries$source[i] == "hae")) next
+
     summary_file <- summaries$file[i]
     if (is.na(summary_file) || nchar(summary_file) == 0) {
       n_no_file <- n_no_file + 1L
@@ -255,7 +276,10 @@ repair_myruns_hr <- function(files, summaries, myruns, verbose = FALSE) {
   file_basenames <- basename(files)
 
   # Find sessions with summary HR but no per-second HR
+  has_source <- "source" %in% names(summaries)
   problem_indices <- which(vapply(seq_len(n_summaries), function(i) {
+    # HAE rows have no on-disk TCX to re-parse; skip.
+    if (has_source && isTRUE(summaries$source[i] == "hae")) return(FALSE)
     has_summary_hr <- !is.na(summaries$avgHeartRateMoving[[i]]) &&
                       as.numeric(summaries$avgHeartRateMoving[[i]]) > 0
     if (!has_summary_hr) return(FALSE)

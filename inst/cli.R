@@ -194,6 +194,30 @@ if (do_import) {
   myruns <- my_templist[["myruns"]]
   n_updated <- my_templist[["n_updated"]]
   rm(my_templist)
+
+  # Then import HAE workouts (Apple Watch via Health Auto Export)
+  hae_workouts_dir <- file.path(Sys.getenv("TRANING_DATA"),
+                                "kristian", "health_export", "workouts")
+  if (dir.exists(hae_workouts_dir)) {
+    hae_res <- import_hae_workouts(hae_workouts_dir, summaries, myruns,
+                                   verbose = do_verbose)
+    summaries <- hae_res$summaries
+    myruns <- hae_res$myruns
+    if (hae_res$n_imported > 0 || hae_res$n_skipped_dup > 0) {
+      cat("HAE-workouts: ", hae_res$n_imported, " importerade, ",
+          hae_res$n_skipped_dup, " deduppade mot Garmin",
+          if (hae_res$n_skipped_invalid > 0)
+            paste0(", ", hae_res$n_skipped_invalid, " ogiltiga") else "",
+          "\n", sep = "")
+      if (hae_res$n_imported > 0 && length(hae_res$by_sport) > 0) {
+        cat("  per sport: ",
+            paste(names(hae_res$by_sport), hae_res$by_sport,
+                  sep = "=", collapse = ", "),
+            "\n", sep = "")
+      }
+    }
+  }
+
   summaries_newlength <- dplyr::count(summaries)
   summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
 
