@@ -212,6 +212,51 @@ def fetch_health(server, inbox, days_back, fetch_all, dry_run, verbose):
         click.echo("Ingen ny hälsodata hittades")
 
 
+@fetch.command(name="workouts")
+@click.option("--since", default="2014-01-01",
+              help="Start date YYYY-MM-DD (default: 2014-01-01, earliest AW data)")
+@click.option("--until", default=None,
+              help="End date YYYY-MM-DD (default: today)")
+@click.option("--no-metadata", is_flag=True,
+              help="Skip avgHR/heartRateData (smaller, faster, no PMC effect)")
+@click.option("--aggregation", default="minutes",
+              type=click.Choice(["minutes", "seconds"]),
+              help="HR sample granularity (default: minutes)")
+@click.option("--dry-run", is_flag=True,
+              help="Count what would be written without writing")
+@click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
+def fetch_workouts(since, until, no_metadata, aggregation, dry_run, verbose):
+    """Pull historical workouts from HAE TCP server month by month."""
+    from .garmin.utils import get_data_dir, setup_logging
+    from .health import check_server
+    from .health.workouts_tcp import fetch_workouts_tcp
+
+    setup_logging(verbose=verbose)
+
+    try:
+        data_dir = get_data_dir()
+    except (EnvironmentError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+
+    if not check_server():
+        raise click.ClickException("HAE-server inte nåbar — starta appen i förgrunden")
+
+    counts = fetch_workouts_tcp(
+        start_date=since, end_date=until, data_dir=data_dir,
+        dry_run=dry_run,
+        include_metadata=not no_metadata,
+        metadata_aggregation=aggregation,
+    )
+
+    action = "would write" if dry_run else "wrote"
+    click.echo(
+        f"Workouts: {action} {counts['new']} new, "
+        f"{counts['existing']} already on disk, "
+        f"{counts['empty_chunks']} empty months, "
+        f"{counts['failed_chunks']} failed chunks"
+    )
+
+
 def _commit_data(data_dir, n: int) -> None:
     """Git add + commit new files in the data repo."""
     try:
