@@ -110,7 +110,12 @@
 #' @keywords internal
 .filter_sport <- function(summaries, sport = "running") {
   buckets <- .resolve_sport_bucket(sport)
+  # NULL = caller asked for all sports (no filter).
   if (is.null(buckets)) return(summaries)
+  # character(0) = the input was non-NULL but resolved to no recognisable
+  # sport (e.g. "", NA, c()).  Treat as "no matching sport" and return an
+  # empty frame — never silently pass through, which would corrupt totals.
+  if (length(buckets) == 0) return(summaries[0, , drop = FALSE])
   if (!"sport" %in% names(summaries)) return(summaries[0, , drop = FALSE])
   matches <- Reduce(`|`, lapply(buckets, function(b) {
     stringr::str_detect(summaries$sport, stringr::fixed(b))

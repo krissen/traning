@@ -92,6 +92,17 @@ test_that(".filter_sport returns empty data frame when sport column missing", {
   expect_equal(nrow(result), 0)
 })
 
+test_that(".filter_sport returns empty (not pass-through) for blank/NA input", {
+  # Regression: previously sport="" or sport=NA_character_ resolved to
+  # character(0), Reduce produced NULL, and dplyr::filter with NULL was a
+  # silent pass-through that returned every row.  Only NULL / "all" / "any"
+  # are documented as "no filter".
+  df <- .fixture()
+  expect_equal(nrow(traning:::.filter_sport(df, "")), 0)
+  expect_equal(nrow(traning:::.filter_sport(df, NA_character_)), 0)
+  expect_equal(nrow(traning:::.filter_sport(df, c(NA_character_, ""))), 0)
+})
+
 test_that(".filter_sport handles values containing regex metacharacters", {
   # Regression: previously buckets were concatenated into a regex pattern
   # without escaping, so values like "running (treadmill)" would be parsed
