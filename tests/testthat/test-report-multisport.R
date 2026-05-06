@@ -86,18 +86,24 @@ test_that("report_runs_year_month returns sessions for any sport", {
   expect_equal(nrow(result), 4)
 })
 
-test_that("report_insight returns text even for non-running sport", {
+test_that("report_insight uses sport-neutral labels", {
   df <- .multisport_summaries()
-  txt <- report_insight(df, sport = "cycling")
-  # Should not crash; should return some prose containing distance
-  expect_type(txt, "character")
-  expect_true(nchar(txt) > 0)
-  expect_false(identical(txt, "Ingen löpdata."))
+  # Cycling should produce "Cykling …", not "Löpning …"
+  txt_cyk <- report_insight(df, sport = "cycling")
+  expect_match(txt_cyk, "^Cykling ")
+  expect_false(grepl("Löpning", txt_cyk))
+
+  # Walking should produce "Gång …"
+  txt_gng <- report_insight(df, sport = "walking")
+  expect_match(txt_gng, "^Gång ")
+
+  # Default still says "Löpning" (back-compat)
+  txt_run <- report_insight(df)
+  expect_match(txt_run, "^Löpning ")
 })
 
 test_that("report_insight handles unknown sport gracefully", {
   df <- .multisport_summaries()
   txt <- report_insight(df, sport = "fictional_sport_xyz")
-  # No matching rows → fallback message
-  expect_type(txt, "character")
+  expect_equal(txt, "Ingen data.")
 })

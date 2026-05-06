@@ -5,6 +5,38 @@
 # a ``sport`` argument; this resolves it to a vector of bucket names and
 # filters ``summaries`` accordingly.
 
+# Swedish display labels for the most common sport buckets, used in
+# user-facing prose (push notifications, headers).  Falls back to a
+# generic "Aktivitet" when an unmapped value is passed.
+.SPORT_LABELS_SV <- list(
+  "running"      = "Löpning",
+  "cycling"      = "Cykling",
+  "walking"      = "Gång",
+  "swimming"     = "Simning",
+  "strength"     = "Styrketräning",
+  "karntraning"  = "Kärnträning",
+  "ovrigt"       = "Aktivitet",
+  "endurance"    = "Konditionspass",
+  "ballsport"    = "Bollsport",
+  "wintersport"  = "Vintersport",
+  "gym"          = "Gymträning"
+)
+
+#' Swedish display label for a sport bucket
+#'
+#' Used in user-facing prose like push notifications.
+#' @keywords internal
+.sport_label_sv <- function(sport) {
+  if (is.null(sport) || length(sport) == 0) return("Aktivitet")
+  if (length(sport) > 1) return("Aktivitet")
+  if (identical(sport, "all") || identical(sport, "any")) return("Aktivitet")
+  s_lower <- tolower(sport)
+  label <- .SPORT_LABELS_SV[[s_lower]]
+  if (!is.null(label)) return(label)
+  # Fallback: capitalize first letter of the raw value
+  paste0(toupper(substr(s_lower, 1, 1)), substr(s_lower, 2, nchar(s_lower)))
+}
+
 # Curated sport buckets — group several raw sport values under one label.
 .SPORT_BUCKETS <- list(
   endurance = c("running", "cycling", "walking", "swimming"),
@@ -66,10 +98,10 @@
 #' "running")}.  When \code{sport} is \code{NULL} or \code{"all"}, returns
 #' summaries unchanged.
 #'
-#' Matching is done with \code{stringr::str_detect()} so that sport values
-#' like \code{"trail running"} or \code{"running (treadmill)"} still match
-#' \code{"running"}.  Raw HAE values like \code{"cycling"}, \code{"walking"},
-#' \code{"strength"} match exactly.
+#' Each bucket is matched as a literal substring (via
+#' \code{stringr::fixed()}), so values like \code{"trail running"} or
+#' \code{"running (treadmill)"} still match \code{"running"} without
+#' interpreting parentheses or other regex metacharacters.
 #'
 #' @param summaries Data frame with a \code{sport} column.
 #' @param sport Character (scalar or vector) — see
@@ -80,6 +112,8 @@
   buckets <- .resolve_sport_bucket(sport)
   if (is.null(buckets)) return(summaries)
   if (!"sport" %in% names(summaries)) return(summaries[0, , drop = FALSE])
-  pattern <- paste(buckets, collapse = "|")
-  dplyr::filter(summaries, stringr::str_detect(sport, pattern))
+  matches <- Reduce(`|`, lapply(buckets, function(b) {
+    stringr::str_detect(summaries$sport, stringr::fixed(b))
+  }))
+  dplyr::filter(summaries, matches)
 }

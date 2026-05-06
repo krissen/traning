@@ -91,3 +91,36 @@ test_that(".filter_sport returns empty data frame when sport column missing", {
   result <- traning:::.filter_sport(df, "running")
   expect_equal(nrow(result), 0)
 })
+
+test_that(".filter_sport handles values containing regex metacharacters", {
+  # Regression: previously buckets were concatenated into a regex pattern
+  # without escaping, so values like "running (treadmill)" would be parsed
+  # as a regex group and fail to match a literal label.
+  df <- data.frame(
+    sport = c("running (treadmill)", "running", "cycling.indoor",
+              "swimming|open"),
+    stringsAsFactors = FALSE
+  )
+  # "running" should match both literal "running" and the parenthesised one
+  expect_equal(nrow(traning:::.filter_sport(df, "running")), 2)
+  # "cycling.indoor" must match a sport with a literal dot
+  expect_equal(nrow(traning:::.filter_sport(df, "cycling.indoor")), 1)
+  # Pipe character is regex alternation; must be matched literally
+  expect_equal(nrow(traning:::.filter_sport(df, "swimming|open")), 1)
+})
+
+test_that(".sport_label_sv returns Swedish display labels", {
+  expect_equal(traning:::.sport_label_sv("running"), "Löpning")
+  expect_equal(traning:::.sport_label_sv("cycling"), "Cykling")
+  expect_equal(traning:::.sport_label_sv("walking"), "Gång")
+  expect_equal(traning:::.sport_label_sv("swimming"), "Simning")
+  expect_equal(traning:::.sport_label_sv("strength"), "Styrketräning")
+})
+
+test_that(".sport_label_sv falls back gracefully", {
+  expect_equal(traning:::.sport_label_sv(NULL), "Aktivitet")
+  expect_equal(traning:::.sport_label_sv("all"), "Aktivitet")
+  expect_equal(traning:::.sport_label_sv(c("running", "cycling")), "Aktivitet")
+  # Unknown sport: capitalize first letter
+  expect_equal(traning:::.sport_label_sv("yoga"), "Yoga")
+})

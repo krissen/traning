@@ -25,10 +25,11 @@ report_mostrecent <- function(summaries, n_imported) {
 #' @return Character string (one line).
 #' @export
 report_insight <- function(summaries, sport = "running") {
+  label <- .sport_label_sv(sport)
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::arrange(sessionStart)
 
-  if (nrow(runs) == 0) return("Ingen l\u00f6pdata.")
+  if (nrow(runs) == 0) return("Ingen data.")
 
   latest <- utils::tail(runs, 1)
   km <- round(as.numeric(latest$distance) / 1000, 1)
@@ -42,7 +43,7 @@ report_insight <- function(summaries, sport = "running") {
       sessionStart < latest$sessionStart
     )
 
-  base <- paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr)
+  base <- paste0(label, " ", km, " km, ", pace, "/km, puls ", hr)
 
   # Find something positive to highlight
   positive <- NULL
