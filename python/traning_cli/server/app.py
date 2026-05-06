@@ -333,7 +333,9 @@ def create_app() -> FastAPI:
         n, changed_files = save_health_push(payload)
         if n > 0:
             commit_health_data(n_metrics=n)
-            _schedule_health_import(changed_files)
+            # save_health_push returns Path objects; downstream join + R CLI
+            # need plain strings.
+            _schedule_health_import([str(f) for f in changed_files])
 
         _last_received = datetime.now()
         _total_received += 1
