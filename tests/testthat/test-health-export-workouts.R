@@ -134,26 +134,28 @@ test_that("import_hae_workouts dedups against TCX with same sport", {
   expect_equal(nrow(res$summaries), 1)  # unchanged
 })
 
-test_that("import_hae_workouts keeps HAE row if sport differs", {
+test_that("import_hae_workouts dedups across sport buckets too", {
+  # Apple Watch sometimes labels a slow jog as "Utomhus Gång" while Garmin
+  # records it as running.  Dedup is time-only; sport mismatch must not
+  # cause the duplicate row to slip through.
   tmp <- withr::local_tempdir()
-  .write_hae(tmp, "cyk1", "2026-04-06 15:44:30 +0200",
-             "Utomhus Cykling", distance_km = 12.0, duration_s = 1800)
+  .write_hae(tmp, "gng1", "2026-04-06 15:44:30 +0200",
+             "Utomhus Gång", distance_km = 12.0, duration_s = 1800)
 
   summaries <- data.frame(
     sessionStart = as.POSIXct("2026-04-06 15:44:06 +0200",
                               format = "%Y-%m-%d %H:%M:%S %z", tz = "UTC"),
     sport = "running",
-    distance = 8050,
+    distance = 12050,
     file = "20260406-running.tcx",
     source = "tcx",
     stringsAsFactors = FALSE
   )
 
   res <- import_hae_workouts(tmp, summaries, list())
-  expect_equal(res$n_imported, 1)
-  expect_equal(res$n_skipped_dup, 0)
-  expect_equal(nrow(res$summaries), 2)
-  expect_equal(res$summaries$sport[2], "cycling")
+  expect_equal(res$n_imported, 0)
+  expect_equal(res$n_skipped_dup, 1)
+  expect_equal(nrow(res$summaries), 1)
 })
 
 test_that("import_hae_workouts keeps HAE row if Garmin is far away in time", {

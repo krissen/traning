@@ -125,8 +125,11 @@ parse_hae_workout <- function(path) {
 #' \enumerate{
 #'   \item filename already imported (matched via `file = "hae:<basename>"`)
 #'   \item a Garmin (`source == "tcx"`) row exists within
-#'     `tolerance_seconds` of the HAE `sessionStart` AND covers the same
-#'     sport bucket — Garmin wins, HAE row is skipped.
+#'     `tolerance_seconds` of the HAE `sessionStart` — Garmin wins, HAE
+#'     row is skipped.  Sport is **not** required to match, since two
+#'     different activities at the same instant aren't a realistic case
+#'     and the sport label sometimes disagrees between Garmin and AW
+#'     (e.g. a slow jog logged as "walking" by AW).
 #' }
 #' `myruns` receives `NULL` placeholders so positional alignment with
 #' `summaries` is preserved.
@@ -171,12 +174,10 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
 
   # Garmin TCX rows for cross-source dedup
   tcx_starts <- as.POSIXct(character(0))
-  tcx_sports <- character(0)
-  if (all(c("source", "sessionStart", "sport") %in% names(summaries)) &&
+  if (all(c("source", "sessionStart") %in% names(summaries)) &&
       nrow(summaries) > 0) {
     is_tcx <- !is.na(summaries$source) & summaries$source == "tcx"
     tcx_starts <- summaries$sessionStart[is_tcx]
-    tcx_sports <- summaries$sport[is_tcx]
   }
 
   by_sport <- integer(0)
@@ -196,11 +197,11 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       next
     }
 
-    # Cross-source dedup
+    # Cross-source dedup (time-only — sport label may disagree).
     if (length(tcx_starts) > 0) {
-      dt <- abs(as.numeric(difftime(tcx_starts, row$sessionStart, units = "secs")))
-      same_sport <- tcx_sports == row$sport
-      hit <- which(dt < tolerance_seconds & same_sport)
+      dt <- abs(as.numeric(difftime(tcx_starts, row$sessionStart,
+                                    units = "secs")))
+      hit <- which(dt < tolerance_seconds)
       if (length(hit) > 0) {
         result$n_skipped_dup <- result$n_skipped_dup + 1L
         if (verbose) {
