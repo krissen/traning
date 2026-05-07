@@ -152,8 +152,9 @@ test_that("sport_bucket_names returns curated buckets plus 'all'", {
   for (name in names(traning:::.SPORT_BUCKETS)) {
     expect_true(name %in% out, info = paste("missing bucket:", name))
   }
-  # And the "all" sentinel must be the last entry (or at least present)
-  expect_true("all" %in% out)
+  # The "all" sentinel must be the trailing entry — callers (e.g.
+  # the Shiny dropdown) treat it as a reliable last-position default.
+  expect_equal(tail(out, 1), "all")
 })
 
 test_that("filter_sport (exported) matches .filter_sport (internal)", {

@@ -671,11 +671,32 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #' @export
 compute_decoupling <- function(summaries, myruns,
                                min_duration_min        = 45,
-                               max_pace_min_km         = 5.0,
+                               max_pace_min_km         = NULL,
                                warmup_sec              = 600L,
                                smooth_window           = 30L,
                                max_half_speed_diff_pct = 10,
                                sport                   = "running") {
+  # Sport-aware default for the pace ceiling. The filter keeps
+  # sessions whose pace is *slower* than max_pace_min_km (i.e. it
+  # excludes fast efforts/intervals). The 5.0 min/km default is tuned
+  # for running easy-pace; on cycling/walking that filter rejects
+  # every session because their typical pace is much faster than 5
+  # min/km. When the caller doesn't override, pick a threshold that
+  # keeps steady-state easy work in scope while still excluding hard
+  # efforts.
+  if (is.null(max_pace_min_km)) {
+    max_pace_min_km <- switch(
+      sport,
+      running  = 5.0,   # excludes tempo/intervals
+      cycling  = 1.5,   # excludes fast cycling intervals (~< 1:30/km)
+      walking  = 6.0,   # excludes runs misclassified as walking
+      swimming = 15.0,  # excludes fast pool sets
+      # Curated buckets and 'all': permissive default so a mixed-sport
+      # selection doesn't silently drop everything below the running
+      # threshold.
+      15.0
+    )
+  }
   empty <- tibble::tibble(
     sessionStart       = as.Date(character(0)),
     distance_km        = numeric(0),
