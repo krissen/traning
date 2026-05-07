@@ -107,3 +107,39 @@ test_that("report_insight handles unknown sport gracefully", {
   txt <- report_insight(df, sport = "fictional_sport_xyz")
   expect_equal(txt, "Ingen data.")
 })
+
+test_that("report_insight does not crash when latest pace is NA", {
+  # Regression: strength/gym sessions and HAE rows without HR data leave
+  # avgPaceMoving as NA; previously dec_to_mmss(NA) raised
+  # "missing value where TRUE/FALSE needed".
+  df <- data.frame(
+    sessionStart = as.POSIXct(c("2026-01-10", "2026-01-12"), tz = "UTC"),
+    sport = c("strength", "strength"),
+    distance = c(0, 0),
+    avgPaceMoving = c(NA_real_, NA_real_),
+    avgHeartRateMoving = c(NA_real_, NA_real_),
+    durationMoving = as.difftime(c(45, 50), units = "mins"),
+    stringsAsFactors = FALSE
+  )
+  txt <- report_insight(df, sport = "strength")
+  expect_type(txt, "character")
+  expect_true(nchar(txt) > 0)
+  # No "NA/km" fragment — pace is omitted when missing
+  expect_false(grepl("NA/km", txt))
+  expect_false(grepl("puls NA", txt))
+})
+
+test_that("report_insight handles partial NA (HR present, pace absent)", {
+  df <- data.frame(
+    sessionStart = as.POSIXct(c("2026-01-10"), tz = "UTC"),
+    sport = "strength",
+    distance = 0,
+    avgPaceMoving = NA_real_,
+    avgHeartRateMoving = 130,
+    durationMoving = as.difftime(45, units = "mins"),
+    stringsAsFactors = FALSE
+  )
+  txt <- report_insight(df, sport = "strength")
+  expect_match(txt, "puls 130")
+  expect_false(grepl("/km", txt))
+})

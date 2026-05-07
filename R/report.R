@@ -33,8 +33,8 @@ report_insight <- function(summaries, sport = "running") {
 
   latest <- utils::tail(runs, 1)
   km <- round(as.numeric(latest$distance) / 1000, 1)
-  pace <- dec_to_mmss(as.numeric(latest$avgPaceMoving))
-  hr <- round(as.numeric(latest$avgHeartRateMoving), 0)
+  pace_val <- as.numeric(latest$avgPaceMoving)
+  hr_val <- as.numeric(latest$avgHeartRateMoving)
 
   # Compare to current month average
   this_month <- runs %>%
@@ -43,22 +43,39 @@ report_insight <- function(summaries, sport = "running") {
       sessionStart < latest$sessionStart
     )
 
-  base <- paste0(label, " ", km, " km, ", pace, "/km, puls ", hr)
+  # Build the base sentence \u2014 pace and HR are optional. Strength/gym
+  # sessions and HAE rows without HR data leave these as NA, in which
+  # case we omit the corresponding fragment rather than print "NA/km".
+  parts <- paste0(label, " ", km, " km")
+  if (!is.na(pace_val)) {
+    parts <- paste0(parts, ", ", dec_to_mmss(pace_val), "/km")
+  }
+  if (!is.na(hr_val)) {
+    parts <- paste0(parts, ", puls ", round(hr_val, 0))
+  }
+  base <- parts
 
   # Find something positive to highlight
   positive <- NULL
 
-  if (nrow(this_month) >= 2) {
+  if (nrow(this_month) >= 2 && !is.na(pace_val)) {
     avg_pace <- mean(as.numeric(this_month$avgPaceMoving), na.rm = TRUE)
     avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
-    diff_sec <- (as.numeric(latest$avgPaceMoving) - avg_pace) * 60
+    diff_sec <- if (is.na(avg_pace)) NA_real_ else (pace_val - avg_pace) * 60
 
-    if (diff_sec < -5) {
+    if (!is.na(diff_sec) && diff_sec < -5) {
       # Faster than average
       positive <- paste0("Snabbare \u00e4n m\u00e5nadens snitt (",
                          dec_to_mmss(avg_pace), ")")
-    } else if (km > avg_km * 1.1) {
+    } else if (!is.na(avg_km) && km > avg_km * 1.1) {
       # Longer than average
+      positive <- paste0("L\u00e4ngre \u00e4n m\u00e5nadens snitt (",
+                         round(avg_km, 1), " km)")
+    }
+  } else if (nrow(this_month) >= 2) {
+    # Pace unavailable (e.g. strength) \u2014 compare distance only.
+    avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
+    if (!is.na(avg_km) && km > avg_km * 1.1) {
       positive <- paste0("L\u00e4ngre \u00e4n m\u00e5nadens snitt (",
                          round(avg_km, 1), " km)")
     }
