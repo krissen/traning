@@ -71,15 +71,26 @@ sport_label <- function(sport) {
 #'
 #' Returns the canonical sport-column values that belong to a given
 #' curated bucket (\code{"endurance"}, \code{"ballsport"},
-#' \code{"wintersport"}, \code{"gym"}). For convenience, a direct
-#' sport name (e.g. \code{"running"}) returns itself, and
-#' \code{"all"}/\code{NULL} returns \code{NULL} (no member list — caller
-#' should treat as "no bucket scoping").
+#' \code{"wintersport"}, \code{"gym"}).
+#'
+#' Accepts (case-insensitive):
+#' \itemize{
+#'   \item Curated bucket names — returns the bucket's member sports.
+#'   \item Direct sport names — returns the sport itself
+#'     (\code{"running"} → \code{"running"}).
+#'   \item Swedish aliases — resolves to the canonical English value
+#'     (\code{"cykling"} → \code{"cycling"}, \code{"löpning"} →
+#'     \code{"running"}; full mapping in \code{.SPORT_ALIASES}).
+#'   \item \code{"all"} / \code{"any"} / \code{NULL} — returns
+#'     \code{NULL} (no member list; callers should treat as "no bucket
+#'     scoping").
+#' }
 #'
 #' Provided so UI code (Shiny pages, prompt builders) doesn't have to
 #' reach into the non-exported \code{.SPORT_BUCKETS} list.
 #'
-#' @param bucket Character scalar — bucket name, sport name, or "all".
+#' @param bucket Character scalar — bucket name, sport name, Swedish
+#'   alias, or "all".
 #' @return Character vector of canonical sport values, or \code{NULL}
 #'   for \code{"all"} / \code{NULL}.
 #' @export
