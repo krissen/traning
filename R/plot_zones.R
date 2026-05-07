@@ -33,8 +33,10 @@
 #' @return ggplot2 object.
 #' @export
 fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
-                                by = "monthly", zone_data = NULL) {
-  if (is.null(zone_data)) zone_data <- compute_zone_distribution(summaries)
+                                by = "monthly", zone_data = NULL,
+                                sport = "running") {
+  if (is.null(zone_data))
+    zone_data <- compute_zone_distribution(summaries, sport = sport)
 
   span_days <- .compute_span_days(from, to)
 

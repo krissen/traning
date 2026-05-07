@@ -355,6 +355,8 @@ report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
 #' @param n Number of rows to show (default 28). Ignored when from/to given.
 #' @param from Date or NULL. Start of display window (inclusive).
 #' @param to Date or NULL. End of display window (exclusive).
+#' @param sport Sport bucket (default \code{"running"}). Forwarded to the
+#'   underlying \code{compute_*} call. See \code{\link{.filter_sport}}.
 #' @return Tibble
 #' @export
 report_ef <- function(summaries, n = 28, from = NULL, to = NULL,

@@ -26,6 +26,14 @@ test_that("dec_to_mmss does not crash on integer overflow", {
   expect_equal(dec_to_mmss(.Machine$integer.max), "—")
 })
 
+test_that("dec_to_mmss rejects vector input explicitly", {
+  # Was a silent failure mode before: is.na(c(1,NA)) returns
+  # c(FALSE,TRUE) and the if-clause warns instead of producing useful
+  # output.  Now an explicit error so callers must aggregate first.
+  expect_error(dec_to_mmss(c(5.0, 5.5)), "scalar")
+  expect_error(dec_to_mmss(c(NA_real_, 1.0)), "scalar")
+})
+
 test_that("save_atomic writes file readable by load()", {
   tmp <- tempfile(fileext = ".RData")
   on.exit(unlink(tmp), add = TRUE)

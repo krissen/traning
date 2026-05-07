@@ -21,8 +21,9 @@
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_monthtop <- function(summaries, from = NULL, to = NULL) {
-  data <- report_monthtop(summaries, from = from, to = to)
+plot_monthtop <- function(summaries, from = NULL, to = NULL,
+                          sport = "running") {
+  data <- report_monthtop(summaries, from = from, to = to, sport = sport)
 
   data %>%
     dplyr::mutate(
@@ -55,8 +56,10 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL) {
 #'   \code{NULL}.
 #' @return ggplot2 object
 #' @export
-plot_runs_month <- function(summaries, from = NULL, to = NULL) {
-  data <- report_runs_year_month(summaries, from = from, to = to)
+plot_runs_month <- function(summaries, from = NULL, to = NULL,
+                            sport = "running") {
+  data <- report_runs_year_month(summaries, from = from, to = to,
+                                 sport = sport)
 
   ref_date  <- if (!is.null(from)) as.Date(from) else Sys.Date()
   do_year   <- format(ref_date, "%Y")
@@ -92,8 +95,9 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_monthstatus <- function(summaries, from = NULL, to = NULL) {
-  data <- report_monthstatus(summaries, from = from, to = to)
+plot_monthstatus <- function(summaries, from = NULL, to = NULL,
+                             sport = "running") {
+  data <- report_monthstatus(summaries, from = from, to = to, sport = sport)
   .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år")
 }
 
@@ -105,8 +109,9 @@ plot_monthstatus <- function(summaries, from = NULL, to = NULL) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_monthlast <- function(summaries, from = NULL, to = NULL) {
-  data <- report_monthlast(summaries, from = from, to = to)
+plot_monthlast <- function(summaries, from = NULL, to = NULL,
+                           sport = "running") {
+  data <- report_monthlast(summaries, from = from, to = to, sport = sport)
 
   my_month <- as.numeric(format(Sys.time(), "%m"))
   do_month <- if (my_month == 1) 12L else my_month - 1L
@@ -125,8 +130,9 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_yearstatus <- function(summaries, from = NULL, to = NULL) {
-  data <- report_yearstatus(summaries, from = from, to = to)
+plot_yearstatus <- function(summaries, from = NULL, to = NULL,
+                            sport = "running") {
+  data <- report_yearstatus(summaries, from = from, to = to, sport = sport)
   .plot_year_bars(data, title = "Årssammanställning (t.o.m. idag)")
 }
 
@@ -138,8 +144,9 @@ plot_yearstatus <- function(summaries, from = NULL, to = NULL) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-plot_yearstop <- function(summaries, from = NULL, to = NULL) {
-  data <- report_yearstop(summaries, from = from, to = to)
+plot_yearstop <- function(summaries, from = NULL, to = NULL,
+                          sport = "running") {
+  data <- report_yearstop(summaries, from = from, to = to, sport = sport)
   .plot_year_bars(data, title = "Årssammanställning (hela år)")
 }
 

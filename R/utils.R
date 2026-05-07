@@ -168,14 +168,29 @@ save_atomic <- function(..., file, envir = parent.frame()) {
 
 # --- Utility -----------------------------------------------------------------
 
-#' Convert decimal minutes to M:SS format
-#' @param myint Numeric, minutes as decimal (e.g. 5.5 -> "5:30")
-#' @return Character string in "M:SS" format
+#' Convert a decimal-minutes scalar to M:SS format
+#'
+#' Scalar in, character scalar out. Vector input is rejected with an
+#' error rather than silently misbehaving (the previous implementation
+#' relied on \code{is.na()} / \code{is.finite()} producing scalar
+#' booleans for the if-clause).
+#'
+#' @param myint Numeric scalar, minutes as decimal (e.g. \code{5.5}).
+#'   May also be \code{NA}, \code{NaN}, \code{Inf} or \code{numeric(0)}.
+#' @return Character scalar in \code{"M:SS"} format, or \code{"—"} when
+#'   \code{myint} is missing, non-finite, empty, or so large that
+#'   \code{as.integer(myint*60)} would overflow.
 #' @export
 dec_to_mmss <- function(myint) {
-  # Empty / NA / non-finite input → "—" instead of crashing inside the
-  # if-clause below (NA <= 9 is NA, which the if can't evaluate).
-  if (length(myint) == 0 || is.na(myint) || !is.finite(myint)) {
+  # Empty input → dash. Vector input → error (was a silent failure mode
+  # before: is.na(c(1,NA)) returns c(FALSE,TRUE) and the if-clause warns).
+  if (length(myint) == 0) {
+    return("—")
+  }
+  if (length(myint) > 1) {
+    stop("dec_to_mmss() expects a scalar; got length ", length(myint))
+  }
+  if (is.na(myint) || !is.finite(myint)) {
     return("—")
   }
   # Guard against integer overflow when a stray bad row in the cache
