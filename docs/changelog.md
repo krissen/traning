@@ -1,5 +1,29 @@
 # tRäning — Changelog
 
+## 2026-05-07 — Sport-aware notifications
+
+The daily readiness prose now surfaces actual training activity, not
+just the health components. Two new lines may follow the existing
+"Drar ner / OK"-block:
+
+- **`Senaste dygnet: …`** — per-sport distance summary for the rolling
+  24h window ending at midnight on the rendered date. Shown whenever
+  any sport ≥ 0.1 km. Example:
+  `Senaste dygnet: löpning 13 km, gång 3.0 km.`
+- **`Vecka: …`** (Sun) / **`Förra veckan: …`** (Mon) — ISO-week recap.
+  - 1 sport: `Vecka: 32 km löpning. -5 km mot förra veckan.`
+  - 2 sports: `Vecka: 45 km (löpning 30, cykling 15). +8 km mot förra veckan.`
+  - 3+ sports: `Förra veckan: 102 km över 3 sporter (cykling 54, löpning 32, gång 17). -17 km mot förra veckan.`
+
+Both lines are silent when there's nothing useful to say (no recent
+activity, off-day for the weekly recap, all-zero week). Distances
+render with one decimal under 10 km and as integers from 10 km up.
+
+Set `TRANING_NOTIFY_SPORT=false` in `.Renviron` to suppress both lines
+(default is on). Existing prose (`Dagsform`, `Drar ner`, `OK`) is
+unchanged regardless of the setting, so iPhone push and Shiny
+rendering remain backwards compatible.
+
 ## 2026-04-25 — Notification noise reduction
 
 Trim push notifications to the signals that carry information:
