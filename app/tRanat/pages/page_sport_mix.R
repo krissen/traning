@@ -58,6 +58,10 @@ page_sport_mix_ui <- function(id) {
 
 page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
   force(summaries)
+  # Bucket allowlist sourced directly from the package so this page's
+  # logic doesn't depend on mod_sport_select having been sourced first.
+  bucket_values <- traning::sport_bucket_names()
+
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
@@ -81,26 +85,36 @@ page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
     # showing the mix; a plain sport name like "running" would defeat
     # the point of this tab, so fall back to "all" in that case.
     population_sport <- shiny::reactive({
-      if (sp() %in% SPORT_BUCKET_VALUES) sp() else "all"
+      if (sp() %in% bucket_values) sp() else "all"
+    })
+
+    # Pre-scope summaries so all three cards describe the same
+    # population; otherwise picking "gym" or "ballsport" would still
+    # show the full running/cycling/walking CTL overlay.
+    scoped_summaries <- shiny::reactive({
+      pop <- population_sport()
+      if (identical(pop, "all")) summaries
+      else traning::filter_sport(summaries, pop)
     })
 
     output$plot_mix <- plotly::renderPlotly({
       shiny::req(input$period)
-      ply(plot_sport_mix(summaries, period = input$period,
+      ply(plot_sport_mix(scoped_summaries(), period = input$period,
                           from = dr_from(), to = dr_to(),
-                          sport = population_sport()))
+                          sport = "all"))  # already scoped
     })
 
     output$plot_ctl <- plotly::renderPlotly({
       shiny::req(input$ctl_sports)
-      ply(plot_sport_ctl_overlay(summaries,
+      ply(plot_sport_ctl_overlay(scoped_summaries(),
                                   sports = input$ctl_sports,
                                   from = dr_from(), to = dr_to()))
     })
 
     output$plot_calendar <- shiny::renderPlot({
-      plot_sport_calendar(summaries, from = dr_from(), to = dr_to(),
-                           sport = population_sport())
+      plot_sport_calendar(scoped_summaries(),
+                           from = dr_from(), to = dr_to(),
+                           sport = "all")  # already scoped
     })
   })
 }

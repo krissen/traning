@@ -37,6 +37,21 @@
   paste0(toupper(substr(s_lower, 1, 1)), substr(s_lower, 2, nchar(s_lower)))
 }
 
+#' Filter a summaries data frame by sport bucket
+#'
+#' Public wrapper around \code{.filter_sport()}. Same matching rules
+#' (direct sport names, Swedish aliases, curated buckets, special
+#' values \code{NULL}/\code{"all"}/\code{"any"}). Provided so callers
+#' outside the package — most notably the Shiny dashboard — don't have
+#' to reach into internal triple-colon helpers.
+#'
+#' @inheritParams .filter_sport
+#' @return Filtered data frame.
+#' @export
+filter_sport <- function(summaries, sport = "running") {
+  .filter_sport(summaries, sport)
+}
+
 #' Names of the curated sport buckets exposed via \code{sport=}
 #'
 #' Returns the names users can pass to disable sport filtering or to

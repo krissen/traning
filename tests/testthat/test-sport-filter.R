@@ -143,6 +143,28 @@ test_that(".sport_match_mask handles missing sport column", {
   expect_true(all(traning:::.sport_match_mask(df, NULL)))
 })
 
+# --- Public API surface ----------------------------------------------------
+
+test_that("sport_bucket_names returns curated buckets plus 'all'", {
+  out <- sport_bucket_names()
+  expect_type(out, "character")
+  # Every curated bucket from .SPORT_BUCKETS must show up
+  for (name in names(traning:::.SPORT_BUCKETS)) {
+    expect_true(name %in% out, info = paste("missing bucket:", name))
+  }
+  # And the "all" sentinel must be the last entry (or at least present)
+  expect_true("all" %in% out)
+})
+
+test_that("filter_sport (exported) matches .filter_sport (internal)", {
+  df <- .fixture()
+  for (s in list("running", "cycling", "endurance", "all", NULL,
+                 c("running", "cycling"))) {
+    expect_equal(filter_sport(df, s), traning:::.filter_sport(df, s),
+                 info = paste("sport=", deparse(s)))
+  }
+})
+
 test_that(".sport_match_mask coerces NA sport values to FALSE", {
   # Regression: previously str_detect(NA, ...) returned NA, which
   # propagated through Reduce(`|`,) and made `all(matches)` /
