@@ -102,3 +102,26 @@ test_that("plot_sport_calendar default window is one year", {
   p <- plot_sport_calendar(df)  # default from/to → today minus 365
   expect_s3_class(p, "ggplot")
 })
+
+test_that("plot_sport_calendar treats 'to' as exclusive upper bound", {
+  # The MCP bridge already converts a user-facing inclusive `before`
+  # into an exclusive `to = before + 1 day` via _build_args. Adding
+  # another +1 day here would overshoot the requested window — reject
+  # that regression by asserting that `to_d` equals the passed `to`
+  # less one day in the title.
+  df <- .fixture_multisport_plots()
+  to_excl <- as.Date("2026-04-08")
+  p <- plot_sport_calendar(df,
+                            from = as.Date("2026-01-01"),
+                            to = to_excl)
+  expect_s3_class(p, "ggplot")
+  expect_true(grepl("2026-04-07", p$labels$title))
+  expect_false(grepl("2026-04-08", p$labels$title))
+})
+
+test_that(".relabel_sport handles NA without crashing", {
+  # Calendar rest days end up as NA after left_join; .relabel_sport()
+  # used to crash inside .sport_label_sv(NA).
+  out <- traning:::.relabel_sport(c("running", NA, "cycling"))
+  expect_equal(unname(out), c("Löpning", NA_character_, "Cykling"))
+})

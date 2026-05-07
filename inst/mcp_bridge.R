@@ -188,10 +188,10 @@ build_call_args <- function(func_name, func_args) {
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
     "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
     "fetch.plot.hr_zones", "fetch.plot.decoupling",
-    # Multi-sport plots — only plot_sport_calendar uses sport= as a
-    # filter; the other two have their own `sport` semantics
-    # (NULL = all for sport_mix; a sports vector for ctl_overlay) and
-    # ignore the bridge-level sport= forwarding.
+    # Multi-sport plots that accept `sport=` as a population filter
+    # (default NULL = all sports). plot_sport_ctl_overlay is omitted
+    # because it takes a `sports` vector instead of a single bucket;
+    # see the multi-sport extras block below.
     "plot_sport_mix", "plot_sport_calendar"
   )
 

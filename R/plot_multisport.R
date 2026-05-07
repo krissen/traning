@@ -43,9 +43,15 @@
 }
 
 # Apply the canonical Swedish display label so legends and tick texts
-# match the daily readiness prose.
+# match the daily readiness prose. NA-safe — rest-day rows in the
+# calendar (sport=NA after left_join) pass through as NA so the legend
+# treats them as a missing-sport category instead of crashing inside
+# .sport_label_sv().
 .relabel_sport <- function(x) {
-  vapply(x, .sport_label_sv, character(1))
+  vapply(x, function(s) {
+    if (is.null(s) || (length(s) == 1 && is.na(s))) return(NA_character_)
+    .sport_label_sv(s)
+  }, character(1))
 }
 
 #' Sport-mix bar chart — distance per period broken down by sport
@@ -181,12 +187,13 @@ plot_sport_ctl_overlay <- function(summaries,
 #' @export
 plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
                                  sport = NULL) {
-  # `to_excl` is the exclusive upper bound used for filtering. The
-  # human-facing window is [from_d, to_excl - 1]. Default = today + 1
-  # so today's sessions still get included; users who pass `to` get
-  # standard inclusive semantics ("through 2026-04-25").
-  to_excl   <- if (is.null(to)) (Sys.Date() + 1L) else (as.Date(to) + 1L)
-  from_d    <- if (is.null(from)) (to_excl - 366L) else as.Date(from)
+  # `to` follows the same exclusive-upper-bound convention used by the
+  # rest of the bridged R functions (see report_datesum, the MCP
+  # `_build_args` already adds +1 day for absolute ISO dates so it
+  # arrives here exclusive). When `to` is NULL we default to tomorrow
+  # so today's sessions are included.
+  to_excl    <- if (is.null(to)) (Sys.Date() + 1L) else as.Date(to)
+  from_d     <- if (is.null(from)) (to_excl - 366L) else as.Date(from)
   display_to <- to_excl - 1L
 
   data <- .sport_mix_data(summaries, period_fmt = "%Y-%m-%d",
