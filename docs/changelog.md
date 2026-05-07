@@ -6,9 +6,10 @@ The daily readiness prose now surfaces actual training activity, not
 just the health components. Two new lines may follow the existing
 "Drar ner / OK"-block:
 
-- **`Senaste dygnet: …`** — per-sport distance summary for the rolling
-  24h window ending at midnight on the rendered date. Shown whenever
-  any sport ≥ 0.1 km. Example:
+- **`Senaste dygnet: …`** — per-sport distance summary for the 24h
+  window from the rendered date 00:00 UTC through the following
+  midnight. Shown whenever any sport totals ≥ 0.1 km; sports without
+  recorded distance (gym/strength) are silently dropped.  Example:
   `Senaste dygnet: löpning 13 km, gång 3.0 km.`
 - **`Vecka: …`** (Sun) / **`Förra veckan: …`** (Mon) — ISO-week recap.
   - 1 sport: `Vecka: 32 km löpning. -5 km mot förra veckan.`

@@ -186,9 +186,9 @@ test_that("latest_known_metrics handles empty input", {
   midnight_today <- as.POSIXct(as.character(today), tz = "UTC")
   tibble::tibble(
     sessionStart = c(
-      midnight_today + as.difftime(8,  units = "hours"),  # 04-22 08:00 run
-      midnight_today + as.difftime(18, units = "hours"),  # 04-22 18:00 walk
-      midnight_today - as.difftime(72 - 7, units = "hours"),  # 04-19 17:00 cycle (W17)
+      midnight_today + as.difftime(8,  units = "hours"),  # 04-22 08:00 run (W17)
+      midnight_today + as.difftime(18, units = "hours"),  # 04-22 18:00 walk (W17)
+      midnight_today - as.difftime(72 - 7, units = "hours"),  # 04-19 17:00 cycle (W16)
       midnight_today - as.difftime(120, units = "hours"),     # 04-17 00:00 run (W16)
       midnight_today - as.difftime(240, units = "hours"),     # 04-12 00:00 run (W15)
       midnight_today - as.difftime(264, units = "hours")      # 04-11 00:00 run (W15)
@@ -227,10 +227,25 @@ test_that(".weekly_sport_aggregate sums per-sport km for current week", {
                                             on_date = as.Date("2026-04-22"),
                                             week_offset = 0L)
   expect_match(res$iso_week, "^2026-W")
-  # Mon-Wed of week-17 has run + walk + cycle (5 days ago row falls in
-  # week-16, not 17) — verify by total
-  expect_true(res$total_km > 0)
-  expect_true("running" %in% res$per_sport$sport)
+  # Week 17 (Mon 04-20 .. Sun 04-26) only contains the two 04-22 sessions
+  # (run + walk). The cycling row on 04-19 falls in week 16.
+  expect_setequal(res$per_sport$sport, c("running", "walking"))
+  expect_equal(round(res$total_km, 1), 12.3)  # 8.1 + 4.2
+})
+
+test_that(".recent_sport_activity drops zero-distance sports", {
+  # Strength sessions have no distance; the prose should silently skip
+  # them rather than rendering "styrketräning 0.0 km".
+  base <- as.POSIXct("2026-04-22 12:00:00", tz = "UTC")
+  s <- tibble::tibble(
+    sessionStart = c(base + as.difftime(c(2, 4), units = "hours")),
+    sport = c("running", "strength"),
+    distance = c(8000, 0)
+  )
+  res <- traning:::.recent_sport_activity(s,
+                                           on_date = as.Date("2026-04-22"))
+  expect_equal(res$sport, "running")
+  expect_false("strength" %in% res$sport)
 })
 
 test_that(".format_recent_activity_line renders Swedish prose", {

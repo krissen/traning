@@ -1283,8 +1283,11 @@ health_insight_delta <- function(before, after) {
 # return NULL when there's nothing useful to say so callers can omit the
 # line silently.
 
-# Recent sport activity within `hours` of `on_date`. Returns a tibble of
-# (sport, sessions, km) ordered by km descending, or NULL if no rows.
+# Recent sport activity within `hours` of `on_date`. Returns a data frame
+# of (sport, sessions, km) ordered by km descending, or NULL if no rows
+# pass the per-sport distance threshold (>= 0.1 km).  Distance-less
+# sports (gym/strength rows that have sessions but no kilometres) are
+# dropped — listing "styrketräning 0.0 km" in the push reads as noise.
 .recent_sport_activity <- function(summaries, on_date, hours = 24L) {
   if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
     return(NULL)
@@ -1313,7 +1316,7 @@ health_insight_delta <- function(before, after) {
     )
   })
   out <- do.call(rbind, agg)
-  out <- out[out$km >= 0.1 | out$sessions >= 1, , drop = FALSE]
+  out <- out[!is.na(out$km) & out$km >= 0.1, , drop = FALSE]
   if (nrow(out) == 0) return(NULL)
   rownames(out) <- NULL
   out[order(-out$km), , drop = FALSE]
@@ -1321,7 +1324,8 @@ health_insight_delta <- function(before, after) {
 
 # Same shape as .recent_sport_activity but for an ISO calendar week.
 # `week_offset = 0` is the week containing on_date, `-1` is the previous
-# week, etc. Returns the per-sport tibble (possibly empty rows = c(0)).
+# week, etc. Returns a list with `iso_week`, `total_km`, and a per-sport
+# data frame (zero-rows when no sessions reached the 0.1 km floor).
 .weekly_sport_aggregate <- function(summaries, on_date, week_offset = 0L) {
   if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
     return(NULL)
@@ -1359,7 +1363,9 @@ health_insight_delta <- function(before, after) {
     )
   })
   out <- do.call(rbind, agg)
-  out <- out[out$km >= 0.1 | out$sessions >= 1, , drop = FALSE]
+  # Drop zero-distance sports so they don't inflate the "över N sporter"
+  # count or render as "styrketräning 0.0 km".
+  out <- out[!is.na(out$km) & out$km >= 0.1, , drop = FALSE]
   rownames(out) <- NULL
   out <- out[order(-out$km), , drop = FALSE]
 
