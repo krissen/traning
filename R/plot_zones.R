@@ -30,6 +30,14 @@
 #' @param to Date or NULL. End of display window.
 #' @param by Character. Aggregation level — currently only \code{"monthly"}
 #'   is supported.
+#' @param zone_data Optional precomputed zone-distribution list (from
+#'   \code{compute_zone_distribution()} or \code{load_zone_distribution()}).
+#'   When NULL, computed on the fly from \code{summaries} and
+#'   \code{sport}.
+#' @param sport Sport bucket (default \code{"running"}). Forwarded to
+#'   \code{compute_zone_distribution()} when \code{zone_data} is NULL.
+#'   Has no effect when \code{zone_data} is supplied — pass a sport-
+#'   scoped \code{zone_data} in that case.
 #' @return ggplot2 object.
 #' @export
 fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,

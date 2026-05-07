@@ -932,10 +932,14 @@ def resource_thresholds() -> str:
 def resource_sports() -> str:
     """Available sport buckets for the `sport=` parameter on training tools.
 
-    Lists raw sport names found in the cache, Swedish aliases, and
-    curated multi-sport buckets. Reading the cache via R is overkill
-    for this static reference, so we hard-code the known set — the R
-    helper .resolve_sport_bucket() resolves any of these.
+    Curated reference — lists the canonical sport names known to
+    .resolve_sport_bucket() in R, the Swedish aliases it accepts, and
+    the multi-sport buckets defined there. The list is hard-coded
+    (rather than read from the cache) because callers need stable
+    documentation; if a brand-new sport string starts appearing in
+    summaries$sport it can still be passed through verbatim, but it
+    won't show up here until the resource is updated. The R helpers
+    .SPORT_BUCKETS / .SPORT_ALIASES are the source of truth.
     """
     lines = [
         "# Sport buckets",
