@@ -14,15 +14,17 @@ library(ggplot2)
 if (!exists("summaries")) source("global.R", local = FALSE)
 
 # --- Source modules and pages ---
-source("modules/mod_date_preset.R",  local = TRUE)
-source("modules/mod_metric_panel.R", local = TRUE)
-source("modules/mod_overview.R",     local = TRUE)
-source("pages/page_overview.R",      local = TRUE)
-source("pages/page_training.R",      local = TRUE)
-source("pages/page_progress.R",      local = TRUE)
-source("pages/page_health.R",        local = TRUE)
-source("pages/page_performance.R",   local = TRUE)
-source("pages/page_race.R",          local = TRUE)
+source("modules/mod_date_preset.R",   local = TRUE)
+source("modules/mod_sport_select.R",  local = TRUE)
+source("modules/mod_metric_panel.R",  local = TRUE)
+source("modules/mod_overview.R",      local = TRUE)
+source("pages/page_overview.R",       local = TRUE)
+source("pages/page_training.R",       local = TRUE)
+source("pages/page_progress.R",       local = TRUE)
+source("pages/page_health.R",         local = TRUE)
+source("pages/page_performance.R",    local = TRUE)
+source("pages/page_race.R",           local = TRUE)
+source("pages/page_sport_mix.R",      local = TRUE)
 
 # --- Theme ---
 theme <- bs_theme(
@@ -64,7 +66,11 @@ ui <- page_navbar(
         });
       });
     "),
-    date_preset_ui("dates")
+    bslib::layout_columns(
+      col_widths = bslib::breakpoints(sm = 12, md = c(8, 4)),
+      date_preset_ui("dates"),
+      sport_select_ui("sport")
+    )
   ),
 
   nav_panel("\u00d6versikt",
@@ -75,6 +81,9 @@ ui <- page_navbar(
   ),
   nav_panel("Utveckling",
     page_progress_ui("progress")
+  ),
+  nav_panel("Sport-mix",
+    page_sport_mix_ui("sport_mix")
   ),
   nav_panel("H\u00e4lsa",
     page_health_ui("health")
@@ -89,22 +98,26 @@ ui <- page_navbar(
 
 # --- Server ---
 server <- function(input, output, session) {
-  # Global date range
+  # Global date range + sport
   dates <- date_preset_server("dates")
+  sport <- sport_select_server("sport")
 
   # Mobile detection reactive
   is_mobile <- reactive({
     isTRUE(input$is_mobile)
   })
 
-  # Page servers
+  # Page servers — sport= is forwarded to every page that has any
+  # sport-aware compute_*/report_*/plot_* call. Pages that are
+  # genuinely sport-blind (overview, health, race) can ignore it.
   page_overview_server("overview", summaries, health_daily, myruns,
                         decoupling_data, dates, is_mobile)
-  page_training_server("training", summaries, dates, is_mobile)
-  page_progress_server("progress", summaries, dates, is_mobile)
+  page_training_server("training", summaries, dates, is_mobile, sport)
+  page_progress_server("progress", summaries, dates, is_mobile, sport)
+  page_sport_mix_server("sport_mix", summaries, dates, is_mobile, sport)
   page_health_server("health", summaries, health_daily, dates, is_mobile)
   page_performance_server("performance", summaries, myruns, health_daily,
-                           decoupling_data, dates, is_mobile)
+                           decoupling_data, dates, is_mobile, sport)
   page_race_server("race", summaries, dates, is_mobile)
 }
 

@@ -19,36 +19,54 @@ page_performance_ui <- function(id) {
 }
 
 page_performance_server <- function(id, summaries, myruns, health_daily,
-                                     decoupling_data, dates, is_mobile) {
+                                     decoupling_data, dates, is_mobile,
+                                     sport) {
   force(summaries); force(myruns); force(decoupling_data)
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
+    sp      <- shiny::reactive(sport())
 
     # EF
     metric_panel_server("ef",
-      plot_fn   = shiny::reactive(fetch.plot.ef(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_ef(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(fetch.plot.ef(summaries, from = dr_from(),
+                                                  to = dr_to(),
+                                                  sport = sp())),
+      report_fn = shiny::reactive(report_ef(summaries, from = dr_from(),
+                                              to = dr_to(),
+                                              sport = sp())),
       is_mobile = is_mobile
     )
 
     # HRE
     metric_panel_server("hre",
-      plot_fn   = shiny::reactive(fetch.plot.hre(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_hre(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(fetch.plot.hre(summaries, from = dr_from(),
+                                                   to = dr_to(),
+                                                   sport = sp())),
+      report_fn = shiny::reactive(report_hre(summaries, from = dr_from(),
+                                               to = dr_to(),
+                                               sport = sp())),
       is_mobile = is_mobile
     )
 
-    # Decoupling — renderPlot (faceted, works better static for this one)
+    # Decoupling — renderPlot (faceted, works better static for this one).
+    # Note: decoupling_data is precomputed for the running cache; for
+    # non-running sport selections we let the underlying compute_*
+    # recompute on the fly via decoupling_data = NULL.
     metric_panel_server("decoupling",
       plot_fn = shiny::reactive({
         fetch.plot.decoupling(summaries, myruns,
           from = dr_from(), to = dr_to(),
-          decoupling_data = decoupling_data)
+          decoupling_data = if (identical(sp(), "running")) decoupling_data
+                            else NULL,
+          sport = sp())
       }),
       report_fn = shiny::reactive({
-        report_decoupling(from = dr_from(), to = dr_to(),
-          decoupling_data = decoupling_data)
+        report_decoupling(summaries = summaries, myruns = myruns,
+          from = dr_from(), to = dr_to(),
+          decoupling_data = if (identical(sp(), "running")) decoupling_data
+                            else NULL,
+          sport = sp())
       }),
       use_plotly = FALSE,
       is_mobile = is_mobile
@@ -57,10 +75,12 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
     # HR Zones
     metric_panel_server("hr_zones",
       plot_fn = shiny::reactive({
-        fetch.plot.hr_zones(summaries, from = dr_from(), to = dr_to())
+        fetch.plot.hr_zones(summaries, from = dr_from(), to = dr_to(),
+                             sport = sp())
       }),
       report_fn = shiny::reactive({
-        report_hr_zones(summaries, from = dr_from(), to = dr_to())
+        report_hr_zones(summaries, from = dr_from(), to = dr_to(),
+                        sport = sp())
       }),
       is_mobile = is_mobile
     )
@@ -68,10 +88,12 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
     # Recovery HR
     metric_panel_server("recovery_hr",
       plot_fn = shiny::reactive({
-        fetch.plot.recovery_hr(summaries, from = dr_from(), to = dr_to())
+        fetch.plot.recovery_hr(summaries, from = dr_from(), to = dr_to(),
+                                sport = sp())
       }),
       report_fn = shiny::reactive({
-        report_recovery_hr(summaries, from = dr_from(), to = dr_to())
+        report_recovery_hr(summaries, from = dr_from(), to = dr_to(),
+                           sport = sp())
       }),
       is_mobile = is_mobile
     )

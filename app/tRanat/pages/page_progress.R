@@ -48,11 +48,12 @@ page_progress_ui <- function(id) {
   )
 }
 
-page_progress_server <- function(id, summaries, dates, is_mobile) {
+page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
   force(summaries)
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
+    sp      <- shiny::reactive(sport())
 
     # Filtered summaries for pace tab
     summaries_f <- shiny::reactive({
@@ -78,49 +79,54 @@ page_progress_server <- function(id, summaries, dates, is_mobile) {
 
     # --- Month/Year panels ---
     metric_panel_server("monthstatus",
-      plot_fn   = shiny::reactive(plot_monthstatus(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_monthstatus(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(plot_monthstatus(summaries, from = dr_from(), to = dr_to(), sport = sp())),
+      report_fn = shiny::reactive(report_monthstatus(summaries, from = dr_from(), to = dr_to(), sport = sp())),
       is_mobile = is_mobile
     )
     metric_panel_server("monthlast",
-      plot_fn   = shiny::reactive(plot_monthlast(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_monthlast(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(plot_monthlast(summaries, from = dr_from(), to = dr_to(), sport = sp())),
+      report_fn = shiny::reactive(report_monthlast(summaries, from = dr_from(), to = dr_to(), sport = sp())),
       is_mobile = is_mobile
     )
     metric_panel_server("yearstatus",
-      plot_fn   = shiny::reactive(plot_yearstatus(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_yearstatus(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(plot_yearstatus(summaries, from = dr_from(), to = dr_to(), sport = sp())),
+      report_fn = shiny::reactive(report_yearstatus(summaries, from = dr_from(), to = dr_to(), sport = sp())),
       is_mobile = is_mobile
     )
     metric_panel_server("yearstop",
-      plot_fn   = shiny::reactive(plot_yearstop(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_yearstop(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(plot_yearstop(summaries, from = dr_from(), to = dr_to(), sport = sp())),
+      report_fn = shiny::reactive(report_yearstop(summaries, from = dr_from(), to = dr_to(), sport = sp())),
       is_mobile = is_mobile
     )
     metric_panel_server("month_this",
-      plot_fn   = shiny::reactive(plot_runs_month(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_runs_year_month(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(plot_runs_month(summaries, from = dr_from(), to = dr_to(), sport = sp())),
+      report_fn = shiny::reactive(report_runs_year_month(summaries, from = dr_from(), to = dr_to(), sport = sp())),
       is_mobile = is_mobile
     )
     metric_panel_server("monthtop",
-      plot_fn   = shiny::reactive(plot_monthtop(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_monthtop(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(plot_monthtop(summaries, from = dr_from(), to = dr_to(), sport = sp())),
+      report_fn = shiny::reactive(report_monthtop(summaries, from = dr_from(), to = dr_to(), sport = sp())),
       is_mobile = is_mobile
     )
     metric_panel_server("pace",
-      plot_fn   = shiny::reactive(fetch.plot.mean.pace(fetch.my.mean.pace(summaries_f()))),
-      report_fn = shiny::reactive(fetch.my.mean.pace(summaries_f())),
+      plot_fn   = shiny::reactive(fetch.plot.mean.pace(
+                                    fetch.my.mean.pace(summaries_f(),
+                                                        sport = sp()))),
+      report_fn = shiny::reactive(fetch.my.mean.pace(summaries_f(),
+                                                      sport = sp())),
       is_mobile = is_mobile
     )
 
     # --- Datumperiod (own date range) ---
     output$plot_datesum <- plotly::renderPlotly({
       shiny::req(input$datesum_range)
-      ply(plot_datesum(summaries, input$datesum_range[1], input$datesum_range[2]))
+      ply(plot_datesum(summaries, input$datesum_range[1],
+                       input$datesum_range[2], sport = sp()))
     })
     output$table_datesum <- DT::renderDataTable({
       shiny::req(input$datesum_range)
-      report_datesum(summaries, input$datesum_range[1], input$datesum_range[2])
+      report_datesum(summaries, input$datesum_range[1],
+                     input$datesum_range[2], sport = sp())
     })
   })
 }
