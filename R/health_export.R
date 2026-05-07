@@ -1277,6 +1277,195 @@ health_insight_delta <- function(before, after) {
   }
 }
 
+# --- Sport activity helpers for notification prose --------------------------
+# These produce the per-sport summary lines that are appended to the daily
+# readiness prose ("Senaste dygnet:" + the Sunday weekly recap). Helpers
+# return NULL when there's nothing useful to say so callers can omit the
+# line silently.
+
+# Recent sport activity within `hours` of `on_date`. Returns a data frame
+# of (sport, sessions, km) ordered by km descending, or NULL if no rows
+# pass the per-sport distance threshold (>= 0.1 km).  Distance-less
+# sports (gym/strength rows that have sessions but no kilometres) are
+# dropped — listing "styrketräning 0.0 km" in the push reads as noise.
+.recent_sport_activity <- function(summaries, on_date, hours = 24L) {
+  if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
+    return(NULL)
+  if (!all(c("sport", "sessionStart", "distance") %in% names(summaries)))
+    return(NULL)
+  end_ts   <- as.POSIXct(as.character(on_date),
+                          format = "%Y-%m-%d", tz = "UTC") +
+              as.difftime(1, units = "days")
+  start_ts <- end_ts - as.difftime(hours, units = "hours")
+
+  recent <- summaries[
+    !is.na(summaries$sessionStart) &
+      summaries$sessionStart >= start_ts &
+      summaries$sessionStart <  end_ts &
+      !is.na(summaries$sport),
+    , drop = FALSE
+  ]
+  if (nrow(recent) == 0) return(NULL)
+
+  agg <- by(recent, recent$sport, function(d) {
+    data.frame(
+      sport    = d$sport[1],
+      sessions = nrow(d),
+      km       = sum(as.numeric(d$distance), na.rm = TRUE) / 1000,
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- do.call(rbind, agg)
+  out <- out[!is.na(out$km) & out$km >= 0.1, , drop = FALSE]
+  if (nrow(out) == 0) return(NULL)
+  rownames(out) <- NULL
+  out[order(-out$km), , drop = FALSE]
+}
+
+# Same shape as .recent_sport_activity but for an ISO calendar week.
+# `week_offset = 0` is the week containing on_date, `-1` is the previous
+# week, etc. Returns a list with `iso_week`, `total_km`, and a per-sport
+# data frame (zero-rows when no sessions reached the 0.1 km floor).
+.weekly_sport_aggregate <- function(summaries, on_date, week_offset = 0L) {
+  if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
+    return(NULL)
+  ref <- as.Date(on_date) + (week_offset * 7L)
+  # ISO week: Monday start. as.POSIXlt$wday returns 0 (Sun) .. 6 (Sat).
+  wday <- as.POSIXlt(ref)$wday
+  monday_offset <- if (wday == 0L) 6L else (wday - 1L)
+  monday <- ref - monday_offset
+  end_ts   <- as.POSIXct(as.character(monday + 7L),
+                          format = "%Y-%m-%d", tz = "UTC")
+  start_ts <- as.POSIXct(as.character(monday),
+                          format = "%Y-%m-%d", tz = "UTC")
+
+  rows <- summaries[
+    !is.na(summaries$sessionStart) &
+      summaries$sessionStart >= start_ts &
+      summaries$sessionStart <  end_ts &
+      !is.na(summaries$sport),
+    , drop = FALSE
+  ]
+  if (nrow(rows) == 0) {
+    return(list(
+      iso_week = format(monday, "%G-W%V"),
+      total_km = 0,
+      per_sport = data.frame(sport = character(0), sessions = integer(0),
+                              km = numeric(0), stringsAsFactors = FALSE)
+    ))
+  }
+  agg <- by(rows, rows$sport, function(d) {
+    data.frame(
+      sport    = d$sport[1],
+      sessions = nrow(d),
+      km       = sum(as.numeric(d$distance), na.rm = TRUE) / 1000,
+      stringsAsFactors = FALSE
+    )
+  })
+  out <- do.call(rbind, agg)
+  # Drop zero-distance sports so they don't inflate the "över N sporter"
+  # count or render as "styrketräning 0.0 km".
+  out <- out[!is.na(out$km) & out$km >= 0.1, , drop = FALSE]
+  rownames(out) <- NULL
+  out <- out[order(-out$km), , drop = FALSE]
+
+  list(
+    iso_week  = format(monday, "%G-W%V"),
+    total_km  = sum(out$km),
+    per_sport = out
+  )
+}
+
+# Format a single distance for in-line text (one decimal under 10, integer
+# from 10 km).
+.fmt_km <- function(km) {
+  if (is.na(km)) return("")
+  if (km >= 10) format(round(km), big.mark = "")
+  else sprintf("%.1f", km)
+}
+
+# Build the "Senaste dygnet: löpning 8.1 km, gång 4.2 km." line, or NULL.
+.format_recent_activity_line <- function(activity) {
+  if (is.null(activity) || nrow(activity) == 0) return(NULL)
+  parts <- vapply(seq_len(nrow(activity)), function(i) {
+    sport <- tolower(.sport_label_sv(activity$sport[i]))
+    paste0(sport, " ", .fmt_km(activity$km[i]), " km")
+  }, character(1))
+  paste0("Senaste dygnet: ", paste(parts, collapse = ", "), ".")
+}
+
+# Build "Vecka: ..." or "Förra veckan: ..." line. `prefix` controls the
+# Swedish header so the same formatter handles both Sunday's "this week"
+# recap and Monday's "förra veckan" make-up post.
+.format_weekly_summary_line <- function(weekly, previous = NULL,
+                                         prefix = "Vecka") {
+  if (is.null(weekly) || weekly$total_km < 0.1) return(NULL)
+  per <- weekly$per_sport
+  n_sports <- nrow(per)
+  total_str <- .fmt_km(weekly$total_km)
+
+  body <- if (n_sports == 1) {
+    sport <- tolower(.sport_label_sv(per$sport[1]))
+    paste0(total_str, " km ", sport)
+  } else if (n_sports == 2) {
+    s1 <- tolower(.sport_label_sv(per$sport[1]))
+    s2 <- tolower(.sport_label_sv(per$sport[2]))
+    paste0(total_str, " km (", s1, " ", .fmt_km(per$km[1]),
+           ", ", s2, " ", .fmt_km(per$km[2]), ")")
+  } else {
+    detail <- vapply(seq_len(n_sports), function(i) {
+      paste0(tolower(.sport_label_sv(per$sport[i])), " ",
+             .fmt_km(per$km[i]))
+    }, character(1))
+    paste0(total_str, " km över ", n_sports, " sporter (",
+           paste(detail, collapse = ", "), ")")
+  }
+
+  delta_part <- ""
+  if (!is.null(previous) && !is.null(previous$total_km) &&
+      is.finite(previous$total_km)) {
+    diff_km <- weekly$total_km - previous$total_km
+    if (abs(diff_km) >= 0.5) {
+      sign_str <- if (diff_km > 0) "+" else "-"
+      delta_part <- paste0(" ", sign_str, .fmt_km(abs(diff_km)),
+                            " km mot förra veckan.")
+    } else {
+      delta_part <- " Som förra veckan."
+    }
+  }
+
+  paste0(prefix, ": ", body, ".", delta_part)
+}
+
+# Pick the right weekly headline. Sunday → "Vecka: ..." for the running
+# week. Monday → "Förra veckan: ..." (the makeup post). Other days →
+# NULL so we don't spam.
+.weekly_line_for_date <- function(summaries, on_date,
+                                   notify_sport = TRUE) {
+  if (!isTRUE(notify_sport)) return(NULL)
+  wday <- as.POSIXlt(as.Date(on_date))$wday  # 0=Sun, 1=Mon ... 6=Sat
+  if (wday == 0L) {
+    # Sunday → recap of the current ISO week so far
+    cur  <- .weekly_sport_aggregate(summaries, on_date, week_offset = 0L)
+    prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L)
+    .format_weekly_summary_line(cur, prev, prefix = "Vecka")
+  } else if (wday == 1L) {
+    # Monday → recap of the week that just ended
+    last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L)
+    prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L)
+    .format_weekly_summary_line(last, prev, prefix = "Förra veckan")
+  } else {
+    NULL
+  }
+}
+
+# Read the opt-out env var once; defaults to "on" for any value other
+# than the explicit "false"/"0"/"no" set.
+.notify_sport_enabled <- function() {
+  v <- tolower(Sys.getenv("TRANING_NOTIFY_SPORT", unset = "true"))
+  !v %in% c("false", "0", "no", "off")
+}
+
 #' Generate state-based health insight notification
 #'
 #' Produces Swedish prose describing today's readiness state and the components
@@ -1362,6 +1551,20 @@ health_insight_readiness <- function(health_daily, summaries,
     parts <- c(parts, paste0("Drar ner: ", paste(drar_ner, collapse = ", "), "."))
   if (length(ok_parts) > 0)
     parts <- c(parts, paste0("OK: ", paste(ok_parts, collapse = ", "), "."))
+
+  # Sport-aware additions: last-24h activity + Sunday/Monday weekly
+  # recap. Both are silent when there's nothing useful to say, and
+  # opt-out with TRANING_NOTIFY_SPORT=false.
+  if (.notify_sport_enabled()) {
+    activity_line <- .format_recent_activity_line(
+      .recent_sport_activity(summaries, row$date)
+    )
+    if (!is.null(activity_line)) parts <- c(parts, activity_line)
+
+    weekly_line <- .weekly_line_for_date(summaries, row$date,
+                                          notify_sport = TRUE)
+    if (!is.null(weekly_line)) parts <- c(parts, weekly_line)
+  }
 
   prosa <- paste(parts, collapse = " ")
 

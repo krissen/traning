@@ -175,3 +175,177 @@ test_that("latest_known_metrics handles empty input", {
   res <- latest_known_metrics(empty)
   expect_equal(nrow(res), 0)
 })
+
+# --- Sport-aware notifications -----------------------------------------------
+
+.fixture_multisport <- function(today = as.Date("2026-04-22")) {
+  # Wed 2026-04-22 → ISO week 2026-W17 (Mon 04-20 .. Sun 04-26).
+  # `.recent_sport_activity` looks at the 24h window ending one day past
+  # on_date, i.e. for on_date=2026-04-22 it covers 2026-04-22 00:00 UTC
+  # → 2026-04-23 00:00 UTC. Place 2 sessions in that window.
+  midnight_today <- as.POSIXct(as.character(today), tz = "UTC")
+  tibble::tibble(
+    sessionStart = c(
+      midnight_today + as.difftime(8,  units = "hours"),  # 04-22 08:00 run (W17)
+      midnight_today + as.difftime(18, units = "hours"),  # 04-22 18:00 walk (W17)
+      midnight_today - as.difftime(72 - 7, units = "hours"),  # 04-19 17:00 cycle (W16)
+      midnight_today - as.difftime(120, units = "hours"),     # 04-17 00:00 run (W16)
+      midnight_today - as.difftime(240, units = "hours"),     # 04-12 00:00 run (W15)
+      midnight_today - as.difftime(264, units = "hours")      # 04-11 00:00 run (W15)
+    ),
+    sport = c("running", "walking", "cycling", "running", "running", "running"),
+    distance = c(8100, 4200, 25000, 6500, 7000, 7500),
+    durationMoving = rep(2400, 6),
+    avgPaceMoving = c(5.0, 16.0, 2.4, 5.5, 5.2, 5.0),
+    avgSpeedMoving = c(3.3, 1.0, 6.9, 3.0, 3.2, 3.3),
+    avgHeartRateMoving = c(140, 95, 130, 138, 142, 140),
+    file = paste0("ms_", seq_len(6), ".tcx"),
+    year = format(midnight_today, "%Y")
+  )
+}
+
+test_that(".recent_sport_activity aggregates the last 24h per sport", {
+  s <- .fixture_multisport()
+  res <- traning:::.recent_sport_activity(s, on_date = as.Date("2026-04-22"),
+                                          hours = 24L)
+  expect_s3_class(res, "data.frame")
+  # Yesterday window should include the 1 run + 1 walk only
+  expect_setequal(res$sport, c("running", "walking"))
+  expect_equal(sort(res$km), c(4.2, 8.1))
+})
+
+test_that(".recent_sport_activity returns NULL on empty input", {
+  expect_null(traning:::.recent_sport_activity(NULL,
+                                                as.Date("2026-04-22")))
+  expect_null(traning:::.recent_sport_activity(data.frame(),
+                                                as.Date("2026-04-22")))
+})
+
+test_that(".weekly_sport_aggregate sums per-sport km for current week", {
+  s <- .fixture_multisport()
+  res <- traning:::.weekly_sport_aggregate(s,
+                                            on_date = as.Date("2026-04-22"),
+                                            week_offset = 0L)
+  expect_match(res$iso_week, "^2026-W")
+  # Week 17 (Mon 04-20 .. Sun 04-26) only contains the two 04-22 sessions
+  # (run + walk). The cycling row on 04-19 falls in week 16.
+  expect_setequal(res$per_sport$sport, c("running", "walking"))
+  expect_equal(round(res$total_km, 1), 12.3)  # 8.1 + 4.2
+})
+
+test_that(".recent_sport_activity drops zero-distance sports", {
+  # Strength sessions have no distance; the prose should silently skip
+  # them rather than rendering "styrketräning 0.0 km".
+  base <- as.POSIXct("2026-04-22 12:00:00", tz = "UTC")
+  s <- tibble::tibble(
+    sessionStart = c(base + as.difftime(c(2, 4), units = "hours")),
+    sport = c("running", "strength"),
+    distance = c(8000, 0)
+  )
+  res <- traning:::.recent_sport_activity(s,
+                                           on_date = as.Date("2026-04-22"))
+  expect_equal(res$sport, "running")
+  expect_false("strength" %in% res$sport)
+})
+
+test_that(".format_recent_activity_line renders Swedish prose", {
+  activity <- data.frame(
+    sport = c("running", "cycling"),
+    sessions = c(1L, 1L),
+    km = c(8.1, 25),
+    stringsAsFactors = FALSE
+  )
+  out <- traning:::.format_recent_activity_line(activity)
+  expect_match(out, "^Senaste dygnet: ")
+  expect_match(out, "löpning 8.1 km")
+  expect_match(out, "cykling 25 km")
+})
+
+test_that(".format_recent_activity_line returns NULL when no rows", {
+  expect_null(traning:::.format_recent_activity_line(NULL))
+  expect_null(traning:::.format_recent_activity_line(
+    data.frame(sport = character(0), sessions = integer(0),
+               km = numeric(0))
+  ))
+})
+
+test_that(".format_weekly_summary_line handles 1/2/3+ sport variants", {
+  # 1 sport
+  one <- list(iso_week = "2026-W17", total_km = 32,
+              per_sport = data.frame(sport = "running", sessions = 4L,
+                                      km = 32, stringsAsFactors = FALSE))
+  expect_match(traning:::.format_weekly_summary_line(one),
+               "^Vecka: 32 km löpning")
+
+  # 2 sports
+  two <- list(iso_week = "2026-W17", total_km = 45,
+              per_sport = data.frame(
+                sport = c("running", "cycling"),
+                sessions = c(2L, 1L),
+                km = c(30, 15),
+                stringsAsFactors = FALSE
+              ))
+  expect_match(traning:::.format_weekly_summary_line(two),
+               "^Vecka: 45 km \\(löpning 30, cykling 15\\)")
+
+  # 3+ sports → bucket count
+  three <- list(iso_week = "2026-W17", total_km = 64,
+                per_sport = data.frame(
+                  sport = c("running", "cycling", "walking", "strength"),
+                  sessions = c(2L, 1L, 3L, 1L),
+                  km = c(30, 20, 12, 2),
+                  stringsAsFactors = FALSE
+                ))
+  expect_match(traning:::.format_weekly_summary_line(three),
+               "över 4 sporter")
+})
+
+test_that(".format_weekly_summary_line includes delta vs previous week", {
+  cur <- list(iso_week = "2026-W17", total_km = 45,
+              per_sport = data.frame(sport = "running", sessions = 4L,
+                                      km = 45, stringsAsFactors = FALSE))
+  prev <- list(iso_week = "2026-W16", total_km = 32,
+               per_sport = data.frame(sport = "running", sessions = 3L,
+                                       km = 32, stringsAsFactors = FALSE))
+  out <- traning:::.format_weekly_summary_line(cur, prev)
+  expect_match(out, "\\+13 km mot förra veckan")
+})
+
+test_that(".weekly_line_for_date only fires on Sun/Mon", {
+  s <- .fixture_multisport(today = as.Date("2026-04-22"))  # Wed
+  expect_null(traning:::.weekly_line_for_date(s, as.Date("2026-04-22")))
+  # Sunday
+  sunday <- as.Date("2026-04-26")
+  out <- traning:::.weekly_line_for_date(s, sunday)
+  expect_match(out, "^Vecka: ")
+  # Monday → make-up post for previous week
+  monday <- as.Date("2026-04-27")
+  out <- traning:::.weekly_line_for_date(s, monday)
+  expect_match(out, "^Förra veckan: ")
+})
+
+test_that("health_insight_readiness includes recent activity line", {
+  today <- as.Date("2026-04-22")
+  hd <- .fixture_health_daily(today)
+  s <- .fixture_multisport(today)
+  res <- health_insight_readiness(hd, s, hr_max = 185, on_date = today)
+  expect_match(res$prosa, "Senaste dygnet: ")
+})
+
+test_that("health_insight_readiness includes weekly recap on Sunday", {
+  sunday <- as.Date("2026-04-26")
+  hd <- .fixture_health_daily(sunday)
+  s <- .fixture_multisport(today = sunday)
+  res <- health_insight_readiness(hd, s, hr_max = 185, on_date = sunday)
+  expect_match(res$prosa, "Vecka: ")
+})
+
+test_that("TRANING_NOTIFY_SPORT=false suppresses the new lines", {
+  withr::with_envvar(c("TRANING_NOTIFY_SPORT" = "false"), {
+    today <- as.Date("2026-04-22")
+    hd <- .fixture_health_daily(today)
+    s <- .fixture_multisport(today)
+    res <- health_insight_readiness(hd, s, hr_max = 185, on_date = today)
+    expect_false(grepl("Senaste dygnet:", res$prosa))
+  })
+})
