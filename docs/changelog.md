@@ -1,5 +1,62 @@
 # tRäning — Changelog
 
+## 2026-05-07 — Multi-sport Shiny dashboard
+
+Final piece of the sport-agnostic refactor. The tRanat dashboard now
+has a global sport selector in the header that propagates into every
+metric panel, plus a new **Sport-mix** tab that visualises activity
+across sports.
+
+- **Global sport selector** (header). Choices group "Direkta sporter"
+  (running, cycling, walking, swimming, strength, badminton,
+  bordtennis, övrigt) and "Sammansatta" (curated buckets: endurance,
+  ballsport, gym, wintersport, all). The selected value is forwarded
+  to all metric panels (PMC, ACWR, EF, HRE, decoupling, HR-zones,
+  recovery HR, etc.) so the same dashboard now answers questions for
+  any sport — not just running.
+- **Sport-mix tab.** Three new cards built on `plot_sport_mix()`,
+  `plot_sport_ctl_overlay()`, and `plot_sport_calendar()`. The CTL
+  overlay's checkbox row is derived from the active bucket so
+  selecting `gym`/`ballsport`/`wintersport` exposes the bucket's
+  actual member sports; selecting `all` exposes the sports actually
+  present in the data (capped at 12 most common).
+- **Decoupling pace gate is now sport-aware.** Both
+  `compute_decoupling()` and `load_decoupling()` resolve
+  `max_pace_min_km` through a shared helper: 5.0 (running easy-pace),
+  1.5 (cycling), 6.0 (walking), 15.0 (swimming), and disabled (0) for
+  multi-sport selections where a single min/km cutoff doesn't fit.
+  Previous default of 5.0 silently filtered out nearly every cycling
+  or `all`-bucket session.
+- **New public helpers** for UI/integration code:
+  `traning::filter_sport()`, `sport_bucket_names()`, `sport_label()`,
+  `sport_bucket_members()`. Replaces triple-colon access into
+  `.SPORT_BUCKETS`/`.sport_label_sv` from app/MCP code.
+
+## 2026-05-07 — Multi-sport visualisations
+
+Three new plot families in `R/plot_multisport.R`, also exposed via
+Vayu (`get_sport_mix`, `get_sport_ctl_overlay`, `get_sport_calendar`)
+and the Shiny app:
+
+- **`plot_sport_mix()`** — stacked bar of distance per period (week /
+  month / year) × sport. Curated buckets and `all` aggregate
+  consistently with the rest of the toolchain.
+- **`plot_sport_ctl_overlay()`** — cross-sport CTL trajectories on a
+  shared axis so cycling vs running fitness can be compared directly.
+- **`plot_sport_calendar()`** — daily activity-calendar heatmap
+  coloured by sport. Locale-independent (`%u` ISO weekdays) so
+  rendering is identical on macOS dev and the Arch Linux Shiny host.
+
+## 2026-05-07 — `--sport=` flag on CLI
+
+Both the R CLI (`Rscript inst/cli.R`) and the Python CLI (`traning
+report …`, `traning datesum`, etc.) accept `--sport=` to scope every
+metric report to a single sport, a Swedish alias (`cykling`,
+`löpning`, `gång`), or a curated bucket (`endurance`, `ballsport`,
+`gym`, `wintersport`, `all`). Default remains `running` for
+backwards compatibility — every existing invocation behaves as
+before.
+
 ## 2026-05-07 — Sport-aware notifications
 
 The daily readiness prose now surfaces actual training activity, not
