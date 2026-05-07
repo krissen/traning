@@ -109,16 +109,35 @@
 #' @return Filtered data frame.
 #' @keywords internal
 .filter_sport <- function(summaries, sport = "running") {
+  matches <- .sport_match_mask(summaries, sport)
+  if (all(matches)) return(summaries)
+  if (!any(matches)) return(summaries[0, , drop = FALSE])
+  dplyr::filter(summaries, matches)
+}
+
+#' Logical mask telling which rows of \code{summaries} match \code{sport}
+#'
+#' Same matching rules as \code{.filter_sport()} but returns a logical
+#' vector aligned to \code{summaries} so callers that need positional
+#' alignment (e.g. \code{compute_decoupling()} indexing into
+#' \code{myruns[[i]]}) can keep their indices.
+#'
+#' Treats \code{NULL}/\code{"all"}/\code{"any"} as "match everything", and
+#' an explicit-but-unrecognised sport input (e.g. \code{""},
+#' \code{NA_character_}) as "match nothing" — never as silent
+#' pass-through.
+#'
+#' @param summaries Data frame with a \code{sport} column.
+#' @param sport Character (scalar or vector), or NULL.
+#' @return Logical vector with \code{length(.) == nrow(summaries)}.
+#' @keywords internal
+.sport_match_mask <- function(summaries, sport = "running") {
+  n <- nrow(summaries)
   buckets <- .resolve_sport_bucket(sport)
-  # NULL = caller asked for all sports (no filter).
-  if (is.null(buckets)) return(summaries)
-  # character(0) = the input was non-NULL but resolved to no recognisable
-  # sport (e.g. "", NA, c()).  Treat as "no matching sport" and return an
-  # empty frame — never silently pass through, which would corrupt totals.
-  if (length(buckets) == 0) return(summaries[0, , drop = FALSE])
-  if (!"sport" %in% names(summaries)) return(summaries[0, , drop = FALSE])
-  matches <- Reduce(`|`, lapply(buckets, function(b) {
+  if (is.null(buckets)) return(rep(TRUE, n))
+  if (length(buckets) == 0) return(rep(FALSE, n))
+  if (!"sport" %in% names(summaries)) return(rep(FALSE, n))
+  Reduce(`|`, lapply(buckets, function(b) {
     stringr::str_detect(summaries$sport, stringr::fixed(b))
   }))
-  dplyr::filter(summaries, matches)
 }

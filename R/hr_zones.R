@@ -71,7 +71,8 @@
 compute_zone_distribution <- function(summaries,
                                       hr_max    = NULL,
                                       vt1_pct   = 0.80,
-                                      vt2_pct   = 0.90) {
+                                      vt2_pct   = 0.90,
+                                      sport     = "running") {
   if (!.has_garmin_zones(summaries)) {
     stop(
       "summaries saknar garmin_hrTimeInZone-kolumner. ",
@@ -81,8 +82,7 @@ compute_zone_distribution <- function(summaries,
 
   zone_cols <- paste0("garmin_hrTimeInZone_", 1:5)
 
-  runs <- summaries %>%
-    dplyr::filter(stringr::str_detect(sport, "running")) %>%
+  runs <- .filter_sport(summaries, sport) %>%
     # Behåll bara rader där samtliga fem zon-kolumner är icke-NA
     dplyr::filter(dplyr::if_all(dplyr::all_of(zone_cols), ~ !is.na(.x))) %>%
     dplyr::mutate(
@@ -207,7 +207,8 @@ compute_zone_distribution_persecond <- function(summaries,
                                                 myruns,
                                                 hr_max  = NULL,
                                                 vt1_pct = 0.80,
-                                                vt2_pct = 0.90) {
+                                                vt2_pct = 0.90,
+                                                sport   = "running") {
   if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
 
   vt1 <- hr_max * vt1_pct
@@ -216,8 +217,8 @@ compute_zone_distribution_persecond <- function(summaries,
   message("HRmax: ", hr_max, " bpm | VT1: ", round(vt1), " bpm | VT2: ",
           round(vt2), " bpm")
 
-  # Identifiera löpsessioner — håll index mot myruns-listan
-  run_idx <- which(stringr::str_detect(summaries$sport, "running"))
+  # Identifiera kvalificerande sessioner — håll index mot myruns-listan
+  run_idx <- which(.sport_match_mask(summaries, sport))
 
   n_runs   <- length(run_idx)
   n_skip   <- 0L
@@ -365,6 +366,7 @@ compute_zone_distribution_persecond <- function(summaries,
 #' @param force Logical.  If TRUE, discard cache and recompute everything.
 #' @param cache_path Character or NULL.  Path to RData cache file.
 #'   NULL = auto-detect from TRANING_DATA.
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return Named list with \code{$per_activity}, \code{$monthly},
 #'   \code{$skipped} — same as \code{compute_zone_distribution_persecond()}.
 #' @export
@@ -374,7 +376,8 @@ load_zone_distribution <- function(summaries,
                                    vt1_pct    = 0.80,
                                    vt2_pct    = 0.90,
                                    force      = FALSE,
-                                   cache_path = NULL) {
+                                   cache_path = NULL,
+                                   sport      = "running") {
   if (is.null(cache_path)) cache_path <- .zone_cache_path()
 
   cached_activity <- NULL
@@ -397,8 +400,9 @@ load_zone_distribution <- function(summaries,
     }
   }
 
-  # Find running sessions not already cached or known-skipped
-  run_idx <- which(stringr::str_detect(summaries$sport, "running"))
+  # Find qualifying sessions not already cached or known-skipped.
+  # Index-based filter so myruns positional alignment is preserved.
+  run_idx <- which(.sport_match_mask(summaries, sport))
   run_dates <- as.Date(summaries$sessionStart[run_idx])
 
   if (cache_valid) {
@@ -517,9 +521,8 @@ load_zone_distribution <- function(summaries,
 
   if (.has_garmin_zones(summaries)) {
     garmin_dates <- per_activity$sessionStart
-    garmin_fallback <- summaries %>%
+    garmin_fallback <- .filter_sport(summaries, sport) %>%
       dplyr::filter(
-        stringr::str_detect(sport, "running"),
         !(as.Date(sessionStart) %in% garmin_dates)
       ) %>%
       dplyr::filter(dplyr::if_all(
@@ -693,7 +696,8 @@ cross_validate_zones <- function(summaries,
                                  myruns,
                                  hr_max  = NULL,
                                  vt1_pct = 0.80,
-                                 vt2_pct = 0.90) {
+                                 vt2_pct = 0.90,
+                                 sport   = "running") {
   if (!.has_garmin_zones(summaries)) {
     stop(
       "summaries saknar garmin_hrTimeInZone-kolumner. ",
@@ -708,9 +712,9 @@ cross_validate_zones <- function(summaries,
 
   zone_cols <- paste0("garmin_hrTimeInZone_", 1:5)
 
-  # Identifiera löpsessioner med kompletta Garmin-zondata
+  # Identifiera kvalificerande sessioner med kompletta Garmin-zondata
   run_idx <- which(
-    stringr::str_detect(summaries$sport, "running") &
+    .sport_match_mask(summaries, sport) &
       !is.na(summaries$garmin_hrTimeInZone_1) &
       !is.na(summaries$garmin_hrTimeInZone_5)
   )

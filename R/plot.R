@@ -85,11 +85,13 @@ fetch.plot.monthly.dist <- function(month_summaries_til_day) {
 
 #' Compute yearly mean pace statistics
 #' @param summaries Data frame of all workout summaries
+#' @param sport Sport bucket (default \code{"running"}). Pace numbers
+#'   for non-pace-based sports (e.g. cycling) reflect the same column
+#'   but the unit interpretation differs.
 #' @return Tibble with year, totDuration, meanPace, minPace
 #' @export
-fetch.my.mean.pace <- function(summaries) {
-  mean.pace <- summaries %>%
-    dplyr::filter(stringr::str_detect(sport, 'running')) %>%
+fetch.my.mean.pace <- function(summaries, sport = "running") {
+  mean.pace <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(year = format(sessionStart, "%Y")) %>%
     dplyr::group_by(year) %>%
     dplyr::summarise(
@@ -102,11 +104,11 @@ fetch.my.mean.pace <- function(summaries) {
 
 #' Scatter + smooth plot of yearly total distance
 #' @param summaries Data frame of all workout summaries
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return ggplot2 object
 #' @export
-fetch.plot.sum.dist <- function(summaries) {
-  summaries %>%
-    dplyr::filter(stringr::str_detect(sport, 'running')) %>%
+fetch.plot.sum.dist <- function(summaries, sport = "running") {
+  .filter_sport(summaries, sport) %>%
     dplyr::mutate(year = as.numeric(format(sessionStart, "%Y"))) %>%
     dplyr::group_by(year) %>%
     dplyr::summarise(
