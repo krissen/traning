@@ -57,9 +57,10 @@
 #'   Informational only for this function.
 #' @param vt2_pct Numeric (0–1). VT2 as fraction of HRmax (default 0.90).
 #'   Informational only for this function.
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return Named list with two elements:
 #'   \describe{
-#'     \item{\code{$per_activity}}{Tibble with one row per qualifying run:
+#'     \item{\code{$per_activity}}{Tibble with one row per qualifying session:
 #'       \code{sessionStart} (Date), \code{distance_km}, \code{z1_pct},
 #'       \code{z2_pct}, \code{z3_pct}, \code{z1_sec}, \code{z2_sec},
 #'       \code{z3_sec}, \code{total_sec}.}
@@ -71,7 +72,8 @@
 compute_zone_distribution <- function(summaries,
                                       hr_max    = NULL,
                                       vt1_pct   = 0.80,
-                                      vt2_pct   = 0.90) {
+                                      vt2_pct   = 0.90,
+                                      sport     = "running") {
   if (!.has_garmin_zones(summaries)) {
     stop(
       "summaries saknar garmin_hrTimeInZone-kolumner. ",
@@ -81,8 +83,7 @@ compute_zone_distribution <- function(summaries,
 
   zone_cols <- paste0("garmin_hrTimeInZone_", 1:5)
 
-  runs <- summaries %>%
-    dplyr::filter(stringr::str_detect(sport, "running")) %>%
+  runs <- .filter_sport(summaries, sport) %>%
     # Behåll bara rader där samtliga fem zon-kolumner är icke-NA
     dplyr::filter(dplyr::if_all(dplyr::all_of(zone_cols), ~ !is.na(.x))) %>%
     dplyr::mutate(
@@ -190,9 +191,10 @@ compute_zone_distribution <- function(summaries,
 #' @param summaries Summaries tibble (from \code{my_dbs_load()}).
 #' @param myruns List of trackeRdata objects (from \code{my_dbs_load()}).
 #' @param hr_max Numeric. HRmax in bpm. \code{NULL} = auto-detect via
-#'   \code{get_hr_max(summaries)}.
+#'   \code{get_hr_max(summaries, sport = sport)} (sport-aware).
 #' @param vt1_pct Numeric (0–1). VT1 threshold as fraction of HRmax (default 0.80).
 #' @param vt2_pct Numeric (0–1). VT2 threshold as fraction of HRmax (default 0.90).
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return Named list with three elements:
 #'   \describe{
 #'     \item{\code{$per_activity}}{Tibble with same structure as
@@ -207,8 +209,9 @@ compute_zone_distribution_persecond <- function(summaries,
                                                 myruns,
                                                 hr_max  = NULL,
                                                 vt1_pct = 0.80,
-                                                vt2_pct = 0.90) {
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
+                                                vt2_pct = 0.90,
+                                                sport   = "running") {
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
   vt1 <- hr_max * vt1_pct
   vt2 <- hr_max * vt2_pct
@@ -216,8 +219,35 @@ compute_zone_distribution_persecond <- function(summaries,
   message("HRmax: ", hr_max, " bpm | VT1: ", round(vt1), " bpm | VT2: ",
           round(vt2), " bpm")
 
-  # Identifiera löpsessioner — håll index mot myruns-listan
-  run_idx <- which(stringr::str_detect(summaries$sport, "running"))
+  # Identifiera kvalificerande sessioner — håll index mot myruns-listan
+  run_idx <- which(.sport_match_mask(summaries, sport))
+
+  empty_per_activity <- tibble::tibble(
+    sessionStart = as.Date(character(0)),
+    distance_km  = numeric(0),
+    z1_sec       = numeric(0),
+    z2_sec       = numeric(0),
+    z3_sec       = numeric(0),
+    total_sec    = numeric(0),
+    z1_pct       = numeric(0),
+    z2_pct       = numeric(0),
+    z3_pct       = numeric(0)
+  )
+
+  if (length(run_idx) == 0) {
+    return(list(
+      per_activity = empty_per_activity,
+      monthly      = tibble::tibble(
+        year_month   = character(0),
+        z1_pct       = numeric(0),
+        z2_pct       = numeric(0),
+        z3_pct       = numeric(0),
+        n_activities = integer(0),
+        total_min    = numeric(0)
+      ),
+      skipped = 0L
+    ))
+  }
 
   n_runs   <- length(run_idx)
   n_skip   <- 0L
@@ -365,6 +395,7 @@ compute_zone_distribution_persecond <- function(summaries,
 #' @param force Logical.  If TRUE, discard cache and recompute everything.
 #' @param cache_path Character or NULL.  Path to RData cache file.
 #'   NULL = auto-detect from TRANING_DATA.
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return Named list with \code{$per_activity}, \code{$monthly},
 #'   \code{$skipped} — same as \code{compute_zone_distribution_persecond()}.
 #' @export
@@ -374,7 +405,8 @@ load_zone_distribution <- function(summaries,
                                    vt1_pct    = 0.80,
                                    vt2_pct    = 0.90,
                                    force      = FALSE,
-                                   cache_path = NULL) {
+                                   cache_path = NULL,
+                                   sport      = "running") {
   if (is.null(cache_path)) cache_path <- .zone_cache_path()
 
   cached_activity <- NULL
@@ -383,22 +415,26 @@ load_zone_distribution <- function(summaries,
 
   if (!force && !is.null(cache_path) && file.exists(cache_path)) {
     load(cache_path)  # loads: zone_cache
-    # Invalidate if thresholds changed
+    # Cache must also match `sport`. Without it, a cache built for
+    # running could be merged with a cycling request via shared
+    # sessionStart dates, returning cross-sport zones.
     if (exists("zone_cache") &&
         identical(zone_cache$vt1_pct, vt1_pct) &&
-        identical(zone_cache$vt2_pct, vt2_pct)) {
+        identical(zone_cache$vt2_pct, vt2_pct) &&
+        identical(zone_cache$sport %||% NULL, sport)) {
       cached_activity <- zone_cache$per_activity
       cached_skipped_dates <- zone_cache$skipped_dates %||% as.Date(character(0))
       cache_valid <- TRUE
       message("Zoncache: ", nrow(cached_activity), " sessioner (",
               length(cached_skipped_dates), " utan HR-data).")
     } else {
-      message("Zoncache: tr\u00f6skelv\u00e4rden \u00e4ndrade, r\u00e4knar om allt.")
+      message("Zoncache: parametrar \u00e4ndrade, r\u00e4knar om allt.")
     }
   }
 
-  # Find running sessions not already cached or known-skipped
-  run_idx <- which(stringr::str_detect(summaries$sport, "running"))
+  # Find qualifying sessions not already cached or known-skipped.
+  # Index-based filter so myruns positional alignment is preserved.
+  run_idx <- which(.sport_match_mask(summaries, sport))
   run_dates <- as.Date(summaries$sessionStart[run_idx])
 
   if (cache_valid) {
@@ -411,6 +447,35 @@ load_zone_distribution <- function(summaries,
 
   all_skipped <- cached_skipped_dates
 
+  # No qualifying sessions at all (e.g. unknown sport bucket) and no
+  # cache to fall back on \u2192 return an empty payload before the dplyr
+  # pipeline downstream tries to select() on a NULL `per_activity`.
+  if (length(run_idx) == 0 && !cache_valid) {
+    return(list(
+      per_activity = tibble::tibble(
+        sessionStart = as.Date(character(0)),
+        distance_km  = numeric(0),
+        z1_pct       = numeric(0),
+        z2_pct       = numeric(0),
+        z3_pct       = numeric(0),
+        z1_sec       = numeric(0),
+        z2_sec       = numeric(0),
+        z3_sec       = numeric(0),
+        total_sec    = numeric(0),
+        source       = character(0)
+      ),
+      monthly = tibble::tibble(
+        year_month   = character(0),
+        z1_pct       = numeric(0),
+        z2_pct       = numeric(0),
+        z3_pct       = numeric(0),
+        n_activities = integer(0),
+        total_min    = numeric(0)
+      ),
+      skipped = 0L
+    ))
+  }
+
   if (length(new_run_idx) == 0) {
     message("Zoncache: inga nya sessioner att ber\u00e4kna.")
     per_activity <- cached_activity
@@ -419,7 +484,7 @@ load_zone_distribution <- function(summaries,
 
     # Per-session HRmax → per-session VT1/VT2
     new_dates <- as.Date(summaries$sessionStart[new_run_idx])
-    hr_max_vec <- get_hr_max_at(new_dates, summaries)
+    hr_max_vec <- get_hr_max_at(new_dates, summaries, sport = sport)
     vt1_vec <- hr_max_vec * vt1_pct
     vt2_vec <- hr_max_vec * vt2_pct
 
@@ -505,7 +570,8 @@ load_zone_distribution <- function(summaries,
       per_activity  = per_activity,
       skipped_dates = all_skipped,
       vt1_pct       = vt1_pct,
-      vt2_pct       = vt2_pct
+      vt2_pct       = vt2_pct,
+      sport         = sport
     )
     save_atomic(zone_cache, file = cache_path)
     message("Zoncache sparad: ", nrow(per_activity), " sessioner (per-sekund).")
@@ -517,9 +583,8 @@ load_zone_distribution <- function(summaries,
 
   if (.has_garmin_zones(summaries)) {
     garmin_dates <- per_activity$sessionStart
-    garmin_fallback <- summaries %>%
+    garmin_fallback <- .filter_sport(summaries, sport) %>%
       dplyr::filter(
-        stringr::str_detect(sport, "running"),
         !(as.Date(sessionStart) %in% garmin_dates)
       ) %>%
       dplyr::filter(dplyr::if_all(
@@ -584,8 +649,13 @@ load_zone_distribution <- function(summaries,
       dplyr::arrange(year_month)
   }
 
+  # `skipped` reports the total set of sessions ever skipped, not just the
+  # newly-processed ones. all_skipped accumulates both cached_skipped_dates
+  # (carried over from earlier runs) and new_skipped (from this call), so
+  # the count remains accurate even when this call returns purely cached
+  # results.
   list(per_activity = per_activity, monthly = monthly,
-       skipped = if (exists("n_skip")) n_skip else 0L)
+       skipped = length(all_skipped))
 }
 
 #' Compute Polarization Index (Treff 2019)
@@ -679,9 +749,11 @@ compute_polarization_index <- function(zone_data, window = "monthly") {
 #' @param summaries Enriched summaries tibble (must contain
 #'   \code{garmin_hrTimeInZone_*} columns).
 #' @param myruns List of trackeRdata objects.
-#' @param hr_max Numeric. HRmax in bpm. \code{NULL} = auto-detect.
+#' @param hr_max Numeric. HRmax in bpm. \code{NULL} = auto-detect via
+#'   \code{get_hr_max(summaries, sport = sport)} (sport-aware).
 #' @param vt1_pct Numeric (0–1). VT1 threshold (default 0.80).
 #' @param vt2_pct Numeric (0–1). VT2 threshold (default 0.90).
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return Tibble with one row per overlapping activity:
 #'   \code{sessionStart}, \code{distance_km},
 #'   \code{garmin_z1_pct}, \code{garmin_z2_pct}, \code{garmin_z3_pct},
@@ -693,7 +765,8 @@ cross_validate_zones <- function(summaries,
                                  myruns,
                                  hr_max  = NULL,
                                  vt1_pct = 0.80,
-                                 vt2_pct = 0.90) {
+                                 vt2_pct = 0.90,
+                                 sport   = "running") {
   if (!.has_garmin_zones(summaries)) {
     stop(
       "summaries saknar garmin_hrTimeInZone-kolumner. ",
@@ -701,16 +774,16 @@ cross_validate_zones <- function(summaries,
     )
   }
 
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
   vt1 <- hr_max * vt1_pct
   vt2 <- hr_max * vt2_pct
 
   zone_cols <- paste0("garmin_hrTimeInZone_", 1:5)
 
-  # Identifiera löpsessioner med kompletta Garmin-zondata
+  # Identifiera kvalificerande sessioner med kompletta Garmin-zondata
   run_idx <- which(
-    stringr::str_detect(summaries$sport, "running") &
+    .sport_match_mask(summaries, sport) &
       !is.na(summaries$garmin_hrTimeInZone_1) &
       !is.na(summaries$garmin_hrTimeInZone_5)
   )

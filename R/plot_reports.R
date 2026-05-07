@@ -145,8 +145,8 @@ plot_yearstop <- function(summaries, from = NULL, to = NULL) {
 
 #' Distance per period for a date range — bar chart
 #'
-#' Aggregates running distance from \code{summaries} over the given date
-#' range. The time resolution is chosen automatically:
+#' Aggregates distance for the selected \code{sport} bucket over the given
+#' date range. The time resolution is chosen automatically:
 #' \itemize{
 #'   \item < 60 days  → daily bars
 #'   \item < 18 months → weekly bars (\code{"\%Y-W\%V"})
@@ -156,9 +156,11 @@ plot_yearstop <- function(summaries, from = NULL, to = NULL) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @param do_datesum_from Start date (Date or character \code{"YYYY-MM-DD"}).
 #' @param do_datesum_to End date (Date or character \code{"YYYY-MM-DD"}).
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return ggplot2 object
 #' @export
-plot_datesum <- function(summaries, do_datesum_from, do_datesum_to) {
+plot_datesum <- function(summaries, do_datesum_from, do_datesum_to,
+                         sport = "running") {
   from <- as.Date(do_datesum_from)
   to   <- as.Date(do_datesum_to)
 
@@ -181,9 +183,8 @@ plot_datesum <- function(summaries, do_datesum_from, do_datesum_to) {
     "Månad"
   }
 
-  data <- summaries %>%
+  data <- .filter_sport(summaries, sport) %>%
     dplyr::filter(
-      stringr::str_detect(sport, "running"),
       sessionStart >= from,
       sessionStart <  to
     ) %>%

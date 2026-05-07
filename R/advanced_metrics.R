@@ -49,28 +49,42 @@
   result
 }
 
-#' Compute Efficiency Factor (EF) per run
+#' Compute Efficiency Factor (EF) per session
 #'
 #' EF = average speed (m/min) / average heart rate (bpm).
 #' A higher EF means more speed per heartbeat — a proxy for aerobic fitness.
-#' Only runs longer than 5 km are included because short sessions produce
-#' noisy EF values that distort the trend.
+#' Sessions of \code{min_distance} or less (default 5 km) are excluded
+#' because short sessions produce noisy EF values that distort the trend.
 #'
 #' A 28-day rolling mean (ef_rolling28) is also returned to reveal the
 #' underlying fitness trend, smoothing over day-to-day variation.
 #'
+#' EF generalises naturally to any sport that records speed and HR
+#' (e.g. cycling, walking).
+#'
 #' @param summaries Data frame from \code{my_dbs_load()}, enriched by
 #'   \code{add_my_columns()} and \code{fix_zero_moving()}.
-#' @return Tibble with one row per qualifying run, ordered by date, with
-#'   columns: \code{sessionStart}, \code{distance_km}, \code{avgSpeedMoving},
-#'   \code{avgHeartRateMoving}, \code{ef}, \code{ef_rolling28}.
+#' @param sport Sport bucket (default \code{"running"}).
+#' @param min_distance Numeric. Minimum distance in metres to include
+#'   (default 5000).
+#' @return Tibble with one row per qualifying session, ordered by date,
+#'   with columns: \code{sessionStart}, \code{distance_km},
+#'   \code{avgSpeedMoving}, \code{avgHeartRateMoving}, \code{ef},
+#'   \code{ef_rolling28}.
 #' @export
-compute_efficiency_factor <- function(summaries) {
-  runs <- summaries %>%
-    dplyr::filter(
-      stringr::str_detect(sport, "running"),
-      distance > 5000
-    ) %>%
+compute_efficiency_factor <- function(summaries, sport = "running",
+                                      min_distance = 5000) {
+  empty <- tibble::tibble(
+    sessionStart       = as.Date(character(0)),
+    distance_km        = numeric(0),
+    avgSpeedMoving     = numeric(0),
+    avgHeartRateMoving = numeric(0),
+    ef                 = numeric(0),
+    ef_rolling28       = numeric(0)
+  )
+
+  runs <- .filter_sport(summaries, sport) %>%
+    dplyr::filter(distance > min_distance) %>%
     dplyr::mutate(
       sessionStart = as.Date(sessionStart),
       distance_km  = distance / 1000,
@@ -83,6 +97,8 @@ compute_efficiency_factor <- function(summaries) {
     dplyr::mutate(
       ef = speed_m_per_min / hr
     )
+
+  if (nrow(runs) == 0) return(empty)
 
   # 28-day rolling mean: work on per-day values (use last run of the day
   # when multiple runs share a date), then join back
@@ -120,7 +136,7 @@ compute_efficiency_factor <- function(summaries) {
     )
 }
 
-#' Compute Heart Rate Efficiency (HRE) per run — Votyakov metric
+#' Compute Heart Rate Efficiency (HRE) per session — Votyakov metric
 #'
 #' HRE = average heart rate (bpm) * average pace (min/km) = beats per km.
 #' A lower HRE means fewer heartbeats needed per km — better aerobic fitness.
@@ -128,22 +144,34 @@ compute_efficiency_factor <- function(summaries) {
 #'
 #' Votyakov et al. (2025) validated HRE over 14 years with thresholds:
 #' <700 bpkm = well-fitted, 700-750 = fitted, >800 = poorly-fitted.
+#' These thresholds are running-specific; the formula still produces a
+#' meaningful "beats per km" value for cycling/walking but the absolute
+#' numbers differ.
 #'
-#' Only runs longer than 5 km are included.  A 28-day rolling mean
-#' (hre_rolling28) reveals the underlying fitness trend.
+#' Sessions of \code{min_distance} or less (default 5 km) are excluded.
+#' A 28-day rolling mean (hre_rolling28) reveals the underlying trend.
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
-#' @return Tibble with one row per qualifying run, ordered by date, with
-#'   columns: \code{sessionStart}, \code{distance_km},
+#' @param sport Sport bucket (default \code{"running"}).
+#' @param min_distance Numeric. Minimum distance in metres (default 5000).
+#' @return Tibble with one row per qualifying session, ordered by date,
+#'   with columns: \code{sessionStart}, \code{distance_km},
 #'   \code{avgHeartRateMoving}, \code{avgPaceMoving}, \code{hre},
 #'   \code{hre_rolling28}.
 #' @export
-compute_hre <- function(summaries) {
-  runs <- summaries %>%
-    dplyr::filter(
-      stringr::str_detect(sport, "running"),
-      distance > 5000
-    ) %>%
+compute_hre <- function(summaries, sport = "running",
+                        min_distance = 5000) {
+  empty <- tibble::tibble(
+    sessionStart       = as.Date(character(0)),
+    distance_km        = numeric(0),
+    avgHeartRateMoving = numeric(0),
+    avgPaceMoving      = numeric(0),
+    hre                = numeric(0),
+    hre_rolling28      = numeric(0)
+  )
+
+  runs <- .filter_sport(summaries, sport) %>%
+    dplyr::filter(distance > min_distance) %>%
     dplyr::mutate(
       sessionStart = as.Date(sessionStart),
       distance_km  = distance / 1000,
@@ -155,6 +183,8 @@ compute_hre <- function(summaries) {
     dplyr::mutate(
       hre = hr * pace
     )
+
+  if (nrow(runs) == 0) return(empty)
 
   daily_hre <- runs %>%
     dplyr::group_by(sessionStart) %>%
@@ -207,19 +237,32 @@ compute_hre <- function(summaries) {
 #' two windows are independent.
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
-#' @return Tibble with one row per calendar day from first to last run,
+#' @param sport Sport bucket (default \code{"running"}).
+#' @return Tibble with one row per calendar day from first to last session,
 #'   with columns: \code{date}, \code{daily_km}, \code{weekly_km},
 #'   \code{acute_load}, \code{chronic_load}, \code{acwr},
 #'   \code{acwr_uncoupled}.
 #' @export
-compute_acwr <- function(summaries) {
-  # Aggregate to daily km (all runs — not filtered to > 5 km)
-  daily <- summaries %>%
-    dplyr::filter(stringr::str_detect(sport, "running")) %>%
+compute_acwr <- function(summaries, sport = "running") {
+  empty <- tibble::tibble(
+    date              = as.Date(character(0)),
+    daily_km          = numeric(0),
+    weekly_km         = numeric(0),
+    acute_load        = numeric(0),
+    chronic_load      = numeric(0),
+    acwr              = numeric(0),
+    acwr_uncoupled    = numeric(0),
+    weekly_pct_change = numeric(0)
+  )
+
+  # Aggregate to daily km (all sessions — not filtered to > 5 km)
+  daily <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(date = as.Date(sessionStart)) %>%
     dplyr::group_by(date) %>%
     dplyr::summarise(daily_km = sum(distance, na.rm = TRUE) / 1000,
                      .groups = "drop")
+
+  if (nrow(daily) == 0) return(empty)
 
   # Full date spine with rest days as 0; extend to today
   spine_end <- max(max(daily$date), Sys.Date())
@@ -300,18 +343,28 @@ compute_acwr <- function(summaries) {
 #' contribute zeros to both mean and SD.
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
-#' @return Tibble with one row per calendar day from first to last run,
+#' @param sport Sport bucket (default \code{"running"}).
+#' @return Tibble with one row per calendar day from first to last session,
 #'   with columns: \code{date}, \code{daily_km}, \code{weekly_km},
 #'   \code{monotony}, \code{strain}.
 #' @export
-compute_monotony_strain <- function(summaries) {
+compute_monotony_strain <- function(summaries, sport = "running") {
+  empty <- tibble::tibble(
+    date      = as.Date(character(0)),
+    daily_km  = numeric(0),
+    weekly_km = numeric(0),
+    monotony  = numeric(0),
+    strain    = numeric(0)
+  )
+
   # Aggregate to daily km — same approach as compute_acwr()
-  daily <- summaries %>%
-    dplyr::filter(stringr::str_detect(sport, "running")) %>%
+  daily <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(date = as.Date(sessionStart)) %>%
     dplyr::group_by(date) %>%
     dplyr::summarise(daily_km = sum(distance, na.rm = TRUE) / 1000,
                      .groups = "drop")
+
+  if (nrow(daily) == 0) return(empty)
 
   spine_end <- max(max(daily$date), Sys.Date())
   date_spine <- tibble::tibble(
@@ -352,17 +405,19 @@ compute_monotony_strain <- function(summaries) {
 #' (Cole et al. 1999).
 #'
 #' @param summaries Enriched summaries (must contain garmin_recoveryHeartRate)
+#' @param sport Sport bucket (default \code{"running"}). Garmin recovery HR
+#'   is only emitted for running today, so non-running buckets typically
+#'   return an empty tibble.
 #' @return Tibble with columns: sessionStart, distance_km,
 #'   recovery_hr, recovery_hr_rolling28
 #' @export
-compute_recovery_hr <- function(summaries) {
+compute_recovery_hr <- function(summaries, sport = "running") {
   if (!"garmin_recoveryHeartRate" %in% names(summaries)) {
     stop("summaries saknar garmin_recoveryHeartRate. Kör augment_summaries() först.")
   }
 
-  runs <- summaries %>%
+  runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(
-      stringr::str_detect(sport, "running"),
       !is.na(garmin_recoveryHeartRate),
       garmin_recoveryHeartRate > 0
     ) %>%
@@ -450,14 +505,16 @@ compute_recovery_hr <- function(summaries) {
 #'   the same value is used for all sessions. If a vector, must be the same
 #'   length as the number of qualifying sessions (matched by date order).
 #'   If NULL, \code{get_hr_rest()} is called for each session date.
+#' @param sport Sport bucket (default \code{"running"}). TRIMP is purely
+#'   HR-based and works for any sport with HR data.
 #' @return Tibble with: date, daily_trimp, trimp_type ("btrimp").
 #' @export
-compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL) {
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
+compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
+                          sport = "running") {
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
-  runs <- summaries %>%
+  runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(
-      stringr::str_detect(sport, "running"),
       !is.na(avgHeartRateMoving),
       as.numeric(avgHeartRateMoving) > 0,
       !is.na(durationMoving)
@@ -518,10 +575,13 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL) {
 #' @param summaries Summaries data frame.
 #' @param hr_max Numeric. Maximum heart rate. NULL = auto-detect.
 #' @param hr_rest Numeric or NULL. Resting heart rate. NULL = time-varying from AW data.
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return Tibble with daily values: date, daily_trimp, atl, ctl, tsb.
 #' @export
-compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL) {
-  daily_trimp <- compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest)
+compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
+                        sport = "running") {
+  daily_trimp <- compute_trimp(summaries, hr_max = hr_max,
+                               hr_rest = hr_rest, sport = sport)
 
   if (nrow(daily_trimp) == 0) {
     return(tibble::tibble(date = as.Date(character(0)),
@@ -552,18 +612,24 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL) {
     )
 }
 
-#' Compute Aerobic Decoupling per run
+#' Compute Aerobic Decoupling per session
 #'
-#' Aerobic decoupling measures the drift in pace:HR efficiency between the first
-#' and second half of a run, excluding a warmup period.  A positive value means
-#' the second half was less efficient (cardiac drift).  Well-developed aerobic
-#' fitness produces decoupling < 3\%; values > 5\% suggest aerobic limitation.
+#' Aerobic decoupling measures the drift in pace:HR efficiency between the
+#' first and second half of a session, excluding a warmup period. A positive
+#' value means the second half was less efficient (cardiac drift).
+#' Well-developed aerobic fitness produces decoupling < 3\%; values > 5\%
+#' suggest aerobic limitation.
+#'
+#' Defaults are tuned for running (steady-state easy pace), but the algorithm
+#' generalises to any sport with steady speed and HR samples (cycling,
+#' walking) — pass \code{sport} accordingly and adjust \code{max_pace_min_km}
+#' if the sport's typical pace differs.
 #'
 #' @section Session selection:
-#' Only steady-state easy runs are included:
+#' Only steady-state easy sessions are included:
 #' \itemize{
-#'   \item Duration > 45 min (short runs produce noisy values)
-#'   \item Average pace > 5:00/km (excludes intervals and tempo runs)
+#'   \item Duration > 45 min (short sessions produce noisy values)
+#'   \item Average pace > 5:00/km (excludes intervals and tempo sessions)
 #'   \item Mean speed difference between halves \eqn{\le} 10\% (excludes
 #'     non-steady-state sessions — warm-up progression, fartlek, negative
 #'     splits)
@@ -595,7 +661,10 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL) {
 #'   speed between first and second half, as a percentage of the faster half
 #'   (default 10).  Sessions exceeding this are not steady-state and are
 #'   excluded.
-#' @return Tibble with one row per qualifying run, ordered by date:
+#' @param sport Sport bucket (default \code{"running"}). Decoupling is a
+#'   speed:HR drift; the same algorithm works for any sport with steady
+#'   speed and HR samples (e.g. cycling, walking).
+#' @return Tibble with one row per qualifying session, ordered by date:
 #'   \code{sessionStart}, \code{distance_km}, \code{duration_min},
 #'   \code{avg_pace}, \code{avg_hr}, \code{ratio_first}, \code{ratio_second},
 #'   \code{decoupling_pct}, \code{decoupling_rolling28}, \code{temperature}.
@@ -605,7 +674,8 @@ compute_decoupling <- function(summaries, myruns,
                                max_pace_min_km         = 5.0,
                                warmup_sec              = 600L,
                                smooth_window           = 30L,
-                               max_half_speed_diff_pct = 10) {
+                               max_half_speed_diff_pct = 10,
+                               sport                   = "running") {
   empty <- tibble::tibble(
     sessionStart       = as.Date(character(0)),
     distance_km        = numeric(0),
@@ -619,9 +689,11 @@ compute_decoupling <- function(summaries, myruns,
     temperature        = numeric(0)
   )
 
-  # Filter qualifying sessions at summary level
+  # Filter qualifying sessions at summary level. We work with row indices
+  # (not dplyr::filter) because myruns is positionally aligned to
+  # summaries — losing positions would break the [[i]] lookup.
   run_idx <- which(
-    stringr::str_detect(summaries$sport, "running") &
+    .sport_match_mask(summaries, sport) &
     as.numeric(summaries$durationMoving, units = "mins") > min_duration_min &
     as.numeric(summaries$avgPaceMoving) > max_pace_min_km
   )
@@ -801,7 +873,8 @@ load_decoupling <- function(summaries, myruns,
                             smooth_window           = 30L,
                             max_half_speed_diff_pct = 10,
                             force                   = FALSE,
-                            cache_path              = NULL) {
+                            cache_path              = NULL,
+                            sport                   = "running") {
   if (is.null(cache_path)) cache_path <- .decoupling_cache_path()
 
   cached <- NULL
@@ -810,12 +883,18 @@ load_decoupling <- function(summaries, myruns,
 
   if (!force && !is.null(cache_path) && file.exists(cache_path)) {
     load(cache_path)  # loads: decoupling_cache
+    # Cache must also match `sport` — without that, a cache produced for
+    # one sport could be reused (or merged with) a request for another
+    # and return cross-sport results. Older caches (pre-sport-key) are
+    # treated as invalid and recomputed.
     if (exists("decoupling_cache") &&
         identical(decoupling_cache$min_duration_min, min_duration_min) &&
         identical(decoupling_cache$max_pace_min_km, max_pace_min_km) &&
         identical(decoupling_cache$warmup_sec, warmup_sec) &&
         identical(decoupling_cache$smooth_window, smooth_window) &&
-        identical(decoupling_cache$max_half_speed_diff_pct, max_half_speed_diff_pct)) {
+        identical(decoupling_cache$max_half_speed_diff_pct,
+                  max_half_speed_diff_pct) &&
+        identical(decoupling_cache$sport %||% NULL, sport)) {
       cached <- decoupling_cache$per_run
       cached_skipped_dates <- decoupling_cache$skipped_dates %||%
         as.Date(character(0))
@@ -829,7 +908,7 @@ load_decoupling <- function(summaries, myruns,
 
   # Find qualifying sessions not already cached
   run_idx <- which(
-    stringr::str_detect(summaries$sport, "running") &
+    .sport_match_mask(summaries, sport) &
     as.numeric(summaries$durationMoving, units = "mins") > min_duration_min &
     as.numeric(summaries$avgPaceMoving) > max_pace_min_km
   )
@@ -860,7 +939,8 @@ load_decoupling <- function(summaries, myruns,
       max_pace_min_km         = max_pace_min_km,
       warmup_sec              = warmup_sec,
       smooth_window           = smooth_window,
-      max_half_speed_diff_pct = max_half_speed_diff_pct
+      max_half_speed_diff_pct = max_half_speed_diff_pct,
+      sport                   = sport
     )
 
     if (cache_valid && nrow(cached) > 0) {
@@ -916,7 +996,8 @@ load_decoupling <- function(summaries, myruns,
       max_pace_min_km         = max_pace_min_km,
       warmup_sec              = warmup_sec,
       smooth_window           = smooth_window,
-      max_half_speed_diff_pct = max_half_speed_diff_pct
+      max_half_speed_diff_pct = max_half_speed_diff_pct,
+      sport                   = sport
     )
     save_atomic(decoupling_cache, file = cache_path)
     message("Decoupling-cache sparad: ", nrow(per_run), " sessioner.")

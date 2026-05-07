@@ -92,6 +92,81 @@ test_that(".filter_sport returns empty data frame when sport column missing", {
   expect_equal(nrow(result), 0)
 })
 
+# --- .sport_match_mask --------------------------------------------------------
+
+test_that(".sport_match_mask returns logical vector of nrow(summaries)", {
+  df <- .fixture()
+  mask <- traning:::.sport_match_mask(df, "running")
+  expect_type(mask, "logical")
+  expect_length(mask, nrow(df))
+})
+
+test_that(".sport_match_mask matches the same rows as .filter_sport", {
+  df <- .fixture()
+  # Use list() (not c()) so that vector inputs and NULL aren't silently
+  # flattened/dropped during the loop.
+  cases <- list(
+    "running",
+    "cycling",
+    "endurance",
+    c("running", "cycling"),
+    "all",
+    NULL,
+    ""
+  )
+  for (s in cases) {
+    mask <- traning:::.sport_match_mask(df, s)
+    filtered <- traning:::.filter_sport(df, s)
+    expect_equal(sum(mask), nrow(filtered),
+                 info = paste("sport=", deparse(s)))
+  }
+})
+
+test_that(".sport_match_mask treats NULL/all/any/character(0) as match-all", {
+  df <- .fixture()
+  expect_true(all(traning:::.sport_match_mask(df, NULL)))
+  expect_true(all(traning:::.sport_match_mask(df, "all")))
+  expect_true(all(traning:::.sport_match_mask(df, "any")))
+  expect_true(all(traning:::.sport_match_mask(df, character(0))))
+})
+
+test_that(".sport_match_mask treats blank/NA as match-none", {
+  df <- .fixture()
+  expect_false(any(traning:::.sport_match_mask(df, "")))
+  expect_false(any(traning:::.sport_match_mask(df, NA_character_)))
+})
+
+test_that(".sport_match_mask handles missing sport column", {
+  df <- data.frame(distance = c(1000, 2000), stringsAsFactors = FALSE)
+  expect_false(any(traning:::.sport_match_mask(df, "running")))
+  # NULL still means "match all" — there are no sport-specific rows to filter
+  expect_true(all(traning:::.sport_match_mask(df, NULL)))
+})
+
+test_that(".sport_match_mask coerces NA sport values to FALSE", {
+  # Regression: previously str_detect(NA, ...) returned NA, which
+  # propagated through Reduce(`|`,) and made `all(matches)` /
+  # `any(matches)` raise "missing value where TRUE/FALSE needed".
+  df <- data.frame(
+    sport = c("running", NA_character_, "cycling", NA, "running"),
+    stringsAsFactors = FALSE
+  )
+  mask <- traning:::.sport_match_mask(df, "running")
+  expect_false(anyNA(mask))
+  expect_equal(mask, c(TRUE, FALSE, FALSE, FALSE, TRUE))
+})
+
+test_that(".filter_sport doesn't crash on NA sport values", {
+  df <- data.frame(
+    sport = c("running", NA_character_, "cycling"),
+    distance = c(1000, 2000, 3000),
+    stringsAsFactors = FALSE
+  )
+  # Used to error: "missing value where TRUE/FALSE needed"
+  expect_no_error(traning:::.filter_sport(df, "running"))
+  expect_equal(nrow(traning:::.filter_sport(df, "running")), 1)
+})
+
 test_that(".filter_sport returns empty (not pass-through) for blank/NA input", {
   # Regression: previously sport="" or sport=NA_character_ resolved to
   # character(0), Reduce produced NULL, and dplyr::filter with NULL was a

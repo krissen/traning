@@ -80,29 +80,39 @@ import_resting_hr <- function(csv_path) {
 
 #' Get HRmax estimate
 #'
-#' Returns HRmax from the \code{HR_MAX} environment variable if set,
-#' otherwise estimates from the 98th percentile of max HR values observed
-#' in the enriched summaries (filtered to running sessions > 20 min to
-#' exclude sensor artifacts), otherwise uses the Tanaka formula
-#' (208 - 0.7 * age, requiring \code{AGE} env var), and as a last resort
-#' returns 185 bpm with a warning.
+#' Returns HRmax using the first available source in this priority order:
+#' \enumerate{
+#'   \item \code{HR_MAX} environment variable (explicit override).
+#'   \item Data-driven: 98th percentile of \code{garmin_maxHR} from
+#'     sessions matching \code{sport} that are longer than 20 min,
+#'     when \code{summaries} is non-NULL and contains the column.
+#'   \item \code{BIRTH_YEAR} environment variable + Tanaka formula
+#'     (208 - 0.7 * age) — same source as \code{\link{get_hr_max_at}},
+#'     so a consistent estimate is produced when only birth year is
+#'     configured.
+#'   \item \code{AGE} environment variable + Tanaka formula.
+#'   \item Fallback: 185 bpm with a warning.
+#' }
 #'
 #' @param summaries Summaries tibble, optionally with a \code{garmin_maxHR}
 #'   column (added by \code{add_my_columns()}). May be \code{NULL}.
+#' @param sport Sport bucket used for the data-driven estimate
+#'   (default \code{"running"}). Different sports may have different
+#'   max-HR ceilings — cycling typically lower than running — so passing
+#'   the relevant sport gives a more representative estimate.
 #' @return Numeric scalar (beats per minute)
 #' @export
-get_hr_max <- function(summaries = NULL) {
+get_hr_max <- function(summaries = NULL, sport = "running") {
   # 1. Explicit env var takes priority
   hr_max_env <- suppressWarnings(as.numeric(Sys.getenv("HR_MAX", unset = "")))
   if (!is.na(hr_max_env) && hr_max_env > 0) {
     return(hr_max_env)
   }
 
-  # 2. Data-driven: 98th percentile of garmin_maxHR from running sessions > 20 min
+  # 2. Data-driven: 98th percentile of garmin_maxHR from sessions > 20 min
   if (!is.null(summaries) && "garmin_maxHR" %in% colnames(summaries)) {
-    max_hr_vals <- summaries %>%
+    max_hr_vals <- .filter_sport(summaries, sport) %>%
       dplyr::filter(
-        stringr::str_detect(sport, "running"),
         # duration is a difftime (typically in minutes from trackeR)
         as.numeric(duration, units = "mins") > 20
       ) %>%
@@ -118,7 +128,16 @@ get_hr_max <- function(summaries = NULL) {
     }
   }
 
-  # 3. Tanaka formula: 208 - 0.7 * age
+  # 3. BIRTH_YEAR + Tanaka formula (preferred — same source as get_hr_max_at)
+  birth_year <- suppressWarnings(
+    as.numeric(Sys.getenv("BIRTH_YEAR", unset = "")))
+  if (!is.na(birth_year) && birth_year > 1900) {
+    age <- as.numeric(format(Sys.Date(), "%Y")) - birth_year
+    estimate <- 208 - 0.7 * age
+    return(round(estimate))
+  }
+
+  # 4. AGE env var (snapshot — doesn't decline over time)
   age_env <- suppressWarnings(as.numeric(Sys.getenv("AGE", unset = "")))
   if (!is.na(age_env) && age_env > 0) {
     estimate <- 208 - 0.7 * age_env
@@ -127,9 +146,10 @@ get_hr_max <- function(summaries = NULL) {
     return(round(estimate))
   }
 
-  # 4. Ultimate fallback
-  warning("HRmax could not be determined (set HR_MAX or AGE env var, or ",
-          "provide summaries with garmin_maxHR). Returning 185 bpm as default.")
+  # 5. Ultimate fallback
+  warning("HRmax could not be determined (set HR_MAX, BIRTH_YEAR or AGE env ",
+          "var, or provide summaries with garmin_maxHR). ",
+          "Returning 185 bpm as default.")
   185
 }
 
@@ -204,9 +224,11 @@ get_hr_rest <- function(date, rhr_data = NULL) {
 #'
 #' @param date Date vector (Date or character).
 #' @param summaries Optional summaries tibble with \code{garmin_maxHR}.
+#' @param sport Sport bucket used for the data-driven estimate
+#'   (default \code{"running"}).
 #' @return Numeric vector of same length as \code{date} (bpm, rounded).
 #' @export
-get_hr_max_at <- function(date, summaries = NULL) {
+get_hr_max_at <- function(date, summaries = NULL, sport = "running") {
   date <- as.Date(date)
 
   # 1. Explicit override → fixed for all dates
@@ -228,9 +250,8 @@ get_hr_max_at <- function(date, summaries = NULL) {
 
   # 3. Data-driven: yearly 98th percentile with linear fit
   if (!is.null(summaries) && "garmin_maxHR" %in% colnames(summaries)) {
-    yearly <- summaries %>%
+    yearly <- .filter_sport(summaries, sport) %>%
       dplyr::filter(
-        stringr::str_detect(sport, "running"),
         as.numeric(duration, units = "mins") > 20
       ) %>%
       dplyr::mutate(
