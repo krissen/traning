@@ -89,6 +89,19 @@ test_that("compute_hre returns empty tibble when no rows match", {
                       "avgPaceMoving", "hre", "hre_rolling28"))
 })
 
+test_that("compute_acwr returns empty tibble when no rows match", {
+  df <- .metrics_summaries()
+  # No rows match — date-spine min/max would crash on empty input
+  expect_no_error(res <- compute_acwr(df, sport = "swimming"))
+  expect_equal(nrow(res), 0)
+})
+
+test_that("compute_monotony_strain returns empty tibble when no rows match", {
+  df <- .metrics_summaries()
+  expect_no_error(res <- compute_monotony_strain(df, sport = "swimming"))
+  expect_equal(nrow(res), 0)
+})
+
 test_that("compute_acwr sport='cycling' aggregates cycling km only", {
   df <- .metrics_summaries()
   result <- compute_acwr(df, sport = "cycling")

@@ -244,12 +244,25 @@ compute_hre <- function(summaries, sport = "running",
 #'   \code{acwr_uncoupled}.
 #' @export
 compute_acwr <- function(summaries, sport = "running") {
+  empty <- tibble::tibble(
+    date              = as.Date(character(0)),
+    daily_km          = numeric(0),
+    weekly_km         = numeric(0),
+    acute_load        = numeric(0),
+    chronic_load      = numeric(0),
+    acwr              = numeric(0),
+    acwr_uncoupled    = numeric(0),
+    weekly_pct_change = numeric(0)
+  )
+
   # Aggregate to daily km (all sessions — not filtered to > 5 km)
   daily <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(date = as.Date(sessionStart)) %>%
     dplyr::group_by(date) %>%
     dplyr::summarise(daily_km = sum(distance, na.rm = TRUE) / 1000,
                      .groups = "drop")
+
+  if (nrow(daily) == 0) return(empty)
 
   # Full date spine with rest days as 0; extend to today
   spine_end <- max(max(daily$date), Sys.Date())
@@ -336,12 +349,22 @@ compute_acwr <- function(summaries, sport = "running") {
 #'   \code{monotony}, \code{strain}.
 #' @export
 compute_monotony_strain <- function(summaries, sport = "running") {
+  empty <- tibble::tibble(
+    date      = as.Date(character(0)),
+    daily_km  = numeric(0),
+    weekly_km = numeric(0),
+    monotony  = numeric(0),
+    strain    = numeric(0)
+  )
+
   # Aggregate to daily km — same approach as compute_acwr()
   daily <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(date = as.Date(sessionStart)) %>%
     dplyr::group_by(date) %>%
     dplyr::summarise(daily_km = sum(distance, na.rm = TRUE) / 1000,
                      .groups = "drop")
+
+  if (nrow(daily) == 0) return(empty)
 
   spine_end <- max(max(daily$date), Sys.Date())
   date_spine <- tibble::tibble(

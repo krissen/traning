@@ -222,6 +222,33 @@ compute_zone_distribution_persecond <- function(summaries,
   # Identifiera kvalificerande sessioner — håll index mot myruns-listan
   run_idx <- which(.sport_match_mask(summaries, sport))
 
+  empty_per_activity <- tibble::tibble(
+    sessionStart = as.Date(character(0)),
+    distance_km  = numeric(0),
+    z1_sec       = numeric(0),
+    z2_sec       = numeric(0),
+    z3_sec       = numeric(0),
+    total_sec    = numeric(0),
+    z1_pct       = numeric(0),
+    z2_pct       = numeric(0),
+    z3_pct       = numeric(0)
+  )
+
+  if (length(run_idx) == 0) {
+    return(list(
+      per_activity = empty_per_activity,
+      monthly      = tibble::tibble(
+        year_month   = character(0),
+        z1_pct       = numeric(0),
+        z2_pct       = numeric(0),
+        z3_pct       = numeric(0),
+        n_activities = integer(0),
+        total_min    = numeric(0)
+      ),
+      skipped = 0L
+    ))
+  }
+
   n_runs   <- length(run_idx)
   n_skip   <- 0L
   results  <- vector("list", n_runs)

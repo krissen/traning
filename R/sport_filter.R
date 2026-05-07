@@ -137,7 +137,12 @@
   if (is.null(buckets)) return(rep(TRUE, n))
   if (length(buckets) == 0) return(rep(FALSE, n))
   if (!"sport" %in% names(summaries)) return(rep(FALSE, n))
-  Reduce(`|`, lapply(buckets, function(b) {
+  matches <- Reduce(`|`, lapply(buckets, function(b) {
     stringr::str_detect(summaries$sport, stringr::fixed(b))
   }))
+  # str_detect returns NA when the input is NA, which propagates into
+  # all()/any() and causes "missing value where TRUE/FALSE needed" in
+  # callers like .filter_sport(). Treat NA sport values as no match.
+  matches[is.na(matches)] <- FALSE
+  matches
 }
