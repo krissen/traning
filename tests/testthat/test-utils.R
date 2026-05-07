@@ -9,6 +9,31 @@ test_that("dec_to_mmss handles single-digit seconds", {
   expect_equal(dec_to_mmss(5.1), "5:06")
 })
 
+test_that("dec_to_mmss returns dash for invalid input", {
+  expect_equal(dec_to_mmss(NA), "—")
+  expect_equal(dec_to_mmss(NA_real_), "—")
+  expect_equal(dec_to_mmss(NaN), "—")
+  expect_equal(dec_to_mmss(Inf), "—")
+  expect_equal(dec_to_mmss(-Inf), "—")
+  expect_equal(dec_to_mmss(numeric(0)), "—")
+})
+
+test_that("dec_to_mmss does not crash on integer overflow", {
+  # Regression: a stray bad pace row in the cache (e.g. 2.4e11 min/km)
+  # used to drive `as.integer(x*60)` past the integer.max ceiling, which
+  # silently coerced to NA and crashed the if-clause below it.
+  expect_equal(dec_to_mmss(1e10), "—")
+  expect_equal(dec_to_mmss(.Machine$integer.max), "—")
+})
+
+test_that("dec_to_mmss rejects vector input explicitly", {
+  # Was a silent failure mode before: is.na(c(1,NA)) returns
+  # c(FALSE,TRUE) and the if-clause warns instead of producing useful
+  # output.  Now an explicit error so callers must aggregate first.
+  expect_error(dec_to_mmss(c(5.0, 5.5)), "scalar")
+  expect_error(dec_to_mmss(c(NA_real_, 1.0)), "scalar")
+})
+
 test_that("save_atomic writes file readable by load()", {
   tmp <- tempfile(fileext = ".RData")
   on.exit(unlink(tmp), add = TRUE)

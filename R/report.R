@@ -355,10 +355,13 @@ report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
 #' @param n Number of rows to show (default 28). Ignored when from/to given.
 #' @param from Date or NULL. Start of display window (inclusive).
 #' @param to Date or NULL. End of display window (exclusive).
+#' @param sport Sport bucket (default \code{"running"}). Forwarded to the
+#'   underlying \code{compute_*} call. See \code{\link{.filter_sport}}.
 #' @return Tibble
 #' @export
-report_ef <- function(summaries, n = 28, from = NULL, to = NULL) {
-  compute_efficiency_factor(summaries) %>%
+report_ef <- function(summaries, n = 28, from = NULL, to = NULL,
+                      sport = "running") {
+  compute_efficiency_factor(summaries, sport = sport) %>%
     dplyr::mutate(
       Datum = sessionStart,
       Km = round(distance_km, 1),
@@ -373,8 +376,9 @@ report_ef <- function(summaries, n = 28, from = NULL, to = NULL) {
 #' @inheritParams report_ef
 #' @return Tibble
 #' @export
-report_hre <- function(summaries, n = 28, from = NULL, to = NULL) {
-  compute_hre(summaries) %>%
+report_hre <- function(summaries, n = 28, from = NULL, to = NULL,
+                       sport = "running") {
+  compute_hre(summaries, sport = sport) %>%
     dplyr::mutate(
       Datum = sessionStart,
       Km = round(distance_km, 1),
@@ -389,8 +393,9 @@ report_hre <- function(summaries, n = 28, from = NULL, to = NULL) {
 #' @inheritParams report_ef
 #' @return Tibble
 #' @export
-report_acwr <- function(summaries, n = 28, from = NULL, to = NULL) {
-  compute_acwr(summaries) %>%
+report_acwr <- function(summaries, n = 28, from = NULL, to = NULL,
+                        sport = "running") {
+  compute_acwr(summaries, sport = sport) %>%
     dplyr::mutate(
       Datum = date,
       `Km/dag` = round(daily_km, 1),
@@ -405,8 +410,9 @@ report_acwr <- function(summaries, n = 28, from = NULL, to = NULL) {
 #' @inheritParams report_ef
 #' @return Tibble
 #' @export
-report_monotony <- function(summaries, n = 28, from = NULL, to = NULL) {
-  compute_monotony_strain(summaries) %>%
+report_monotony <- function(summaries, n = 28, from = NULL, to = NULL,
+                            sport = "running") {
+  compute_monotony_strain(summaries, sport = sport) %>%
     dplyr::mutate(
       Datum = date,
       `Km/dag` = round(daily_km, 1),
@@ -425,8 +431,10 @@ report_monotony <- function(summaries, n = 28, from = NULL, to = NULL) {
 #' @return Tibble
 #' @export
 report_pmc <- function(summaries, n = 28, from = NULL, to = NULL,
-                       hr_max = NULL, hr_rest = NULL) {
-  compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest) %>%
+                       hr_max = NULL, hr_rest = NULL,
+                       sport = "running") {
+  compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
+              sport = sport) %>%
     dplyr::mutate(
       Datum = date,
       TRIMP = round(daily_trimp, 1),
@@ -442,8 +450,9 @@ report_pmc <- function(summaries, n = 28, from = NULL, to = NULL,
 #' @inheritParams report_ef
 #' @return Tibble
 #' @export
-report_recovery_hr <- function(summaries, n = 28, from = NULL, to = NULL) {
-  data <- compute_recovery_hr(summaries)
+report_recovery_hr <- function(summaries, n = 28, from = NULL, to = NULL,
+                               sport = "running") {
+  data <- compute_recovery_hr(summaries, sport = sport)
   if (nrow(data) == 0) {
     return(tibble::tibble(
       Datum = as.Date(character(0)), Km = numeric(0),
@@ -470,8 +479,9 @@ report_recovery_hr <- function(summaries, n = 28, from = NULL, to = NULL) {
 #' @return Tibble with monthly zone distribution and PI
 #' @export
 report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
-                            zone_data = NULL) {
-  if (is.null(zone_data)) zone_data <- compute_zone_distribution(summaries)
+                            zone_data = NULL, sport = "running") {
+  if (is.null(zone_data))
+    zone_data <- compute_zone_distribution(summaries, sport = sport)
 
   if (nrow(zone_data$monthly) == 0) {
     return(tibble::tibble(
@@ -501,10 +511,11 @@ report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
     .tail_or_daterange(n, from, to, "Datum")
 }
 
-#' Aerobic Decoupling report — recent qualifying runs
+#' Aerobic Decoupling report — recent qualifying sessions
 #'
-#' Shows per-run decoupling percentage (pace:HR drift between first and second
-#' half) with 28-day rolling mean.  Requires per-second data from myruns.
+#' Shows per-session decoupling percentage (pace/speed:HR drift between
+#' first and second half) with 28-day rolling mean. Requires per-second
+#' data from myruns. Generalises to cycling/walking via \code{sport=}.
 #'
 #' @param decoupling_data Tibble from \code{compute_decoupling()} or
 #'   \code{load_decoupling()}.  If NULL, computed on the fly from
@@ -516,9 +527,10 @@ report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
 #' @export
 report_decoupling <- function(summaries = NULL, myruns = NULL,
                               n = 28, from = NULL, to = NULL,
-                              decoupling_data = NULL) {
+                              decoupling_data = NULL,
+                              sport = "running") {
   if (is.null(decoupling_data)) {
-    decoupling_data <- compute_decoupling(summaries, myruns)
+    decoupling_data <- compute_decoupling(summaries, myruns, sport = sport)
   }
 
   if (nrow(decoupling_data) == 0) {

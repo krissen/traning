@@ -146,8 +146,9 @@ fetch.plot.mean.pace <- function(mean.pace) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
-  ef_data <- compute_efficiency_factor(summaries)
+fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
+                          sport = "running") {
+  ef_data <- compute_efficiency_factor(summaries, sport = sport)
 
   # Filter to date range
   ef_data <- .filter_date_range(ef_data, "sessionStart", from, to)
@@ -160,7 +161,7 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
   show_rolling <- span > 35
 
   # Weekly km for volume panel
-  acwr_data <- compute_acwr(summaries) %>%
+  acwr_data <- compute_acwr(summaries, sport = sport) %>%
     dplyr::filter(
       date >= min(ef_data$sessionStart),
       date <= max(ef_data$sessionStart)
@@ -252,8 +253,9 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL) {
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @return ggplot2 object
 #' @export
-fetch.plot.hre <- function(summaries, from = NULL, to = NULL) {
-  hre_data <- compute_hre(summaries)
+fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
+                           sport = "running") {
+  hre_data <- compute_hre(summaries, sport = sport)
 
   # Filter to date range
   hre_data <- .filter_date_range(hre_data, "sessionStart", from, to)
@@ -331,8 +333,9 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL) {
 #' @param days Integer.  Number of trailing days to show.  Default 365.
 #' @return ggplot2 object
 #' @export
-fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL) {
-  acwr_data <- compute_acwr(summaries)
+fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL,
+                            sport = "running") {
+  acwr_data <- compute_acwr(summaries, sport = sport)
 
   # Date range overrides the days parameter
   if (!is.null(from)) {
@@ -479,8 +482,9 @@ fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL) {
 #' @param days Integer.  Number of trailing days to show.  Default 365.
 #' @return ggplot2 object
 #' @export
-fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL) {
-  ms_data <- compute_monotony_strain(summaries)
+fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL,
+                                sport = "running") {
+  ms_data <- compute_monotony_strain(summaries, sport = sport)
 
   if (!is.null(from)) {
     cutoff <- as.Date(from)
@@ -563,11 +567,14 @@ fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL) {
 #' @param hr_rest Numeric or NULL. HRrest override.
 #' @param from Date or NULL. Start of display window (overrides days).
 #' @param to Date or NULL. End of display window.
+#' @param sport Sport bucket (default \code{"running"}). Forwarded to
+#'   \code{compute_pmc()}.
 #' @return ggplot2 object
 #' @export
 fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
-                           from = NULL, to = NULL) {
-  pmc_data <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest)
+                           from = NULL, to = NULL, sport = "running") {
+  pmc_data <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
+                          sport = sport)
 
   if (nrow(pmc_data) == 0) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
@@ -685,8 +692,9 @@ fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
 #' Scatter plot of Recovery Heart Rate over time (see above)
 #' @inheritParams fetch.plot.pmc
 #' @export
-fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL) {
-  rhr_data <- compute_recovery_hr(summaries)
+fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
+                                   sport = "running") {
+  rhr_data <- compute_recovery_hr(summaries, sport = sport)
 
   if (nrow(rhr_data) == 0) {
     message("Ingen recovery HR-data tillgänglig.")
@@ -786,9 +794,10 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL) {
 #' @export
 fetch.plot.decoupling <- function(summaries, myruns = NULL,
                                   from = NULL, to = NULL,
-                                  decoupling_data = NULL) {
+                                  decoupling_data = NULL,
+                                  sport = "running") {
   if (is.null(decoupling_data)) {
-    decoupling_data <- compute_decoupling(summaries, myruns)
+    decoupling_data <- compute_decoupling(summaries, myruns, sport = sport)
   }
 
   if (nrow(decoupling_data) == 0) {

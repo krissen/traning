@@ -54,6 +54,7 @@ mcp.prompt()(prompts.konditionsbedomning)
 # --- Register resources ---
 mcp.resource("vayu://metrics")(tools.resource_metrics)
 mcp.resource("vayu://thresholds")(tools.resource_thresholds)
+mcp.resource("vayu://sports")(tools.resource_sports)
 
 
 def main():

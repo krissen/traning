@@ -136,12 +136,22 @@ if (needs("h")) {
   health_daily <- load_health_data()
 }
 
+# Resolve sport early so cache loaders can scope by sport. Both
+# load_zone_distribution() and load_decoupling() use sport as a cache
+# key — without forwarding it here, zone/decoupling caches built for
+# running would be silently reused for a cycling request.
+sport_arg <- if (!is.null(func_args$sport)) {
+  as.character(func_args$sport)
+} else {
+  "running"
+}
+
 if (needs("z")) {
-  zone_data <- load_zone_distribution(summaries, myruns)
+  zone_data <- load_zone_distribution(summaries, myruns, sport = sport_arg)
 }
 
 if (needs("d")) {
-  decoupling_data <- load_decoupling(summaries, myruns)
+  decoupling_data <- load_decoupling(summaries, myruns, sport = sport_arg)
 }
 
 # --- Build function arguments ---
@@ -160,6 +170,22 @@ build_call_args <- function(func_name, func_args) {
     "report_decoupling", "report_readiness", "report_metric"
   )
 
+  # Functions that accept a 'sport' parameter (for sport-agnostic
+  # filtering — running, cycling, walking, ...). Plot wrappers inherit
+  # via their underlying report_* / compute_* call.
+  sport_funcs <- c(
+    "report_monthtop", "report_runs_year_month", "report_monthlast",
+    "report_yearstop", "report_yearstatus", "report_monthstatus",
+    "report_datesum", "report_ef", "report_hre", "report_acwr",
+    "report_monotony", "report_pmc", "report_recovery_hr",
+    "report_hr_zones", "report_decoupling",
+    "plot_monthtop", "plot_runs_month", "plot_monthstatus",
+    "plot_monthlast", "plot_yearstatus", "plot_yearstop", "plot_datesum",
+    "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
+    "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
+    "fetch.plot.hr_zones", "fetch.plot.decoupling"
+  )
+
   if (!is.null(func_args$n) && func_name %in% n_funcs)
     a$n <- as.integer(func_args$n)
   if (!is.null(func_args$from))    a$from   <- as.Date(func_args$from)
@@ -167,6 +193,8 @@ build_call_args <- function(func_name, func_args) {
   if (!is.null(func_args$hr_max))  a$hr_max <- as.numeric(func_args$hr_max)
   if (!is.null(func_args$hr_rest)) a$hr_rest <- as.numeric(func_args$hr_rest)
   if (!is.null(func_args$metric))  a$metric <- func_args$metric
+  if (!is.null(func_args$sport) && func_name %in% sport_funcs)
+    a$sport <- as.character(func_args$sport)
 
   # Inject required data objects
   d <- func_registry[[func_name]]
@@ -193,6 +221,9 @@ build_call_args <- function(func_name, func_args) {
     a <- list(summaries = summaries,
               do_datesum_from = dr_from,
               do_datesum_to = dr_to)
+    if (!is.null(func_args$sport)) {
+      a$sport <- as.character(func_args$sport)
+    }
   }
 
   # Functions with zone_data

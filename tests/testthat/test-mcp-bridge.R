@@ -106,3 +106,29 @@ test_that("invalid JSON args handled gracefully", {
   # Should exit non-zero
   expect_true(rc != 0)
 })
+
+# --- sport= forwarding regression tests ---
+
+test_that("sport= reaches sport-aware report functions", {
+  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  # Use report_monthtop with a sport that does not exist in the cache —
+  # the bridge must forward the value so the result has zero rows.
+  # If the sport_funcs whitelist or arg-mapping ever drops sport, the
+  # call would silently return running monthly tops instead.
+  out <- run_bridge("report_monthtop",
+                    '{"n":3,"sport":"__no_such_sport__"}')
+  expect_equal(out$type, "data")
+  expect_equal(out$rows, 0)
+})
+
+test_that("sport='all' yields different output than sport='running'", {
+  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  run_only <- run_bridge("report_yearstop", '{"n":2,"sport":"running"}')
+  all_sports <- run_bridge("report_yearstop", '{"n":2,"sport":"all"}')
+  expect_equal(run_only$type, "data")
+  expect_equal(all_sports$type, "data")
+  # We don't compare numeric totals (the bridge unboxes them as JSON
+  # strings depending on column type). It's enough that the two
+  # responses differ — that proves sport= reaches the R function.
+  expect_false(identical(run_only$data, all_sports$data))
+})
