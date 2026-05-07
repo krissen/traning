@@ -53,7 +53,7 @@
 #'
 #' EF = average speed (m/min) / average heart rate (bpm).
 #' A higher EF means more speed per heartbeat — a proxy for aerobic fitness.
-#' Sessions shorter than \code{min_distance} (default 5 km) are excluded
+#' Sessions of \code{min_distance} or less (default 5 km) are excluded
 #' because short sessions produce noisy EF values that distort the trend.
 #'
 #' A 28-day rolling mean (ef_rolling28) is also returned to reveal the
@@ -74,6 +74,15 @@
 #' @export
 compute_efficiency_factor <- function(summaries, sport = "running",
                                       min_distance = 5000) {
+  empty <- tibble::tibble(
+    sessionStart       = as.Date(character(0)),
+    distance_km        = numeric(0),
+    avgSpeedMoving     = numeric(0),
+    avgHeartRateMoving = numeric(0),
+    ef                 = numeric(0),
+    ef_rolling28       = numeric(0)
+  )
+
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(distance > min_distance) %>%
     dplyr::mutate(
@@ -88,6 +97,8 @@ compute_efficiency_factor <- function(summaries, sport = "running",
     dplyr::mutate(
       ef = speed_m_per_min / hr
     )
+
+  if (nrow(runs) == 0) return(empty)
 
   # 28-day rolling mean: work on per-day values (use last run of the day
   # when multiple runs share a date), then join back
@@ -137,7 +148,7 @@ compute_efficiency_factor <- function(summaries, sport = "running",
 #' meaningful "beats per km" value for cycling/walking but the absolute
 #' numbers differ.
 #'
-#' Sessions shorter than \code{min_distance} (default 5 km) are excluded.
+#' Sessions of \code{min_distance} or less (default 5 km) are excluded.
 #' A 28-day rolling mean (hre_rolling28) reveals the underlying trend.
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
@@ -150,6 +161,15 @@ compute_efficiency_factor <- function(summaries, sport = "running",
 #' @export
 compute_hre <- function(summaries, sport = "running",
                         min_distance = 5000) {
+  empty <- tibble::tibble(
+    sessionStart       = as.Date(character(0)),
+    distance_km        = numeric(0),
+    avgHeartRateMoving = numeric(0),
+    avgPaceMoving      = numeric(0),
+    hre                = numeric(0),
+    hre_rolling28      = numeric(0)
+  )
+
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(distance > min_distance) %>%
     dplyr::mutate(
@@ -163,6 +183,8 @@ compute_hre <- function(summaries, sport = "running",
     dplyr::mutate(
       hre = hr * pace
     )
+
+  if (nrow(runs) == 0) return(empty)
 
   daily_hre <- runs %>%
     dplyr::group_by(sessionStart) %>%
@@ -466,7 +488,7 @@ compute_recovery_hr <- function(summaries, sport = "running") {
 #' @export
 compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
                           sport = "running") {
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(

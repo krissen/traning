@@ -122,10 +122,10 @@
 #' alignment (e.g. \code{compute_decoupling()} indexing into
 #' \code{myruns[[i]]}) can keep their indices.
 #'
-#' Treats \code{NULL}/\code{"all"}/\code{"any"} as "match everything", and
-#' an explicit-but-unrecognised sport input (e.g. \code{""},
-#' \code{NA_character_}) as "match nothing" — never as silent
-#' pass-through.
+#' Treats \code{NULL}, \code{character(0)}, \code{"all"} and \code{"any"}
+#' as "match everything", and an explicit-but-unrecognised sport input
+#' (e.g. \code{""}, \code{NA_character_}) as "match nothing" — never as
+#' silent pass-through.
 #'
 #' @param summaries Data frame with a \code{sport} column.
 #' @param sport Character (scalar or vector), or NULL.

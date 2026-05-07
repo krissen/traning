@@ -209,7 +209,7 @@ compute_zone_distribution_persecond <- function(summaries,
                                                 vt1_pct = 0.80,
                                                 vt2_pct = 0.90,
                                                 sport   = "running") {
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
   vt1 <- hr_max * vt1_pct
   vt2 <- hr_max * vt2_pct
@@ -423,7 +423,7 @@ load_zone_distribution <- function(summaries,
 
     # Per-session HRmax → per-session VT1/VT2
     new_dates <- as.Date(summaries$sessionStart[new_run_idx])
-    hr_max_vec <- get_hr_max_at(new_dates, summaries)
+    hr_max_vec <- get_hr_max_at(new_dates, summaries, sport = sport)
     vt1_vec <- hr_max_vec * vt1_pct
     vt2_vec <- hr_max_vec * vt2_pct
 
@@ -705,7 +705,7 @@ cross_validate_zones <- function(summaries,
     )
   }
 
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries)
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
   vt1 <- hr_max * vt1_pct
   vt2 <- hr_max * vt2_pct

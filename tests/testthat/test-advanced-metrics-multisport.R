@@ -50,10 +50,43 @@ test_that("compute_efficiency_factor default still running", {
 })
 
 test_that("compute_efficiency_factor min_distance is configurable", {
+  # Add an explicit short run so the threshold actually changes the count.
+  base <- as.POSIXct("2026-02-01 08:00:00", tz = "UTC")
+  short <- data.frame(
+    sessionStart       = base,
+    sport              = "running",
+    distance           = 3000,  # < 5 km
+    durationMoving     = as.difftime(20, units = "mins"),
+    avgSpeedMoving     = 2.5,
+    avgPaceMoving      = 6.7,
+    avgHeartRateMoving = 130,
+    duration           = as.difftime(20, units = "mins"),
+    stringsAsFactors = FALSE
+  )
+  df <- rbind(.metrics_summaries(), short)
+
+  # Default (5000) excludes the 3 km run
+  res_default <- compute_efficiency_factor(df, sport = "running")
+  # min_distance = 0 includes everything
+  res_all <- compute_efficiency_factor(df, sport = "running", min_distance = 0)
+  expect_equal(nrow(res_all) - nrow(res_default), 1)
+})
+
+test_that("compute_efficiency_factor returns empty tibble when no rows match", {
   df <- .metrics_summaries()
-  # All running including 6km → 5 rows
-  result <- compute_efficiency_factor(df, sport = "running", min_distance = 0)
-  expect_equal(nrow(result), 5)
+  # No "swimming" rows in fixture → no qualifying sessions
+  res <- compute_efficiency_factor(df, sport = "swimming")
+  expect_equal(nrow(res), 0)
+  expect_named(res, c("sessionStart", "distance_km", "avgSpeedMoving",
+                      "avgHeartRateMoving", "ef", "ef_rolling28"))
+})
+
+test_that("compute_hre returns empty tibble when no rows match", {
+  df <- .metrics_summaries()
+  res <- compute_hre(df, sport = "swimming")
+  expect_equal(nrow(res), 0)
+  expect_named(res, c("sessionStart", "distance_km", "avgHeartRateMoving",
+                      "avgPaceMoving", "hre", "hre_rolling28"))
 })
 
 test_that("compute_acwr sport='cycling' aggregates cycling km only", {
