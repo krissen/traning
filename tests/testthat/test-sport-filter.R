@@ -103,8 +103,18 @@ test_that(".sport_match_mask returns logical vector of nrow(summaries)", {
 
 test_that(".sport_match_mask matches the same rows as .filter_sport", {
   df <- .fixture()
-  for (s in c("running", "cycling", "endurance",
-              c("running", "cycling"), "all", NULL, "")) {
+  # Use list() (not c()) so that vector inputs and NULL aren't silently
+  # flattened/dropped during the loop.
+  cases <- list(
+    "running",
+    "cycling",
+    "endurance",
+    c("running", "cycling"),
+    "all",
+    NULL,
+    ""
+  )
+  for (s in cases) {
     mask <- traning:::.sport_match_mask(df, s)
     filtered <- traning:::.filter_sport(df, s)
     expect_equal(sum(mask), nrow(filtered),

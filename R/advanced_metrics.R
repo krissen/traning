@@ -612,18 +612,24 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
     )
 }
 
-#' Compute Aerobic Decoupling per run
+#' Compute Aerobic Decoupling per session
 #'
-#' Aerobic decoupling measures the drift in pace:HR efficiency between the first
-#' and second half of a run, excluding a warmup period.  A positive value means
-#' the second half was less efficient (cardiac drift).  Well-developed aerobic
-#' fitness produces decoupling < 3\%; values > 5\% suggest aerobic limitation.
+#' Aerobic decoupling measures the drift in pace:HR efficiency between the
+#' first and second half of a session, excluding a warmup period. A positive
+#' value means the second half was less efficient (cardiac drift).
+#' Well-developed aerobic fitness produces decoupling < 3\%; values > 5\%
+#' suggest aerobic limitation.
+#'
+#' Defaults are tuned for running (steady-state easy pace), but the algorithm
+#' generalises to any sport with steady speed and HR samples (cycling,
+#' walking) — pass \code{sport} accordingly and adjust \code{max_pace_min_km}
+#' if the sport's typical pace differs.
 #'
 #' @section Session selection:
-#' Only steady-state easy runs are included:
+#' Only steady-state easy sessions are included:
 #' \itemize{
-#'   \item Duration > 45 min (short runs produce noisy values)
-#'   \item Average pace > 5:00/km (excludes intervals and tempo runs)
+#'   \item Duration > 45 min (short sessions produce noisy values)
+#'   \item Average pace > 5:00/km (excludes intervals and tempo sessions)
 #'   \item Mean speed difference between halves \eqn{\le} 10\% (excludes
 #'     non-steady-state sessions — warm-up progression, fartlek, negative
 #'     splits)

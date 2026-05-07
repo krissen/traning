@@ -145,8 +145,8 @@ plot_yearstop <- function(summaries, from = NULL, to = NULL) {
 
 #' Distance per period for a date range — bar chart
 #'
-#' Aggregates running distance from \code{summaries} over the given date
-#' range. The time resolution is chosen automatically:
+#' Aggregates distance for the selected \code{sport} bucket over the given
+#' date range. The time resolution is chosen automatically:
 #' \itemize{
 #'   \item < 60 days  → daily bars
 #'   \item < 18 months → weekly bars (\code{"\%Y-W\%V"})
