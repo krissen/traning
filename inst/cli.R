@@ -114,7 +114,16 @@ my_options <- list(
     help = "Don't open output file after saving (default: open)"),
   make_option("--limit",
     type = "integer", default = NULL,
-    help = "Limit table rows (default varies per command)")
+    help = "Limit table rows (default varies per command)"),
+  # --- Sport filter ---
+  make_option("--sport",
+    type = "character", default = "running",
+    help = paste0(
+      "Sport bucket to filter on (default 'running', back-compat). ",
+      "Examples: 'cycling', 'walking', 'strength', 'all' (no filter), ",
+      "'endurance' (running+cycling+walking+swimming). ",
+      "Swedish aliases ('löpning', 'cykling', 'gång') also accepted."
+    ))
 )
 
 opt_parser <- OptionParser(option_list = my_options)
@@ -146,6 +155,7 @@ do_output       <- options$output
 do_format       <- options$format
 do_no_open      <- options$`no-open`
 do_limit        <- options$limit
+do_sport        <- options$sport %||% "running"
 
 # --- Build date range ---
 # Handle legacy --datesum format as syntactic sugar for --after/--before
@@ -280,25 +290,35 @@ emit_table <- function(tbl, default_name = "table") {
 # --- Reports: basic commands ---
 if (do_month_top) {
   if (do_plot) {
-    emit_plot(plot_monthtop(summaries, from = date_range$from, to = date_range$to), "month-top")
+    emit_plot(plot_monthtop(summaries, from = date_range$from, to = date_range$to,
+                            sport = do_sport), "month-top")
   } else {
-    emit_table(report_monthtop(summaries, n = do_limit %||% 10L, from = date_range$from, to = date_range$to), "month-top")
+    emit_table(report_monthtop(summaries, n = do_limit %||% 10L,
+                               from = date_range$from, to = date_range$to,
+                               sport = do_sport), "month-top")
   }
 }
 
 if (do_month_running) {
   if (do_plot) {
-    emit_plot(plot_monthstatus(summaries, from = date_range$from, to = date_range$to), "month-running")
+    emit_plot(plot_monthstatus(summaries, from = date_range$from, to = date_range$to,
+                               sport = do_sport), "month-running")
   } else {
-    emit_table(report_monthstatus(summaries, n = do_limit, from = date_range$from, to = date_range$to), "month-running")
+    emit_table(report_monthstatus(summaries, n = do_limit,
+                                  from = date_range$from, to = date_range$to,
+                                  sport = do_sport), "month-running")
   }
 }
 
 if (do_month_this) {
   if (do_plot) {
-    emit_plot(plot_runs_month(summaries, from = date_range$from, to = date_range$to), "month-this")
+    emit_plot(plot_runs_month(summaries, from = date_range$from, to = date_range$to,
+                              sport = do_sport), "month-this")
   } else {
-    month_summaries_this <- report_runs_year_month(summaries, n = do_limit, from = date_range$from, to = date_range$to)
+    month_summaries_this <- report_runs_year_month(summaries, n = do_limit,
+                                                    from = date_range$from,
+                                                    to = date_range$to,
+                                                    sport = do_sport)
     emit_table(month_summaries_this, "month-this")
     if (is.null(do_output) && is.null(do_format)) {
       my_month_km <- round(sum(month_summaries_this$Km), digits = 2)
@@ -312,25 +332,34 @@ if (do_month_this) {
 
 if (do_month_last) {
   if (do_plot) {
-    emit_plot(plot_monthlast(summaries, from = date_range$from, to = date_range$to), "month-last")
+    emit_plot(plot_monthlast(summaries, from = date_range$from, to = date_range$to,
+                             sport = do_sport), "month-last")
   } else {
-    emit_table(report_monthlast(summaries, n = do_limit, from = date_range$from, to = date_range$to), "month-last")
+    emit_table(report_monthlast(summaries, n = do_limit,
+                                from = date_range$from, to = date_range$to,
+                                sport = do_sport), "month-last")
   }
 }
 
 if (do_year_running) {
   if (do_plot) {
-    emit_plot(plot_yearstatus(summaries, from = date_range$from, to = date_range$to), "year-running")
+    emit_plot(plot_yearstatus(summaries, from = date_range$from, to = date_range$to,
+                              sport = do_sport), "year-running")
   } else {
-    emit_table(report_yearstatus(summaries, n = do_limit, from = date_range$from, to = date_range$to), "year-running")
+    emit_table(report_yearstatus(summaries, n = do_limit,
+                                 from = date_range$from, to = date_range$to,
+                                 sport = do_sport), "year-running")
   }
 }
 
 if (do_year_top) {
   if (do_plot) {
-    emit_plot(plot_yearstop(summaries, from = date_range$from, to = date_range$to), "year-top")
+    emit_plot(plot_yearstop(summaries, from = date_range$from, to = date_range$to,
+                            sport = do_sport), "year-top")
   } else {
-    emit_table(report_yearstop(summaries, n = do_limit, from = date_range$from, to = date_range$to), "year-top")
+    emit_table(report_yearstop(summaries, n = do_limit,
+                               from = date_range$from, to = date_range$to,
+                               sport = do_sport), "year-top")
   }
 }
 
@@ -349,18 +378,22 @@ if (!is.null(options$datesum) || (has_daterange && !any_report)) {
   if (is.null(dr_to))   dr_to   <- Sys.Date() + 1
 
   if (do_plot) {
-    emit_plot(plot_datesum(summaries, dr_from, dr_to), "datesum")
+    emit_plot(plot_datesum(summaries, dr_from, dr_to,
+                           sport = do_sport), "datesum")
   } else {
-    emit_table(report_datesum(summaries, dr_from, dr_to), "datesum")
+    emit_table(report_datesum(summaries, dr_from, dr_to,
+                              sport = do_sport), "datesum")
   }
 }
 
 if (do_total_pace) {
   pace_data <- if (has_daterange) filter_by_daterange(summaries, date_range) else summaries
   if (do_plot) {
-    emit_plot(fetch.plot.mean.pace(fetch.my.mean.pace(pace_data)), "total-pace")
+    emit_plot(fetch.plot.mean.pace(fetch.my.mean.pace(pace_data,
+                                                       sport = do_sport)),
+              "total-pace")
   } else {
-    emit_table(fetch.my.mean.pace(pace_data), "total-pace")
+    emit_table(fetch.my.mean.pace(pace_data, sport = do_sport), "total-pace")
   }
 }
 
@@ -371,46 +404,56 @@ if (do_total_pace) {
 
 if (do_ef) {
   if (do_plot) {
-    emit_plot(fetch.plot.ef(summaries, from = date_range$from, to = date_range$to), "ef")
+    emit_plot(fetch.plot.ef(summaries, from = date_range$from, to = date_range$to,
+                            sport = do_sport), "ef")
   } else {
     emit_table(report_ef(summaries, n = do_limit %||% 28L,
-                    from = date_range$from, to = date_range$to), "ef")
+                    from = date_range$from, to = date_range$to,
+                    sport = do_sport), "ef")
   }
 }
 
 if (do_hre) {
   if (do_plot) {
-    emit_plot(fetch.plot.hre(summaries, from = date_range$from, to = date_range$to), "hre")
+    emit_plot(fetch.plot.hre(summaries, from = date_range$from, to = date_range$to,
+                             sport = do_sport), "hre")
   } else {
     emit_table(report_hre(summaries, n = do_limit %||% 28L,
-                     from = date_range$from, to = date_range$to), "hre")
+                     from = date_range$from, to = date_range$to,
+                     sport = do_sport), "hre")
   }
 }
 
 if (do_acwr) {
   if (do_plot) {
-    emit_plot(fetch.plot.acwr(summaries, from = date_range$from, to = date_range$to), "acwr")
+    emit_plot(fetch.plot.acwr(summaries, from = date_range$from, to = date_range$to,
+                              sport = do_sport), "acwr")
   } else {
     emit_table(report_acwr(summaries, n = do_limit %||% 28L,
-                      from = date_range$from, to = date_range$to), "acwr")
+                      from = date_range$from, to = date_range$to,
+                      sport = do_sport), "acwr")
   }
 }
 
 if (do_monotony) {
   if (do_plot) {
-    emit_plot(fetch.plot.monotony(summaries, from = date_range$from, to = date_range$to), "monotony")
+    emit_plot(fetch.plot.monotony(summaries, from = date_range$from, to = date_range$to,
+                                  sport = do_sport), "monotony")
   } else {
     emit_table(report_monotony(summaries, n = do_limit %||% 28L,
-                          from = date_range$from, to = date_range$to), "monotony")
+                          from = date_range$from, to = date_range$to,
+                          sport = do_sport), "monotony")
   }
 }
 
 if (do_pmc) {
   if (do_plot) {
-    emit_plot(fetch.plot.pmc(summaries, from = date_range$from, to = date_range$to), "pmc")
+    emit_plot(fetch.plot.pmc(summaries, from = date_range$from, to = date_range$to,
+                             sport = do_sport), "pmc")
   } else {
     emit_table(report_pmc(summaries, n = do_limit %||% 28L,
-                     from = date_range$from, to = date_range$to), "pmc")
+                     from = date_range$from, to = date_range$to,
+                     sport = do_sport), "pmc")
   }
 }
 
@@ -437,38 +480,45 @@ if (do_readiness) {
 }
 
 if (do_hr_zones) {
-  # Per-second zone computation with caching (accurate VT1/VT2 thresholds)
-  zone_data <- load_zone_distribution(summaries, myruns, force = do_force)
+  # Per-second zone computation with caching (accurate VT1/VT2 thresholds).
+  # The cache is sport-keyed, so pass do_sport through.
+  zone_data <- load_zone_distribution(summaries, myruns, force = do_force,
+                                      sport = do_sport)
   if (do_plot) {
     emit_plot(fetch.plot.hr_zones(summaries,
                 from = date_range$from, to = date_range$to,
-                zone_data = zone_data), "hr-zones")
+                zone_data = zone_data, sport = do_sport), "hr-zones")
   } else {
     emit_table(report_hr_zones(summaries, n = do_limit %||% 12L,
                   from = date_range$from, to = date_range$to,
-                  zone_data = zone_data), "hr-zones")
+                  zone_data = zone_data, sport = do_sport), "hr-zones")
   }
 }
 
 if (do_recovery_hr) {
   if (do_plot) {
-    emit_plot(fetch.plot.recovery_hr(summaries, from = date_range$from, to = date_range$to), "recovery-hr")
+    emit_plot(fetch.plot.recovery_hr(summaries, from = date_range$from, to = date_range$to,
+                                     sport = do_sport), "recovery-hr")
   } else {
     emit_table(report_recovery_hr(summaries, n = do_limit %||% 28L,
-                             from = date_range$from, to = date_range$to), "recovery-hr")
+                             from = date_range$from, to = date_range$to,
+                             sport = do_sport), "recovery-hr")
   }
 }
 
 if (do_decoupling) {
-  decoupling_data <- load_decoupling(summaries, myruns, force = do_force)
+  decoupling_data <- load_decoupling(summaries, myruns, force = do_force,
+                                     sport = do_sport)
   if (do_plot) {
     emit_plot(fetch.plot.decoupling(summaries, myruns,
                 from = date_range$from, to = date_range$to,
-                decoupling_data = decoupling_data), "decoupling")
+                decoupling_data = decoupling_data,
+                sport = do_sport), "decoupling")
   } else {
     emit_table(report_decoupling(n = do_limit %||% 28L,
                   from = date_range$from, to = date_range$to,
-                  decoupling_data = decoupling_data), "decoupling")
+                  decoupling_data = decoupling_data,
+                  sport = do_sport), "decoupling")
   }
 }
 

@@ -78,6 +78,14 @@ def report_options(f):
                   help="Output format. Plots: pdf, png. Tables: csv, json, jsonl, xlsx")
     @click.option("--no-open", is_flag=True, help="Don't open output file after saving")
     @click.option("--limit", type=int, default=None, help="Limit table rows")
+    @click.option("--sport", default=None,
+                  help=("Sport bucket to filter on. When omitted the R "
+                        "CLI's own default is used (currently 'running' — "
+                        "back-compat). Examples: 'cycling', 'walking', "
+                        "'strength', 'all' (no filter), 'endurance' "
+                        "(running+cycling+walking+swimming). Swedish "
+                        "aliases ('löpning', 'cykling', 'gång') accepted. "
+                        "Pass an empty string ('') to match nothing."))
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         return f(*args, **kwargs)
@@ -85,7 +93,8 @@ def report_options(f):
 
 
 def _r_report(flag, show_plot=False, after=None, before=None, span=None,
-              limit=None, output=None, fmt=None, no_open=False):
+              limit=None, output=None, fmt=None, no_open=False,
+              sport=None):
     """Build and execute an R report/plot command."""
     cmd = ["Rscript", str(CLI_R), flag]
     if show_plot:
@@ -104,6 +113,12 @@ def _r_report(flag, show_plot=False, after=None, before=None, span=None,
         cmd.append(f"--format={fmt}")
     if no_open:
         cmd.append("--no-open")
+    # Forward sport= even when empty ("") — the R helper treats an empty
+    # bucket as "match nothing" rather than as "no filter", so dropping
+    # the flag would silently fall back to R's default sport instead of
+    # honouring the explicit empty pass-through.
+    if sport is not None:
+        cmd.append(f"--sport={sport}")
     _exec(cmd)
 
 
@@ -587,101 +602,101 @@ def report():
 
 @report.command()
 @report_options
-def month(show_plot, after, before, span, output, fmt, no_open, limit):
+def month(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Current month vs same month previous years."""
-    _r_report("--month-running", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--month-running", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @report.command()
 @report_options
-def year(show_plot, after, before, span, output, fmt, no_open, limit):
+def year(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Current year vs previous years (same day-of-year)."""
-    _r_report("--year-running", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--year-running", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @report.command()
 @report_options
-def pace(show_plot, after, before, span, output, fmt, no_open, limit):
+def pace(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Pace summary per year."""
-    _r_report("--total-pace", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--total-pace", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @report.command()
 @report_options
-def top(show_plot, after, before, span, output, fmt, no_open, limit):
+def top(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Year totals."""
-    _r_report("--year-top", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--year-top", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @report.command(name="month-top")
 @report_options
-def month_top(show_plot, after, before, span, output, fmt, no_open, limit):
+def month_top(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Top 10 months by distance."""
-    _r_report("--month-top", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--month-top", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @report.command(name="month-this")
 @report_options
-def month_this(show_plot, after, before, span, output, fmt, no_open, limit):
+def month_this(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Individual runs this month."""
-    _r_report("--month-this", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--month-this", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @report.command(name="month-last")
 @report_options
-def month_last(show_plot, after, before, span, output, fmt, no_open, limit):
+def month_last(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Last month across years."""
-    _r_report("--month-last", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--month-last", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 # -- plot commands (top-level) -----------------------------------------------
 
 @cli.command()
 @report_options
-def ef(show_plot, after, before, span, output, fmt, no_open, limit):
+def ef(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Efficiency Factor trend."""
-    _r_report("--ef", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--ef", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @cli.command()
 @report_options
-def hre(show_plot, after, before, span, output, fmt, no_open, limit):
+def hre(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Heart Rate Efficiency (beats/km, Votyakov)."""
-    _r_report("--hre", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--hre", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @cli.command()
 @report_options
-def acwr(show_plot, after, before, span, output, fmt, no_open, limit):
+def acwr(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Acute:Chronic Workload Ratio."""
-    _r_report("--acwr", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--acwr", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @cli.command()
 @report_options
-def monotony(show_plot, after, before, span, output, fmt, no_open, limit):
+def monotony(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Training Monotony and Strain."""
-    _r_report("--monotony", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--monotony", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @cli.command()
 @report_options
-def pmc(show_plot, after, before, span, output, fmt, no_open, limit):
+def pmc(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Performance Management Chart (TRIMP/CTL/ATL/TSB)."""
-    _r_report("--pmc", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--pmc", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @cli.command(name="recovery-hr")
 @report_options
-def recovery_hr(show_plot, after, before, span, output, fmt, no_open, limit):
+def recovery_hr(show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Recovery Heart Rate trend."""
-    _r_report("--recovery-hr", show_plot, after, before, span, limit, output, fmt, no_open)
+    _r_report("--recovery-hr", show_plot, after, before, span, limit, output, fmt, no_open, sport)
 
 
 @cli.command(name="zones")
 @click.option("--force", is_flag=True, help="Recompute all zones (bypass cache)")
 @report_options
-def hr_zones(force, show_plot, after, before, span, output, fmt, no_open, limit):
+def hr_zones(force, show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """HR zone distribution and Polarization Index (Seiler 3-zone)."""
     cmd = ["Rscript", str(CLI_R), "--hr-zones"]
     if force:
@@ -702,13 +717,15 @@ def hr_zones(force, show_plot, after, before, span, output, fmt, no_open, limit)
         cmd.append(f"--format={fmt}")
     if no_open:
         cmd.append("--no-open")
+    if sport is not None:
+        cmd.append(f"--sport={sport}")
     _exec(cmd)
 
 
 @cli.command()
 @click.option("--force", is_flag=True, help="Recompute all (bypass cache)")
 @report_options
-def decoupling(force, show_plot, after, before, span, output, fmt, no_open, limit):
+def decoupling(force, show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Aerobic decoupling trend (pace:HR drift)."""
     cmd = ["Rscript", str(CLI_R), "--decoupling"]
     if force:
@@ -729,6 +746,8 @@ def decoupling(force, show_plot, after, before, span, output, fmt, no_open, limi
         cmd.append(f"--format={fmt}")
     if no_open:
         cmd.append("--no-open")
+    if sport is not None:
+        cmd.append(f"--sport={sport}")
     _exec(cmd)
 
 
@@ -737,7 +756,7 @@ def decoupling(force, show_plot, after, before, span, output, fmt, no_open, limi
 @cli.command()
 @click.argument("range", required=False, default=None)
 @report_options
-def datesum(range, show_plot, after, before, span, output, fmt, no_open, limit):
+def datesum(range, show_plot, after, before, span, output, fmt, no_open, limit, sport):
     """Summary for a date range.
 
     RANGE: Legacy format YYYY-MM-DD--YYYY-MM-DD (optional).
@@ -762,6 +781,8 @@ def datesum(range, show_plot, after, before, span, output, fmt, no_open, limit):
         cmd.append(f"--format={fmt}")
     if no_open:
         cmd.append("--no-open")
+    if sport is not None:
+        cmd.append(f"--sport={sport}")
     _exec(cmd)
 
 
