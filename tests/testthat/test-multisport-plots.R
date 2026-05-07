@@ -125,3 +125,22 @@ test_that(".relabel_sport handles NA without crashing", {
   out <- traning:::.relabel_sport(c("running", NA, "cycling"))
   expect_equal(unname(out), c("Löpning", NA_character_, "Cykling"))
 })
+
+test_that("plot_sport_calendar colours zero-distance gym days", {
+  # Regression: .sport_mix_data dropped 0-km buckets which made the
+  # calendar treat strength sessions as rest days. The calendar now
+  # passes min_km=0 so gym days surface as their own colour cell.
+  base <- as.POSIXct("2026-04-22 08:00:00", tz = "UTC")
+  s <- tibble::tibble(
+    sessionStart = c(base, base + as.difftime(1, units = "days")),
+    sport = c("running", "strength"),
+    distance = c(8000, 0)
+  )
+  p <- plot_sport_calendar(s,
+                            from = as.Date("2026-04-22"),
+                            to = as.Date("2026-04-25"))
+  expect_s3_class(p, "ggplot")
+  # The plot data should include strength as a labelled (non-NA) row
+  layer <- p$data
+  expect_true(any(!is.na(layer$sport_sv) & layer$sport_sv == "Styrketräning"))
+})

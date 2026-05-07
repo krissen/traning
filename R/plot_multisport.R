@@ -7,9 +7,12 @@
 # --- Sport-mix data (used by sport-mix bar + calendar) ---------------------
 
 # Aggregate distance per (period, sport).  `period_fmt` is a strftime
-# format string controlling the bucket — "%Y-%m" for months, "%Y-W%V"
-# for ISO weeks, "%Y" for years, "%Y-%m-%d" for daily.  Returns a tibble
-# with columns: period (chr), sport (chr), km (dbl).
+# format string controlling the bucket — "%Y-%m" for months,
+# "%G-W%V" for ISO weeks (note: ISO week-year %G, not calendar %Y),
+# "%Y" for years, "%Y-%m-%d" for daily.  Returns a tibble with columns:
+# period (chr), sport (chr), km (dbl).
+# `min_km = 0` keeps zero-distance buckets (gym/strength) — useful for
+# the calendar where we want every training day coloured.
 .sport_mix_data <- function(summaries, period_fmt = "%Y-%m",
                              from = NULL, to = NULL,
                              sport = NULL,
@@ -196,15 +199,19 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
   from_d     <- if (is.null(from)) (to_excl - 366L) else as.Date(from)
   display_to <- to_excl - 1L
 
+  # min_km = 0 so gym/strength sessions (0 km but still training) get
+  # coloured on the calendar. Distance-based sports still win the
+  # "dominant" tie-break by km below.
   data <- .sport_mix_data(summaries, period_fmt = "%Y-%m-%d",
                           from = from_d, to = to_excl,
-                          sport = sport, min_km = 0.1)
+                          sport = sport, min_km = 0)
   if (nrow(data) == 0) {
     return(ggplot2::ggplot() +
            ggplot2::ggtitle("Aktivitetskalender: ingen data i fönstret"))
   }
 
-  # Pick the dominant sport per day
+  # Pick the dominant sport per day. Tie-break: distance first; for
+  # tied or zero-distance days, fall back to alphabetical sport name.
   dominant <- data %>%
     dplyr::group_by(period) %>%
     dplyr::slice_max(km, n = 1, with_ties = FALSE) %>%

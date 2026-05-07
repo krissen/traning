@@ -197,8 +197,13 @@ build_call_args <- function(func_name, func_args) {
 
   if (!is.null(func_args$n) && func_name %in% n_funcs)
     a$n <- as.integer(func_args$n)
-  if (!is.null(func_args$from))    a$from   <- as.Date(func_args$from)
-  if (!is.null(func_args$to))      a$to     <- as.Date(func_args$to)
+  # Date args can arrive as ISO strings (YYYY, YYYY-MM, YYYY-MM-DD) or
+  # relative expressions like "-2w" / "-1y" — Python's _build_args
+  # passes them through verbatim. parse_date_expr() handles both,
+  # whereas as.Date() on "-2w" yields NA (which then crashes plots
+  # that build a date spine).
+  if (!is.null(func_args$from))    a$from   <- parse_date_expr(func_args$from)
+  if (!is.null(func_args$to))      a$to     <- parse_date_expr(func_args$to)
   if (!is.null(func_args$hr_max))  a$hr_max <- as.numeric(func_args$hr_max)
   if (!is.null(func_args$hr_rest)) a$hr_rest <- as.numeric(func_args$hr_rest)
   if (!is.null(func_args$metric))  a$metric <- func_args$metric
@@ -237,8 +242,10 @@ build_call_args <- function(func_name, func_args) {
 
   # report_datesum / plot_datesum: special positional args
   if (func_name %in% c("report_datesum", "plot_datesum")) {
-    dr_from <- if (!is.null(func_args$from)) as.Date(func_args$from) else as.Date("1970-01-01")
-    dr_to   <- if (!is.null(func_args$to))   as.Date(func_args$to)   else Sys.Date() + 1
+    dr_from <- if (!is.null(func_args$from)) parse_date_expr(func_args$from)
+               else as.Date("1970-01-01")
+    dr_to   <- if (!is.null(func_args$to))   parse_date_expr(func_args$to)
+               else Sys.Date() + 1
     a <- list(summaries = summaries,
               do_datesum_from = dr_from,
               do_datesum_to = dr_to)
