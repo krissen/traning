@@ -18,22 +18,23 @@ report_mostrecent <- function(summaries, n_imported) {
 
 #' Generate a short insight text for the most recent session
 #'
-#' Compares the latest run against the current month's average.
+#' Compares the latest session against the current month's average.
 #' Output is a single line suitable for push notifications.
 #' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Character string (one line).
 #' @export
-report_insight <- function(summaries) {
-  runs <- summaries %>%
-    dplyr::filter(stringr::str_detect(sport, "running")) %>%
+report_insight <- function(summaries, sport = "running") {
+  label <- .sport_label_sv(sport)
+  runs <- .filter_sport(summaries, sport) %>%
     dplyr::arrange(sessionStart)
 
-  if (nrow(runs) == 0) return("Ingen l\u00f6pdata.")
+  if (nrow(runs) == 0) return("Ingen data.")
 
   latest <- utils::tail(runs, 1)
   km <- round(as.numeric(latest$distance) / 1000, 1)
-  pace <- dec_to_mmss(as.numeric(latest$avgPaceMoving))
-  hr <- round(as.numeric(latest$avgHeartRateMoving), 0)
+  pace_val <- as.numeric(latest$avgPaceMoving)
+  hr_val <- as.numeric(latest$avgHeartRateMoving)
 
   # Compare to current month average
   this_month <- runs %>%
@@ -42,22 +43,39 @@ report_insight <- function(summaries) {
       sessionStart < latest$sessionStart
     )
 
-  base <- paste0("L\u00f6pning ", km, " km, ", pace, "/km, puls ", hr)
+  # Build the base sentence \u2014 pace and HR are optional. Strength/gym
+  # sessions and HAE rows without HR data leave these as NA, in which
+  # case we omit the corresponding fragment rather than print "NA/km".
+  parts <- paste0(label, " ", km, " km")
+  if (!is.na(pace_val)) {
+    parts <- paste0(parts, ", ", dec_to_mmss(pace_val), "/km")
+  }
+  if (!is.na(hr_val)) {
+    parts <- paste0(parts, ", puls ", round(hr_val, 0))
+  }
+  base <- parts
 
   # Find something positive to highlight
   positive <- NULL
 
-  if (nrow(this_month) >= 2) {
+  if (nrow(this_month) >= 2 && !is.na(pace_val)) {
     avg_pace <- mean(as.numeric(this_month$avgPaceMoving), na.rm = TRUE)
     avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
-    diff_sec <- (as.numeric(latest$avgPaceMoving) - avg_pace) * 60
+    diff_sec <- if (is.na(avg_pace)) NA_real_ else (pace_val - avg_pace) * 60
 
-    if (diff_sec < -5) {
+    if (!is.na(diff_sec) && diff_sec < -5) {
       # Faster than average
       positive <- paste0("Snabbare \u00e4n m\u00e5nadens snitt (",
                          dec_to_mmss(avg_pace), ")")
-    } else if (km > avg_km * 1.1) {
+    } else if (!is.na(avg_km) && km > avg_km * 1.1) {
       # Longer than average
+      positive <- paste0("L\u00e4ngre \u00e4n m\u00e5nadens snitt (",
+                         round(avg_km, 1), " km)")
+    }
+  } else if (nrow(this_month) >= 2) {
+    # Pace unavailable (e.g. strength) \u2014 compare distance only.
+    avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
+    if (!is.na(avg_km) && km > avg_km * 1.1) {
       positive <- paste0("L\u00e4ngre \u00e4n m\u00e5nadens snitt (",
                          round(avg_km, 1), " km)")
     }
@@ -76,15 +94,16 @@ report_insight <- function(summaries) {
   paste0(base, ". ", positive, ".")
 }
 
-#' Summarise runs within a date range
+#' Summarise sessions within a date range
 #' @param summaries Data frame of all workout summaries
 #' @param do_datesum_from Start date (Date object)
 #' @param do_datesum_to End date (Date object)
+#' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with summary statistics
 #' @export
-report_datesum <- function(summaries, do_datesum_from, do_datesum_to) {
-  summaries <- summaries %>%
-    dplyr::filter(stringr::str_detect(sport, 'running'))
+report_datesum <- function(summaries, do_datesum_from, do_datesum_to,
+                           sport = "running") {
+  summaries <- .filter_sport(summaries, sport)
   filtered_summaries <- summaries %>%
     dplyr::filter(sessionStart >= do_datesum_from & sessionStart < do_datesum_to)
 
@@ -106,13 +125,14 @@ report_datesum <- function(summaries, do_datesum_from, do_datesum_to) {
 #' @param n Number of top months to return (default 10).
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
+#' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with top months
 #' @export
-report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL) {
+report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL,
+                            sport = "running") {
   summaries <- .filter_input(summaries, from, to)
 
-  summaries %>%
-    dplyr::filter(stringr::str_detect(sport, 'running')) %>%
+  .filter_sport(summaries, sport) %>%
     dplyr::mutate(`År-mån` = format(sessionStart, "%Y-%m")) %>%
     dplyr::select(`År-mån`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År-mån`) %>%
@@ -126,7 +146,7 @@ report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL) {
     utils::head(n = n)
 }
 
-#' List individual runs within a date range
+#' List individual sessions within a date range
 #'
 #' Defaults to the current calendar month when neither \code{from} nor
 #' \code{to} is given.
@@ -135,10 +155,12 @@ report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL) {
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
-#' @return Tibble with individual runs
+#' @param sport Sport bucket. See \code{\link{.filter_sport}}.
+#' @return Tibble with individual sessions
 #' @export
 report_runs_year_month <- function(summaries, n = NULL,
-                                   from = NULL, to = NULL) {
+                                   from = NULL, to = NULL,
+                                   sport = "running") {
   # Default to current month if no range specified
   if (is.null(from) && is.null(to)) {
     from <- as.Date(format(Sys.Date(), "%Y-%m-01"))
@@ -147,8 +169,7 @@ report_runs_year_month <- function(summaries, n = NULL,
 
   summaries <- .filter_input(summaries, from, to)
 
-  result <- summaries %>%
-    dplyr::filter(stringr::str_detect(sport, 'running')) %>%
+  result <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(
       'År' = as.numeric(format(sessionStart, "%Y")),
       'Mån' = as.numeric(format(sessionStart, "%m")),
@@ -169,10 +190,13 @@ report_runs_year_month <- function(summaries, n = NULL,
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
+#' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with per-year statistics for last month
 #' @export
-report_monthlast <- function(summaries, n = NULL, from = NULL, to = NULL) {
+report_monthlast <- function(summaries, n = NULL, from = NULL, to = NULL,
+                             sport = "running") {
   summaries <- .filter_input(summaries, from, to)
+  summaries <- .filter_sport(summaries, sport)
 
   my_month <- as.numeric(format(Sys.time(), "%m"))
   do_month <- if (my_month == 1) 12L else my_month - 1L
@@ -180,8 +204,7 @@ report_monthlast <- function(summaries, n = NULL, from = NULL, to = NULL) {
 
   result <- summaries %>%
     dplyr::mutate(month = as.numeric(format(sessionStart, "%m"))) %>%
-    dplyr::filter(month == do_month,
-                  stringr::str_detect(sport, 'running')) %>%
+    dplyr::filter(month == do_month) %>%
     dplyr::mutate('År' = as.numeric(format(sessionStart, "%Y"))) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
@@ -203,15 +226,17 @@ report_monthlast <- function(summaries, n = NULL, from = NULL, to = NULL) {
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
+#' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with per-year statistics
 #' @export
-report_yearstop <- function(summaries, n = NULL, from = NULL, to = NULL) {
+report_yearstop <- function(summaries, n = NULL, from = NULL, to = NULL,
+                            sport = "running") {
   summaries <- .filter_input(summaries, from, to)
+  summaries <- .filter_sport(summaries, sport)
   my_dayyear <- as.numeric(format(Sys.time(), "%j"))
 
   result <- summaries %>%
     dplyr::mutate('År' = as.numeric(format(sessionStart, "%Y"))) %>%
-    dplyr::filter(stringr::str_detect(sport, 'running')) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
@@ -232,10 +257,13 @@ report_yearstop <- function(summaries, n = NULL, from = NULL, to = NULL) {
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
+#' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with per-year statistics up to current day-of-year
 #' @export
-report_yearstatus <- function(summaries, n = NULL, from = NULL, to = NULL) {
+report_yearstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
+                              sport = "running") {
   summaries <- .filter_input(summaries, from, to)
+  summaries <- .filter_sport(summaries, sport)
   my_dayyear <- as.numeric(format(Sys.time(), "%j"))
 
   result <- summaries %>%
@@ -243,9 +271,7 @@ report_yearstatus <- function(summaries, n = NULL, from = NULL, to = NULL) {
       dayyear = as.numeric(format(sessionStart, "%j")),
       'År' = as.numeric(format(sessionStart, "%Y"))
     ) %>%
-    dplyr::filter(
-      dayyear <= my_dayyear,
-      stringr::str_detect(sport, 'running')) %>%
+    dplyr::filter(dayyear <= my_dayyear) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
@@ -266,17 +292,19 @@ report_yearstatus <- function(summaries, n = NULL, from = NULL, to = NULL) {
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
+#' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with per-year statistics for current month
 #' @export
-report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL) {
+report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
+                               sport = "running") {
   summaries <- .filter_input(summaries, from, to)
+  summaries <- .filter_sport(summaries, sport)
   my_month <- as.numeric(format(Sys.time(), "%m"))
   my_day <- as.numeric(format(Sys.time(), "%d"))
 
   result <- summaries %>%
     dplyr::mutate(month = as.numeric(format(sessionStart, "%m"))) %>%
-    dplyr::filter(month == my_month,
-                  stringr::str_detect(sport, 'running')) %>%
+    dplyr::filter(month == my_month) %>%
     dplyr::mutate(
       day = as.numeric(format(sessionStart, "%d")),
       'År' = as.numeric(format(sessionStart, "%Y"))
