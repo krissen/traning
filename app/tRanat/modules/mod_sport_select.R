@@ -3,10 +3,17 @@
 # Mirrors the curated buckets exposed by R/sport_filter.R so the
 # selector and the underlying data path stay in sync.
 
+# Curated buckets that aggregate multiple sports. Kept in one place so
+# the page-level "is this a population narrow-down?" check (see
+# pages/page_sport_mix.R) and the dropdown can't drift apart.
+SPORT_BUCKET_VALUES <- c("endurance", "ballsport", "gym",
+                          "wintersport", "all")
+
 sport_select_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::selectInput(
-    ns("sport"), NULL,
+    ns("sport"),
+    label = "Sport",  # visible label needed for screen readers
     choices = list(
       "Direkta sporter" = c(
         "Löpning"        = "running",

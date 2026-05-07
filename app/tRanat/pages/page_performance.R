@@ -49,23 +49,30 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
       is_mobile = is_mobile
     )
 
-    # Decoupling — renderPlot (faceted, works better static for this one).
-    # Note: decoupling_data is precomputed for the running cache; for
-    # non-running sport selections we let the underlying compute_*
-    # recompute on the fly via decoupling_data = NULL.
+    # Decoupling — renderPlot (faceted, works better static for this
+    # one). The decoupling cache is keyed to running; for any other
+    # sport we recompute, but cache the result via shiny::reactive() so
+    # the plot and table renders share one full-history pass instead
+    # of triggering two on every reactive invalidation.
+    decoupling_for_sport <- shiny::reactive({
+      if (identical(sp(), "running")) {
+        decoupling_data
+      } else {
+        compute_decoupling(summaries, myruns, sport = sp())
+      }
+    })
+
     metric_panel_server("decoupling",
       plot_fn = shiny::reactive({
         fetch.plot.decoupling(summaries, myruns,
           from = dr_from(), to = dr_to(),
-          decoupling_data = if (identical(sp(), "running")) decoupling_data
-                            else NULL,
+          decoupling_data = decoupling_for_sport(),
           sport = sp())
       }),
       report_fn = shiny::reactive({
         report_decoupling(summaries = summaries, myruns = myruns,
           from = dr_from(), to = dr_to(),
-          decoupling_data = if (identical(sp(), "running")) decoupling_data
-                            else NULL,
+          decoupling_data = decoupling_for_sport(),
           sport = sp())
       }),
       use_plotly = FALSE,

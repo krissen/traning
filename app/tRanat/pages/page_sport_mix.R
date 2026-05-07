@@ -76,19 +76,19 @@ page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
       pp
     }
 
+    # Sport-mix tab semantics: a curated bucket (endurance / ballsport
+    # / gym / wintersport / all) narrows the population while still
+    # showing the mix; a plain sport name like "running" would defeat
+    # the point of this tab, so fall back to "all" in that case.
+    population_sport <- shiny::reactive({
+      if (sp() %in% SPORT_BUCKET_VALUES) sp() else "all"
+    })
+
     output$plot_mix <- plotly::renderPlotly({
       shiny::req(input$period)
-      sp_val <- sp()
-      # On the Sport-mix tab, "running" as an *override* would defeat
-      # the purpose of seeing the mix — treat the page-level dropdown
-      # as a population narrow-down only when it's a curated bucket
-      # (endurance/ballsport/gym/wintersport) or "all". For plain
-      # sport names, fall back to "all" so all sports show up.
-      pop <- if (sp_val %in% c("endurance", "ballsport", "gym",
-                                "wintersport", "all")) sp_val else NULL
       ply(plot_sport_mix(summaries, period = input$period,
                           from = dr_from(), to = dr_to(),
-                          sport = pop))
+                          sport = population_sport()))
     })
 
     output$plot_ctl <- plotly::renderPlotly({
@@ -99,10 +99,8 @@ page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
     })
 
     output$plot_calendar <- shiny::renderPlot({
-      pop <- if (sp() %in% c("endurance", "ballsport", "gym",
-                              "wintersport", "all")) sp() else NULL
       plot_sport_calendar(summaries, from = dr_from(), to = dr_to(),
-                           sport = pop)
+                           sport = population_sport())
     })
   })
 }
