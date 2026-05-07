@@ -447,6 +447,35 @@ load_zone_distribution <- function(summaries,
 
   all_skipped <- cached_skipped_dates
 
+  # No qualifying sessions at all (e.g. unknown sport bucket) and no
+  # cache to fall back on \u2192 return an empty payload before the dplyr
+  # pipeline downstream tries to select() on a NULL `per_activity`.
+  if (length(run_idx) == 0 && !cache_valid) {
+    return(list(
+      per_activity = tibble::tibble(
+        sessionStart = as.Date(character(0)),
+        distance_km  = numeric(0),
+        z1_pct       = numeric(0),
+        z2_pct       = numeric(0),
+        z3_pct       = numeric(0),
+        z1_sec       = numeric(0),
+        z2_sec       = numeric(0),
+        z3_sec       = numeric(0),
+        total_sec    = numeric(0),
+        source       = character(0)
+      ),
+      monthly = tibble::tibble(
+        year_month   = character(0),
+        z1_pct       = numeric(0),
+        z2_pct       = numeric(0),
+        z3_pct       = numeric(0),
+        n_activities = integer(0),
+        total_min    = numeric(0)
+      ),
+      skipped = 0L
+    ))
+  }
+
   if (length(new_run_idx) == 0) {
     message("Zoncache: inga nya sessioner att ber\u00e4kna.")
     per_activity <- cached_activity
@@ -620,8 +649,13 @@ load_zone_distribution <- function(summaries,
       dplyr::arrange(year_month)
   }
 
+  # `skipped` reports the total set of sessions ever skipped, not just the
+  # newly-processed ones. all_skipped accumulates both cached_skipped_dates
+  # (carried over from earlier runs) and new_skipped (from this call), so
+  # the count remains accurate even when this call returns purely cached
+  # results.
   list(per_activity = per_activity, monthly = monthly,
-       skipped = if (exists("n_skip")) n_skip else 0L)
+       skipped = length(all_skipped))
 }
 
 #' Compute Polarization Index (Treff 2019)
