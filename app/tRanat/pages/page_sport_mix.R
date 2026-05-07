@@ -90,10 +90,27 @@ page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
     # buckets like "ballsport" / "gym" / "wintersport" expose their
     # actual member sports instead of the previous endurance-only
     # hard-coded list (which left those buckets with empty overlays).
+    # For "all" we use the sports actually present in the data so the
+    # checkbox row reflects what the user can actually overlay
+    # (instead of a fixed running/cycling/walking/swimming list that
+    # ignored e.g. strength or wintersport activity).
     ctl_choices <- shiny::reactive({
       pop <- population_sport()
       members <- if (identical(pop, "all")) {
-        c("running", "cycling", "walking", "swimming")
+        if ("sport" %in% names(scoped_summaries())) {
+          present <- unique(scoped_summaries()$sport)
+          present <- present[!is.na(present) & nzchar(present)]
+          if (length(present) > 12) {
+            # Keep the panel readable — pick the 12 most common
+            # sports by row count.
+            counts <- sort(table(scoped_summaries()$sport),
+                           decreasing = TRUE)
+            present <- names(counts)[seq_len(min(12, length(counts)))]
+          }
+          sort(present)
+        } else {
+          character(0)
+        }
       } else {
         traning::sport_bucket_members(pop)
       }

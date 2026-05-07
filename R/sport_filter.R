@@ -54,8 +54,8 @@
 #'     "ballsport" → "Bollsport", "wintersport" → "Vintersport").
 #'   \item Unknown sports fall back to a title-cased version of the
 #'     raw value ("yoga" → "Yoga").
-#'   \item \code{NULL}, \code{character(0)}, length-> 1 vectors, and
-#'     the \code{"all"}/\code{"any"} sentinels (case-insensitive)
+#'   \item \code{NULL}, \code{character(0)}, vectors of length > 1,
+#'     and the \code{"all"}/\code{"any"} sentinels (case-insensitive)
 #'     return the generic "Aktivitet".
 #' }
 #'
