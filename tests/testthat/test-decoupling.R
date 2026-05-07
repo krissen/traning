@@ -142,7 +142,9 @@ test_that("compute_decoupling pace default is sport-aware for cycling", {
 test_that("compute_decoupling disables pace ceiling for multi-sport buckets", {
   # Endurance bucket spans running (~5 min/km), cycling (~1.5 min/km),
   # walking (~6 min/km). A single min/km cutoff doesn't fit any of
-  # them, so the default falls to Inf and only duration / steady-state
+  # them, so the default disables the pace gate (max_pace_min_km = 0
+  # — the predicate is `avgPaceMoving > max_pace_min_km`, so 0 keeps
+  # every row with a real pace) and only duration / steady-state
   # filters apply. Expect every row to survive (regression check
   # against the previous max(vals)=15.0 default that excluded most
   # endurance sessions).
@@ -170,8 +172,9 @@ test_that("compute_decoupling with sport='all' does not silently filter all rows
 })
 
 test_that("compute_decoupling unknown single sport disables pace ceiling", {
-  # Previously fell back to 15.0 → empty result. With Inf, the
-  # duration filter still applies but the pace one doesn't.
+  # Previously fell back to 15.0 → empty result. With max_pace_min_km
+  # = 0 the pace predicate (`avgPaceMoving > 0`) keeps every recorded
+  # session and only duration / steady-state filters apply.
   weird <- test_summaries_dc
   weird$sport <- "yoga"
   weird$avgPaceMoving <- 4.0  # would fail running's 5.0 cutoff

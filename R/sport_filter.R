@@ -45,8 +45,22 @@
 #' (Shiny, plot labelling) that needs a localised label without
 #' reaching into non-exported internals.
 #'
-#' @param sport Character scalar, vector, or NULL. Multi-sport and
-#'   curated-bucket inputs return the generic "Aktivitet".
+#' Behaviour summary:
+#' \itemize{
+#'   \item Known sports return their Swedish name ("running" →
+#'     "Löpning", "cycling" → "Cykling", etc.).
+#'   \item Curated buckets return their bucket label
+#'     ("endurance" → "Konditionspass", "gym" → "Gymträning",
+#'     "ballsport" → "Bollsport", "wintersport" → "Vintersport").
+#'   \item Unknown sports fall back to a title-cased version of the
+#'     raw value ("yoga" → "Yoga").
+#'   \item \code{NULL}, \code{character(0)}, length-> 1 vectors, and
+#'     the \code{"all"}/\code{"any"} sentinels (case-insensitive)
+#'     return the generic "Aktivitet".
+#' }
+#'
+#' @param sport Character scalar, vector, or NULL. See behaviour
+#'   summary above.
 #' @return Character scalar.
 #' @export
 sport_label <- function(sport) {

@@ -55,7 +55,15 @@ sport_select_server <- function(id) {
   shiny::moduleServer(id, function(input, output, session) {
     shiny::reactive({
       val <- input$sport
-      if (is.null(val) || !nzchar(val)) "running" else val
+      # nzchar(NA) returns NA, which makes `if (...)` raise; guard
+      # explicitly. Also coerce non-character values defensively so a
+      # stray numeric/logical input can't reach downstream sport= args.
+      if (is.null(val) || !is.character(val) || is.na(val) ||
+          !nzchar(val)) {
+        "running"
+      } else {
+        val
+      }
     })
   })
 }
