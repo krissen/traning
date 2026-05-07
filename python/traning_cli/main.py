@@ -79,11 +79,13 @@ def report_options(f):
     @click.option("--no-open", is_flag=True, help="Don't open output file after saving")
     @click.option("--limit", type=int, default=None, help="Limit table rows")
     @click.option("--sport", default=None,
-                  help=("Sport bucket to filter on. Default 'running' "
-                        "(back-compat). Examples: 'cycling', 'walking', "
+                  help=("Sport bucket to filter on. When omitted the R "
+                        "CLI's own default is used (currently 'running' — "
+                        "back-compat). Examples: 'cycling', 'walking', "
                         "'strength', 'all' (no filter), 'endurance' "
                         "(running+cycling+walking+swimming). Swedish "
-                        "aliases ('löpning', 'cykling', 'gång') accepted."))
+                        "aliases ('löpning', 'cykling', 'gång') accepted. "
+                        "Pass an empty string ('') to match nothing."))
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         return f(*args, **kwargs)
@@ -111,7 +113,11 @@ def _r_report(flag, show_plot=False, after=None, before=None, span=None,
         cmd.append(f"--format={fmt}")
     if no_open:
         cmd.append("--no-open")
-    if sport:
+    # Forward sport= even when empty ("") — the R helper treats an empty
+    # bucket as "match nothing" rather than as "no filter", so dropping
+    # the flag would silently fall back to R's default sport instead of
+    # honouring the explicit empty pass-through.
+    if sport is not None:
         cmd.append(f"--sport={sport}")
     _exec(cmd)
 
@@ -711,7 +717,7 @@ def hr_zones(force, show_plot, after, before, span, output, fmt, no_open, limit,
         cmd.append(f"--format={fmt}")
     if no_open:
         cmd.append("--no-open")
-    if sport:
+    if sport is not None:
         cmd.append(f"--sport={sport}")
     _exec(cmd)
 
@@ -740,7 +746,7 @@ def decoupling(force, show_plot, after, before, span, output, fmt, no_open, limi
         cmd.append(f"--format={fmt}")
     if no_open:
         cmd.append("--no-open")
-    if sport:
+    if sport is not None:
         cmd.append(f"--sport={sport}")
     _exec(cmd)
 
@@ -775,7 +781,7 @@ def datesum(range, show_plot, after, before, span, output, fmt, no_open, limit, 
         cmd.append(f"--format={fmt}")
     if no_open:
         cmd.append("--no-open")
-    if sport:
+    if sport is not None:
         cmd.append(f"--sport={sport}")
     _exec(cmd)
 
