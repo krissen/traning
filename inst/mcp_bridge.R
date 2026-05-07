@@ -199,11 +199,19 @@ build_call_args <- function(func_name, func_args) {
     a$n <- as.integer(func_args$n)
   # Date args can arrive as ISO strings (YYYY, YYYY-MM, YYYY-MM-DD) or
   # relative expressions like "-2w" / "-1y" — Python's _build_args
-  # passes them through verbatim. parse_date_expr() handles both,
-  # whereas as.Date() on "-2w" yields NA (which then crashes plots
-  # that build a date spine).
+  # passes them through verbatim, except for absolute ISO `before`
+  # values where +1 day is already added so the user-facing
+  # "inclusive" boundary becomes our exclusive `to`. parse_date_expr()
+  # handles both forms; for relative `to` we apply the same +1 day
+  # shift here so a "-2w" boundary day still gets included.
+  .is_relative_date <- function(x) {
+    is.character(x) && length(x) == 1 && grepl("^-\\d+[dwmy]$", x)
+  }
   if (!is.null(func_args$from))    a$from   <- parse_date_expr(func_args$from)
-  if (!is.null(func_args$to))      a$to     <- parse_date_expr(func_args$to)
+  if (!is.null(func_args$to)) {
+    a$to <- parse_date_expr(func_args$to)
+    if (.is_relative_date(func_args$to)) a$to <- a$to + 1L
+  }
   if (!is.null(func_args$hr_max))  a$hr_max <- as.numeric(func_args$hr_max)
   if (!is.null(func_args$hr_rest)) a$hr_rest <- as.numeric(func_args$hr_rest)
   if (!is.null(func_args$metric))  a$metric <- func_args$metric
@@ -236,7 +244,12 @@ build_call_args <- function(func_name, func_args) {
   }
   if (func_name == "plot_sport_ctl_overlay") {
     if (!is.null(func_args$sports)) {
-      a$sports <- as.character(func_args$sports)
+      # JSON arrays arrive as a list under simplifyVector = FALSE, so
+      # as.character() on the list itself would error. Coerce each
+      # element to a scalar string explicitly.
+      a$sports <- vapply(func_args$sports,
+                          function(x) as.character(x)[[1]],
+                          character(1))
     }
   }
 

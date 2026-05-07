@@ -210,11 +210,14 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
            ggplot2::ggtitle("Aktivitetskalender: ingen data i fönstret"))
   }
 
-  # Pick the dominant sport per day. Tie-break: distance first; for
-  # tied or zero-distance days, fall back to alphabetical sport name.
+  # Pick the dominant sport per day. Tie-break: distance first, then
+  # alphabetical sport name so the chosen colour is deterministic on
+  # mixed/zero-distance days (slice_max alone keeps input order, which
+  # is implementation-defined).
   dominant <- data %>%
+    dplyr::arrange(period, dplyr::desc(km), sport) %>%
     dplyr::group_by(period) %>%
-    dplyr::slice_max(km, n = 1, with_ties = FALSE) %>%
+    dplyr::slice_head(n = 1) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(date = as.Date(period))
 
