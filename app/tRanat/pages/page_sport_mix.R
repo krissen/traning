@@ -30,18 +30,7 @@ page_sport_mix_ui <- function(id) {
       bslib::card_body(
         bslib::layout_columns(
           col_widths = bslib::breakpoints(sm = 12, md = 8),
-          shiny::checkboxGroupInput(ns("ctl_sports"),
-            "Sporter att överlagra",
-            choices = c(
-              "Löpning" = "running",
-              "Cykling" = "cycling",
-              "Gång"    = "walking",
-              "Simning" = "swimming",
-              "Totalt"  = "all"
-            ),
-            selected = c("running", "cycling", "walking", "all"),
-            inline = TRUE
-          )
+          shiny::uiOutput(ns("ctl_sports_ui"))
         ),
         plotly::plotlyOutput(ns("plot_ctl"), height = "380px")
       )
@@ -95,6 +84,39 @@ page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
       pop <- population_sport()
       if (identical(pop, "all")) summaries
       else traning::filter_sport(summaries, pop)
+    })
+
+    # CTL overlay: derive selectable sports from the active bucket so
+    # buckets like "ballsport" / "gym" / "wintersport" expose their
+    # actual member sports instead of the previous endurance-only
+    # hard-coded list (which left those buckets with empty overlays).
+    ctl_choices <- shiny::reactive({
+      pop <- population_sport()
+      members <- if (identical(pop, "all")) {
+        c("running", "cycling", "walking", "swimming")
+      } else {
+        traning:::.SPORT_BUCKETS[[pop]]
+      }
+      if (is.null(members) || length(members) == 0) {
+        members <- c("running", "cycling", "walking", "swimming")
+      }
+      labels <- vapply(members, traning:::.sport_label_sv, character(1))
+      vals   <- c(members, "all")
+      names(vals) <- c(labels, "Totalt")
+      vals
+    })
+
+    output$ctl_sports_ui <- shiny::renderUI({
+      choices <- ctl_choices()
+      # Default-select up to four members + the "Totalt" series so the
+      # overlay starts with something meaningful regardless of bucket.
+      preselect <- utils::head(choices, 4)
+      shiny::checkboxGroupInput(session$ns("ctl_sports"),
+        "Sporter att överlagra",
+        choices  = choices,
+        selected = c(preselect, "all"),
+        inline   = TRUE
+      )
     })
 
     output$plot_mix <- plotly::renderPlotly({

@@ -651,8 +651,12 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #' @param myruns List of trackeRdata objects from \code{my_dbs_load()}.
 #' @param min_duration_min Numeric.  Minimum moving duration in minutes
 #'   (default 45).
-#' @param max_pace_min_km Numeric.  Maximum pace in min/km — runs faster than
-#'   this are excluded (default 5.0, i.e. only easy pace).
+#' @param max_pace_min_km Numeric.  Maximum pace in min/km — sessions
+#'   faster than this are excluded. Default \code{NULL} picks a sport-
+#'   aware threshold: 5.0 (running easy-pace), 1.5 (cycling, excludes
+#'   intervals under 1:30/km), 6.0 (walking, excludes runs misclassified
+#'   as walks), 15.0 (swimming + curated buckets where mixed paces
+#'   coexist). Pass an explicit number to override.
 #' @param warmup_sec Integer.  Seconds to exclude from the start (default 600).
 #' @param smooth_window Integer.  Rolling mean window in seconds for speed
 #'   smoothing (default 30).  Converted to number of observations based on
@@ -678,24 +682,37 @@ compute_decoupling <- function(summaries, myruns,
                                sport                   = "running") {
   # Sport-aware default for the pace ceiling. The filter keeps
   # sessions whose pace is *slower* than max_pace_min_km (i.e. it
-  # excludes fast efforts/intervals). The 5.0 min/km default is tuned
-  # for running easy-pace; on cycling/walking that filter rejects
-  # every session because their typical pace is much faster than 5
-  # min/km. When the caller doesn't override, pick a threshold that
-  # keeps steady-state easy work in scope while still excluding hard
-  # efforts.
+  # excludes fast efforts/intervals). 5.0 min/km is running easy-pace;
+  # on cycling/walking that threshold rejects every session because
+  # their typical pace is much faster. Resolve the sport input through
+  # .resolve_sport_bucket() so Swedish aliases ("cykling"), curated
+  # buckets ("endurance"), and even small vectors don't silently fall
+  # to the permissive fallback when they could match a single primary
+  # sport instead.
   if (is.null(max_pace_min_km)) {
-    max_pace_min_km <- switch(
-      sport,
-      running  = 5.0,   # excludes tempo/intervals
-      cycling  = 1.5,   # excludes fast cycling intervals (~< 1:30/km)
-      walking  = 6.0,   # excludes runs misclassified as walking
-      swimming = 15.0,  # excludes fast pool sets
-      # Curated buckets and 'all': permissive default so a mixed-sport
-      # selection doesn't silently drop everything below the running
-      # threshold.
-      15.0
-    )
+    .pace_default_for <- function(s) {
+      switch(s,
+        running  = 5.0,   # excludes tempo/intervals
+        cycling  = 1.5,   # excludes fast cycling intervals (~< 1:30/km)
+        walking  = 6.0,   # excludes runs misclassified as walking
+        swimming = 15.0,  # excludes fast pool sets
+        NA_real_)
+    }
+    resolved <- .resolve_sport_bucket(sport)
+    if (is.null(resolved) || length(resolved) == 0) {
+      # NULL = "all": mixed sports, permissive default.
+      max_pace_min_km <- 15.0
+    } else if (length(resolved) == 1) {
+      d <- .pace_default_for(resolved)
+      max_pace_min_km <- if (is.na(d)) 15.0 else d
+    } else {
+      # Multi-sport bucket — take the loosest (largest) per-sport
+      # default that still applies, so we don't accidentally exclude
+      # the slowest member sport (e.g. walking inside "endurance").
+      vals <- vapply(resolved, .pace_default_for, numeric(1))
+      vals <- vals[!is.na(vals)]
+      max_pace_min_km <- if (length(vals) == 0) 15.0 else max(vals)
+    }
   }
   empty <- tibble::tibble(
     sessionStart       = as.Date(character(0)),
