@@ -129,6 +129,7 @@ def get_training_load(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
+    sport: str = "running",
 ) -> dict | list:
     """Training load metrics: PMC (fitness/fatigue/form), ACWR, or monotony.
 
@@ -140,6 +141,10 @@ def get_training_load(
         after: Start date filter.
         before: End date filter.
         plot: If True, return the corresponding chart (PNG).
+        sport: Sport bucket. Default 'running'. Examples: 'cycling',
+            'walking', 'strength', 'all' (no filter), 'endurance'
+            (running+cycling+walking+swimming). See vayu://sports for
+            the full list of supported names and aliases.
     """
     metric = metric.lower()
     report_map = {
@@ -151,7 +156,7 @@ def get_training_load(
         return {"type": "error", "message": f"Unknown metric: {metric}. Use pmc, acwr, or monotony."}
 
     report_func, plot_func = report_map[metric]
-    args = _build_args(after, before, n)
+    args = _build_args(after, before, n, sport=sport)
     return _data_or_plot(report_func, plot_func, args, plot)
 
 
@@ -161,10 +166,12 @@ def get_efficiency(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
+    sport: str = "running",
 ) -> dict | list:
     """Efficiency trend: EF (Efficiency Factor) or HRE (Heart Rate Efficiency).
 
-    EF = pace:HR ratio. HRE = avgHR x avgPace (beats/km).
+    EF = speed:HR ratio. HRE = avgHR x avgPace (beats/km).
+    Both generalise to cycling/walking when speed and HR are present.
 
     Args:
         metric: 'ef' (Efficiency Factor) or 'hre' (Heart Rate Efficiency).
@@ -172,6 +179,7 @@ def get_efficiency(
         after: Start date filter.
         before: End date filter.
         plot: If True, return the corresponding chart (PNG).
+        sport: Sport bucket (default 'running'). See vayu://sports.
     """
     metric = metric.lower()
     report_map = {
@@ -182,7 +190,7 @@ def get_efficiency(
         return {"type": "error", "message": f"Unknown metric: {metric}. Use ef or hre."}
 
     report_func, plot_func = report_map[metric]
-    args = _build_args(after, before, n)
+    args = _build_args(after, before, n, sport=sport)
     return _data_or_plot(report_func, plot_func, args, plot)
 
 
@@ -191,6 +199,7 @@ def get_zones(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
+    sport: str = "running",
 ) -> dict | list:
     """HR zone distribution (Seiler 3-zone model) and Polarization Index.
 
@@ -202,8 +211,9 @@ def get_zones(
         after: Start date filter.
         before: End date filter.
         plot: If True, return stacked bar chart of zone distribution (PNG).
+        sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    args = _build_args(after, before, n)
+    args = _build_args(after, before, n, sport=sport)
     return _data_or_plot("report_hr_zones", "fetch.plot.hr_zones", args, plot)
 
 
@@ -216,6 +226,7 @@ def get_sessions(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
+    sport: str = "running",
 ) -> dict | list:
     """List individual training sessions with distance, pace, HR.
 
@@ -224,8 +235,9 @@ def get_sessions(
         after: Start date filter.
         before: End date filter.
         plot: If True, return lollipop chart of sessions (PNG).
+        sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    args = _build_args(after, before, n)
+    args = _build_args(after, before, n, sport=sport)
     return _data_or_plot("report_runs_year_month", "plot_runs_month", args, plot)
 
 
@@ -235,8 +247,9 @@ def get_monthly_summary(
     before: Optional[str] = None,
     top: bool = False,
     plot: bool = False,
+    sport: str = "running",
 ) -> dict | list:
-    """Monthly running summary (distance, pace, sessions).
+    """Monthly volume summary per sport (distance, pace, sessions).
 
     Args:
         n: Number of entries to show (default 12).
@@ -244,8 +257,9 @@ def get_monthly_summary(
         before: End date filter.
         top: If True, show top months by distance instead of current month comparison.
         plot: If True, return bar chart (PNG).
+        sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    args = _build_args(after, before, n)
+    args = _build_args(after, before, n, sport=sport)
     if top:
         return _data_or_plot("report_monthtop", "plot_monthtop", args, plot)
     return _data_or_plot("report_monthstatus", "plot_monthstatus", args, plot)
@@ -257,8 +271,9 @@ def get_yearly_summary(
     before: Optional[str] = None,
     top: bool = False,
     plot: bool = False,
+    sport: str = "running",
 ) -> dict | list:
-    """Yearly running summary (total distance, sessions, pace).
+    """Yearly volume summary per sport (total distance, sessions, pace).
 
     Args:
         n: Number of entries to show.
@@ -266,8 +281,9 @@ def get_yearly_summary(
         before: End date filter.
         top: If True, show full-year totals. If False, year-to-date comparison.
         plot: If True, return bar chart (PNG).
+        sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    args = _build_args(after, before, n)
+    args = _build_args(after, before, n, sport=sport)
     if top:
         return _data_or_plot("report_yearstop", "plot_yearstop", args, plot)
     return _data_or_plot("report_yearstatus", "plot_yearstatus", args, plot)
@@ -282,18 +298,20 @@ def get_decoupling(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
+    sport: str = "running",
 ) -> dict | list:
-    """Aerobic decoupling: pace:HR drift between first and second half of runs.
+    """Aerobic decoupling: pace/speed:HR drift between halves of a session.
 
     <3% well-coupled, 3-5% acceptable, 5-8% moderate drift, >8% significant.
 
     Args:
-        n: Number of recent qualifying runs (default 28).
+        n: Number of recent qualifying sessions (default 28).
         after: Start date filter.
         before: End date filter.
         plot: If True, return decoupling trend chart (PNG).
+        sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    args = _build_args(after, before, n)
+    args = _build_args(after, before, n, sport=sport)
     return _data_or_plot("report_decoupling", "fetch.plot.decoupling", args, plot)
 
 
@@ -302,18 +320,22 @@ def get_recovery_hr(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
+    sport: str = "running",
 ) -> dict | list:
     """Post-workout recovery heart rate trend.
 
-    Lower recovery HR indicates better cardiovascular fitness.
+    Lower recovery HR indicates better cardiovascular fitness. Garmin
+    only emits recovery HR for running today, so non-running buckets
+    typically return an empty result.
 
     Args:
         n: Number of recent sessions (default 28).
         after: Start date filter.
         before: End date filter.
         plot: If True, return recovery HR trend chart (PNG).
+        sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    args = _build_args(after, before, n)
+    args = _build_args(after, before, n, sport=sport)
     return _data_or_plot("report_recovery_hr", "fetch.plot.recovery_hr", args, plot)
 
 
@@ -389,6 +411,7 @@ def compare_periods(
     period_a_to: str,
     period_b_from: str,
     period_b_to: str,
+    sport: str = "running",
 ) -> dict:
     """Compare two date ranges side by side (distance, pace, sessions).
 
@@ -397,9 +420,12 @@ def compare_periods(
         period_a_to: End of first period.
         period_b_from: Start of second period.
         period_b_to: End of second period.
+        sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    a = r_report("report_datesum", {"from": period_a_from, "to": period_a_to})
-    b = r_report("report_datesum", {"from": period_b_from, "to": period_b_to})
+    a = r_report("report_datesum",
+                 {"from": period_a_from, "to": period_a_to, "sport": sport})
+    b = r_report("report_datesum",
+                 {"from": period_b_from, "to": period_b_to, "sport": sport})
 
     return {
         "schema_version": "1.0",
@@ -407,6 +433,7 @@ def compare_periods(
             "status": "ok",
             "period_a": f"{period_a_from} to {period_a_to}",
             "period_b": f"{period_b_from} to {period_b_to}",
+            "sport": sport,
         },
         "details": {
             "period_a": a.get("details", []),
@@ -896,4 +923,56 @@ def resource_thresholds() -> str:
             for level, value in defn["thresholds"].items():
                 lines.append(f"  {level}: {value}")
             lines.append("")
+    return "\n".join(lines)
+
+
+def resource_sports() -> str:
+    """Available sport buckets for the `sport=` parameter on training tools.
+
+    Lists raw sport names found in the cache, Swedish aliases, and
+    curated multi-sport buckets. Reading the cache via R is overkill
+    for this static reference, so we hard-code the known set — the R
+    helper .resolve_sport_bucket() resolves any of these.
+    """
+    lines = [
+        "# Sport buckets",
+        "",
+        "Pass any of these as `sport=...` to training tools",
+        "(get_monthly_summary, get_yearly_summary, get_training_load,",
+        "get_efficiency, get_zones, get_decoupling, get_sessions,",
+        "get_recovery_hr, compare_periods).",
+        "",
+        "## Direct sport names (raw values in summaries$sport)",
+        "",
+        "- **running**, cycling, walking, swimming, strength",
+        "- karntraning, ovrigt (other), bordtennis, badminton, tennis,",
+        "  paddelsporter, fotboll, hockey, fitness-spel,",
+        "- skridskosporter, snosporter, utforsakning, rodd, yoga,",
+        "  bagskytte, sinne_&_kropp",
+        "",
+        "## Swedish aliases (resolved to direct names)",
+        "",
+        "- löpning / lopning → running",
+        "- cykling / cykel → cycling",
+        "- gång / gang / promenad → walking",
+        "- simning → swimming",
+        "- styrka / styrketräning → strength",
+        "",
+        "## Curated buckets",
+        "",
+        "- **endurance** = running + cycling + walking + swimming",
+        "- **ballsport** = badminton + bordtennis + fotboll + tennis",
+        "  + paddelsporter + hockey + fitness-spel",
+        "- **wintersport** = skridskosporter + snosporter + utforsakning",
+        "- **gym** = strength + karntraning + ovrigt",
+        "",
+        "## Special values (no filter)",
+        "",
+        "- **all** / **any** / `null` — match every sport in the cache",
+        "",
+        "## Vector input",
+        "",
+        "Pass a list to combine, e.g. `sport=['running', 'cycling']`.",
+        "Empty / NA values match nothing (never silent pass-through).",
+    ]
     return "\n".join(lines)

@@ -173,10 +173,26 @@ save_atomic <- function(..., file, envir = parent.frame()) {
 #' @return Character string in "M:SS" format
 #' @export
 dec_to_mmss <- function(myint) {
-  myint_secs <- as.integer(myint * 60, units = "seconds")
+  # Empty / NA / non-finite input → "—" instead of crashing inside the
+  # if-clause below (NA <= 9 is NA, which the if can't evaluate).
+  if (length(myint) == 0 || is.na(myint) || !is.finite(myint)) {
+    return("—")
+  }
+  # Guard against integer overflow when a stray bad row in the cache
+  # produces an astronomical pace value (e.g. avgPaceMoving = 2.4e11
+  # has occurred in legacy cycling rows). as.integer(x*60) silently
+  # coerces overflow to NA, which the if-clause below can't evaluate.
+  total_secs <- myint * 60
+  if (abs(total_secs) > .Machine$integer.max) {
+    return("—")
+  }
+  myint_secs <- as.integer(total_secs, units = "seconds")
   myint_mmss <- lubridate::seconds_to_period(myint_secs)
   myint_min <- lubridate::minute(myint_mmss)
   myint_sec <- lubridate::second(myint_mmss)
+  if (is.na(myint_sec) || is.na(myint_min)) {
+    return("—")
+  }
   if (myint_sec <= 9) {
     myint_sec <- stringr::str_glue("0{myint_sec}")
   } else if (nchar(as.character(myint_sec)) == 1) {
