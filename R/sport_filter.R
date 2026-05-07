@@ -29,8 +29,10 @@
 .sport_label_sv <- function(sport) {
   if (is.null(sport) || length(sport) == 0) return("Aktivitet")
   if (length(sport) > 1) return("Aktivitet")
-  if (identical(sport, "all") || identical(sport, "any")) return("Aktivitet")
   s_lower <- tolower(sport)
+  # "all"/"any" are sentinels — treat them case-insensitively so
+  # "All"/"ANY" don't slip through as literal sport names.
+  if (s_lower %in% c("all", "any")) return("Aktivitet")
   label <- .SPORT_LABELS_SV[[s_lower]]
   if (!is.null(label)) return(label)
   # Fallback: capitalize first letter of the raw value
@@ -73,8 +75,11 @@ sport_bucket_members <- function(bucket) {
     stop("sport_bucket_members() takes a single bucket name; got length ",
          length(bucket))
   }
-  if (identical(bucket, "all") || identical(bucket, "any")) return(NULL)
   b <- tolower(bucket)
+  # "all"/"any" are sentinels — match case-insensitively so "All"/"ANY"
+  # also resolve to NULL (no bucket scoping) rather than a literal
+  # sport name.
+  if (b %in% c("all", "any")) return(NULL)
   if (!is.null(.SPORT_BUCKETS[[b]])) return(.SPORT_BUCKETS[[b]])
   if (!is.null(.SPORT_ALIASES[[b]])) return(.SPORT_ALIASES[[b]])
   b

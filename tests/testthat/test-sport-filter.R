@@ -197,6 +197,24 @@ test_that("sport_bucket_members rejects vector input", {
                "single bucket name")
 })
 
+test_that("sport_bucket_members handles 'all'/'any' case-insensitively", {
+  # Sentinel values must resolve to NULL regardless of case so callers
+  # that treat NULL as "no bucket scoping" don't get tricked into
+  # filtering by a literal "All" string.
+  expect_null(sport_bucket_members("All"))
+  expect_null(sport_bucket_members("ALL"))
+  expect_null(sport_bucket_members("Any"))
+  expect_null(sport_bucket_members("ANY"))
+})
+
+test_that("sport_label handles 'all'/'any' case-insensitively", {
+  # Matches the sentinel behaviour of sport_bucket_members().
+  expect_equal(sport_label("All"), "Aktivitet")
+  expect_equal(sport_label("ALL"), "Aktivitet")
+  expect_equal(sport_label("Any"), "Aktivitet")
+  expect_equal(sport_label("ANY"), "Aktivitet")
+})
+
 test_that(".sport_match_mask coerces NA sport values to FALSE", {
   # Regression: previously str_detect(NA, ...) returned NA, which
   # propagated through Reduce(`|`,) and made `all(matches)` /
