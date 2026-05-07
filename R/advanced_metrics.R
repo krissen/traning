@@ -683,37 +683,6 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #'   \code{avg_pace}, \code{avg_hr}, \code{ratio_first}, \code{ratio_second},
 #'   \code{decoupling_pct}, \code{decoupling_rolling28}, \code{temperature}.
 #' @export
-
-# Sport-aware default for the pace ceiling. The filter is
-# `avgPaceMoving > max_pace_min_km`, so this is an *easy-pace* gate:
-# higher numbers are *more* restrictive (require slower sessions).
-# 5.0 min/km is running easy-pace; on cycling/walking that threshold
-# rejects every session because their typical pace is much faster.
-# Resolve the sport input through .resolve_sport_bucket() so Swedish
-# aliases ("cykling"), curated buckets ("endurance"), and short
-# vectors hit a meaningful per-sport threshold instead of falling
-# silently to a global catch-all. For multi-sport selections (NULL,
-# "all", curated buckets) the gate is disabled (returns 0 — `pace > 0`
-# keeps every recorded session); use 0 rather than Inf since
-# `pace > Inf` is FALSE for finite paces.
-#' @keywords internal
-.resolve_max_pace_min_km <- function(sport) {
-  pace_for <- function(s) {
-    switch(s,
-      running  = 5.0,
-      cycling  = 1.5,
-      walking  = 6.0,
-      swimming = 15.0,
-      NA_real_)
-  }
-  resolved <- .resolve_sport_bucket(sport)
-  if (is.null(resolved) || length(resolved) == 0 || length(resolved) > 1) {
-    return(0)
-  }
-  d <- pace_for(resolved)
-  if (is.na(d)) 0 else d
-}
-
 compute_decoupling <- function(summaries, myruns,
                                min_duration_min        = 45,
                                max_pace_min_km         = NULL,
@@ -900,6 +869,51 @@ compute_decoupling <- function(summaries, myruns,
   if (traning_data == "") return(NULL)
   normalizePath(file.path(traning_data, "cache", "decoupling.RData"),
                 mustWork = FALSE)
+}
+
+#' Resolve the sport-aware easy-pace gate for decoupling
+#'
+#' Internal helper shared by \code{compute_decoupling()} and
+#' \code{load_decoupling()} so both functions agree on which
+#' \code{max_pace_min_km} to use when the caller passes \code{NULL}.
+#'
+#' The decoupling pace filter keeps rows where \code{avgPaceMoving >
+#' max_pace_min_km}, so this is an *easy-pace* gate: a higher number
+#' is more restrictive. 5.0 min/km is running easy-pace; cycling and
+#' walking move much faster in min/km, so a single threshold cannot
+#' fit all sports. The resolver:
+#' \itemize{
+#'   \item Resolves \code{sport} via \code{.resolve_sport_bucket()} so
+#'     Swedish aliases ("cykling") and curated buckets ("endurance")
+#'     are handled.
+#'   \item Returns the sport-specific threshold for a single known
+#'     sport: 5.0 (running), 1.5 (cycling), 6.0 (walking), 15.0
+#'     (swimming).
+#'   \item Returns 0 (gate disabled — \code{pace > 0} keeps every
+#'     recorded session) for \code{NULL} / \code{"all"} / multi-sport
+#'     buckets, and for unknown single sports. We use 0 rather than
+#'     \code{Inf} because \code{pace > Inf} is \code{FALSE} for any
+#'     finite pace.
+#' }
+#'
+#' @param sport Character scalar/vector or NULL.
+#' @return Numeric — pace threshold in min/km.
+#' @keywords internal
+.resolve_max_pace_min_km <- function(sport) {
+  pace_for <- function(s) {
+    switch(s,
+      running  = 5.0,
+      cycling  = 1.5,
+      walking  = 6.0,
+      swimming = 15.0,
+      NA_real_)
+  }
+  resolved <- .resolve_sport_bucket(sport)
+  if (is.null(resolved) || length(resolved) == 0 || length(resolved) > 1) {
+    return(0)
+  }
+  d <- pace_for(resolved)
+  if (is.na(d)) 0 else d
 }
 
 #' Load aerobic decoupling with incremental caching
