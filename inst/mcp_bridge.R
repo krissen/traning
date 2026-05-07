@@ -93,7 +93,11 @@ func_registry <- list(
   fetch.plot.hrv         = "h",
   fetch.plot.sleep       = "h",
   fetch.plot.vo2max      = "shg",
-  fetch.plot.readiness_score = "sh"
+  fetch.plot.readiness_score = "sh",
+  # Multi-sport plots
+  plot_sport_mix         = "s",
+  plot_sport_ctl_overlay = "s",
+  plot_sport_calendar    = "s"
 )
 
 if (is.null(func_name) || !func_name %in% names(func_registry)) {
@@ -208,10 +212,22 @@ build_call_args <- function(func_name, func_args) {
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
     "plot_monthlast", "plot_yearstatus", "plot_yearstop",
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
-    "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr"
+    "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
+    "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar"
   )
   if (func_name %in% summaries_funcs) {
     a <- c(list(summaries = summaries), a)
+  }
+
+  # Multi-sport plot extras
+  if (func_name == "plot_sport_mix") {
+    if (!is.null(func_args$period)) a$period <- as.character(func_args$period)
+    if (!is.null(func_args$min_km)) a$min_km <- as.numeric(func_args$min_km)
+  }
+  if (func_name == "plot_sport_ctl_overlay") {
+    if (!is.null(func_args$sports)) {
+      a$sports <- as.character(func_args$sports)
+    }
   }
 
   # report_datesum / plot_datesum: special positional args
