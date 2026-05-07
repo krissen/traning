@@ -125,6 +125,66 @@ test_that("compute_decoupling filters fast pace (<5:00/km)", {
   expect_lt(nrow(result), nrow(full))
 })
 
+test_that("compute_decoupling pace default is sport-aware for cycling", {
+  # Cycling sessions are typically much faster than 5:00/km, so the
+  # running-tuned threshold of 5.0 would reject every ride (`pace >
+  # 5.0` is FALSE for any pace under 5 min/km). The cycling default
+  # of 1.5 min/km is permissive enough to keep them.
+  cyc <- test_summaries_dc
+  cyc$sport <- "cycling"
+  # Cycling pace 2.0 min/km (= 30 km/h) — slower than 1.5 in min/km
+  # terms (higher number = slower pace), so passes `pace > 1.5`. It
+  # would have failed the running default `pace > 5.0`.
+  cyc$avgPaceMoving <- 2.0
+  myruns <- make_dc_myruns(test_summaries_dc)
+  result <- compute_decoupling(cyc, myruns, sport = "cycling")
+  expect_gt(nrow(result), 0)
+})
+
+test_that("compute_decoupling disables pace ceiling for multi-sport buckets", {
+  # Endurance bucket spans running (~5 min/km), cycling (~1.5 min/km),
+  # walking (~6 min/km). A single min/km cutoff doesn't fit any of
+  # them, so the default disables the pace gate (max_pace_min_km = 0
+  # — the predicate is `avgPaceMoving > max_pace_min_km`, so 0 keeps
+  # every row with a real pace) and only duration / steady-state
+  # filters apply. Expect every row to survive (regression check
+  # against the previous max(vals)=15.0 default that excluded most
+  # endurance sessions).
+  mixed <- test_summaries_dc
+  mixed$sport <- rep(c("running", "cycling", "walking", "swimming"),
+                     length.out = nrow(mixed))
+  mixed$avgPaceMoving <- ifelse(mixed$sport == "cycling", 2.0,
+                                ifelse(mixed$sport == "running", 5.5,
+                                ifelse(mixed$sport == "walking", 8.0, 18.0)))
+  myruns <- make_dc_myruns(test_summaries_dc)
+  result <- compute_decoupling(mixed, myruns, sport = "endurance")
+  expect_equal(nrow(result), nrow(mixed))
+})
+
+test_that("compute_decoupling with sport='all' does not silently filter all rows", {
+  # Regression: previously sport=NULL/"all" defaulted max_pace_min_km
+  # to 15.0, which excludes nearly every running/cycling/walking
+  # session (they're all faster than 15 min/km).
+  cyc <- test_summaries_dc
+  cyc$sport <- rep(c("running", "cycling"), length.out = nrow(cyc))
+  cyc$avgPaceMoving <- ifelse(cyc$sport == "cycling", 2.0, 5.5)
+  myruns <- make_dc_myruns(test_summaries_dc)
+  result <- compute_decoupling(cyc, myruns, sport = "all")
+  expect_gt(nrow(result), 0)
+})
+
+test_that("compute_decoupling unknown single sport disables pace ceiling", {
+  # Previously fell back to 15.0 → empty result. With max_pace_min_km
+  # = 0 the pace predicate (`avgPaceMoving > 0`) keeps every recorded
+  # session and only duration / steady-state filters apply.
+  weird <- test_summaries_dc
+  weird$sport <- "yoga"
+  weird$avgPaceMoving <- 4.0  # would fail running's 5.0 cutoff
+  myruns <- make_dc_myruns(test_summaries_dc)
+  result <- compute_decoupling(weird, myruns, sport = "yoga")
+  expect_gt(nrow(result), 0)
+})
+
 test_that("compute_decoupling handles NULL myruns entries", {
   myruns <- make_dc_myruns(test_summaries_dc)
   myruns[[1]] <- NULL
@@ -275,6 +335,40 @@ test_that("load_decoupling force bypasses cache", {
   result <- load_decoupling(test_summaries_dc, myruns,
                             cache_path = cache_file, force = TRUE)
   expect_s3_class(result, "tbl_df")
+})
+
+test_that("load_decoupling pace default is sport-aware (cycling)", {
+  # Regression: load_decoupling used to hard-code max_pace_min_km =
+  # 5.0 in its pre-cache filter, which silently dropped every cycling
+  # row before compute_decoupling ever ran. With the shared
+  # .resolve_max_pace_min_km() resolver, sport="cycling" now uses 1.5
+  # and keeps cycling sessions.
+  cyc <- test_summaries_dc
+  cyc$sport <- "cycling"
+  cyc$avgPaceMoving <- 2.0
+  myruns <- make_dc_myruns(test_summaries_dc)
+  cache_file <- tempfile(fileext = ".RData")
+  on.exit(unlink(cache_file))
+  result <- load_decoupling(cyc, myruns,
+                            sport = "cycling",
+                            cache_path = cache_file)
+  expect_gt(nrow(result), 0)
+})
+
+test_that("load_decoupling pace default disables filter for 'all'/buckets", {
+  # Same regression check for multi-sport scoping: previously the
+  # pre-cache filter `pace > 5.0` excluded everything in buckets like
+  # "endurance" / "all"; the gate is now disabled (0).
+  mixed <- test_summaries_dc
+  mixed$sport <- rep(c("running", "cycling"), length.out = nrow(mixed))
+  mixed$avgPaceMoving <- ifelse(mixed$sport == "cycling", 2.0, 5.5)
+  myruns <- make_dc_myruns(test_summaries_dc)
+  cache_file <- tempfile(fileext = ".RData")
+  on.exit(unlink(cache_file))
+  result <- load_decoupling(mixed, myruns,
+                            sport = "all",
+                            cache_path = cache_file)
+  expect_gt(nrow(result), 0)
 })
 
 test_that("load_decoupling invalidates on parameter change", {

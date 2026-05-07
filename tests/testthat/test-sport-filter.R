@@ -143,6 +143,78 @@ test_that(".sport_match_mask handles missing sport column", {
   expect_true(all(traning:::.sport_match_mask(df, NULL)))
 })
 
+# --- Public API surface ----------------------------------------------------
+
+test_that("sport_bucket_names returns curated buckets plus 'all'", {
+  out <- sport_bucket_names()
+  expect_type(out, "character")
+  # Every curated bucket from .SPORT_BUCKETS must show up
+  for (name in names(traning:::.SPORT_BUCKETS)) {
+    expect_true(name %in% out, info = paste("missing bucket:", name))
+  }
+  # The "all" sentinel must be the trailing entry — callers (e.g.
+  # the Shiny dropdown) treat it as a reliable last-position default.
+  expect_equal(tail(out, 1), "all")
+})
+
+test_that("filter_sport (exported) matches .filter_sport (internal)", {
+  df <- .fixture()
+  for (s in list("running", "cycling", "endurance", "all", NULL,
+                 c("running", "cycling"))) {
+    expect_equal(filter_sport(df, s), traning:::.filter_sport(df, s),
+                 info = paste("sport=", deparse(s)))
+  }
+})
+
+test_that("sport_label (exported) returns Swedish display labels", {
+  expect_equal(sport_label("running"), "Löpning")
+  expect_equal(sport_label("cycling"), "Cykling")
+  expect_equal(sport_label("yoga"), "Yoga")  # title-case fallback
+  expect_equal(sport_label(NULL), "Aktivitet")
+  expect_equal(sport_label("all"), "Aktivitet")
+})
+
+test_that("sport_bucket_members returns curated bucket members", {
+  expect_setequal(sport_bucket_members("endurance"),
+                  c("running", "cycling", "walking", "swimming"))
+  expect_setequal(sport_bucket_members("ballsport"),
+                  c("badminton", "bordtennis", "fotboll", "tennis",
+                    "paddelsporter", "hockey", "fitness-spel"))
+  expect_setequal(sport_bucket_members("gym"),
+                  c("strength", "karntraning", "ovrigt"))
+})
+
+test_that("sport_bucket_members handles direct sports + 'all' + NULL", {
+  expect_equal(sport_bucket_members("running"), "running")
+  expect_equal(sport_bucket_members("cykling"), "cycling")  # alias
+  expect_null(sport_bucket_members("all"))
+  expect_null(sport_bucket_members("any"))
+  expect_null(sport_bucket_members(NULL))
+})
+
+test_that("sport_bucket_members rejects vector input", {
+  expect_error(sport_bucket_members(c("running", "cycling")),
+               "single bucket name")
+})
+
+test_that("sport_bucket_members handles 'all'/'any' case-insensitively", {
+  # Sentinel values must resolve to NULL regardless of case so callers
+  # that treat NULL as "no bucket scoping" don't get tricked into
+  # filtering by a literal "All" string.
+  expect_null(sport_bucket_members("All"))
+  expect_null(sport_bucket_members("ALL"))
+  expect_null(sport_bucket_members("Any"))
+  expect_null(sport_bucket_members("ANY"))
+})
+
+test_that("sport_label handles 'all'/'any' case-insensitively", {
+  # Matches the sentinel behaviour of sport_bucket_members().
+  expect_equal(sport_label("All"), "Aktivitet")
+  expect_equal(sport_label("ALL"), "Aktivitet")
+  expect_equal(sport_label("Any"), "Aktivitet")
+  expect_equal(sport_label("ANY"), "Aktivitet")
+})
+
 test_that(".sport_match_mask coerces NA sport values to FALSE", {
   # Regression: previously str_detect(NA, ...) returned NA, which
   # propagated through Reduce(`|`,) and made `all(matches)` /

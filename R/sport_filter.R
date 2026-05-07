@@ -29,12 +29,115 @@
 .sport_label_sv <- function(sport) {
   if (is.null(sport) || length(sport) == 0) return("Aktivitet")
   if (length(sport) > 1) return("Aktivitet")
-  if (identical(sport, "all") || identical(sport, "any")) return("Aktivitet")
   s_lower <- tolower(sport)
+  # "all"/"any" are sentinels — treat them case-insensitively so
+  # "All"/"ANY" don't slip through as literal sport names.
+  if (s_lower %in% c("all", "any")) return("Aktivitet")
   label <- .SPORT_LABELS_SV[[s_lower]]
   if (!is.null(label)) return(label)
   # Fallback: capitalize first letter of the raw value
   paste0(toupper(substr(s_lower, 1, 1)), substr(s_lower, 2, nchar(s_lower)))
+}
+
+#' Swedish display label for a sport bucket (exported)
+#'
+#' Public wrapper around \code{.sport_label_sv()}. Useful for UI code
+#' (Shiny, plot labelling) that needs a localised label without
+#' reaching into non-exported internals.
+#'
+#' Behaviour summary:
+#' \itemize{
+#'   \item Known sports return their Swedish name ("running" →
+#'     "Löpning", "cycling" → "Cykling", etc.).
+#'   \item Curated buckets return their bucket label
+#'     ("endurance" → "Konditionspass", "gym" → "Gymträning",
+#'     "ballsport" → "Bollsport", "wintersport" → "Vintersport").
+#'   \item Unknown sports fall back to a title-cased version of the
+#'     raw value ("yoga" → "Yoga").
+#'   \item \code{NULL}, \code{character(0)}, vectors of length > 1,
+#'     and the \code{"all"}/\code{"any"} sentinels (case-insensitive)
+#'     return the generic "Aktivitet".
+#' }
+#'
+#' @param sport Character scalar, vector, or NULL. See behaviour
+#'   summary above.
+#' @return Character scalar.
+#' @export
+sport_label <- function(sport) {
+  .sport_label_sv(sport)
+}
+
+#' Member sports of a curated bucket
+#'
+#' Returns the canonical sport-column values that belong to a given
+#' curated bucket (\code{"endurance"}, \code{"ballsport"},
+#' \code{"wintersport"}, \code{"gym"}).
+#'
+#' Accepts (case-insensitive):
+#' \itemize{
+#'   \item Curated bucket names — returns the bucket's member sports.
+#'   \item Direct sport names — returns the sport itself
+#'     (\code{"running"} → \code{"running"}).
+#'   \item Swedish aliases — resolves to the canonical English value
+#'     (\code{"cykling"} → \code{"cycling"}, \code{"löpning"} →
+#'     \code{"running"}; full mapping in \code{.SPORT_ALIASES}).
+#'   \item \code{"all"} / \code{"any"} / \code{NULL} — returns
+#'     \code{NULL} (no member list; callers should treat as "no bucket
+#'     scoping").
+#' }
+#'
+#' Provided so UI code (Shiny pages, prompt builders) doesn't have to
+#' reach into the non-exported \code{.SPORT_BUCKETS} list.
+#'
+#' @param bucket Character scalar — bucket name, sport name, Swedish
+#'   alias, or "all".
+#' @return Character vector of canonical sport values, or \code{NULL}
+#'   for \code{"all"} / \code{NULL}.
+#' @export
+sport_bucket_members <- function(bucket) {
+  if (is.null(bucket) || length(bucket) == 0) return(NULL)
+  if (length(bucket) > 1) {
+    stop("sport_bucket_members() takes a single bucket name; got length ",
+         length(bucket))
+  }
+  b <- tolower(bucket)
+  # "all"/"any" are sentinels — match case-insensitively so "All"/"ANY"
+  # also resolve to NULL (no bucket scoping) rather than a literal
+  # sport name.
+  if (b %in% c("all", "any")) return(NULL)
+  if (!is.null(.SPORT_BUCKETS[[b]])) return(.SPORT_BUCKETS[[b]])
+  if (!is.null(.SPORT_ALIASES[[b]])) return(.SPORT_ALIASES[[b]])
+  b
+}
+
+#' Filter a summaries data frame by sport bucket
+#'
+#' Public wrapper around \code{.filter_sport()}. Same matching rules
+#' (direct sport names, Swedish aliases, curated buckets, special
+#' values \code{NULL}/\code{"all"}/\code{"any"}). Provided so callers
+#' outside the package — most notably the Shiny dashboard — don't have
+#' to reach into internal triple-colon helpers.
+#'
+#' @inheritParams .filter_sport
+#' @return Filtered data frame.
+#' @export
+filter_sport <- function(summaries, sport = "running") {
+  .filter_sport(summaries, sport)
+}
+
+#' Names of the curated sport buckets exposed via \code{sport=}
+#'
+#' Returns the names users can pass to disable sport filtering or to
+#' aggregate across several sports (\code{"endurance"},
+#' \code{"ballsport"}, \code{"gym"}, \code{"wintersport"},
+#' \code{"all"}). The Shiny dropdown and any other UI surface should
+#' build their bucket lists from this helper rather than hard-coding
+#' the names, so they don't drift away from \code{.SPORT_BUCKETS}.
+#'
+#' @return Character vector.
+#' @export
+sport_bucket_names <- function() {
+  c(names(.SPORT_BUCKETS), "all")
 }
 
 # Curated sport buckets — group several raw sport values under one label.

@@ -13,27 +13,46 @@ page_training_ui <- function(id) {
   )
 }
 
-page_training_server <- function(id, summaries, dates, is_mobile) {
+page_training_server <- function(id, summaries, dates, is_mobile, sport) {
   force(summaries)
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
+    sp      <- shiny::reactive(sport())
 
     metric_panel_server("pmc",
-      plot_fn   = shiny::reactive(fetch.plot.pmc(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_pmc(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(fetch.plot.pmc(summaries,
+                                                  from = dr_from(),
+                                                  to = dr_to(),
+                                                  sport = sp())),
+      report_fn = shiny::reactive(report_pmc(summaries,
+                                              from = dr_from(),
+                                              to = dr_to(),
+                                              sport = sp())),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )
     metric_panel_server("acwr",
-      plot_fn   = shiny::reactive(fetch.plot.acwr(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_acwr(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(fetch.plot.acwr(summaries,
+                                                   from = dr_from(),
+                                                   to = dr_to(),
+                                                   sport = sp())),
+      report_fn = shiny::reactive(report_acwr(summaries,
+                                               from = dr_from(),
+                                               to = dr_to(),
+                                               sport = sp())),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )
     metric_panel_server("monotony",
-      plot_fn   = shiny::reactive(fetch.plot.monotony(summaries, from = dr_from(), to = dr_to())),
-      report_fn = shiny::reactive(report_monotony(summaries, from = dr_from(), to = dr_to())),
+      plot_fn   = shiny::reactive(fetch.plot.monotony(summaries,
+                                                       from = dr_from(),
+                                                       to = dr_to(),
+                                                       sport = sp())),
+      report_fn = shiny::reactive(report_monotony(summaries,
+                                                   from = dr_from(),
+                                                   to = dr_to(),
+                                                   sport = sp())),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )

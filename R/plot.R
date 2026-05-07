@@ -817,8 +817,10 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
   pt_size <- if (span <= 30) 3 else 1.5
   pt_alpha <- if (span <= 30) 0.7 else 0.4
 
-  # Weekly km for volume panel
-  acwr_data <- compute_acwr(summaries) %>%
+  # Weekly km for volume panel — must follow the same sport as the
+  # decoupling points so a cycling-decoupling chart isn't rendered
+  # against running km totals.
+  acwr_data <- compute_acwr(summaries, sport = sport) %>%
     dplyr::filter(
       date >= min(decoupling_data$sessionStart),
       date <= max(decoupling_data$sessionStart)
