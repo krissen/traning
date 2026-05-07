@@ -290,6 +290,76 @@ def get_yearly_summary(
 
 
 # ---------------------------------------------------------------------------
+# Multi-sport visualisations
+# ---------------------------------------------------------------------------
+
+def get_sport_mix(
+    period: str = "month",
+    after: Optional[str] = None,
+    before: Optional[str] = None,
+    min_km: float = 0.1,
+) -> dict:
+    """Stacked bar chart: distance per period broken down by sport.
+
+    Useful for spotting sport-rotation patterns, training-camp blocks,
+    and seasonal shifts (summer cycling vs winter running).
+
+    Args:
+        period: Bar resolution. One of 'month' (default), 'week', 'year'.
+        after: Start date filter.
+        before: End date filter.
+        min_km: Drop (period, sport) cells below this threshold (km).
+    """
+    args = _build_args(after, before, period=period, min_km=min_km)
+    return r_plot("plot_sport_mix", args)
+
+
+def get_sport_ctl_overlay(
+    sports: Optional[list[str]] = None,
+    after: Optional[str] = None,
+    before: Optional[str] = None,
+) -> dict:
+    """CTL (chronic training load) overlay across multiple sport buckets.
+
+    Reveals fitness shifts when a training block is dominated by one
+    sport — e.g. running CTL falling during a cycling-heavy week while
+    overall load (sport='all') stays steady.
+
+    Args:
+        sports: List of sport buckets to overlay. Defaults to
+            ['running', 'cycling', 'walking', 'all'].
+        after: Start date filter.
+        before: End date filter.
+    """
+    if sports is None:
+        sports = ["running", "cycling", "walking", "all"]
+    args = _build_args(after, before, sports=sports)
+    return r_plot("plot_sport_ctl_overlay", args)
+
+
+def get_sport_calendar(
+    after: Optional[str] = None,
+    before: Optional[str] = None,
+    sport: Optional[str] = None,
+) -> dict:
+    """Activity calendar — one cell per day, coloured by dominant sport.
+
+    GitHub-style heatmap. Quick visual of training frequency, sport-mix,
+    and rest patterns.
+
+    Args:
+        after: Start date filter (default = 1 year before `before`).
+        before: End date filter (default = today).
+        sport: Restrict to a single bucket / curated bucket (e.g.
+            'endurance' to hide gym/strength). Default = all sports.
+    """
+    args = _build_args(after, before)
+    if sport is not None:
+        args["sport"] = sport
+    return r_plot("plot_sport_calendar", args)
+
+
+# ---------------------------------------------------------------------------
 # Trends
 # ---------------------------------------------------------------------------
 

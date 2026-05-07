@@ -93,7 +93,11 @@ func_registry <- list(
   fetch.plot.hrv         = "h",
   fetch.plot.sleep       = "h",
   fetch.plot.vo2max      = "shg",
-  fetch.plot.readiness_score = "sh"
+  fetch.plot.readiness_score = "sh",
+  # Multi-sport plots
+  plot_sport_mix         = "s",
+  plot_sport_ctl_overlay = "s",
+  plot_sport_calendar    = "s"
 )
 
 if (is.null(func_name) || !func_name %in% names(func_registry)) {
@@ -183,13 +187,31 @@ build_call_args <- function(func_name, func_args) {
     "plot_monthlast", "plot_yearstatus", "plot_yearstop", "plot_datesum",
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
     "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
-    "fetch.plot.hr_zones", "fetch.plot.decoupling"
+    "fetch.plot.hr_zones", "fetch.plot.decoupling",
+    # Multi-sport plots that accept `sport=` as a population filter
+    # (default NULL = all sports). plot_sport_ctl_overlay is omitted
+    # because it takes a `sports` vector instead of a single bucket;
+    # see the multi-sport extras block below.
+    "plot_sport_mix", "plot_sport_calendar"
   )
 
   if (!is.null(func_args$n) && func_name %in% n_funcs)
     a$n <- as.integer(func_args$n)
-  if (!is.null(func_args$from))    a$from   <- as.Date(func_args$from)
-  if (!is.null(func_args$to))      a$to     <- as.Date(func_args$to)
+  # Date args can arrive as ISO strings (YYYY, YYYY-MM, YYYY-MM-DD) or
+  # relative expressions like "-2w" / "-1y" — Python's _build_args
+  # passes them through verbatim, except for absolute ISO `before`
+  # values where +1 day is already added so the user-facing
+  # "inclusive" boundary becomes our exclusive `to`. parse_date_expr()
+  # handles both forms; for relative `to` we apply the same +1 day
+  # shift here so a "-2w" boundary day still gets included.
+  .is_relative_date <- function(x) {
+    is.character(x) && length(x) == 1 && grepl("^-\\d+[dwmy]$", x)
+  }
+  if (!is.null(func_args$from))    a$from   <- parse_date_expr(func_args$from)
+  if (!is.null(func_args$to)) {
+    a$to <- parse_date_expr(func_args$to)
+    if (.is_relative_date(func_args$to)) a$to <- a$to + 1L
+  }
   if (!is.null(func_args$hr_max))  a$hr_max <- as.numeric(func_args$hr_max)
   if (!is.null(func_args$hr_rest)) a$hr_rest <- as.numeric(func_args$hr_rest)
   if (!is.null(func_args$metric))  a$metric <- func_args$metric
@@ -208,16 +230,35 @@ build_call_args <- function(func_name, func_args) {
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
     "plot_monthlast", "plot_yearstatus", "plot_yearstop",
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
-    "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr"
+    "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
+    "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar"
   )
   if (func_name %in% summaries_funcs) {
     a <- c(list(summaries = summaries), a)
   }
 
+  # Multi-sport plot extras
+  if (func_name == "plot_sport_mix") {
+    if (!is.null(func_args$period)) a$period <- as.character(func_args$period)
+    if (!is.null(func_args$min_km)) a$min_km <- as.numeric(func_args$min_km)
+  }
+  if (func_name == "plot_sport_ctl_overlay") {
+    if (!is.null(func_args$sports)) {
+      # JSON arrays arrive as a list under simplifyVector = FALSE, so
+      # as.character() on the list itself would error. Coerce each
+      # element to a scalar string explicitly.
+      a$sports <- vapply(func_args$sports,
+                          function(x) as.character(x)[[1]],
+                          character(1))
+    }
+  }
+
   # report_datesum / plot_datesum: special positional args
   if (func_name %in% c("report_datesum", "plot_datesum")) {
-    dr_from <- if (!is.null(func_args$from)) as.Date(func_args$from) else as.Date("1970-01-01")
-    dr_to   <- if (!is.null(func_args$to))   as.Date(func_args$to)   else Sys.Date() + 1
+    dr_from <- if (!is.null(func_args$from)) parse_date_expr(func_args$from)
+               else as.Date("1970-01-01")
+    dr_to   <- if (!is.null(func_args$to))   parse_date_expr(func_args$to)
+               else Sys.Date() + 1
     a <- list(summaries = summaries,
               do_datesum_from = dr_from,
               do_datesum_to = dr_to)
