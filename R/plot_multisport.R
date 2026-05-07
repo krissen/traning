@@ -69,9 +69,12 @@
 plot_sport_mix <- function(summaries, period = "month",
                            from = NULL, to = NULL,
                            sport = NULL, min_km = 0.1) {
+  # ISO week number (%V) must be paired with ISO week-year (%G), not the
+  # calendar year (%Y), or weeks straddling Jan 1 get bucketed under the
+  # wrong year (e.g. 2026-01-01 falls in ISO year 2025).
   period_fmt <- switch(period,
                        month = "%Y-%m",
-                       week  = "%Y-W%V",
+                       week  = "%G-W%V",
                        year  = "%Y",
                        stop("period must be one of: month, week, year"))
   data <- .sport_mix_data(summaries, period_fmt = period_fmt,
@@ -140,7 +143,14 @@ plot_sport_ctl_overlay <- function(summaries,
   if (!is.null(from)) series <- dplyr::filter(series, date >= as.Date(from))
   if (!is.null(to))   series <- dplyr::filter(series, date <  as.Date(to))
 
-  series$sport_sv <- .relabel_sport(series$sport)
+  # Plot-specific labelling: .sport_label_sv() turns "all" into the
+  # generic "Aktivitet", which is ambiguous next to running/cycling
+  # series in a CTL overlay. Force "Totalt" for the all-sport line so
+  # the legend is unambiguous.
+  series$sport_sv <- vapply(series$sport, function(s) {
+    if (identical(s, "all") || identical(s, "any")) "Totalt"
+    else .sport_label_sv(s)
+  }, character(1))
 
   ggplot2::ggplot(series,
                   ggplot2::aes(x = date, y = ctl, colour = sport_sv)) +
@@ -171,11 +181,16 @@ plot_sport_ctl_overlay <- function(summaries,
 #' @export
 plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
                                  sport = NULL) {
-  to_d   <- if (is.null(to)) Sys.Date() else as.Date(to)
-  from_d <- if (is.null(from)) (to_d - 365L) else as.Date(from)
+  # `to_excl` is the exclusive upper bound used for filtering. The
+  # human-facing window is [from_d, to_excl - 1]. Default = today + 1
+  # so today's sessions still get included; users who pass `to` get
+  # standard inclusive semantics ("through 2026-04-25").
+  to_excl   <- if (is.null(to)) (Sys.Date() + 1L) else (as.Date(to) + 1L)
+  from_d    <- if (is.null(from)) (to_excl - 366L) else as.Date(from)
+  display_to <- to_excl - 1L
 
   data <- .sport_mix_data(summaries, period_fmt = "%Y-%m-%d",
-                          from = from_d, to = to_d,
+                          from = from_d, to = to_excl,
                           sport = sport, min_km = 0.1)
   if (nrow(data) == 0) {
     return(ggplot2::ggplot() +
@@ -189,19 +204,23 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
     dplyr::ungroup() %>%
     dplyr::mutate(date = as.Date(period))
 
-  # Build a complete day spine so rest days appear as gaps
+  # Build a complete day spine so rest days appear as gaps. seq.Date is
+  # inclusive at both ends, so use `display_to` (= to_excl - 1).
   spine <- tibble::tibble(
-    date = seq.Date(from_d, to_d, by = "day")
+    date = seq.Date(from_d, display_to, by = "day")
   )
+  # Weekday axis: %u gives ISO weekday (1=Mon..7=Sun), independent of
+  # LC_TIME. Map to fixed Swedish abbreviations so the plot reads the
+  # same on any system.
+  swedish_wdays <- c("mån", "tis", "ons", "tor", "fre", "lör", "sön")
   joined <- dplyr::left_join(spine, dominant, by = "date") %>%
     dplyr::mutate(
       sport_sv = ifelse(is.na(sport), NA_character_,
                         .relabel_sport(sport)),
       iso_week = as.integer(format(date, "%V")),
       iso_year = as.integer(format(date, "%G")),
-      wday     = factor(format(date, "%a"),
-                        levels = c("mån", "tis", "ons", "tor", "fre",
-                                   "lör", "sön"))
+      wday     = factor(swedish_wdays[as.integer(format(date, "%u"))],
+                        levels = swedish_wdays)
     )
 
   # ggplot2 doesn't have a stable "year+isoweek" axis, so build a
@@ -222,7 +241,7 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
       y = NULL,
       fill = "Sport",
       title = paste0("Aktivitetskalender ", format(from_d, "%Y-%m-%d"),
-                     " – ", format(to_d, "%Y-%m-%d"))
+                     " – ", format(display_to, "%Y-%m-%d"))
     ) +
     ggplot2::theme(
       axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 7)

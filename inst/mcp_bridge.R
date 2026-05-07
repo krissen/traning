@@ -187,7 +187,12 @@ build_call_args <- function(func_name, func_args) {
     "plot_monthlast", "plot_yearstatus", "plot_yearstop", "plot_datesum",
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
     "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
-    "fetch.plot.hr_zones", "fetch.plot.decoupling"
+    "fetch.plot.hr_zones", "fetch.plot.decoupling",
+    # Multi-sport plots — only plot_sport_calendar uses sport= as a
+    # filter; the other two have their own `sport` semantics
+    # (NULL = all for sport_mix; a sports vector for ctl_overlay) and
+    # ignore the bridge-level sport= forwarding.
+    "plot_sport_mix", "plot_sport_calendar"
   )
 
   if (!is.null(func_args$n) && func_name %in% n_funcs)
