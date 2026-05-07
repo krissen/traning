@@ -567,6 +567,8 @@ fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL,
 #' @param hr_rest Numeric or NULL. HRrest override.
 #' @param from Date or NULL. Start of display window (overrides days).
 #' @param to Date or NULL. End of display window.
+#' @param sport Sport bucket (default \code{"running"}). Forwarded to
+#'   \code{compute_pmc()}.
 #' @return ggplot2 object
 #' @export
 fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,

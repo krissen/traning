@@ -511,10 +511,11 @@ report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
     .tail_or_daterange(n, from, to, "Datum")
 }
 
-#' Aerobic Decoupling report — recent qualifying runs
+#' Aerobic Decoupling report — recent qualifying sessions
 #'
-#' Shows per-run decoupling percentage (pace:HR drift between first and second
-#' half) with 28-day rolling mean.  Requires per-second data from myruns.
+#' Shows per-session decoupling percentage (pace/speed:HR drift between
+#' first and second half) with 28-day rolling mean. Requires per-second
+#' data from myruns. Generalises to cycling/walking via \code{sport=}.
 #'
 #' @param decoupling_data Tibble from \code{compute_decoupling()} or
 #'   \code{load_decoupling()}.  If NULL, computed on the fly from

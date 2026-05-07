@@ -422,10 +422,13 @@ def compare_periods(
         period_b_to: End of second period.
         sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    a = r_report("report_datesum",
-                 {"from": period_a_from, "to": period_a_to, "sport": sport})
-    b = r_report("report_datesum",
-                 {"from": period_b_from, "to": period_b_to, "sport": sport})
+    # Reuse _build_args() so the user-facing `to` parameter is inclusive
+    # (other tools do this; otherwise the final day of each period would
+    # be silently dropped because R uses an exclusive upper bound).
+    args_a = _build_args(period_a_from, period_a_to, sport=sport)
+    args_b = _build_args(period_b_from, period_b_to, sport=sport)
+    a = r_report("report_datesum", args_a)
+    b = r_report("report_datesum", args_b)
 
     return {
         "schema_version": "1.0",
@@ -469,7 +472,7 @@ _METRIC_DEFINITIONS = {
     },
     "ef": {
         "name": "Efficiency Factor",
-        "description": "Normalized pace / normalized HR. Higher = more efficient.",
+        "description": "Speed (m/min) / avg HR (bpm). Higher = more efficient. Generalises to any sport with speed and HR.",
         "interpretation": "Upward trend indicates improving aerobic fitness.",
         "references": ["Friel 2009"],
     },
@@ -481,7 +484,7 @@ _METRIC_DEFINITIONS = {
     },
     "decoupling": {
         "name": "Aerobic Decoupling",
-        "description": "Pace:HR efficiency drift between first and second half of a run.",
+        "description": "Pace/speed:HR efficiency drift between first and second half of a session. Generalises to cycling/walking with steady speed + HR samples.",
         "thresholds": {"well_coupled": "<3%", "acceptable": "3-5%", "moderate_drift": "5-8%", "significant": ">8%"},
         "references": ["Friel 2009"],
     },
@@ -944,11 +947,19 @@ def resource_sports() -> str:
         "",
         "## Direct sport names (raw values in summaries$sport)",
         "",
-        "- **running**, cycling, walking, swimming, strength",
-        "- karntraning, ovrigt (other), bordtennis, badminton, tennis,",
-        "  paddelsporter, fotboll, hockey, fitness-spel,",
+        "Use these literals verbatim — they're matched by substring",
+        "against the sport column.",
+        "",
+        "- **running**, **cycling**, **walking**, **swimming**, **strength**",
+        "- karntraning, ovrigt, bordtennis, badminton, tennis,",
+        "  paddelsporter, fotboll, hockey, fitness-spel",
         "- skridskosporter, snosporter, utforsakning, rodd, yoga,",
         "  bagskytte, sinne_&_kropp",
+        "",
+        "(Translation glossary: karntraning = core training,",
+        "ovrigt = other, skridskosporter = ice skating sports,",
+        "snosporter = snow sports, utforsakning = downhill skiing,",
+        "rodd = rowing.)",
         "",
         "## Swedish aliases (resolved to direct names)",
         "",
