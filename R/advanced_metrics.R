@@ -854,12 +854,18 @@ load_decoupling <- function(summaries, myruns,
 
   if (!force && !is.null(cache_path) && file.exists(cache_path)) {
     load(cache_path)  # loads: decoupling_cache
+    # Cache must also match `sport` — without that, a cache produced for
+    # one sport could be reused (or merged with) a request for another
+    # and return cross-sport results. Older caches (pre-sport-key) are
+    # treated as invalid and recomputed.
     if (exists("decoupling_cache") &&
         identical(decoupling_cache$min_duration_min, min_duration_min) &&
         identical(decoupling_cache$max_pace_min_km, max_pace_min_km) &&
         identical(decoupling_cache$warmup_sec, warmup_sec) &&
         identical(decoupling_cache$smooth_window, smooth_window) &&
-        identical(decoupling_cache$max_half_speed_diff_pct, max_half_speed_diff_pct)) {
+        identical(decoupling_cache$max_half_speed_diff_pct,
+                  max_half_speed_diff_pct) &&
+        identical(decoupling_cache$sport %||% NULL, sport)) {
       cached <- decoupling_cache$per_run
       cached_skipped_dates <- decoupling_cache$skipped_dates %||%
         as.Date(character(0))
@@ -961,7 +967,8 @@ load_decoupling <- function(summaries, myruns,
       max_pace_min_km         = max_pace_min_km,
       warmup_sec              = warmup_sec,
       smooth_window           = smooth_window,
-      max_half_speed_diff_pct = max_half_speed_diff_pct
+      max_half_speed_diff_pct = max_half_speed_diff_pct,
+      sport                   = sport
     )
     save_atomic(decoupling_cache, file = cache_path)
     message("Decoupling-cache sparad: ", nrow(per_run), " sessioner.")

@@ -80,12 +80,19 @@ import_resting_hr <- function(csv_path) {
 
 #' Get HRmax estimate
 #'
-#' Returns HRmax from the \code{HR_MAX} environment variable if set,
-#' otherwise estimates from the 98th percentile of max HR values observed
-#' in the enriched summaries (filtered to running sessions > 20 min to
-#' exclude sensor artifacts), otherwise uses the Tanaka formula
-#' (208 - 0.7 * age, requiring \code{AGE} env var), and as a last resort
-#' returns 185 bpm with a warning.
+#' Returns HRmax using the first available source in this priority order:
+#' \enumerate{
+#'   \item \code{HR_MAX} environment variable (explicit override).
+#'   \item Data-driven: 98th percentile of \code{garmin_maxHR} from
+#'     sessions matching \code{sport} that are longer than 20 min,
+#'     when \code{summaries} is non-NULL and contains the column.
+#'   \item \code{BIRTH_YEAR} environment variable + Tanaka formula
+#'     (208 - 0.7 * age) — same source as \code{\link{get_hr_max_at}},
+#'     so a consistent estimate is produced when only birth year is
+#'     configured.
+#'   \item \code{AGE} environment variable + Tanaka formula.
+#'   \item Fallback: 185 bpm with a warning.
+#' }
 #'
 #' @param summaries Summaries tibble, optionally with a \code{garmin_maxHR}
 #'   column (added by \code{add_my_columns()}). May be \code{NULL}.
