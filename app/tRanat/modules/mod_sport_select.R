@@ -3,11 +3,11 @@
 # Mirrors the curated buckets exposed by R/sport_filter.R so the
 # selector and the underlying data path stay in sync.
 
-# Curated buckets that aggregate multiple sports. Kept in one place so
-# the page-level "is this a population narrow-down?" check (see
-# pages/page_sport_mix.R) and the dropdown can't drift apart.
-SPORT_BUCKET_VALUES <- c("endurance", "ballsport", "gym",
-                          "wintersport", "all")
+# Curated buckets that aggregate multiple sports. Sourced from
+# traning::sport_bucket_names() so the Shiny dropdown and the
+# page-level "is this a population narrow-down?" check stay in sync
+# with .SPORT_BUCKETS in R/sport_filter.R.
+SPORT_BUCKET_VALUES <- traning::sport_bucket_names()
 
 sport_select_ui <- function(id) {
   ns <- shiny::NS(id)

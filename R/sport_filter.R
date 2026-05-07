@@ -37,6 +37,21 @@
   paste0(toupper(substr(s_lower, 1, 1)), substr(s_lower, 2, nchar(s_lower)))
 }
 
+#' Names of the curated sport buckets exposed via \code{sport=}
+#'
+#' Returns the names users can pass to disable sport filtering or to
+#' aggregate across several sports (\code{"endurance"},
+#' \code{"ballsport"}, \code{"gym"}, \code{"wintersport"},
+#' \code{"all"}). The Shiny dropdown and any other UI surface should
+#' build their bucket lists from this helper rather than hard-coding
+#' the names, so they don't drift away from \code{.SPORT_BUCKETS}.
+#'
+#' @return Character vector.
+#' @export
+sport_bucket_names <- function() {
+  c(names(.SPORT_BUCKETS), "all")
+}
+
 # Curated sport buckets — group several raw sport values under one label.
 .SPORT_BUCKETS <- list(
   endurance = c("running", "cycling", "walking", "swimming"),
