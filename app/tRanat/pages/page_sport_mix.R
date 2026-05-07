@@ -95,12 +95,12 @@ page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
       members <- if (identical(pop, "all")) {
         c("running", "cycling", "walking", "swimming")
       } else {
-        traning:::.SPORT_BUCKETS[[pop]]
+        traning::sport_bucket_members(pop)
       }
       if (is.null(members) || length(members) == 0) {
         members <- c("running", "cycling", "walking", "swimming")
       }
-      labels <- vapply(members, traning:::.sport_label_sv, character(1))
+      labels <- vapply(members, traning::sport_label, character(1))
       vals   <- c(members, "all")
       names(vals) <- c(labels, "Totalt")
       vals

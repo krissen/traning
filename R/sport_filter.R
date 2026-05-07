@@ -37,6 +37,49 @@
   paste0(toupper(substr(s_lower, 1, 1)), substr(s_lower, 2, nchar(s_lower)))
 }
 
+#' Swedish display label for a sport bucket (exported)
+#'
+#' Public wrapper around \code{.sport_label_sv()}. Useful for UI code
+#' (Shiny, plot labelling) that needs a localised label without
+#' reaching into non-exported internals.
+#'
+#' @param sport Character scalar, vector, or NULL. Multi-sport and
+#'   curated-bucket inputs return the generic "Aktivitet".
+#' @return Character scalar.
+#' @export
+sport_label <- function(sport) {
+  .sport_label_sv(sport)
+}
+
+#' Member sports of a curated bucket
+#'
+#' Returns the canonical sport-column values that belong to a given
+#' curated bucket (\code{"endurance"}, \code{"ballsport"},
+#' \code{"wintersport"}, \code{"gym"}). For convenience, a direct
+#' sport name (e.g. \code{"running"}) returns itself, and
+#' \code{"all"}/\code{NULL} returns \code{NULL} (no member list — caller
+#' should treat as "no bucket scoping").
+#'
+#' Provided so UI code (Shiny pages, prompt builders) doesn't have to
+#' reach into the non-exported \code{.SPORT_BUCKETS} list.
+#'
+#' @param bucket Character scalar — bucket name, sport name, or "all".
+#' @return Character vector of canonical sport values, or \code{NULL}
+#'   for \code{"all"} / \code{NULL}.
+#' @export
+sport_bucket_members <- function(bucket) {
+  if (is.null(bucket) || length(bucket) == 0) return(NULL)
+  if (length(bucket) > 1) {
+    stop("sport_bucket_members() takes a single bucket name; got length ",
+         length(bucket))
+  }
+  if (identical(bucket, "all") || identical(bucket, "any")) return(NULL)
+  b <- tolower(bucket)
+  if (!is.null(.SPORT_BUCKETS[[b]])) return(.SPORT_BUCKETS[[b]])
+  if (!is.null(.SPORT_ALIASES[[b]])) return(.SPORT_ALIASES[[b]])
+  b
+}
+
 #' Filter a summaries data frame by sport bucket
 #'
 #' Public wrapper around \code{.filter_sport()}. Same matching rules

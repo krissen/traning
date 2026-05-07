@@ -166,6 +166,37 @@ test_that("filter_sport (exported) matches .filter_sport (internal)", {
   }
 })
 
+test_that("sport_label (exported) returns Swedish display labels", {
+  expect_equal(sport_label("running"), "Löpning")
+  expect_equal(sport_label("cycling"), "Cykling")
+  expect_equal(sport_label("yoga"), "Yoga")  # title-case fallback
+  expect_equal(sport_label(NULL), "Aktivitet")
+  expect_equal(sport_label("all"), "Aktivitet")
+})
+
+test_that("sport_bucket_members returns curated bucket members", {
+  expect_setequal(sport_bucket_members("endurance"),
+                  c("running", "cycling", "walking", "swimming"))
+  expect_setequal(sport_bucket_members("ballsport"),
+                  c("badminton", "bordtennis", "fotboll", "tennis",
+                    "paddelsporter", "hockey", "fitness-spel"))
+  expect_setequal(sport_bucket_members("gym"),
+                  c("strength", "karntraning", "ovrigt"))
+})
+
+test_that("sport_bucket_members handles direct sports + 'all' + NULL", {
+  expect_equal(sport_bucket_members("running"), "running")
+  expect_equal(sport_bucket_members("cykling"), "cycling")  # alias
+  expect_null(sport_bucket_members("all"))
+  expect_null(sport_bucket_members("any"))
+  expect_null(sport_bucket_members(NULL))
+})
+
+test_that("sport_bucket_members rejects vector input", {
+  expect_error(sport_bucket_members(c("running", "cycling")),
+               "single bucket name")
+})
+
 test_that(".sport_match_mask coerces NA sport values to FALSE", {
   # Regression: previously str_detect(NA, ...) returned NA, which
   # propagated through Reduce(`|`,) and made `all(matches)` /

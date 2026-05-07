@@ -125,6 +125,61 @@ test_that("compute_decoupling filters fast pace (<5:00/km)", {
   expect_lt(nrow(result), nrow(full))
 })
 
+test_that("compute_decoupling pace default is sport-aware for cycling", {
+  # Cycling sessions are typically much faster than 5:00/km, so the
+  # running-tuned threshold of 5.0 would reject every ride. The cycling
+  # default of 1.5 min/km should keep them.
+  cyc <- test_summaries_dc
+  cyc$sport <- "cycling"
+  # Cycling pace ~2.0 min/km (= 30 km/h) — faster than 1.5 (passes
+  # filter), well below the running 5.0 (would have failed).
+  cyc$avgPaceMoving <- 2.0
+  myruns <- make_dc_myruns(test_summaries_dc)
+  result <- compute_decoupling(cyc, myruns, sport = "cycling")
+  expect_gt(nrow(result), 0)
+})
+
+test_that("compute_decoupling disables pace ceiling for multi-sport buckets", {
+  # Endurance bucket spans running (~5 min/km), cycling (~1.5 min/km),
+  # walking (~6 min/km). A single min/km cutoff doesn't fit any of
+  # them, so the default falls to Inf and only duration / steady-state
+  # filters apply. Expect every row to survive (regression check
+  # against the previous max(vals)=15.0 default that excluded most
+  # endurance sessions).
+  mixed <- test_summaries_dc
+  mixed$sport <- rep(c("running", "cycling", "walking", "swimming"),
+                     length.out = nrow(mixed))
+  mixed$avgPaceMoving <- ifelse(mixed$sport == "cycling", 2.0,
+                                ifelse(mixed$sport == "running", 5.5,
+                                ifelse(mixed$sport == "walking", 8.0, 18.0)))
+  myruns <- make_dc_myruns(test_summaries_dc)
+  result <- compute_decoupling(mixed, myruns, sport = "endurance")
+  expect_equal(nrow(result), nrow(mixed))
+})
+
+test_that("compute_decoupling with sport='all' does not silently filter all rows", {
+  # Regression: previously sport=NULL/"all" defaulted max_pace_min_km
+  # to 15.0, which excludes nearly every running/cycling/walking
+  # session (they're all faster than 15 min/km).
+  cyc <- test_summaries_dc
+  cyc$sport <- rep(c("running", "cycling"), length.out = nrow(cyc))
+  cyc$avgPaceMoving <- ifelse(cyc$sport == "cycling", 2.0, 5.5)
+  myruns <- make_dc_myruns(test_summaries_dc)
+  result <- compute_decoupling(cyc, myruns, sport = "all")
+  expect_gt(nrow(result), 0)
+})
+
+test_that("compute_decoupling unknown single sport disables pace ceiling", {
+  # Previously fell back to 15.0 → empty result. With Inf, the
+  # duration filter still applies but the pace one doesn't.
+  weird <- test_summaries_dc
+  weird$sport <- "yoga"
+  weird$avgPaceMoving <- 4.0  # would fail running's 5.0 cutoff
+  myruns <- make_dc_myruns(test_summaries_dc)
+  result <- compute_decoupling(weird, myruns, sport = "yoga")
+  expect_gt(nrow(result), 0)
+})
+
 test_that("compute_decoupling handles NULL myruns entries", {
   myruns <- make_dc_myruns(test_summaries_dc)
   myruns[[1]] <- NULL

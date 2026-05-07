@@ -629,7 +629,12 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #' Only steady-state easy sessions are included:
 #' \itemize{
 #'   \item Duration > 45 min (short sessions produce noisy values)
-#'   \item Average pace > 5:00/km (excludes intervals and tempo sessions)
+#'   \item Average pace > sport-aware threshold (defaults: 5:00/km for
+#'     running, 1:30/km for cycling, 6:00/km for walking, 15:00/km for
+#'     swimming) so intervals and tempo sessions are excluded — see
+#'     \code{max_pace_min_km} for full details. The pace ceiling is
+#'     disabled for multi-sport selections (\code{NULL}, \code{"all"},
+#'     curated buckets) since one min/km cutoff doesn't fit all sports.
 #'   \item Mean speed difference between halves \eqn{\le} 10\% (excludes
 #'     non-steady-state sessions — warm-up progression, fartlek, negative
 #'     splits)
@@ -651,12 +656,17 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #' @param myruns List of trackeRdata objects from \code{my_dbs_load()}.
 #' @param min_duration_min Numeric.  Minimum moving duration in minutes
 #'   (default 45).
-#' @param max_pace_min_km Numeric.  Maximum pace in min/km — sessions
-#'   faster than this are excluded. Default \code{NULL} picks a sport-
-#'   aware threshold: 5.0 (running easy-pace), 1.5 (cycling, excludes
-#'   intervals under 1:30/km), 6.0 (walking, excludes runs misclassified
-#'   as walks), 15.0 (swimming + curated buckets where mixed paces
-#'   coexist). Pass an explicit number to override.
+#' @param max_pace_min_km Numeric.  Pace gate in min/km — the filter
+#'   keeps rows whose \code{avgPaceMoving} is *greater than* this value,
+#'   so a higher number is more restrictive (it requires slower / easier
+#'   sessions). Default \code{NULL} picks a sport-aware threshold: 5.0
+#'   (running easy-pace), 1.5 (cycling, excludes intervals under
+#'   1:30/km), 6.0 (walking, excludes runs misclassified as walks), 15.0
+#'   (swimming). For multi-sport selections (\code{NULL}, \code{"all"},
+#'   curated buckets like \code{"endurance"}) the pace ceiling is
+#'   disabled (\code{0}) — a single min/km cutoff cannot meaningfully
+#'   compare running, cycling, walking, etc., so only the duration and
+#'   steady-state filters apply. Pass an explicit number to override.
 #' @param warmup_sec Integer.  Seconds to exclude from the start (default 600).
 #' @param smooth_window Integer.  Rolling mean window in seconds for speed
 #'   smoothing (default 30).  Converted to number of observations based on
@@ -680,15 +690,15 @@ compute_decoupling <- function(summaries, myruns,
                                smooth_window           = 30L,
                                max_half_speed_diff_pct = 10,
                                sport                   = "running") {
-  # Sport-aware default for the pace ceiling. The filter keeps
-  # sessions whose pace is *slower* than max_pace_min_km (i.e. it
-  # excludes fast efforts/intervals). 5.0 min/km is running easy-pace;
-  # on cycling/walking that threshold rejects every session because
-  # their typical pace is much faster. Resolve the sport input through
-  # .resolve_sport_bucket() so Swedish aliases ("cykling"), curated
-  # buckets ("endurance"), and even small vectors don't silently fall
-  # to the permissive fallback when they could match a single primary
-  # sport instead.
+  # Sport-aware default for the pace ceiling. The filter is
+  # `avgPaceMoving > max_pace_min_km`, so this is an *easy-pace* gate:
+  # higher numbers are *more* restrictive (require slower sessions).
+  # 5.0 min/km is running easy-pace; on cycling/walking that threshold
+  # rejects every session because their typical pace is much faster.
+  # Resolve the sport input through .resolve_sport_bucket() so Swedish
+  # aliases ("cykling"), curated buckets ("endurance"), and short
+  # vectors hit a meaningful per-sport threshold instead of falling
+  # silently to a global catch-all.
   if (is.null(max_pace_min_km)) {
     .pace_default_for <- function(s) {
       switch(s,
@@ -699,19 +709,22 @@ compute_decoupling <- function(summaries, myruns,
         NA_real_)
     }
     resolved <- .resolve_sport_bucket(sport)
-    if (is.null(resolved) || length(resolved) == 0) {
-      # NULL = "all": mixed sports, permissive default.
-      max_pace_min_km <- 15.0
-    } else if (length(resolved) == 1) {
-      d <- .pace_default_for(resolved)
-      max_pace_min_km <- if (is.na(d)) 15.0 else d
+    if (is.null(resolved) || length(resolved) == 0 ||
+        length(resolved) > 1) {
+      # NULL/"all" or a multi-sport bucket: a single min/km cutoff
+      # cannot meaningfully compare e.g. running (~5 min/km easy)
+      # against cycling (~1:30/km easy). Disable the pace ceiling
+      # (pace > 0 keeps every session with a valid recorded pace) so
+      # the duration + half-speed-symmetry filters do the work.
+      # NB: we use 0, not Inf — the qualifying predicate is
+      # `avgPaceMoving > max_pace_min_km`, and `pace > Inf` is FALSE.
+      max_pace_min_km <- 0
     } else {
-      # Multi-sport bucket — take the loosest (largest) per-sport
-      # default that still applies, so we don't accidentally exclude
-      # the slowest member sport (e.g. walking inside "endurance").
-      vals <- vapply(resolved, .pace_default_for, numeric(1))
-      vals <- vals[!is.na(vals)]
-      max_pace_min_km <- if (length(vals) == 0) 15.0 else max(vals)
+      d <- .pace_default_for(resolved)
+      # Unknown single sport (e.g. "yoga", "ovrigt"): fall back to
+      # disabled rather than the previous 15 min/km, which silently
+      # filtered out everything.
+      max_pace_min_km <- if (is.na(d)) 0 else d
     }
   }
   empty <- tibble::tibble(
