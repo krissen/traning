@@ -51,11 +51,13 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
 
     # Decoupling — renderPlot (faceted, works better static for this
     # one). The decoupling cache is keyed to running; for any other
-    # sport we recompute, but cache the result via shiny::reactive() so
-    # the plot and table renders share one full-history pass instead
-    # of triggering two on every reactive invalidation.
+    # sport (or if the running cache itself failed to load in
+    # global.R and decoupling_data is NULL) we recompute, but cache
+    # the result via shiny::reactive() so the plot and table renders
+    # share one full-history pass instead of triggering two on every
+    # reactive invalidation.
     decoupling_for_sport <- shiny::reactive({
-      if (identical(sp(), "running")) {
+      if (identical(sp(), "running") && !is.null(decoupling_data)) {
         decoupling_data
       } else {
         compute_decoupling(summaries, myruns, sport = sp())
