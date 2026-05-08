@@ -115,6 +115,12 @@ my_options <- list(
   make_option("--limit",
     type = "integer", default = NULL,
     help = "Limit table rows (default varies per command)"),
+  make_option("--day-summary",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Print qualitative end-of-day summary (Garmin + HAE)"),
+  make_option("--date",
+    type = "character", default = NULL,
+    help = "Reference date (YYYY-MM-DD) for --day-summary (default today)"),
   # --- Sport filter ---
   make_option("--sport",
     type = "character", default = "running",
@@ -156,6 +162,8 @@ do_format       <- options$format
 do_no_open      <- options$`no-open`
 do_limit        <- options$limit
 do_sport        <- options$sport %||% "running"
+do_day_summary  <- options$`day-summary`
+do_date_ref     <- options$date
 
 # --- Build date range ---
 # Handle legacy --datesum format as syntactic sugar for --after/--before
@@ -463,6 +471,15 @@ if (do_import_health) {
 }
 
 # --- Readiness (requires health data) ---
+if (do_day_summary) {
+  td <- Sys.getenv("TRANING_DATA")
+  tl <- my_dbs_load(file.path(td, "cache", "summaries.RData"),
+                     file.path(td, "cache", "myruns.RData"))
+  ref_date <- if (!is.null(do_date_ref)) as.Date(do_date_ref) else Sys.Date()
+  cat(day_summary_prose(tl[["summaries"]], date = ref_date), "\n", sep = "")
+  return_code <- 0L
+}
+
 if (do_readiness) {
   health_daily <- load_health_data()
   if (nrow(health_daily) == 0) {
