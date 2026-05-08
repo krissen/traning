@@ -169,7 +169,8 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
     signals = list(rpe_cr10 = rpe_cr10, duration_min = duration_min,
                    zones = zones),
     sources = c("Foster2001",  # session RPE validated
-                "Seiler2009", "Seiler2010")
+                "Seiler2009", "Seiler2010",
+                "EsteveLanao2005")  # running-specific distribution data
   )
 }
 
@@ -204,7 +205,9 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
     signals = list(z1 = z1, z2 = z2, z3 = z3,
                    duration_min = duration_min),
     sources = c("Seiler2009", "Seiler2010", "Treff2019",
-                "EsteveLanao2007")
+                "EsteveLanao2005",  # running-specific 71/21/8 distribution
+                "EsteveLanao2007",  # RCT comparing Z1- vs Z2-heavy programs
+                "Neal2013")         # POL > THR crossover RCT
   )
 }
 

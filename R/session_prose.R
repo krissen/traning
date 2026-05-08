@@ -15,8 +15,12 @@
 #                                 Seiler2009, Seiler2010, Stoggl2014,
 #                                 EsteveLanao2007
 #   recovery cost & next-hard  → recovery-window__primer.md →
-#                                 Buchheit2014, Seiler2009, Coggan2003,
-#                                 RodriguezMarroyo2017, Carrard2021
+#                                 Stanley2013 (24-48h HRV-suppression by
+#                                 intensity zone — primary), Seiler2007
+#                                 (acute VT1-binary recovery threshold),
+#                                 Buchheit2014 (synthesis), Coggan2003
+#                                 (volume cost), RodriguezMarroyo2017
+#                                 (extreme load), Carrard2021 (FOR/NFOR/OTS)
 #   Z2-accumulation warning    → adaptive-signal-per-zone__implications.md
 #                                 §Recommended notification text templates
 #                                 (sources: EsteveLanao2007, Stoggl2014)
@@ -82,14 +86,21 @@
 
 # ---- Line 2: recovery hint + week-context triggers -------------------------
 
-# Recovery-cost wording per type. Source:
-# recovery-window__primer.md §Cross-cutting synthesis (Buchheit2014:
-# "intense aerobic-oriented exercise: 24-48 h HRV suppression";
-# Seiler2009: rapid Z1 recovery; Coggan2003: ">75 min" volume note).
+# Recovery-cost wording per type. Sources (primary, in order of strength):
+#   Stanley2013 (recovery-window__primer.md §1) — overnight HRV-suppression
+#     stratified by intensity: LI (lactate <2, HRmax <82%) up to 24 h;
+#     threshold (lactate 2-4, HRmax 82-89%) 24-48 h; HI (lactate >4,
+#     HRmax >90%) at least 48 h. Verbatim window quotations.
+#   Seiler2007 (adaptive-signal-per-zone__primer.md §6) — acute same-session
+#     ANS recovery: <VT1 returns in 5-10 min (HT); both threshold and
+#     >VT2 cost ~30 min (HT) or 60-90 min (T) — VT1 is the binary
+#     threshold, not "3 mM lactate" as previously approximated.
+#   Coggan2003 — volume cost note for >75 min sessions (long-run line).
 .session_line_recovery <- function(type) {
   switch(type,
-    # Z1 short / fartlek — no recovery flag; system clears within hours
-    # (Seiler2009 verbatim: ANS recovery rapid after <2 mM lactate).
+    # Z1 short / fartlek — system clears within hours (Seiler2007: <VT1
+    # → ANS back to baseline in 5-10 min in HT athletes; Stanley2013:
+    # LI sessions need at most 24 h overnight).
     recovery = "Låg återhämtningskostnad.",
     endurance = "Låg återhämtningskostnad.",
     fartlek = "Låg återhämtningskostnad.",
@@ -97,12 +108,14 @@
     # (Coggan2003 Level 2: ">75 min may take more than 24 h").
     long =
       "Måttlig återhämtning trots låg intensitet — volymen kostar.",
-    # Buchheit2014: 24-48 h HRV suppression after intense exercise.
+    # Stanley2013: threshold (HRmax 82-89%) → 24-48 h HRV suppression.
+    # Seiler2007: above-VT1 work costs ~30 min acute ANS recovery
+    # regardless of whether it is threshold or above VT2.
     tempo =
       "Måttlig återhämtning, planera lugnare i morgon.",
     threshold_intervals =
       "Måttlig återhämtning, planera lugnare i morgon.",
-    # Buchheit2014 + Seiler2009 (>3 mM lactate → markedly delayed HRV).
+    # Stanley2013: HI (HRmax >90%, lactate >4 mM) → "at least 48 h".
     # Window 48-72 h documented in recovery-window primer §Cross-cutting.
     vo2max =
       "Hög återhämtningskostnad; nästa kvalitetspass tidigast om 48 h.",
