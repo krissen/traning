@@ -42,6 +42,7 @@ def empty_state(today: str | None = None) -> dict[str, Any]:
         "morning_status": None,
         "morning_score": None,
         "afternoon_updates_sent": [],
+        "day_summary_sent": False,
     }
 
 
@@ -96,6 +97,11 @@ def mark_morning_sent(state: dict[str, Any], readiness: dict[str, Any]) -> None:
     state["morning_status"] = readiness.get("status")
     score = readiness.get("score")
     state["morning_score"] = score if score is not None else None
+
+
+def mark_day_summary_sent(state: dict[str, Any]) -> None:
+    """Mark today's end-of-day summary as posted."""
+    state["day_summary_sent"] = True
 
 
 def mark_update_sent(state: dict[str, Any], update: dict[str, Any]) -> None:

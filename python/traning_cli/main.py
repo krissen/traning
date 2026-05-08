@@ -833,6 +833,58 @@ def pull(verbose):
     click.echo("Data uppdaterad")
 
 
+# -- insight ---------------------------------------------------------------
+
+@cli.group()
+def insight():
+    """Qualitative training insights (Swedish prose)."""
+
+
+@insight.command(name="day")
+@click.option("--date", "ref_date", default=None,
+              help="Reference date YYYY-MM-DD (default today)")
+@click.option("--push", is_flag=True,
+              help="Send via Home Assistant push (kailash systemd timer use)")
+@click.option("--force", is_flag=True,
+              help="Re-send even if day_summary already marked sent today")
+def insight_day(ref_date, push, force):
+    """End-of-day qualitative summary across Garmin + HAE workouts."""
+    cmd = ["Rscript", str(CLI_R), "--day-summary"]
+    if ref_date:
+        cmd.append(f"--date={ref_date}")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    if result.returncode != 0:
+        raise click.ClickException(
+            f"day-summary R-anrop misslyckades: {result.stderr.strip()}"
+        )
+    msg = result.stdout.strip()
+    if not msg:
+        raise click.ClickException("day-summary returnerade tom prosa")
+
+    if not push:
+        click.echo(msg)
+        return
+
+    # Push path — used by the 21:30 systemd timer on kailash. Honours
+    # day_summary_sent state to avoid duplicate posts on timer retries.
+    from .server.notify import log_notification, notify
+    from .server.state import (
+        load_notify_state, mark_day_summary_sent, save_notify_state,
+    )
+
+    state = load_notify_state()
+    if state.get("day_summary_sent") and not force:
+        click.echo("day-summary redan postad i dag (state-flagga). --force för att skicka om.")
+        return
+
+    sent = notify("tRäning", msg)
+    log_notification("day_summary", "tRäning", msg, sent)
+    if sent:
+        mark_day_summary_sent(state)
+        save_notify_state(state)
+    click.echo(msg)
+
+
 # -- mcp --------------------------------------------------------------------
 
 @cli.command()

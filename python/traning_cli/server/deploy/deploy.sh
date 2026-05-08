@@ -124,6 +124,7 @@ cmd_all() {
         sudo systemctl enable --now traning-shiny.service
         sudo systemctl enable --now traning-garmin.timer
         sudo systemctl enable --now traning-push.timer
+        sudo systemctl enable --now traning-daysummary.timer
     "
 
     cmd_status
