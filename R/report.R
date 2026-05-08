@@ -25,73 +25,11 @@ report_mostrecent <- function(summaries, n_imported) {
 #' @return Character string (one line).
 #' @export
 report_insight <- function(summaries, sport = "running") {
-  label <- .sport_label_sv(sport)
-  runs <- .filter_sport(summaries, sport) %>%
-    dplyr::arrange(sessionStart)
-
-  if (nrow(runs) == 0) return("Ingen data.")
-
-  latest <- utils::tail(runs, 1)
-  km <- round(as.numeric(latest$distance) / 1000, 1)
-  pace_val <- as.numeric(latest$avgPaceMoving)
-  hr_val <- as.numeric(latest$avgHeartRateMoving)
-
-  # Compare to current month average
-  this_month <- runs %>%
-    dplyr::filter(
-      format(sessionStart, "%Y-%m") == format(latest$sessionStart, "%Y-%m"),
-      sessionStart < latest$sessionStart
-    )
-
-  # Build the base sentence \u2014 pace and HR are optional. Strength/gym
-  # sessions and HAE rows without HR data leave these as NA, in which
-  # case we omit the corresponding fragment rather than print "NA/km".
-  parts <- paste0(label, " ", km, " km")
-  if (!is.na(pace_val)) {
-    parts <- paste0(parts, ", ", dec_to_mmss(pace_val), "/km")
-  }
-  if (!is.na(hr_val)) {
-    parts <- paste0(parts, ", puls ", round(hr_val, 0))
-  }
-  base <- parts
-
-  # Find something positive to highlight
-  positive <- NULL
-
-  if (nrow(this_month) >= 2 && !is.na(pace_val)) {
-    avg_pace <- mean(as.numeric(this_month$avgPaceMoving), na.rm = TRUE)
-    avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
-    diff_sec <- if (is.na(avg_pace)) NA_real_ else (pace_val - avg_pace) * 60
-
-    if (!is.na(diff_sec) && diff_sec < -5) {
-      # Faster than average
-      positive <- paste0("Snabbare \u00e4n m\u00e5nadens snitt (",
-                         dec_to_mmss(avg_pace), ")")
-    } else if (!is.na(avg_km) && km > avg_km * 1.1) {
-      # Longer than average
-      positive <- paste0("L\u00e4ngre \u00e4n m\u00e5nadens snitt (",
-                         round(avg_km, 1), " km)")
-    }
-  } else if (nrow(this_month) >= 2) {
-    # Pace unavailable (e.g. strength) \u2014 compare distance only.
-    avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
-    if (!is.na(avg_km) && km > avg_km * 1.1) {
-      positive <- paste0("L\u00e4ngre \u00e4n m\u00e5nadens snitt (",
-                         round(avg_km, 1), " km)")
-    }
-  }
-
-  # Fallback: monthly total
-  if (is.null(positive)) {
-    month_runs <- runs %>%
-      dplyr::filter(
-        format(sessionStart, "%Y-%m") == format(latest$sessionStart, "%Y-%m")
-      )
-    month_km <- round(sum(as.numeric(month_runs$distance) / 1000), 0)
-    positive <- paste0("M\u00e5nadens total: ", month_km, " km")
-  }
-
-  paste0(base, ". ", positive, ".")
+  # Per-pass post-workout notification body. For running, delegates to
+  # session_prose() (qualitative, research-grounded). For other sports
+  # it falls back to the legacy quantitative line via the same helper.
+  # See R/session_prose.R for sources and prose rules.
+  session_prose(summaries, sport = sport)
 }
 
 #' Summarise sessions within a date range

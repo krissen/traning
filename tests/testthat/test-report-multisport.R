@@ -97,9 +97,16 @@ test_that("report_insight uses sport-neutral labels", {
   txt_gng <- report_insight(df, sport = "walking")
   expect_match(txt_gng, "^Gång ")
 
-  # Default still says "Löpning" (back-compat)
+  # Default (running) now returns qualitative prose from session_prose()
+  # rather than the legacy "Löpning ..." line. Verify it produces a
+  # non-empty string starting with one of the closed taxonomy labels.
   txt_run <- report_insight(df)
-  expect_match(txt_run, "^Löpning ")
+  expect_type(txt_run, "character")
+  expect_true(nchar(txt_run) > 0)
+  expect_match(
+    txt_run,
+    "^(Lugnt löppass|Distanspass|Långpass|Tröskelpass|Tröskelintervaller|Kvalitetspass|Race-pace|Fartlek|Backintervaller|Löpning) "
+  )
 })
 
 test_that("report_insight handles unknown sport gracefully", {
