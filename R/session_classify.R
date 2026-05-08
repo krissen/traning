@@ -213,7 +213,10 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
 
 # Mean-HR-as-%HRmax fallback. Lowest confidence — Seiler 2009 / 2010
 # explicitly warn that mean HR underestimates intensity for sessions with
-# warm-up / cool-down. Used only when neither RPE nor zone data exist.
+# warm-up / cool-down. Meixner 2025 further shows that fixed %HRmax-
+# boundary zones produce CV 22-29% in resulting power output across
+# individuals — the "low" confidence tag here understates uncertainty.
+# Used only when neither RPE nor zone data exist.
 .classify_from_hr_avg <- function(hr_pct, duration_min) {
   type <- if (hr_pct < 0.72) {
     if (duration_min > 90)       "long"
@@ -274,9 +277,16 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
 #' Count Z3 (high-intensity) running sessions in the last N days
 #'
 #' Used to detect the "third hard session this week" overload pattern.
-#' Source: Seiler 2010 — "about two HIT training sessions per week seems
-#' to be sufficient" (verbatim, paper §intensification).
-#'   research/_analys/adaptive-signal-per-zone__implications.md §Recommendations #4
+#'
+#' Sources (in order of primacy):
+#'   Foster, Casado, Esteve-Lanao, Haugen & Seiler (2022) — primary
+#'     mechanistic argument: AMPK signalling saturates with small Z3
+#'     volumes, so additional Z3 sessions yield diminishing returns
+#'     while accumulating recovery cost.
+#'     research/_analys/adaptive-signal-per-zone__primer.md §9
+#'   Seiler (2010) — corroborating observational evidence: "about two
+#'     HIT training sessions per week seems to be sufficient" (verbatim).
+#'     research/_analys/adaptive-signal-per-zone__implications.md §Recommendations #4
 #'
 #' @param summaries Garmin summaries table.
 #' @param on_date Date or POSIXct anchor (default \code{Sys.Date()}).
@@ -306,12 +316,25 @@ session_z3_count <- function(summaries, on_date = Sys.Date(), days = 7,
 
 #' Rolling Z2-fraction (research Z2 = Garmin zone 3) over the last N days
 #'
-#' Implements the moderate-intensity-trap signal (Esteve-Lanao 2007,
-#' Stöggl 2014). Computed as
-#' \eqn{sum(zone3\_seconds) / sum(zone1..5\_seconds)} across all running
-#' sessions in the window.
-#'   research/_analys/adaptive-signal-per-zone__implications.md §Recommendations #3
-#'   research/_analys/hr-zone-distribution__implications.md §Recommendations
+#' Implements the moderate-intensity rolling-share signal — input to the
+#' "diminishing returns above ~20% Z2" hedge in the post-workout prose.
+#'
+#' Sources:
+#'   Esteve-Lanao 2007 — RCT showing >25% Z2 produced smaller gains than
+#'     a Z1-heavy program (matched total load).
+#'   Stöggl & Sperlich 2014 — THR group plateaued in well-trained athletes.
+#'   MoranMacdonald2025 — counter: at matched HIIT, adding Z2 (240 min/wk)
+#'     gave no extra benefit. Reframes Z2 as "diminishing returns" rather
+#'     than "trap" (master's thesis, not peer-reviewed).
+#'
+#' Reliability caveat: Garmin zone fractions are based on %HRmax (often
+#' Tanaka-derived), not VT1/VT2-anchored zones. Meixner2025 (N=50
+#' cyclists) shows fixed %HRmax boundaries produce CV 22-29% in resulting
+#' power output — i.e., the "Z2 fraction" we compute may be off by
+#' multiple zone intervals at the individual level. Treat the 20%-trigger
+#' as best-effort signal, not a hard threshold.
+#'   research/_analys/hr-zone-prescription__implications.md §Reliability ranking
+#'   research/_analys/adaptive-signal-per-zone__implications.md §Classification reliability
 #'
 #' @param summaries Garmin summaries table.
 #' @param on_date Date anchor (default \code{Sys.Date()}).
