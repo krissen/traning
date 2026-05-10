@@ -67,6 +67,62 @@ test_that("day_summary_prose annotates pass-count for repeat sports", {
   expect_match(txt, "cykling 9\\.5 km \\(2 pass\\)")
 })
 
+test_that(".day_state_line: Röd readiness overrides TSB form claim", {
+  # Regression: 2026-05-09 morning notification flagged Röd
+  # (HRV 32 ms, -56 vs 7d) but day-summary said "Form på topp"
+  # because TSB was +11. Readiness must override the TSB phrasing.
+  d <- as.Date("2026-05-08")
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct("2026-05-06 18:00", tz = "UTC"),
+    sport = "running", distance = 8000,
+    avgPaceMoving = 5.5, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(45, units = "mins")
+  )
+  # Inject a Red readiness verdict directly to bypass the
+  # readiness-computation pipeline (tested elsewhere).
+  red <- list(status = "Röd", score = 40,
+              kvalitet = "full", components = list(),
+              components_present = list())
+  txt <- .day_state_line(s, health_daily = NULL, on_date = d,
+                          readiness = red)
+  expect_false(grepl("Form på topp", txt %||% ""),
+               info = paste("Got:", txt))
+  expect_match(txt %||% "", "Röd 40")
+  expect_match(txt %||% "", "återhämtningssignaler dominerar")
+})
+
+test_that(".day_state_line: Gul readiness prepends to TSB text", {
+  d <- as.Date("2026-05-08")
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct("2026-05-06 18:00", tz = "UTC"),
+    sport = "running", distance = 8000,
+    avgPaceMoving = 5.5, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(45, units = "mins")
+  )
+  yellow <- list(status = "Gul", score = 55, kvalitet = "full",
+                 components = list(), components_present = list())
+  txt <- .day_state_line(s, health_daily = NULL, on_date = d,
+                          readiness = yellow)
+  expect_match(txt %||% "", "Gul 55")
+})
+
+test_that(".day_state_line: Grön readiness keeps TSB phrasing", {
+  d <- as.Date("2026-05-08")
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct("2026-05-06 18:00", tz = "UTC"),
+    sport = "running", distance = 8000,
+    avgPaceMoving = 5.5, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(45, units = "mins")
+  )
+  green <- list(status = "Grön", score = 85, kvalitet = "full",
+                components = list(), components_present = list())
+  txt <- .day_state_line(s, health_daily = NULL, on_date = d,
+                          readiness = green)
+  # Grön means TSB phrasing represents the day fine — Dagsform
+  # text not added.
+  expect_false(grepl("Dagsform", txt %||% ""))
+})
+
 test_that("day_summary_prose returns 'Vilodag.' when no sessions on the date", {
   # Sessions exist on other days but not on the requested date.
   s <- tibble::tibble(

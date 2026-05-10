@@ -141,11 +141,21 @@
   paste(parts, collapse = " ")
 }
 
-# TSB / CTL context for the day. Reuses the band logic from
-# session_prose. Same source set.
-.day_form_line <- function(summaries, on_date, hr_max = NULL,
-                            hr_rest = NULL) {
-  tryCatch({
+# Daily state line — combines TSB / CTL form context with the morning
+# readiness verdict (HRV, sleep, RHR, load, wrist temp). Without this
+# blend the day-summary can claim "form på topp" while the morning
+# notification flagged Röd, because TSB and readiness use disjoint
+# signal sources (training-load vs autonomic / sleep). Real example
+# from logs/notifications.jsonl on 2026-05-09:
+#   07:41  Dagsform 🟡 Gul 43 (HRV 32 ms, -56 vs 7d). TSB +11.3.
+#   11:49  Dagsform uppdaterad: ⇒ 🔴 Röd 40.
+#   21:30  "Vilodag. Form på topp — bra läge för kvalitet eller tävling."
+# That last line contradicted the day's readiness verdict. Fixed by
+# letting Gul/Röd readiness override or qualify the TSB phrasing.
+.day_state_line <- function(summaries, health_daily, on_date,
+                             hr_max = NULL, hr_rest = NULL,
+                             readiness = NULL) {
+  tsb_text <- tryCatch({
     pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
                        sport = "running")
     if (nrow(pmc) == 0) return(NULL)
@@ -155,6 +165,46 @@
     pmc_prev  <- if (length(prev_idx) > 0)  pmc[prev_idx[1],  ] else NULL
     .line_tsb_context(pmc_today, pmc_prev)
   }, error = function(e) NULL)
+
+  # `readiness` is normally derived inside this function; tests can
+  # inject a pre-built list directly.
+  if (is.null(readiness) && !is.null(health_daily) &&
+      inherits(health_daily, "data.frame") &&
+      nrow(health_daily) > 0) {
+    readiness <- tryCatch(
+      health_insight_readiness(health_daily, summaries,
+                               hr_max = hr_max, hr_rest = hr_rest,
+                               on_date = on_date),
+      error = function(e) NULL
+    )
+  }
+
+  status <- if (!is.null(readiness)) readiness$status else NA_character_
+  if (is.null(status) || is.na(status) || nchar(status %||% "") == 0) {
+    return(tsb_text)
+  }
+
+  score <- readiness$score
+  ball <- switch(status,
+                 "Grön" = "\U0001F7E2",
+                 "Gul"  = "\U0001F7E1",
+                 "Röd"  = "\U0001F534",
+                 "")
+  score_str <- if (is.finite(score)) sprintf(" %.0f", score) else ""
+  prefix <- paste0("Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
+                   status, score_str)
+
+  if (status == "Röd") {
+    # Hard override — TSB form claim could actively mislead
+    # the user when autonomic/sleep signals are degraded.
+    paste0(prefix, " — återhämtningssignaler dominerar. Vila eller lugnt imorgon.")
+  } else if (status == "Gul") {
+    if (is.null(tsb_text)) paste0(prefix, ".")
+    else paste0(prefix, ". ", tsb_text)
+  } else {
+    # Grön — readiness and TSB concur; keep TSB phrasing.
+    tsb_text
+  }
 }
 
 # ---- Main entry ------------------------------------------------------------
@@ -175,15 +225,26 @@
 #' @param date Date of interest (default today).
 #' @param hr_max Optional HRmax. NULL = auto-detect.
 #' @param hr_rest Optional HRrest.
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}. NULL = auto-load. The day-summary uses
+#'   this to align its form-narrative with the morning readiness
+#'   verdict (Grön / Gul / Röd) — without it, TSB-only phrasing can
+#'   contradict the day's autonomic/sleep state.
 #' @return Character string. Always non-empty; "Vilodag." on full
 #'   rest days when no PMC context is computable.
 #' @export
 day_summary_prose <- function(summaries, date = Sys.Date(),
-                               hr_max = NULL, hr_rest = NULL) {
+                               hr_max = NULL, hr_rest = NULL,
+                               health_daily = NULL) {
   date <- as.Date(date)
 
   if (is.null(summaries) || nrow(summaries) == 0) {
     return("Vilodag.")
+  }
+
+  if (is.null(health_daily)) {
+    health_daily <- tryCatch(load_health_data(),
+                              error = function(e) NULL)
   }
 
   todays <- summaries %>%
@@ -192,8 +253,8 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
 
   if (nrow(todays) == 0 || sum(per_sport$min, na.rm = TRUE) < 1) {
     base <- "Vilodag."
-    form <- .day_form_line(summaries, date, hr_max, hr_rest)
-    if (!is.null(form)) return(paste(base, form))
+    state <- .day_state_line(summaries, health_daily, date, hr_max, hr_rest)
+    if (!is.null(state)) return(paste(base, state))
     return(base)
   }
 
@@ -206,8 +267,8 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   l_purpose <- .day_purpose_line(cls, n_running)
   if (!is.null(l_purpose)) parts <- c(parts, l_purpose)
 
-  l_form <- .day_form_line(summaries, date, hr_max, hr_rest)
-  if (!is.null(l_form)) parts <- c(parts, l_form)
+  l_state <- .day_state_line(summaries, health_daily, date, hr_max, hr_rest)
+  if (!is.null(l_state)) parts <- c(parts, l_state)
 
   l_week <- .day_week_line(summaries, date, hr_max = hr_max)
   if (!is.null(l_week)) parts <- c(parts, l_week)
