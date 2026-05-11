@@ -7,6 +7,7 @@ import logging
 import os
 import re
 import secrets
+import stat as stat_lib
 import subprocess
 import tempfile
 import time
@@ -69,27 +70,51 @@ def _sanitize(value: str) -> str:
 def _prepare_plot_dir() -> Path:
     """Ensure the plot directory exists and prune stale files.
 
-    Refuses to operate on a symlink — under a shared `/tmp` an attacker
-    could otherwise point our dir at a file they want overwritten.
-    Tightens perms to 0o700 even if the directory already exists, so a
-    previously-loose dir gets locked down on the next call.
+    On a shared `/tmp` an attacker could otherwise pre-create the
+    target as a symlink, so `mkdir(..., exist_ok=False)` is used to
+    refuse adoption of any pre-existing entry; if creation fails with
+    `FileExistsError` we re-validate the existing entry with `lstat()`
+    (does not follow symlinks), reject anything that is not a real
+    directory owned by the current uid, and only then chmod.
+    `chmod` failures are fatal — silently continuing with potentially
+    world-readable `/tmp` perms would defeat the point.
 
-    GC runs on every plot call. The directory is tiny (one file per
-    in-flight plot) so a full scan is fine.
+    Plot files are unlinked immediately after read, so the directory
+    is normally empty. Age-based GC (>1 h) on every call covers
+    crashed-bridge cases without needing a separate timer.
     """
-    if VAYU_PLOTS_DIR.is_symlink():
-        raise RuntimeError(
-            f"vayu plot dir is a symlink, refusing to use: {VAYU_PLOTS_DIR}"
-        )
-    VAYU_PLOTS_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
-    if not VAYU_PLOTS_DIR.is_dir():
-        raise RuntimeError(
-            f"vayu plot path exists but is not a directory: {VAYU_PLOTS_DIR}"
-        )
+    try:
+        VAYU_PLOTS_DIR.mkdir(mode=0o700, parents=True, exist_ok=False)
+    except FileExistsError:
+        # Pre-existing entry — validate it's safe to reuse.
+        try:
+            st = VAYU_PLOTS_DIR.lstat()
+        except OSError as e:
+            raise RuntimeError(
+                f"vayu plot dir lstat failed: {VAYU_PLOTS_DIR}: {e}"
+            ) from e
+        if stat_lib.S_ISLNK(st.st_mode):
+            raise RuntimeError(
+                f"vayu plot dir is a symlink, refusing: {VAYU_PLOTS_DIR}"
+            )
+        if not stat_lib.S_ISDIR(st.st_mode):
+            raise RuntimeError(
+                f"vayu plot path is not a directory: {VAYU_PLOTS_DIR}"
+            )
+        if st.st_uid != os.getuid():
+            raise RuntimeError(
+                f"vayu plot dir owned by uid {st.st_uid}, expected "
+                f"{os.getuid()}: {VAYU_PLOTS_DIR}"
+            )
+
+    # Fail-closed chmod: if we cannot lock perms down, the dir is
+    # not safe to keep using.
     try:
         os.chmod(VAYU_PLOTS_DIR, 0o700)
     except OSError as e:
-        logger.warning("Could not chmod %s to 0700: %s", VAYU_PLOTS_DIR, e)
+        raise RuntimeError(
+            f"Could not chmod {VAYU_PLOTS_DIR} to 0o700: {e}"
+        ) from e
 
     cutoff = time.time() - VAYU_PLOTS_MAX_AGE_SEC
     for entry in VAYU_PLOTS_DIR.iterdir():
@@ -171,9 +196,9 @@ def _run_r(
         f"--args={json.dumps(clean_args)}",
     ]
     if plot:
+        # plot_path is non-None here: enforced above.
         cmd.append("--plot")
-        if plot_path is not None:
-            cmd.append(f"--plot_path={plot_path}")
+        cmd.append(f"--plot_path={plot_path}")
 
     env = {**os.environ, "TRANING_OPEN": "false"}
 
