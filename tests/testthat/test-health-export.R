@@ -339,3 +339,71 @@ test_that("import_health_export with force bypasses manifest", {
   )
   expect_equal(nrow(result2), 1)
 })
+
+# --- read_canonical_file daily_total fast-path ------------------------------
+
+test_that("read_canonical_file uses daily_total fast path when present", {
+  # Writer (Python storage.py) populates `daily_total` for sum metrics so
+  # the reader can skip parsing 1000+ intra-day samples. Reader must
+  # honor the precomputed value rather than re-summing the samples.
+  tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(tmp), add = TRUE)
+  jsonlite::write_json(list(
+    metric = "step_count",
+    date = "2026-04-15",
+    units = "count",
+    daily_total = 12345,
+    # Deliberately mismatched samples — the fast-path should NOT touch
+    # these; if it does and re-aggregates, the test would see 999.
+    samples = list(
+      list(date = "2026-04-15 08:00:00 +0200", qty = 999, source = "AW")
+    )
+  ), tmp, auto_unbox = TRUE)
+  result <- read_canonical_file(tmp)
+  expect_equal(nrow(result), 1)
+  expect_equal(result$value, 12345)
+  expect_equal(result$metric, "step_count")
+  expect_equal(result$source, "AW")
+})
+
+test_that("read_canonical_file aggregates sum-metric samples when daily_total missing", {
+  # Older canonical files (pre-2026-05-11) have no daily_total. The
+  # downstream import pipeline collapses (date, metric) with
+  # distinct(.keep_all=TRUE), so the reader must hand it a single
+  # pre-summed row — otherwise a 1100-sample day collapses to one
+  # tiny intra-day reading instead of the true total.
+  tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(tmp), add = TRUE)
+  jsonlite::write_json(list(
+    metric = "step_count",
+    date = "2026-04-15",
+    units = "count",
+    samples = list(
+      list(date = "2026-04-15 08:00:00 +0200", qty = 7000, source = "AW"),
+      list(date = "2026-04-15 17:00:00 +0200", qty = 3000, source = "AW")
+    )
+  ), tmp, auto_unbox = TRUE)
+  result <- read_canonical_file(tmp)
+  expect_equal(nrow(result), 1)
+  expect_equal(result$metric[[1]], "step_count")
+  expect_equal(result$value[[1]], 10000)
+})
+
+test_that("read_canonical_file ignores daily_total for non-sum metrics", {
+  # The fast-path is gated on metric name. A daily_total field
+  # accidentally present for an average-style metric must not be used —
+  # summing HRV samples, for instance, would produce nonsense.
+  tmp <- tempfile(fileext = ".json")
+  on.exit(unlink(tmp), add = TRUE)
+  jsonlite::write_json(list(
+    metric = "heart_rate_variability",
+    date = "2026-04-15",
+    units = "ms",
+    daily_total = 99999,
+    samples = list(
+      list(date = "2026-04-15 08:00:00 +0200", qty = 55, source = "AW")
+    )
+  ), tmp, auto_unbox = TRUE)
+  result <- read_canonical_file(tmp)
+  expect_false(any(result$value == 99999))
+})

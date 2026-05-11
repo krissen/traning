@@ -573,7 +573,38 @@ read_canonical_file <- function(path, verbose = FALSE) {
     return(tibble::tibble())
   }
 
-  # Convert to HAE-compatible format for .parse_metric()
+  # Sum metrics produce one daily total. Two paths feed it:
+  #   1. Fast path: `daily_total` precomputed by the Python writer
+  #      (post-2026-05-11 canonical files). Single-row tibble, no
+  #      sample parsing.
+  #   2. Fallback: older canonical files predate the field. Parse the
+  #      samples and aggregate IN THIS FILE — the downstream import
+  #      pipeline uses `distinct(date, metric, .keep_all = TRUE)`,
+  #      which would otherwise keep a single intra-day sample and
+  #      undercount the day. Both paths emit the same shape.
+  if (metric_name %in% .sum_metrics) {
+    if (!is.null(raw$daily_total) && length(raw$daily_total) == 1) {
+      first_src <- if (length(samples)) {
+        s <- samples[[1]]$source
+        if (is.null(s)) NA_character_ else as.character(s)
+      } else NA_character_
+      return(tibble::tibble(
+        date = as.Date(raw$date),
+        metric = metric_name,
+        value = as.numeric(raw$daily_total),
+        source = first_src
+      ))
+    }
+    metric_obj <- list(name = metric_name, data = samples)
+    parsed <- .parse_metric(metric_obj)
+    if (nrow(parsed) > 1) {
+      parsed <- .aggregate_daily(parsed)
+    }
+    return(parsed)
+  }
+
+  # Non-sum metrics: parse and defer aggregation to the global
+  # pipeline (mean / min / max semantics differ per metric).
   metric_obj <- list(name = metric_name, data = samples)
   result <- .parse_metric(metric_obj)
 
@@ -582,7 +613,6 @@ read_canonical_file <- function(path, verbose = FALSE) {
         nrow(result), "rader\n")
   }
 
-  # No per-file cleaning/aggregation — the global pipeline handles that
   result
 }
 
@@ -924,8 +954,12 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   "respiratory_rate", "apple_sleeping_wrist_temperature",
   "running_ground_contact_time", "running_power", "running_speed",
   "running_stride_length", "running_vertical_oscillation",
-  # Activity
-  "step_count",
+  # Activity — daily totals from the canonical `daily_total` fast-path.
+  # active_energy and walking_running_distance used to be excluded
+  # because parsing their 1000+ intra-day samples per day was too
+  # expensive; the fast-path in read_canonical_file() makes inclusion
+  # near-free for files written by the post-2026-05-11 storage layer.
+  "step_count", "active_energy", "walking_running_distance",
   # Body composition
   "weight_body_mass"
 )
