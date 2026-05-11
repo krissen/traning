@@ -203,7 +203,9 @@
 #' Generate qualitative post-workout prose for the latest running session
 #'
 #' Replaces the previous quantitative one-liner. Output is Swedish and
-#' suitable for a push notification body (1--4 short sentences).
+#' suitable for a push notification body — typically 2–4 short
+#' sentences (functional + recovery, plus state/context/week-trigger
+#' lines when applicable).
 #'
 #' Per-pass prose is currently scoped to running. Other sports fall back
 #' to a sport-aware quantitative line via \code{.session_prose_fallback()}
@@ -227,11 +229,12 @@
 #'   \code{status}, \code{score}, ...). Used by tests to inject a
 #'   verdict without going through \code{health_insight_readiness()}.
 #' @param trigger_source Which source the notification is reacting to.
-#'   \code{"garmin"} (default) prefers TCX rows when picking the latest
-#'   session — relevant because Garmin-trigger imports can pull in HAE
-#'   bursts whose tail() can mask the actual Garmin run. \code{"any"}
-#'   keeps all sources and falls back to whatever has the latest
-#'   timestamp.
+#'   \code{"any"} (default) keeps the legacy "latest by timestamp"
+#'   semantics for arbitrary callers. \code{"garmin"} prefers TCX rows
+#'   when picking the latest session — relevant because Garmin-trigger
+#'   imports can pull in HAE bursts whose tail() can mask the actual
+#'   Garmin run. \code{report_insight()} (the Garmin-trigger entry
+#'   point) opts in explicitly.
 #' @return A character string with the full prose. Returns
 #'   \code{"Ingen data."} when summaries is empty for the sport.
 #' @export
@@ -240,7 +243,7 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
                            include_tsb = TRUE,
                            health_daily = NULL,
                            readiness = NULL,
-                           trigger_source = "garmin") {
+                           trigger_source = "any") {
   if (is.null(summaries) || nrow(summaries) == 0) return("Ingen data.")
 
   runs <- .filter_sport(summaries, sport)
@@ -346,8 +349,10 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
 # segments) so the context line doesn't list 8 cycling micro-segments.
 .session_other_today <- function(summaries, latest, on_date,
                                   min_km = 1.0, min_min = 10) {
-  if (is.null(summaries) || nrow(summaries) == 0) {
-    return(summaries[0, , drop = FALSE])
+  empty <- tibble::tibble()
+  if (is.null(summaries) || !inherits(summaries, "data.frame") ||
+      nrow(summaries) == 0) {
+    return(empty)
   }
   on_date <- as.Date(on_date)
   latest_ts <- latest$sessionStart[1]
@@ -364,8 +369,14 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
   } else rep(TRUE, nrow(others))
 
   # Keep all TCX (Garmin) sessions verbatim. For HAE, require either
-  # ≥1 km OR ≥10 min so autopaused micro-segments drop out.
-  keep <- is_tcx | (km >= min_km | min >= min_min)
+  # ≥1 km OR ≥10 min so autopaused micro-segments drop out. NA in
+  # distance/duration → treat the size-check as FALSE so the row is
+  # only kept via the TCX path; without this guard, an NA-only row
+  # leaks an `NA sport` fragment into the "Tidigare idag" line.
+  size_ok <- (is.finite(km)   & km  >= min_km) |
+             (is.finite(min)  & min >= min_min)
+  keep <- is_tcx | size_ok
+  keep[is.na(keep)] <- FALSE
   others[keep, , drop = FALSE]
 }
 

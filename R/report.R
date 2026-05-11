@@ -29,7 +29,14 @@ report_insight <- function(summaries, sport = "running") {
   # session_prose() (qualitative, research-grounded). For other sports
   # it falls back to the legacy quantitative line via the same helper.
   # See R/session_prose.R for sources and prose rules.
-  session_prose(summaries, sport = sport)
+  #
+  # trigger_source = "garmin" opts in to the TCX-priority latest-pass
+  # selection. report_insight() is the Garmin-trigger entry point in
+  # this codebase (Python's _run_insight_garmin shells out to this).
+  # Other callers using session_prose() directly keep the default
+  # "any" semantics so an arbitrary "latest pass" lookup still picks
+  # the most recent row regardless of source.
+  session_prose(summaries, sport = sport, trigger_source = "garmin")
 }
 
 #' Summarise sessions within a date range

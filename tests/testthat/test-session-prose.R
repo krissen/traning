@@ -66,22 +66,30 @@ test_that("session_prose: Grön readiness keeps TSB phrasing", {
 # ---- Bug B — latest pass selection ---------------------------------------
 
 test_that("session_prose: picks latest TCX over later HAE segments", {
-  # Morning TCX run + 5 HAE walking micro-segments later in the day.
-  # The classification should describe the morning run.
+  # Morning TCX run + several HAE running segments later in the day
+  # (sport stays "running" so .filter_sport() doesn't pre-drop them;
+  # otherwise the test would pass even without the TCX-priority logic).
+  # The classification should describe the morning Garmin run.
   d <- "2026-05-11"
   s <- dplyr::bind_rows(
+    # Garmin-triggering run at 09:00 (RPE 30 → endurance / Distanspass).
     .sp_mk_run(paste(d, "09:00"), source = "tcx", km = 8,
                 pace = 5.0, hr = 145, rpe = 30, sport = "running"),
-    .sp_mk_run(paste(d, "12:00"), source = "hae", km = 0.5,
-                min = 7, sport = "walking"),
-    .sp_mk_run(paste(d, "14:00"), source = "hae", km = 0.6,
-                min = 8, sport = "walking"),
-    .sp_mk_run(paste(d, "17:00"), source = "hae", km = 0.7,
-                min = 9, sport = "walking")
+    # Later HAE running segments — short bouts at threshold pace that
+    # would classify differently if they leaked into "latest".
+    .sp_mk_run(paste(d, "12:00"), source = "hae", km = 1.5,
+                min = 8, pace = 4.5, hr = 165, sport = "running"),
+    .sp_mk_run(paste(d, "14:00"), source = "hae", km = 1.8,
+                min = 9, pace = 4.6, hr = 168, sport = "running"),
+    .sp_mk_run(paste(d, "17:00"), source = "hae", km = 1.2,
+                min = 7, pace = 4.7, hr = 170, sport = "running")
   )
   txt <- session_prose(s, on_date = d, readiness = NULL,
-                       health_daily = data.frame())
-  # RPE 30 → endurance type → "Distanspass" label.
+                       health_daily = data.frame(),
+                       trigger_source = "garmin")
+  # RPE 30 → endurance type → "Distanspass" label. Without TCX-priority
+  # the latest HAE segment (high HR, short, no RPE) would land in HR
+  # fallback and produce a different label.
   expect_match(txt, "^Distanspass")
 })
 
