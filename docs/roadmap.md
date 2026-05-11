@@ -112,9 +112,12 @@ years even though `summaries` contains 20+ years of data. Examples:
 - "April över åren" visar endast 2026
 - Löpande månad-jämförelse mot tidigare år visar bara 2025 och 2026
 
-**Likely cause:** plot helpers using `Sys.Date() - lubridate::years(N)`
-default with a too-small N, or default `dates` reactive narrowing
-the window before the page sees it.
+**Likely cause:** the global date-range selector at the top of the
+app (defaults to "12 months") leaks into the Utveckling page. The
+page is meant to span the full dataset, so it should either ignore
+the global `dates` reactive entirely or expose its own range
+selector. Check `page_progress_server()` and the plot helpers
+(`fetch.plot.*`) to see which branch is actually filtering.
 
 **Deliverables:**
 - Audit each plot on the page; confirm whether the limitation is in
