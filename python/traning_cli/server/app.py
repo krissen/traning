@@ -37,31 +37,38 @@ def _run_import_garmin() -> tuple[str, str | None]:
     Returns (summary, error). On success, summary is the human-readable
     import line ("Import: 1 pass (22 apr), 6.5 km totalt.") or "klart".
     On failure, error contains a short reason and summary is "".
+
+    Acquires the global ``_import_lock`` so a Garmin-trigger import and
+    the debounced HAE auto-import (``_flush_pending_workouts``) cannot
+    rebuild the cache concurrently. Both paths shell out to the same
+    ``cli.R --import`` script, which is not safe to run twice in
+    parallel — the second writer can clobber the first's partial state.
     """
     cmd = ["Rscript", str(_CLI_R), "--import"]
     t0 = time.time()
-    try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=300,
-        )
-        elapsed = int(time.time() - t0)
-        if result.returncode != 0:
-            log.warning("Import garmin failed (%ds): %s",
-                        elapsed, result.stderr.strip()[-300:])
-            return "", "MISSLYCKADES"
-        log.info("Import garmin OK (%ds)", elapsed)
-        lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
-        summary = "klart"
-        for line in reversed(lines):
-            low = line.lower()
-            if any(w in low for w in ["import", "inget att"]):
-                summary = line.strip()
-                break
-        return summary, None
-    except subprocess.TimeoutExpired:
-        elapsed = int(time.time() - t0)
-        log.warning("Import garmin timed out after %ds", elapsed)
-        return "", f"timeout efter {elapsed // 60} min"
+    with _import_lock:
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=300,
+            )
+            elapsed = int(time.time() - t0)
+            if result.returncode != 0:
+                log.warning("Import garmin failed (%ds): %s",
+                            elapsed, result.stderr.strip()[-300:])
+                return "", "MISSLYCKADES"
+            log.info("Import garmin OK (%ds)", elapsed)
+            lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
+            summary = "klart"
+            for line in reversed(lines):
+                low = line.lower()
+                if any(w in low for w in ["import", "inget att"]):
+                    summary = line.strip()
+                    break
+            return summary, None
+        except subprocess.TimeoutExpired:
+            elapsed = int(time.time() - t0)
+            log.warning("Import garmin timed out after %ds", elapsed)
+            return "", f"timeout efter {elapsed // 60} min"
 
 
 def _run_insight_garmin() -> str:
