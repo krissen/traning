@@ -86,3 +86,49 @@ month comparison (always positive framing).
 **Depends on:** Readiness model (Phase 5a), PMC data.
 
 ---
+
+## Vayu plot returns "Plot file not found"
+
+**Symptom:** `get_readiness(plot=True)` (and any other vayu MCP tool
+asking for a plot) returns `{"type": "error", "message": "Plot file
+not found"}`.
+
+**Root cause:** Race condition between R's per-process temp directory
+and the Python reader.
+
+Flow today:
+1. `mcp_bridge.R` runs as a subprocess of `r_bridge.py`.
+2. R writes a PNG to a tempfile via `tempfile()` under `/tmp/RtmpXXX/`.
+3. R prints a JSON envelope with the path to stdout, e.g.
+   `{"type":"plot","path":"/tmp/Rtmp7is7hp/vayu_fd….png"}`.
+4. `r_bridge.py` parses the path and tries
+   `Path(png_path).read_bytes()`.
+5. The file is gone — R cleaned up its `RtmpXXX` session as soon as
+   the subprocess exited (which is before Python gets to step 4).
+
+Confirmed manually: running `mcp_bridge.R` from a shell returns a
+path, but `ls` of that path right after shows nothing. R's
+`tempdir()` is tied to the R process's lifetime; the session cleanup
+on exit removes the directory.
+
+**Options** (pick later in the implementation plan):
+
+- **A. Fixed external tmp directory.** Write to e.g. `/tmp/vayu_plots/`
+  which Python controls. Need a hash/date stem on filenames so two
+  concurrent plots don't collide; a registry is overkill since
+  plots are transient (only useful "right now"). Likely cleanest:
+  one-shot temp file with random suffix + age-based GC.
+- **B. Inline base64 PNG.** R reads the PNG, base64-encodes the
+  bytes and embeds the data in the JSON envelope. No filesystem
+  hand-off. Bigger JSON payloads but eliminates the race entirely.
+- **C. `on.exit()` / `sys.on.exit()` to suppress Rtmp cleanup.**
+  Hacky; not pursued.
+
+User leaning: A keeps payloads small and is the natural fit when
+volumes are low; revisit B if the file-handoff complexity outgrows
+its benefit.
+
+**Environment:** kailash, Arch Linux, R via Rscript, vayu MCP server
+in `/home/krisse/dev/traning/python/traning_cli/mcp/`.
+
+---
