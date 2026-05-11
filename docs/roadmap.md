@@ -86,3 +86,57 @@ month comparison (always positive framing).
 **Depends on:** Readiness model (Phase 5a), PMC data.
 
 ---
+
+## Per-sport CTL overlay
+
+**Goal:** Track chronic training load per discipline so a heavy cycling
+or strength week doesn't artificially deflate the running CTL story.
+
+**Default sport buckets:** cycling, walking, running, strength.
+
+**Deliverables:**
+- Extend `compute_pmc()` (or wrapper) so it returns a CTL/ATL/TSB
+  series per sport bucket alongside the existing running-only view.
+- Plot overlay (already partly present in `page_sport_mix.R`) becomes
+  a first-class metric per the four buckets.
+- MCP exposure via `get_training_load(sport=<bucket>)`.
+
+**Dependencies:** TRIMP must be computed per sport, not just running.
+
+---
+
+## Shiny "Utveckling"-fliken: full historik visas inte
+
+**Bug:** Most figures on the Utveckling page only show the last 1–2
+years even though `summaries` contains 20+ years of data. Examples:
+- "April över åren" visar endast 2026
+- Löpande månad-jämförelse mot tidigare år visar bara 2025 och 2026
+
+**Likely cause:** plot helpers using `Sys.Date() - lubridate::years(N)`
+default with a too-small N, or default `dates` reactive narrowing
+the window before the page sees it.
+
+**Deliverables:**
+- Audit each plot on the page; confirm whether the limitation is in
+  the plot helper (`fetch.plot.*`) or in the date filter.
+- Either default to "all years" or expose a year-count selector per
+  plot. The full 20-year history should be reachable.
+
+---
+
+## Sport-mix per month: kcal/time, not just km
+
+**Goal:** Make the sport-mix view comparable across sports. Kilometres
+say nothing meaningful when comparing a cycling commute (high km, low
+load) with a strength session (zero km).
+
+**Deliverables:**
+- Page on Sport-mix to switch between kcal, duration, and km
+  (kcal and duration are the meaningful defaults).
+- Verify Garmin/HAE data sources for kcal availability per sport.
+
+**Note:** Sport-selector visibility — sport-mix is by construction
+cross-sport and should not show the global sport selector (same UX
+issue flagged on Overview).
+
+---
