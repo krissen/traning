@@ -7,6 +7,8 @@ from typing import Optional
 
 import requests
 
+from fastmcp.utilities.types import Image
+
 from .r_bridge import _run_r, r_report, r_plot
 
 
@@ -19,7 +21,7 @@ def _data_or_plot(
     plot_func: str,
     args: dict,
     plot: bool = False,
-) -> dict | list:
+) -> Image | dict | list:
     """Call a report or plot function depending on the plot flag."""
     if plot:
         return r_plot(plot_func, args)
@@ -61,7 +63,7 @@ def get_readiness(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-) -> dict | list:
+) -> Image | dict | list:
     """Daily readiness score with component breakdown (HRV, sleep, resting HR, training load, wrist temp).
 
     Returns a composite score (0-100) fusing Apple Watch health data
@@ -82,7 +84,7 @@ def get_sleep(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-) -> dict | list:
+) -> Image | dict | list:
     """Sleep data from Apple Watch (total hours, deep/REM/core stages).
 
     Args:
@@ -102,7 +104,7 @@ def get_hrv(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-) -> dict | list:
+) -> Image | dict | list:
     """Heart rate variability (HRV) from Apple Watch as Ln(RMSSD).
 
     Includes 7-day rolling baseline and standard deviation bands.
@@ -130,7 +132,7 @@ def get_training_load(
     before: Optional[str] = None,
     plot: bool = False,
     sport: str = "running",
-) -> dict | list:
+) -> Image | dict | list:
     """Training load metrics: PMC (fitness/fatigue/form), ACWR, or monotony.
 
     Args:
@@ -167,7 +169,7 @@ def get_efficiency(
     before: Optional[str] = None,
     plot: bool = False,
     sport: str = "running",
-) -> dict | list:
+) -> Image | dict | list:
     """Efficiency trend: EF (Efficiency Factor) or HRE (Heart Rate Efficiency).
 
     EF = speed:HR ratio. HRE = avgHR x avgPace (beats/km).
@@ -200,7 +202,7 @@ def get_zones(
     before: Optional[str] = None,
     plot: bool = False,
     sport: str = "running",
-) -> dict | list:
+) -> Image | dict | list:
     """HR zone distribution (Seiler 3-zone model) and Polarization Index.
 
     Z1 (low, <VT1), Z2 (threshold), Z3 (high, >=VT2).
@@ -227,7 +229,7 @@ def get_sessions(
     before: Optional[str] = None,
     plot: bool = False,
     sport: str = "running",
-) -> dict | list:
+) -> Image | dict | list:
     """List individual training sessions with distance, pace, HR.
 
     Args:
@@ -248,7 +250,7 @@ def get_monthly_summary(
     top: bool = False,
     plot: bool = False,
     sport: str = "running",
-) -> dict | list:
+) -> Image | dict | list:
     """Monthly volume summary per sport (distance, pace, sessions).
 
     Args:
@@ -272,7 +274,7 @@ def get_yearly_summary(
     top: bool = False,
     plot: bool = False,
     sport: str = "running",
-) -> dict | list:
+) -> Image | dict | list:
     """Yearly volume summary per sport (total distance, sessions, pace).
 
     Args:
@@ -298,7 +300,7 @@ def get_sport_mix(
     after: Optional[str] = None,
     before: Optional[str] = None,
     min_km: float = 0.1,
-) -> dict:
+) -> Image | dict:
     """Stacked bar chart: distance per period broken down by sport.
 
     Useful for spotting sport-rotation patterns, training-camp blocks,
@@ -318,7 +320,7 @@ def get_sport_ctl_overlay(
     sports: Optional[list[str]] = None,
     after: Optional[str] = None,
     before: Optional[str] = None,
-) -> dict:
+) -> Image | dict:
     """CTL (chronic training load) overlay across multiple sport buckets.
 
     Reveals fitness shifts when a training block is dominated by one
@@ -341,7 +343,7 @@ def get_sport_calendar(
     after: Optional[str] = None,
     before: Optional[str] = None,
     sport: Optional[str] = None,
-) -> dict:
+) -> Image | dict:
     """Activity calendar — one cell per day, coloured by dominant sport.
 
     GitHub-style heatmap. Quick visual of training frequency, sport-mix,
@@ -369,7 +371,7 @@ def get_decoupling(
     before: Optional[str] = None,
     plot: bool = False,
     sport: str = "running",
-) -> dict | list:
+) -> Image | dict | list:
     """Aerobic decoupling: pace/speed:HR drift between halves of a session.
 
     <3% well-coupled, 3-5% acceptable, 5-8% moderate drift, >8% significant.
@@ -391,7 +393,7 @@ def get_recovery_hr(
     before: Optional[str] = None,
     plot: bool = False,
     sport: str = "running",
-) -> dict | list:
+) -> Image | dict | list:
     """Post-workout recovery heart rate trend.
 
     Lower recovery HR indicates better cardiovascular fitness. Garmin
@@ -413,7 +415,7 @@ def get_resting_hr(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-) -> dict | list:
+) -> Image | dict | list:
     """Resting heart rate trend from Apple Watch.
 
     Args:
@@ -432,7 +434,7 @@ def get_vo2max(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-) -> dict | list:
+) -> Image | dict | list:
     """VO2max estimate trend (Apple Watch daily + Garmin per-activity).
 
     When plotting, overlays both sources for comparison.

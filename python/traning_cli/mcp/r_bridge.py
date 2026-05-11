@@ -1,6 +1,5 @@
 """R bridge — subprocess helpers for calling R functions from the MCP server."""
 
-import base64
 import json
 import logging
 import os
@@ -13,6 +12,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from fastmcp.utilities.types import Image
 
 logger = logging.getLogger(__name__)
 
@@ -315,12 +316,18 @@ def r_plot(
     args: dict[str, Any] | None = None,
     *,
     timeout: int = 120,
-) -> dict:
-    """Call an R plot function and return base64-encoded PNG.
+) -> Image | dict:
+    """Call an R plot function and return MCP-spec image content.
 
-    Returns a dict with ``type``, ``base64`` (PNG bytes), ``media_type``
-    (``"image/png"``), and ``func`` (the R function that produced it).
-    On failure: ``{"type": "error", "message": ...}``.
+    Returns a FastMCP ``Image`` on success, which FastMCP serialises as
+    the standard MCP ``ImageContent`` (``{type: "image", data, mimeType}``).
+    The previous bespoke dict shape (``{type: "plot", base64, ...}``)
+    was not recognised by spec-compliant clients (e.g. OpenClaw
+    webchat) and silently swallowed.
+
+    On failure: ``{"type": "error", "message": ...}`` — kept as a dict
+    so the error surfaces as readable text in the chat rather than as
+    a broken image attempt.
     """
     _prepare_plot_dir()
     png_path = _new_plot_path()
@@ -355,16 +362,10 @@ def r_plot(
 
     try:
         png_data = png_path.read_bytes()
-        b64 = base64.b64encode(png_data).decode("ascii")
     finally:
         try:
             png_path.unlink()
         except OSError as e:
             logger.debug("Failed to unlink %s: %s", png_path, e)
 
-    return {
-        "type": "plot",
-        "base64": b64,
-        "media_type": "image/png",
-        "func": func,
-    }
+    return Image(data=png_data, format="png")
