@@ -1,7 +1,11 @@
 # Insight context line — adds one prioritized "trend" sentence to the
 # daily readiness notification. Picks at most one of:
 #
-#   1. "Comeback" streak: today had a run after >= 3 days off.
+#   1. "Comeback" streak: today had a run AND the previous run was at
+#      least `threshold_days` calendar days ago (default 3). The day
+#      count matches Swedish usage — "Första löpningen på 3 dagar"
+#      means today minus last-run-date == 3, i.e. 2 rest days in
+#      between.
 #   2. ACWR commentary: low (< 0.8) or elevated (> 1.3).
 #   3. HRV trend: 7-day linear slope < -0.5 ms/day.
 #
@@ -20,6 +24,13 @@
 # --- Comeback / streak ------------------------------------------------------
 
 #' Generate a streak-comeback line when today is the first run after a layoff
+#'
+#' Triggers when today contains a run and the previous run was
+#' \code{threshold_days} or more calendar days ago. The day count
+#' equals \code{on_date - max(prior_run_dates)} (so 3 = 2 rest days
+#' between the two runs); the wording on the Swedish side reads
+#' "Första löpningen på N dagar." which matches that arithmetic.
+#'
 #' @keywords internal
 .insight_streak_line <- function(summaries, on_date,
                                   threshold_days = 3L) {

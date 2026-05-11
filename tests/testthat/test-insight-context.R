@@ -16,6 +16,32 @@ test_that(".insight_streak_line fires after 3+ days off", {
   expect_match(line, "Första löpningen på 4 dagar")
 })
 
+test_that(".insight_streak_line threshold uses calendar-days arithmetic", {
+  # threshold_days = 3 means today - last_run >= 3, i.e. 2+ rest days
+  # between the two runs. A 3-day gap (last May 7, today May 10) is
+  # the smallest gap that triggers. Confirm both sides of the
+  # boundary explicitly so the Swedish "på N dagar" wording stays
+  # honest.
+  today <- as.Date("2026-05-10")
+  s_three <- tibble::tibble(  # 3-day gap → should fire
+    sessionStart = as.POSIXct(c("2026-05-07 08:00:00",
+                                 "2026-05-10 08:00:00"),
+                               tz = "UTC"),
+    distance = c(8000, 6000),
+    sport = "running"
+  )
+  expect_match(traning:::.insight_streak_line(s_three, today),
+               "på 3 dagar")
+  s_two <- tibble::tibble(    # 2-day gap → must NOT fire
+    sessionStart = as.POSIXct(c("2026-05-08 08:00:00",
+                                 "2026-05-10 08:00:00"),
+                               tz = "UTC"),
+    distance = c(8000, 6000),
+    sport = "running"
+  )
+  expect_null(traning:::.insight_streak_line(s_two, today))
+})
+
 test_that(".insight_streak_line is silent when ran yesterday", {
   today <- as.Date("2026-05-11")
   summaries <- tibble::tibble(
