@@ -1,5 +1,138 @@
 # tRäning — Changelog
 
+## 2026-05-11 — Smart insight context line
+
+Roadmap item "Smart insight notifications" closed (PR #17). The
+morning readiness push now appends at most one prioritised trend
+sentence from a fixed chain — first match wins, the rest stay
+silent:
+
+1. **Streak comeback** — "Första löpningen på N dagar." when today
+   is the first run after ≥ 3 calendar days.
+2. **ACWR commentary** — "ACWR 0.68 — låg belastning, bra
+   återhämtning." / "ACWR 1.62 — hög belastning, skadetröskeln i
+   sikte." when the ratio sits outside the normal 0.8–1.3 band.
+3. **HRV downtrend** — "HRV sjunkande trend — ta det lugnt idag."
+   when the 7-day linear slope is below -0.5 ms/day.
+
+Opt-out via `TRANING_NOTIFY_CONTEXT=false` in `.Renviron`. Helpers
+live in `R/insight_context.R`; `health_insight_readiness()` calls
+`.insight_context_line()` between the existing weekly recap and
+the final paste.
+
+Race-readiness context deliberately deferred — there's no source
+of truth for "next race" in the pipeline today.
+
+## 2026-05-11 — Phase 5d: Taper plan & race readiness
+
+Roadmap item "Phase 5d: Taper planning & race analysis" closed
+(PR #16). Two new R primitives plus surfaces on every layer:
+
+- `compute_taper_plan(summaries, race_date, distance_km,
+  taper_weeks)` returns one ISO-week row from this Monday through
+  race week. Volume curve linearly interpolates between baseline
+  (4-week median of running km, including no-run weeks) and a
+  0.45 race-week floor.
+- `compute_race_readiness(summaries, health_daily, target_date,
+  taper_weeks)` returns a 0–100 composite (CTL trend / projected
+  TSB / HRV stability / resting-HR stability) plus Swedish prose
+  and a status label (Klar ≥ 70, Tveksam 40–69, Inte klar < 40).
+  Missing components are dropped from the average rather than
+  zero-scored, and the prose surfaces which ones weren't measured.
+
+Surfaces:
+- MCP: `get_taper_plan()`, `get_race_readiness()` —
+  `python/traning_cli/mcp/tools.py`.
+- Shiny: `app/tRanat/pages/page_race.R` replaces the Phase-5d
+  placeholder with date + distance + taper-week inputs and three
+  cards (weekly plan, prose, readiness status header).
+
+Algorithm trade-offs documented in `docs/dev/race-taper-design.md`.
+
+## 2026-05-11 — Shiny backfill upload page
+
+Roadmap item "Shiny import UI" closed (PR #15). New **Import** tab
+in tRanat lets the user drop a zip (Withings export today, any
+future `identify_archive()` target tomorrow), preview which
+metrics + how many new canonical files would be written via
+`--dry-run`, and commit with a single click. Uses the existing
+`traning backfill` CLI under the hood via a small system2 wrapper
+in `R/python_cli.R` — no reticulate, no duplicated archive
+parsing.
+
+## 2026-05-11 — Smart sport-mix metric switcher
+
+Roadmap item "Sport-mix per month: kcal/time, not just km" closed
+(PR #14) with one substantive deviation: the third axis is
+**TRIMP**, not kcal. Effort beats energy as a comparable axis
+across endurance + strength sessions, and TRIMP is already what
+CTL/ATL build on, so no new data source was needed.
+
+Sport-mix bars are now switchable between **distance** (km,
+default), **duration** (active minutes — visible for gym/strength
+too) and **TRIMP** (Banister, requires HR + duration > 10 min).
+Exposed via `plot_sport_mix(metric=)`, MCP `get_sport_mix(metric=)`,
+and a radio-buttons row on the Sport-mix Shiny page.
+
+## 2026-05-11 — Utveckling-fliken visar full historik igen
+
+Roadmap bug "Shiny Utveckling-fliken: full historik visas inte"
+closed (PR #13). The page presents historical comparisons (April
+over the years, monthly trend vs previous years, etc.) but was
+wired to the global 12-month date preset, so the comparisons
+silently collapsed to one or two recent years.
+
+`page_progress_server()` now ignores the global `dates` reactive
+for its month/year/pace panels — they receive `summaries` and
+`sport` only, so the report/plot helpers see `from = NULL, to =
+NULL` and `filter_by_daterange()` returns the data unchanged. The
+"Datumperiod" card at the bottom keeps its own dateRangeInput for
+ad-hoc range queries.
+
+## 2026-05-11 — Daily totals for high-volume health metrics
+
+Roadmap item "Daily pre-aggregation for high-volume metrics"
+closed (PR #11) with a hybrid approach: keep raw intra-day
+samples on disk, but stamp every canonical file for a sum-metric
+with a precomputed `daily_total` so the R reader never has to
+parse 1000+ samples just to get the day's total.
+
+`active_energy` and `walking_running_distance` join
+`.import_metrics` — they used to be excluded because parsing was
+too expensive. Older canonical files lacking `daily_total`
+continue to work via the existing parse-then-aggregate path; both
+produce the same value.
+
+## 2026-05-11 — Service hardening + Caddy ingress
+
+Off-roadmap but landed alongside the Phase 5d work. Tailscale-only
+binds on `traning-receiver` (100.x.x.x:8421) and `traning-vayu`
+(100.x.x.x:8422); `traning-shiny` bound to loopback (127.0.0.1:8423)
+and exposed publicly only through Caddy at `traning.niemi.cc`. Env
+vars in `/etc/traning/env` drive all three units so the same
+templates work across hosts. Documented in
+`docs/user/pipeline-setup.md`.
+
+## 2026-05-11 — Vayu MCP plot pipeline (file race + image spec)
+
+Two roadmap items closed together:
+
+- "Vayu plot returns 'Plot file not found'" (PR #10). R's
+  `tempfile()` lived under the subprocess's per-process tempdir,
+  which was wiped on exit before Python could read the PNG.
+  Python now owns `<tempdir>/vayu_plots_uid<uid>/` with `0o700`
+  perms + symlink-refuse + age-based GC; the path is passed to R
+  via `--plot_path`. TOCTOU on the dir is handled with
+  `mkdir(exist_ok=False)` + `lstat()` re-validation; the
+  resolution is `os.getuid()`-based so the path is locale- and
+  USER-env-immune.
+- "Vayu plots invisible in OpenClaw webchat" (PR #12,
+  1B-followup). `r_plot()` used to return a bespoke
+  `{type: "plot", base64, …}` dict that spec-compliant MCP clients
+  silently dropped. It now returns a `fastmcp.utilities.types.Image`,
+  which FastMCP serialises to the standard
+  `{type: "image", data, mimeType}` ImageContent.
+
 ## 2026-04-08 — MCP transport: SSH stdio → persistent SSE
 
 Roadmap item "MCP transport: SSH → SSE over Tailscale" closed out
