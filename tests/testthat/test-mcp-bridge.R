@@ -96,6 +96,9 @@ test_that("plot_path argument writes to caller-owned path", {
   # tempdir and is wiped on quit, racing the Python reader.
   skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
   target_dir <- tempfile("vayu_plot_path_test_")
+  # Register cleanup before the expect_* calls so a failed expectation
+  # doesn't leave the probe PNG on disk.
+  on.exit(unlink(target_dir, recursive = TRUE), add = TRUE)
   target <- file.path(target_dir, "probe.png")
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
   result <- system2("Rscript",
@@ -111,7 +114,6 @@ test_that("plot_path argument writes to caller-owned path", {
   expect_equal(out$path, target)
   expect_true(file.exists(target))
   expect_gt(file.info(target)$size, 1000)  # sanity: real PNG, not stub
-  unlink(target_dir, recursive = TRUE)
 })
 
 # --- Args passing ---

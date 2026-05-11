@@ -1,6 +1,7 @@
 """R bridge — subprocess helpers for calling R functions from the MCP server."""
 
 import base64
+import getpass
 import json
 import logging
 import os
@@ -21,7 +22,12 @@ MCP_BRIDGE_R = TRANING_ROOT / "inst" / "mcp_bridge.R"
 # Python owns the directory R writes plot PNGs into, so the file
 # survives the R subprocess exit. R's own tempdir() is wiped when the
 # bridge process ends, which used to race with Python's read.
-VAYU_PLOTS_DIR = Path(tempfile.gettempdir()) / "vayu_plots"
+#
+# Per-user dir name + 0o700 perms prevent another local user from
+# listing/reading plots or pre-creating a symlinked trap on shared
+# hosts. getpass.getuser() avoids hard-coding the username so the
+# same code runs under `krisse` on kailash, `krisniem` on macOS, etc.
+VAYU_PLOTS_DIR = Path(tempfile.gettempdir()) / f"vayu_plots_{getpass.getuser()}"
 VAYU_PLOTS_MAX_AGE_SEC = 3600
 
 # Date expression pattern: YYYY, YYYY-MM, YYYY-MM-DD, or relative (-3w, -1y, etc.)
@@ -63,10 +69,28 @@ def _sanitize(value: str) -> str:
 def _prepare_plot_dir() -> Path:
     """Ensure the plot directory exists and prune stale files.
 
+    Refuses to operate on a symlink — under a shared `/tmp` an attacker
+    could otherwise point our dir at a file they want overwritten.
+    Tightens perms to 0o700 even if the directory already exists, so a
+    previously-loose dir gets locked down on the next call.
+
     GC runs on every plot call. The directory is tiny (one file per
     in-flight plot) so a full scan is fine.
     """
-    VAYU_PLOTS_DIR.mkdir(parents=True, exist_ok=True)
+    if VAYU_PLOTS_DIR.is_symlink():
+        raise RuntimeError(
+            f"vayu plot dir is a symlink, refusing to use: {VAYU_PLOTS_DIR}"
+        )
+    VAYU_PLOTS_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not VAYU_PLOTS_DIR.is_dir():
+        raise RuntimeError(
+            f"vayu plot path exists but is not a directory: {VAYU_PLOTS_DIR}"
+        )
+    try:
+        os.chmod(VAYU_PLOTS_DIR, 0o700)
+    except OSError as e:
+        logger.warning("Could not chmod %s to 0700: %s", VAYU_PLOTS_DIR, e)
+
     cutoff = time.time() - VAYU_PLOTS_MAX_AGE_SEC
     for entry in VAYU_PLOTS_DIR.iterdir():
         try:
@@ -118,6 +142,12 @@ def _run_r(
     """
     if func not in _KNOWN_FUNCTIONS:
         return {"type": "error", "message": f"Unknown function: {func}"}
+
+    # Enforced rather than fallen-back: a None path would silently
+    # reintroduce the R-tempdir race the rest of this module exists
+    # to prevent.
+    if plot and plot_path is None:
+        raise ValueError("_run_r(plot=True) requires plot_path")
 
     timeout = max(10, min(300, timeout))
     args = args or {}
