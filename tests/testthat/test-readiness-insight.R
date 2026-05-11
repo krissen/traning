@@ -356,8 +356,13 @@ test_that("TRANING_NOTIFY_SPORT=false suppresses the new lines", {
 # Streak-comeback fixture: last running session 5 days before `today`,
 # plus today, so the streak helper has the cleanest possible trigger.
 .fixture_streak_comeback <- function(today) {
-  starts <- as.POSIXct(c(today - 5L, today)) +
-            as.difftime(8, units = "hours")
+  # Explicit UTC mirrors the other fixtures in this file. Without it
+  # the test becomes timezone-dependent — `today - 5L` is a Date but
+  # `as.POSIXct(Date)` defaults to local time, so the
+  # `as.Date(sessionStart)` step inside the helper can shift by a
+  # day on hosts with extreme offsets (CI runners in non-CET zones).
+  starts <- as.POSIXct(paste0(c(today - 5L, today), " 08:00:00"),
+                       tz = "UTC")
   tibble::tibble(
     sessionStart = starts,
     sport = "running",
