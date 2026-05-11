@@ -305,17 +305,22 @@ def _flush_pending_workouts() -> None:
     Shares the global ``_import_lock`` with the Garmin-trigger path so the
     two cannot race. Failure is logged to journal; no notification is
     sent — HAE pushes are dags-kontext, not per-pass events.
+
+    The pending counter is only cleared on a successful import so a
+    failed run leaves visible state in /v1/status; the next workout
+    push reschedules the timer and the import is retried then.
     """
     global _workouts_timer, _pending_workouts_count
+    global _last_import_ts, _last_import_files
     with _workouts_lock:
         n = _pending_workouts_count
-        _pending_workouts_count = 0
         _workouts_timer = None
     if n <= 0:
         return
 
+    ok = False
+    t0 = time.time()
     with _import_lock:
-        t0 = time.time()
         try:
             result = subprocess.run(
                 ["Rscript", str(_CLI_R), "--import"],
@@ -329,6 +334,7 @@ def _flush_pending_workouts() -> None:
                     elapsed, n, result.stderr.strip()[-300:],
                 )
             else:
+                ok = True
                 # Surface the trailing import-summary line for journal logs.
                 lines = [l.strip() for l in result.stdout.strip().splitlines()
                          if l.strip()]
@@ -345,6 +351,16 @@ def _flush_pending_workouts() -> None:
                         elapsed, n)
         except Exception:
             log.exception("HAE auto-import: unexpected error")
+
+    # Update /v1/status tracking. Mirror the health-flush behaviour so a
+    # successful HAE auto-import shows up in status alongside Garmin
+    # imports. On failure we still surface the attempt timestamp (the
+    # warning is the actionable signal); pending count stays for retry.
+    if ok:
+        with _workouts_lock:
+            _pending_workouts_count = max(0, _pending_workouts_count - n)
+        _last_import_ts = datetime.now()
+        _last_import_files = n
 
 
 def _schedule_workouts_import(n_new: int) -> None:
