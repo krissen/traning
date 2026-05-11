@@ -1,8 +1,8 @@
 # page_import.R — upload a health-export archive and backfill it.
 #
 # Wraps the Python `traning backfill` CLI with a two-step Shiny flow:
-#  1. User selects a zip; we run `--dry-run` and show a preview of
-#     metrics + dates that would be added.
+#  1. User selects a zip; we run `--dry-run` and show a per-metric
+#     preview of how many new canonical files would be written.
 #  2. User confirms; we run the real backfill and show the result.
 #
 # The page deliberately avoids reticulate — see R/python_cli.R for
@@ -43,11 +43,12 @@ page_import_server <- function(id) {
   shiny::moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # Two reactive values: the dry-run result, and the committed
-    # result. Separate so the preview survives the user clicking
-    # "Confirm" until the real run finishes.
-    preview_rv <- shiny::reactiveVal(NULL)
-    result_rv  <- shiny::reactiveVal(NULL)
+    # Three reactive values: dry-run preview, the in-flight flag for
+    # the commit step (prevents a second Confirm click while we're
+    # still writing files), and the committed result.
+    preview_rv    <- shiny::reactiveVal(NULL)
+    committing_rv <- shiny::reactiveVal(FALSE)
+    result_rv     <- shiny::reactiveVal(NULL)
 
     # Wipe previous state when a new file lands.
     shiny::observeEvent(input$zip, {
@@ -75,7 +76,27 @@ page_import_server <- function(id) {
         ))
       }
       counts <- out$counts
-      total  <- sum(counts)
+      # Distinguish "CLI ran clean and reported no new dates" from
+      # "CLI ran clean but our parser couldn't pull any metric: N
+      # lines out of the stdout". Without this distinction a parser
+      # regression would silently look identical to a quiet archive.
+      parsed_empty_but_output <- length(counts) == 0L &&
+                                  length(out$stdout) > 0L
+      if (parsed_empty_but_output) {
+        return(bslib::card(
+          class = "section-spacer",
+          bslib::card_header(
+            class = "bg-warning",
+            "Förhandsgranskning — kunde inte tolka räknarna"
+          ),
+          bslib::card_body(
+            shiny::p("CLI:n gick igenom utan fel men ingen rad ",
+                     "matchade förväntat format. Rå-utskrift:"),
+            shiny::pre(paste(out$stdout, collapse = "\n"))
+          )
+        ))
+      }
+      total <- sum(counts)
       if (total == 0L) {
         return(bslib::card(
           class = "section-spacer",
@@ -119,12 +140,22 @@ page_import_server <- function(id) {
       if (!is.null(committed)) return(NULL)
       shiny::actionButton(
         ns("confirm"), "Skriv canonical-filer",
-        class = "btn-primary"
+        class = "btn-primary",
+        # Disable the button as soon as a commit is in flight so a
+        # second click can't queue another backfill run while the
+        # first one is still writing files.
+        disabled = isTRUE(committing_rv())
       )
     })
 
     shiny::observeEvent(input$confirm, {
       shiny::req(input$zip)
+      # Guard against the observer re-firing before the disabled
+      # attribute reaches the client (the renderUI round-trip lags
+      # the first click).
+      if (isTRUE(committing_rv())) return(NULL)
+      committing_rv(TRUE)
+      on.exit(committing_rv(FALSE), add = TRUE)
       shiny::withProgress(message = "Skriver canonical-filer …",
                            value = 0.5, {
         out <- traning_backfill(input$zip$datapath, dry_run = FALSE)
@@ -147,7 +178,28 @@ page_import_server <- function(id) {
           )
         ))
       }
-      total <- sum(out$counts)
+      counts <- out$counts
+      # Same parse-failure detection as the preview branch — if the
+      # CLI exited cleanly but our stdout parser came up empty, fall
+      # back to the raw output so we don't tell the user "0 nya
+      # filer" when the CLI in fact wrote some.
+      if (length(counts) == 0L && length(out$stdout) > 0L) {
+        return(bslib::card(
+          class = "section-spacer",
+          bslib::card_header(
+            class = "bg-warning",
+            "Backfill klart — kunde inte tolka räknarna"
+          ),
+          bslib::card_body(
+            shiny::p("CLI:n rapporterade lyckat men inga rader ",
+                     "matchade förväntat format. Rå-utskrift:"),
+            shiny::pre(paste(out$stdout, collapse = "\n")),
+            shiny::p("Kör ", shiny::code("traning import health --force"),
+                     " för att hämta in eventuellt nyskrivna filer.")
+          )
+        ))
+      }
+      total <- sum(counts)
       bslib::card(
         class = "section-spacer",
         bslib::card_header(

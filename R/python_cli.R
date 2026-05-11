@@ -16,11 +16,12 @@
 #'     either \code{system.file()} (devtools::load_all() during dev)
 #'     or the current working directory (Shiny launched from the
 #'     repo root or \code{app/tRanat/}).
-#'   \item Known production paths
-#'     (\code{/home/krisse/dev/traning/python/.venv/bin/traning} on
-#'     kailash).
 #'   \item \code{Sys.which("traning")}.
 #' }
+#'
+#' Hosts whose layout is not covered by 2-3 should set
+#' \code{TRANING_CLI}; baked-in production paths were rejected as
+#' they don't survive a `krisse` → other-user rename.
 #'
 #' Each candidate is checked for both existence AND execute
 #' permission — a non-executable file at the configured path would
@@ -76,13 +77,6 @@ traning_cli_path <- function() {
     if (!is.na(out)) return(out)
   }
 
-  # Known production paths. Kept short on purpose — anything else
-  # should be configured via TRANING_CLI rather than baked in here.
-  for (cand in c("/home/krisse/dev/traning/python/.venv/bin/traning")) {
-    out <- .accept(cand)
-    if (!is.na(out)) return(out)
-  }
-
   which_path <- unname(Sys.which("traning"))
   if (.is_exec(which_path)) return(normalizePath(which_path,
                                                   mustWork = FALSE))
@@ -110,20 +104,30 @@ traning_cli_path <- function() {
 #'   }
 #' @export
 traning_backfill <- function(zip_path, dry_run = FALSE, cli_path = NULL) {
+  .fail <- function(msg) {
+    list(success = FALSE, exit_code = -1L, counts = integer(0),
+         stdout = character(0), stderr = msg)
+  }
+
   if (is.null(cli_path)) cli_path <- traning_cli_path()
-  if (is.na(cli_path)) {
-    return(list(
-      success = FALSE, exit_code = -1L, counts = integer(0),
-      stdout = character(0),
-      stderr = "Could not locate the `traning` CLI. Set TRANING_CLI."
+  # Treat NA, NULL, empty string, missing-file and non-executable
+  # paths uniformly — system2() would error on any of them, and the
+  # Shiny page expects a clean envelope.
+  cli_ok <- !is.null(cli_path) &&
+            is.character(cli_path) &&
+            length(cli_path) == 1L &&
+            !is.na(cli_path) &&
+            nzchar(cli_path) &&
+            file.exists(cli_path) &&
+            !isTRUE(file.info(cli_path)$isdir) &&
+            file.access(cli_path, mode = 1L) == 0L
+  if (!cli_ok) {
+    return(.fail(
+      "Could not locate an executable `traning` CLI. Set TRANING_CLI."
     ))
   }
   if (!file.exists(zip_path)) {
-    return(list(
-      success = FALSE, exit_code = -1L, counts = integer(0),
-      stdout = character(0),
-      stderr = paste0("Archive does not exist: ", zip_path)
-    ))
+    return(.fail(paste0("Archive does not exist: ", zip_path)))
   }
 
   args <- c("backfill", zip_path)
@@ -131,8 +135,25 @@ traning_backfill <- function(zip_path, dry_run = FALSE, cli_path = NULL) {
 
   stderr_file <- tempfile("traning_backfill_stderr_")
   on.exit(unlink(stderr_file), add = TRUE)
-  out <- suppressWarnings(system2(cli_path, args = shQuote(args),
-                                   stdout = TRUE, stderr = stderr_file))
+
+  # system2() can raise on permission errors, exec-format failures,
+  # or other OS-level issues that the validation above can't catch
+  # ahead of time. Wrap so the Shiny session sees a populated error
+  # envelope instead of a stack trace.
+  out <- tryCatch(
+    suppressWarnings(system2(cli_path, args = shQuote(args),
+                              stdout = TRUE, stderr = stderr_file)),
+    error = function(e) {
+      structure(character(0),
+                status = -1L,
+                .traning_exec_error = conditionMessage(e))
+    }
+  )
+  exec_error <- attr(out, ".traning_exec_error")
+  if (!is.null(exec_error)) {
+    return(.fail(paste0("system2 failed: ", exec_error)))
+  }
+
   exit_code <- attr(out, "status")
   if (is.null(exit_code)) exit_code <- 0L
   stderr_lines <- if (file.exists(stderr_file)) {
