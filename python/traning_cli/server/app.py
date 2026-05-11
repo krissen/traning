@@ -306,9 +306,10 @@ def _flush_pending_workouts() -> None:
     two cannot race. Failure is logged to journal; no notification is
     sent — HAE pushes are dags-kontext, not per-pass events.
 
-    The pending counter is only cleared on a successful import so a
-    failed run leaves visible state in /v1/status; the next workout
-    push reschedules the timer and the import is retried then.
+    The pending counter is only decremented after a successful import.
+    On failure the counter is left intact and surfaced via /v1/status's
+    ``pending_workouts`` field so the next workout push reschedules the
+    timer and the import is retried then.
     """
     global _workouts_timer, _pending_workouts_count
     global _last_import_ts, _last_import_files
@@ -352,15 +353,15 @@ def _flush_pending_workouts() -> None:
         except Exception:
             log.exception("HAE auto-import: unexpected error")
 
-    # Update /v1/status tracking. Mirror the health-flush behaviour so a
-    # successful HAE auto-import shows up in status alongside Garmin
-    # imports. On failure we still surface the attempt timestamp (the
-    # warning is the actionable signal); pending count stays for retry.
+    # /v1/status bookkeeping. Update timestamp on every attempt (matches
+    # _flush_pending_health behaviour) so an attempted-but-failed import
+    # is still visible. The pending counter is only drained on success;
+    # a failed run keeps it surfaced for the next push to retry.
+    _last_import_ts = datetime.now()
+    _last_import_files = n
     if ok:
         with _workouts_lock:
             _pending_workouts_count = max(0, _pending_workouts_count - n)
-        _last_import_ts = datetime.now()
-        _last_import_files = n
 
 
 def _schedule_workouts_import(n_new: int) -> None:
@@ -406,6 +407,9 @@ def create_app() -> FastAPI:
         with _pending_lock:
             pending_count = len(_pending_files)
             timer_armed = _pending_timer is not None
+        with _workouts_lock:
+            pending_workouts = _pending_workouts_count
+            workouts_timer_armed = _workouts_timer is not None
         return {
             "uptime_seconds": int(time.time() - _start_time),
             "last_received": _last_received.isoformat() if _last_received else None,
@@ -415,6 +419,9 @@ def create_app() -> FastAPI:
             "pending_files": pending_count,
             "pending_timer_armed": timer_armed,
             "debounce_seconds": _DEBOUNCE_SECS,
+            "pending_workouts": pending_workouts,
+            "workouts_timer_armed": workouts_timer_armed,
+            "workouts_debounce_seconds": _DEBOUNCE_WORKOUTS_SECS,
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])
