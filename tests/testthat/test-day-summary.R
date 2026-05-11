@@ -39,7 +39,7 @@ test_that("day_summary_prose includes sport mix and dominant type", {
 
   txt <- day_summary_prose(summaries, date = d)
   # Sport mix line present
-  expect_match(txt, "Dagens stimulus")
+  expect_match(txt, "Dagens pass")
   expect_match(txt, "löpning 8\\.0 km")
   expect_match(txt, "cykling 6\\.5 km")
   expect_match(txt, "gång 1\\.5 km")

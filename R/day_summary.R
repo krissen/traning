@@ -64,7 +64,7 @@
     # of Y km each" rather than "N sessions totalling Y km").
     if (n > 1) sprintf("%s (%d pass)", base, n) else base
   }, character(1))
-  paste0("Dagens stimulus: ", paste(parts, collapse = " + "), ".")
+  paste0("Dagens pass: ", paste(parts, collapse = " + "), ".")
 }
 
 # Classify the dominant running session of the day, if any. Returns NULL
