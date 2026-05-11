@@ -299,6 +299,10 @@ _workouts_timer: threading.Timer | None = None
 _workouts_lock = threading.Lock()
 
 
+_last_workouts_import_ts: datetime | None = None
+_last_workouts_import_count: int = 0
+
+
 def _flush_pending_workouts() -> None:
     """Silently rebuild summaries.RData via `cli.R --import`.
 
@@ -312,7 +316,6 @@ def _flush_pending_workouts() -> None:
     timer and the import is retried then.
     """
     global _workouts_timer, _pending_workouts_count
-    global _last_import_ts, _last_import_files
     with _workouts_lock:
         n = _pending_workouts_count
         _workouts_timer = None
@@ -353,12 +356,16 @@ def _flush_pending_workouts() -> None:
         except Exception:
             log.exception("HAE auto-import: unexpected error")
 
-    # /v1/status bookkeeping. Update timestamp on every attempt (matches
-    # _flush_pending_health behaviour) so an attempted-but-failed import
-    # is still visible. The pending counter is only drained on success;
-    # a failed run keeps it surfaced for the next push to retry.
-    _last_import_ts = datetime.now()
-    _last_import_files = n
+    # /v1/status bookkeeping. Track workout imports in dedicated fields
+    # so we don't conflate health "files imported" with workout
+    # "pending count" semantics on the shared _last_import_* fields.
+    # Timestamp updates on every attempt (matches _flush_pending_health
+    # behaviour) so an attempted-but-failed import is still visible.
+    # The pending counter is only drained on success; a failed run keeps
+    # it surfaced for the next push to retry.
+    global _last_workouts_import_ts, _last_workouts_import_count
+    _last_workouts_import_ts = datetime.now()
+    _last_workouts_import_count = n
     if ok:
         with _workouts_lock:
             _pending_workouts_count = max(0, _pending_workouts_count - n)
@@ -422,6 +429,11 @@ def create_app() -> FastAPI:
             "pending_workouts": pending_workouts,
             "workouts_timer_armed": workouts_timer_armed,
             "workouts_debounce_seconds": _DEBOUNCE_WORKOUTS_SECS,
+            "last_workouts_import": (
+                _last_workouts_import_ts.isoformat()
+                if _last_workouts_import_ts else None
+            ),
+            "last_workouts_import_count": _last_workouts_import_count,
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])
