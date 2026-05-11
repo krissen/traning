@@ -23,6 +23,33 @@ from ..garmin.utils import get_data_dir
 log = logging.getLogger(__name__)
 
 
+# Metrics whose intra-day samples sum to a meaningful daily total
+# (steps walked, calories burned, distance covered, etc.). Reading
+# these out of 1100+ raw samples per day is wasteful when callers only
+# want the day's total; canonical files for these metrics carry a
+# `daily_total` field so the R reader can take a fast path.
+#
+# Must stay in sync with `.sum_metrics` in R/health_export.R.
+_SUM_METRICS = frozenset({
+    "step_count", "active_energy", "basal_energy_burned",
+    "flights_climbed", "apple_exercise_time", "apple_stand_time",
+    "apple_stand_hour", "walking_running_distance",
+    "cycling_distance", "mindful_minutes", "time_in_daylight",
+})
+
+
+def _daily_total(samples: list[dict]) -> float | None:
+    """Sum the `qty` values across samples. None if no numeric qty seen."""
+    total = 0.0
+    found = False
+    for s in samples:
+        qty = s.get("qty")
+        if isinstance(qty, (int, float)):
+            total += qty
+            found = True
+    return total if found else None
+
+
 # --- Canonical deduplication ------------------------------------------------
 
 def _sample_key(sample: dict) -> str:
@@ -88,6 +115,10 @@ def canonicalize_metric(
             "units": units,
             "samples": merged,
         }
+        if metric_name in _SUM_METRICS:
+            total = _daily_total(merged)
+            if total is not None:
+                doc["daily_total"] = total
         with open(canonical_path, "w") as f:
             json.dump(doc, f, ensure_ascii=False)
 

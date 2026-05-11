@@ -573,6 +573,27 @@ read_canonical_file <- function(path, verbose = FALSE) {
     return(tibble::tibble())
   }
 
+  # Fast path: high-volume sum metrics (step_count, active_energy, ...)
+  # carry a precomputed `daily_total` field that the Python writer
+  # populates. Returning a one-row tibble here avoids parsing 1000+
+  # samples per day just to sum them. Older canonical files without
+  # the field fall through to the full parser, which sums the samples
+  # itself via .aggregate_daily() — both paths produce the same value.
+  if (metric_name %in% .sum_metrics &&
+      !is.null(raw$daily_total) &&
+      length(raw$daily_total) == 1) {
+    first_src <- if (length(samples)) {
+      s <- samples[[1]]$source
+      if (is.null(s)) NA_character_ else as.character(s)
+    } else NA_character_
+    return(tibble::tibble(
+      date = as.Date(raw$date),
+      metric = metric_name,
+      value = as.numeric(raw$daily_total),
+      source = first_src
+    ))
+  }
+
   # Convert to HAE-compatible format for .parse_metric()
   metric_obj <- list(name = metric_name, data = samples)
   result <- .parse_metric(metric_obj)
@@ -924,8 +945,12 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   "respiratory_rate", "apple_sleeping_wrist_temperature",
   "running_ground_contact_time", "running_power", "running_speed",
   "running_stride_length", "running_vertical_oscillation",
-  # Activity
-  "step_count",
+  # Activity — daily totals from the canonical `daily_total` fast-path.
+  # active_energy and walking_running_distance used to be excluded
+  # because parsing their 1000+ intra-day samples per day was too
+  # expensive; the fast-path in read_canonical_file() makes inclusion
+  # near-free for files written by the post-2026-05-11 storage layer.
+  "step_count", "active_energy", "walking_running_distance",
   # Body composition
   "weight_body_mass"
 )
