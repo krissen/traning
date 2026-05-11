@@ -299,6 +299,76 @@ _SPORT_MIX_PERIODS = ("month", "week", "year")
 _SPORT_MIX_METRICS = ("distance", "duration", "trimp")
 
 
+def get_taper_plan(
+    race_date: str,
+    distance_km: Optional[float] = None,
+    taper_weeks: int = 2,
+) -> dict:
+    """Weekly km schedule from this Monday through race week.
+
+    Returns the per-week target volumes for the build / taper / race
+    phases, anchored on the median of the last four complete ISO
+    weeks of running. See docs/dev/race-taper-design.md for the
+    algorithm.
+
+    Args:
+        race_date: ISO date of the race (YYYY-MM-DD). Must be on or
+            after today.
+        distance_km: Race distance in km. Echoed back in the
+            payload; does not change the volume curve.
+        taper_weeks: Number of reduced-volume weeks before the race
+            (race week itself excluded). 1–4, default 2.
+    """
+    try:
+        rd = date.fromisoformat(race_date)
+    except ValueError as e:
+        return {"type": "error",
+                "message": f"race_date must be YYYY-MM-DD: {e}"}
+    if rd < date.today():
+        return {"type": "error",
+                "message": f"race_date must be today or later: {race_date}"}
+    if not (1 <= taper_weeks <= 4):
+        return {"type": "error",
+                "message": "taper_weeks must be between 1 and 4"}
+
+    args: dict = {"race_date": rd.isoformat(),
+                  "taper_weeks": int(taper_weeks)}
+    if distance_km is not None:
+        args["distance_km"] = float(distance_km)
+    return r_report("compute_taper_plan", args)
+
+
+def get_race_readiness(
+    target_date: str,
+    taper_weeks: int = 2,
+) -> dict:
+    """Composite race-day readiness score with Swedish prose.
+
+    Fuses CTL trend (fitness), projected TSB (form), HRV stability
+    and resting-HR stability into a 0–100 score and a status label
+    ("Klar" / "Tveksam" / "Inte klar"). Missing health data lowers
+    the number of contributing components rather than the score
+    itself.
+
+    Args:
+        target_date: ISO date of the race (YYYY-MM-DD).
+        taper_weeks: How many reduced-volume weeks the TSB
+            projection should assume. 1–4, default 2.
+    """
+    try:
+        td = date.fromisoformat(target_date)
+    except ValueError as e:
+        return {"type": "error",
+                "message": f"target_date must be YYYY-MM-DD: {e}"}
+    if not (1 <= taper_weeks <= 4):
+        return {"type": "error",
+                "message": "taper_weeks must be between 1 and 4"}
+
+    args: dict = {"target_date": td.isoformat(),
+                  "taper_weeks": int(taper_weeks)}
+    return r_report("compute_race_readiness", args)
+
+
 def get_sport_mix(
     period: str = "month",
     metric: str = "distance",

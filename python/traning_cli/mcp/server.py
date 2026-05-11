@@ -48,6 +48,8 @@ mcp.tool()(tools.get_pipeline_status)
 mcp.tool()(tools.get_form)
 mcp.tool()(tools.get_recent_data)
 mcp.tool()(tools.get_latest_known)
+mcp.tool()(tools.get_taper_plan)
+mcp.tool()(tools.get_race_readiness)
 
 # --- Register prompts ---
 mcp.prompt()(prompts.daglig_check)

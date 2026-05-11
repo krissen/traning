@@ -122,7 +122,7 @@ server <- function(input, output, session) {
   page_health_server("health", summaries, health_daily, dates, is_mobile)
   page_performance_server("performance", summaries, myruns, health_daily,
                            decoupling_data, dates, is_mobile, sport)
-  page_race_server("race", summaries, dates, is_mobile)
+  page_race_server("race", summaries, health_daily, dates, is_mobile)
   page_import_server("import")
 }
 

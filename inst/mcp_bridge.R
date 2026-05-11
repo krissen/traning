@@ -103,7 +103,10 @@ func_registry <- list(
   # Multi-sport plots
   plot_sport_mix         = "s",
   plot_sport_ctl_overlay = "s",
-  plot_sport_calendar    = "s"
+  plot_sport_calendar    = "s",
+  # Phase 5d — race
+  compute_taper_plan       = "s",
+  compute_race_readiness   = "sh"
 )
 
 if (is.null(func_name) || !func_name %in% names(func_registry)) {
@@ -237,10 +240,28 @@ build_call_args <- function(func_name, func_args) {
     "plot_monthlast", "plot_yearstatus", "plot_yearstop",
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
     "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
-    "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar"
+    "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
+    "compute_taper_plan"
   )
   if (func_name %in% summaries_funcs) {
     a <- c(list(summaries = summaries), a)
+  }
+
+  # Phase 5d: race tools
+  if (func_name == "compute_taper_plan") {
+    if (!is.null(func_args$race_date))
+      a$race_date <- as.Date(func_args$race_date)
+    if (!is.null(func_args$distance_km))
+      a$distance_km <- as.numeric(func_args$distance_km)
+    if (!is.null(func_args$taper_weeks))
+      a$taper_weeks <- as.integer(func_args$taper_weeks)
+  }
+  if (func_name == "compute_race_readiness") {
+    a <- c(list(summaries = summaries, health_daily = health_daily), a)
+    if (!is.null(func_args$target_date))
+      a$target_date <- as.Date(func_args$target_date)
+    if (!is.null(func_args$taper_weeks))
+      a$taper_weeks <- as.integer(func_args$taper_weeks)
   }
 
   # Multi-sport plot extras

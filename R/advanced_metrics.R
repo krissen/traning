@@ -1076,3 +1076,351 @@ load_decoupling <- function(summaries, myruns,
 
   per_run
 }
+
+
+# --- Phase 5d: Taper plan & race readiness -----------------------------------
+#
+# See docs/dev/race-taper-design.md for the algorithm rationale.
+
+#' Median weekly running km over the last `lookback_weeks` complete ISO weeks
+#'
+#' Used by \code{compute_taper_plan()} as the baseline for the volume
+#' curve. Median (not mean) makes a single spike week's km not pull the
+#' whole schedule above what the athlete is actually maintaining.
+#'
+#' @keywords internal
+.recent_baseline_km <- function(summaries, lookback_weeks = 4L) {
+  if (is.null(summaries) || nrow(summaries) == 0L) return(0)
+  runs <- .filter_sport(summaries, "running")
+  if (nrow(runs) == 0L) return(0)
+
+  iso_dow <- function(d) as.integer(format(d, "%u"))
+  today <- Sys.Date()
+  this_monday <- today - (iso_dow(today) - 1L)
+  start <- this_monday - as.integer(lookback_weeks) * 7L
+
+  d <- as.Date(runs$sessionStart)
+  recent <- runs[!is.na(d) & d >= start & d < this_monday, , drop = FALSE]
+  if (nrow(recent) == 0L) return(0)
+
+  recent_d <- as.Date(recent$sessionStart)
+  iso_week <- paste0(format(recent_d, "%G"), "-W",
+                     format(recent_d, "%V"))
+  km_per_week <- tapply(
+    as.numeric(recent$distance) / 1000,
+    iso_week,
+    function(x) sum(x, na.rm = TRUE)
+  )
+  median(km_per_week, na.rm = TRUE)
+}
+
+
+#' Compute a taper plan from today through race day
+#'
+#' Produces one row per ISO week from this Monday through the week
+#' containing \code{race_date}. The volume curve linearly interpolates
+#' between a 0.45 race-week floor and 1.0 (full baseline) over the
+#' \code{taper_weeks + 1} weeks closest to the race; weeks earlier
+#' than that remain at baseline. See
+#' \code{docs/dev/race-taper-design.md} for trade-offs.
+#'
+#' @param summaries Augmented summaries from \code{my_dbs_load()}.
+#' @param race_date Date of the race. Must be on or after today.
+#' @param distance_km Optional race distance, echoed back in the
+#'   plan's attributes; does not change the curve.
+#' @param taper_weeks Number of reduced-volume weeks before the race
+#'   (race week itself excluded). Integer 1–4, default 2.
+#' @return Tibble with columns \code{week_start, week_end,
+#'   weeks_until_race, phase, baseline_km, target_km,
+#'   relative_to_baseline}. The \code{distance_km} input is preserved
+#'   as an attribute on the tibble.
+#' @export
+compute_taper_plan <- function(summaries, race_date,
+                                distance_km = NA_real_,
+                                taper_weeks = 2L) {
+  race_date <- as.Date(race_date)
+  if (is.na(race_date) || race_date < Sys.Date()) {
+    stop("race_date must be today or in the future")
+  }
+  taper_weeks <- as.integer(taper_weeks)
+  if (is.na(taper_weeks) || taper_weeks < 1L || taper_weeks > 4L) {
+    stop("taper_weeks must be an integer between 1 and 4")
+  }
+
+  baseline_km <- .recent_baseline_km(summaries, lookback_weeks = 4L)
+
+  iso_dow <- function(d) as.integer(format(d, "%u"))
+  today <- Sys.Date()
+  this_monday <- today - (iso_dow(today) - 1L)
+  race_monday <- race_date - (iso_dow(race_date) - 1L)
+
+  weeks <- seq.Date(this_monday, race_monday, by = "week")
+  weeks_until <- as.integer(as.numeric(race_monday - weeks) / 7)
+
+  taper_floor <- 0.45
+  rel <- ifelse(
+    weeks_until > taper_weeks,
+    1.0,
+    taper_floor + (1 - taper_floor) * weeks_until / (taper_weeks + 1L)
+  )
+  phase <- ifelse(weeks_until == 0L, "race",
+                   ifelse(weeks_until <= taper_weeks, "taper", "build"))
+
+  plan <- tibble::tibble(
+    week_start           = weeks,
+    week_end             = weeks + 6L,
+    weeks_until_race     = weeks_until,
+    phase                = phase,
+    baseline_km          = baseline_km,
+    target_km            = round(baseline_km * rel, 1),
+    relative_to_baseline = round(rel, 3)
+  )
+  attr(plan, "race_date")   <- race_date
+  attr(plan, "distance_km") <- distance_km
+  plan
+}
+
+
+#' Render a taper plan as Swedish prose
+#'
+#' @param plan Output of \code{compute_taper_plan()}.
+#' @return Character scalar (multi-line).
+#' @export
+render_taper_plan_prose <- function(plan) {
+  if (is.null(plan) || nrow(plan) == 0L) {
+    return("Ingen taper-plan att visa.")
+  }
+  race_date   <- attr(plan, "race_date")
+  distance_km <- attr(plan, "distance_km")
+  baseline    <- plan$baseline_km[[1]]
+
+  header_bits <- character(0)
+  if (!is.null(race_date)) {
+    header_bits <- c(header_bits,
+                     sprintf("Tävling: %s", format(race_date, "%a %d %b %Y")))
+  }
+  if (length(distance_km) && !is.na(distance_km)) {
+    header_bits <- c(header_bits, sprintf("%.1f km", distance_km))
+  }
+  header_bits <- c(header_bits,
+                   sprintf("baseline %.1f km/v (4v median)", baseline))
+  lines <- paste(header_bits, collapse = " — ")
+
+  for (i in seq_len(nrow(plan))) {
+    row <- plan[i, ]
+    label <- switch(row$phase,
+      race  = sprintf("Tävlingsvecka (%s)", format(row$week_start, "%d %b")),
+      taper = sprintf("Taper -%d (%s)", row$weeks_until_race,
+                       format(row$week_start, "%d %b")),
+      build = sprintf("Bygg (%s)",    format(row$week_start, "%d %b"))
+    )
+    lines <- c(lines,
+               sprintf("  %s: %.1f km (%.0f %% av baseline)",
+                       label, row$target_km,
+                       100 * row$relative_to_baseline))
+  }
+  paste(lines, collapse = "\n")
+}
+
+
+# --- Race readiness ---------------------------------------------------------
+
+# Internal: score a "stability" component where smaller-delta = better.
+# Returns 100 inside the "good" band, 0 outside the "bad" band, linear
+# between. Sign convention: `direction = "lower-is-better"` flips the
+# delta (used for resting HR, where higher than baseline is bad).
+.score_stability <- function(delta, good_threshold, bad_threshold,
+                              direction = "higher-is-better") {
+  if (is.na(delta)) return(NA_real_)
+  if (identical(direction, "lower-is-better")) delta <- -delta
+  if (delta >= -abs(good_threshold)) return(100)
+  if (delta <= -abs(bad_threshold))  return(0)
+  100 * (delta + abs(bad_threshold)) /
+        (abs(bad_threshold) - abs(good_threshold))
+}
+
+
+#' Compute race-day readiness composite score
+#'
+#' Combines four components — CTL trend, projected TSB, HRV
+#' stability, resting-HR stability — into a 0–100 score and a
+#' Swedish status label. Components without enough data are dropped
+#' from the average rather than scored as 0, so the result degrades
+#' gracefully when health data is missing.
+#'
+#' @param summaries Augmented summaries from \code{my_dbs_load()}.
+#' @param health_daily Daily health data from \code{load_health_data()};
+#'   may be \code{NULL}.
+#' @param target_date Race date. May be in the past or future.
+#' @param taper_weeks Used by the TSB projection to estimate how much
+#'   ATL will decay between today and \code{target_date}. Default 2.
+#' @return Named list with \code{target_date}, \code{days_until},
+#'   \code{components} (list of per-component scores + raw values),
+#'   \code{score} (0–100, or \code{NA} when nothing could be measured),
+#'   \code{status} ("Klar" / "Tveksam" / "Inte klar" /
+#'   "Otillräcklig data"), and \code{prose} (multi-line Swedish text).
+#' @export
+compute_race_readiness <- function(summaries, health_daily, target_date,
+                                    taper_weeks = 2L) {
+  target_date <- as.Date(target_date)
+  days_until  <- as.integer(as.numeric(target_date - Sys.Date()))
+
+  components <- list()
+
+  pmc <- if (!is.null(summaries) && nrow(summaries) > 0L) {
+    tryCatch(compute_pmc(summaries), error = function(e) NULL)
+  } else NULL
+
+  if (!is.null(pmc) && nrow(pmc) > 0L) {
+    ctl_today <- tail(pmc$ctl, 1L)
+    baseline_date <- Sys.Date() - 28L
+    # Pick the row closest to 28d ago (handles missing days in the spine)
+    idx <- which.min(abs(pmc$date - baseline_date))
+    if (length(idx) == 1L) {
+      ctl_baseline <- pmc$ctl[[idx]]
+      delta_ctl <- ctl_today - ctl_baseline
+      score <- if (delta_ctl >= -2) 100
+               else if (delta_ctl <= -10) 0
+               else (delta_ctl + 10) * 100 / 8
+      components$ctl_trend <- list(
+        score = score, raw_today = ctl_today,
+        raw_baseline = ctl_baseline, delta = delta_ctl
+      )
+    }
+
+    # TSB projection: assume taper drives ATL down so TSB rises toward
+    # 0.7 * CTL. Approximate as linear blend with weeks_until.
+    tsb_today <- tail(pmc$tsb, 1L)
+    if (days_until <= 0L) {
+      tsb_proj <- tsb_today
+    } else {
+      weeks_to <- min(days_until / 7, taper_weeks)
+      ceiling_tsb <- ctl_today * 0.3
+      tsb_proj <- tsb_today + (ceiling_tsb - tsb_today) * weeks_to /
+                                                          (taper_weeks + 1L)
+    }
+    score <- if (tsb_proj >= 5 && tsb_proj <= 15) 100
+             else if (tsb_proj >= 0 && tsb_proj <= 25) 50
+             else 0
+    components$tsb_projection <- list(
+      score = score, raw_today = tsb_today,
+      raw_projected = tsb_proj
+    )
+  }
+
+  # Health components
+  if (!is.null(health_daily) && nrow(health_daily) > 0L) {
+    .stability_component <- function(metric_name, good, bad,
+                                      direction = "higher-is-better") {
+      hd <- health_daily[health_daily$metric == metric_name, , drop = FALSE]
+      if (nrow(hd) < 7L) return(NULL)
+      hd$date <- as.Date(hd$date)
+      hd <- hd[order(hd$date), ]
+      last7  <- tail(hd$value, 7L)
+      last28 <- tail(hd$value, 28L)
+      if (sum(!is.na(last7)) < 3L || sum(!is.na(last28)) < 7L) return(NULL)
+      m7  <- mean(last7,  na.rm = TRUE)
+      m28 <- mean(last28, na.rm = TRUE)
+      delta <- m7 - m28
+      score <- .score_stability(delta, good, bad, direction = direction)
+      list(score = score, raw_today = m7, raw_baseline = m28, delta = delta)
+    }
+    hrv <- .stability_component("heart_rate_variability",
+                                 good = 0.5, bad = 3,
+                                 direction = "higher-is-better")
+    if (!is.null(hrv)) components$hrv_stability <- hrv
+    rhr <- .stability_component("resting_heart_rate",
+                                 good = 1, bad = 3,
+                                 direction = "lower-is-better")
+    if (!is.null(rhr)) components$resting_hr_stability <- rhr
+  }
+
+  if (length(components) == 0L) {
+    return(list(
+      target_date = target_date, days_until = days_until,
+      components = list(), score = NA_real_, status = "Otillräcklig data",
+      prose = paste0("Inte tillräckligt med data för att bedöma ",
+                     "tävlingsberedskap.")
+    ))
+  }
+
+  scores <- vapply(components, function(c) c$score, numeric(1))
+  total_score <- mean(scores, na.rm = TRUE)
+  status <- if (is.na(total_score)) "Otillräcklig data"
+            else if (total_score >= 70) "Klar"
+            else if (total_score >= 40) "Tveksam"
+            else "Inte klar"
+
+  prose <- .render_race_readiness_prose(components, total_score, status,
+                                         days_until)
+
+  list(
+    target_date = target_date, days_until = days_until,
+    components  = components,  score = total_score,
+    status      = status,      prose = prose
+  )
+}
+
+
+.render_race_readiness_prose <- function(components, total_score, status,
+                                          days_until) {
+  hdr <- if (days_until > 0L) {
+    sprintf("Tävlingsberedskap (%d dagar kvar): %s — %d/100",
+            days_until, status, round(total_score))
+  } else if (days_until == 0L) {
+    sprintf("Tävlingsberedskap (idag): %s — %d/100",
+            status, round(total_score))
+  } else {
+    sprintf("Tävlingsberedskap (%d dagar sedan): %s — %d/100",
+            abs(days_until), status, round(total_score))
+  }
+
+  lines <- character(0)
+  if (!is.null(components$ctl_trend)) {
+    c0 <- components$ctl_trend
+    arrow <- if (c0$delta >= 1) "↑" else if (c0$delta <= -1) "↓" else "→"
+    lines <- c(lines, sprintf(
+      "  CTL (fitness): %.0f → %.0f %s (delta %+.1f, 28d)",
+      c0$raw_baseline, c0$raw_today, arrow, c0$delta
+    ))
+  }
+  if (!is.null(components$tsb_projection)) {
+    c0 <- components$tsb_projection
+    lines <- c(lines, sprintf(
+      "  TSB (form): nu %+.1f, projektion på tävlingsdagen %+.1f",
+      c0$raw_today, c0$raw_projected
+    ))
+  }
+  if (!is.null(components$hrv_stability)) {
+    c0 <- components$hrv_stability
+    lines <- c(lines, sprintf(
+      "  HRV: 7d %.1f vs 28d %.1f (%+.1f ms)",
+      c0$raw_today, c0$raw_baseline, c0$delta
+    ))
+  }
+  if (!is.null(components$resting_hr_stability)) {
+    c0 <- components$resting_hr_stability
+    lines <- c(lines, sprintf(
+      "  Vilopuls: 7d %.0f vs 28d %.0f (%+.1f bpm)",
+      c0$raw_today, c0$raw_baseline, c0$delta
+    ))
+  }
+
+  paste(c(hdr, lines), collapse = "\n")
+}
+
+
+#' Render a race readiness assessment as Swedish prose
+#'
+#' Convenience wrapper around the \code{prose} field of
+#' \code{compute_race_readiness()}.
+#'
+#' @param assessment Output of \code{compute_race_readiness()}.
+#' @return Character scalar (multi-line).
+#' @export
+render_race_readiness_prose <- function(assessment) {
+  if (is.null(assessment) || is.null(assessment$prose)) {
+    return("Ingen bedömning att visa.")
+  }
+  assessment$prose
+}
