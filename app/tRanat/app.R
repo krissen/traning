@@ -25,6 +25,7 @@ source("pages/page_health.R",         local = TRUE)
 source("pages/page_performance.R",    local = TRUE)
 source("pages/page_race.R",           local = TRUE)
 source("pages/page_sport_mix.R",      local = TRUE)
+source("pages/page_import.R",         local = TRUE)
 
 # --- Theme ---
 theme <- bs_theme(
@@ -93,6 +94,9 @@ ui <- page_navbar(
   ),
   nav_panel("T\u00e4vling",
     page_race_ui("race")
+  ),
+  nav_panel("Import",
+    page_import_ui("import")
   )
 )
 
@@ -119,6 +123,7 @@ server <- function(input, output, session) {
   page_performance_server("performance", summaries, myruns, health_daily,
                            decoupling_data, dates, is_mobile, sport)
   page_race_server("race", summaries, dates, is_mobile)
+  page_import_server("import")
 }
 
 shinyApp(ui, server)
