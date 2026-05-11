@@ -210,7 +210,12 @@ rm(my_templist)
 # command (--pmc, --acwr, --ef, --decoupling, ...) operates on the same
 # enriched view. The upgrade is persisted so subsequent invocations
 # (and other processes reading the same cache) skip the augment step.
-if (!any(grepl("^garmin_", names(summaries))) && dir.exists(gc_json_dir)) {
+if (!("garmin_matched" %in% names(summaries)) && dir.exists(gc_json_dir)) {
+  # Presence of `garmin_matched` is the canonical "this cache has been
+  # augmented" signal. augment_summaries() creates it even when the
+  # garmin_data tibble is empty, so this block fires exactly once per
+  # cache regardless of whether the gconnect directory contains JSON
+  # files yet.
   message("Auto-upgrading cache: lägger till garmin_*-kolumner från Garmin JSON …")
   garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
                            error = function(e) {
