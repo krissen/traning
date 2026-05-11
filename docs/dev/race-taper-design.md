@@ -158,14 +158,16 @@ A list:
   `R/advanced_metrics.R`. Sibling renderers
   (`render_taper_plan_prose()`, `render_race_readiness_prose()`) in
   the same file.
-- **CLI:** `Rscript inst/cli.R --race-date YYYY-MM-DD --race-distance KM
-  [--taper-weeks N]` produces both the plan table and the readiness
-  card.
 - **MCP:** `get_taper_plan(race_date, distance_km, taper_weeks)` and
-  `get_race_readiness(target_date)` in `python/traning_cli/mcp/tools.py`.
-- **Shiny:** replace the placeholder in
-  `app/tRanat/pages/page_race.R` with a date input + distance input +
-  cards showing the plan tibble and the readiness prose.
+  `get_race_readiness(target_date, taper_weeks)` in
+  `python/traning_cli/mcp/tools.py`.
+- **Shiny:** `app/tRanat/pages/page_race.R` replaces the Phase-5d
+  placeholder with a date input + distance input + cards showing the
+  plan tibble and the readiness prose.
+- **CLI:** intentionally deferred — the Python CLI doesn't have a
+  `race` group today and the MCP + Shiny surfaces cover the day-to-
+  day need. A future task can wire `traning race plan` / `traning
+  race readiness` when Phase 5e starts.
 
 ## Out of scope (Phase 5e+)
 

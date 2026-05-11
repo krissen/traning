@@ -314,8 +314,8 @@ def get_taper_plan(
     Args:
         race_date: ISO date of the race (YYYY-MM-DD). Must be on or
             after today.
-        distance_km: Race distance in km. Echoed back in the
-            payload; does not change the volume curve.
+        distance_km: Race distance in km. Surfaced in the response's
+            `_meta` block; does not change the volume curve.
         taper_weeks: Number of reduced-volume weeks before the race
             (race week itself excluded). 1–4, default 2.
     """
@@ -335,7 +335,19 @@ def get_taper_plan(
                   "taper_weeks": int(taper_weeks)}
     if distance_km is not None:
         args["distance_km"] = float(distance_km)
-    return r_report("compute_taper_plan", args)
+    out = r_report("compute_taper_plan", args)
+    # The R tibble carries race_date / distance_km only as
+    # attributes, which jsonlite drops. Re-surface them in _meta so
+    # the MCP client can label the plan without re-deriving from the
+    # request.
+    if isinstance(out, dict):
+        meta = dict(out.get("_meta", {}))
+        meta["race_date"] = rd.isoformat()
+        if distance_km is not None:
+            meta["distance_km"] = float(distance_km)
+        meta["taper_weeks"] = int(taper_weeks)
+        out["_meta"] = meta
+    return out
 
 
 def get_race_readiness(
