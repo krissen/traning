@@ -203,7 +203,7 @@
 #' Generate qualitative post-workout prose for the latest running session
 #'
 #' Replaces the previous quantitative one-liner. Output is Swedish and
-#' suitable for a push notification body (1--3 short sentences).
+#' suitable for a push notification body (1--4 short sentences).
 #'
 #' Per-pass prose is currently scoped to running. Other sports fall back
 #' to a sport-aware quantitative line via \code{.session_prose_fallback()}
@@ -217,21 +217,39 @@
 #'   Z3 count and PMC delta lookup.
 #' @param hr_max Optional HRmax. NULL = auto-detect via \code{get_hr_max()}.
 #' @param hr_rest Optional HRrest. NULL = compute_pmc default.
-#' @param include_tsb Whether to append a TSB-context line if PMC can be
-#'   computed (default TRUE).
+#' @param include_tsb Whether to append a state line (TSB + readiness
+#'   blend) if PMC can be computed (default TRUE).
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}. NULL = auto-load. Used to derive the
+#'   morning readiness verdict so Gul/Röd days don't get an upbeat
+#'   "Form på topp" override.
+#' @param readiness Optional pre-built readiness list (with elements
+#'   \code{status}, \code{score}, ...). Used by tests to inject a
+#'   verdict without going through \code{health_insight_readiness()}.
+#' @param trigger_source Which source the notification is reacting to.
+#'   \code{"garmin"} (default) prefers TCX rows when picking the latest
+#'   session — relevant because Garmin-trigger imports can pull in HAE
+#'   bursts whose tail() can mask the actual Garmin run. \code{"any"}
+#'   keeps all sources and falls back to whatever has the latest
+#'   timestamp.
 #' @return A character string with the full prose. Returns
 #'   \code{"Ingen data."} when summaries is empty for the sport.
 #' @export
 session_prose <- function(summaries, sport = "running", on_date = NULL,
                            hr_max = NULL, hr_rest = NULL,
-                           include_tsb = TRUE) {
+                           include_tsb = TRUE,
+                           health_daily = NULL,
+                           readiness = NULL,
+                           trigger_source = "garmin") {
   if (is.null(summaries) || nrow(summaries) == 0) return("Ingen data.")
 
   runs <- .filter_sport(summaries, sport)
   if (nrow(runs) == 0) return("Ingen data.")
 
-  runs <- runs %>% dplyr::arrange(.data$sessionStart)
-  latest <- utils::tail(runs, 1)
+  # Pick latest with TCX priority when triggered from Garmin. Otherwise
+  # fall through to plain tail() behaviour. Returns NULL on empty.
+  latest <- .session_latest_garmin(runs, trigger_source = trigger_source)
+  if (is.null(latest) || nrow(latest) == 0) return("Ingen data.")
   if (is.null(on_date)) on_date <- as.Date(latest$sessionStart[1])
 
   # Non-running sports → legacy quantitative line.
@@ -253,6 +271,33 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
   l2 <- .session_line_functional_recovery(cls)
   if (length(l2) > 0) parts <- c(parts, l2)
 
+  # State line: blends morning-readiness verdict with TSB band. Shares
+  # the .day_state_line() helper from R/day_summary.R so a fix to the
+  # narrative logic propagates to both per-pass and 21:30 summaries.
+  # See research/_analys/tsb-narrative__implications.md §Caveats for
+  # why readiness must override TSB phrasing on Gul/Röd days.
+  if (isTRUE(include_tsb)) {
+    if (is.null(readiness) && is.null(health_daily)) {
+      health_daily <- tryCatch(load_health_data(),
+                                error = function(e) NULL)
+    }
+    state <- tryCatch(
+      .day_state_line(summaries, health_daily, on_date,
+                       hr_max = hr_max, hr_rest = hr_rest,
+                       readiness = readiness),
+      error = function(e) NULL
+    )
+    if (!is.null(state)) parts <- c(parts, state)
+  }
+
+  # "Tidigare idag" — other passes the user has logged today, with the
+  # classified session removed. Filters out HAE autopause-noise (<1 km
+  # AND <10 min). Returns NULL when there's nothing notable to add.
+  ctx <- .session_today_context_line(
+    .session_other_today(summaries, latest, on_date)
+  )
+  if (!is.null(ctx)) parts <- c(parts, ctx)
+
   # Rolling-context triggers (Z2-trap >20%, Z3-count ≥2/week).
   if (identical(cls$zone, "Z2")) {
     z2 <- session_z2_fraction(summaries, on_date = on_date, days = 90)
@@ -266,25 +311,81 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
     if (!is.null(extra)) parts <- c(parts, extra)
   }
 
-  # TSB / CTL context — optional and best-effort. compute_pmc() is the
-  # heaviest call here; wrap in tryCatch so a TRIMP problem (missing HR
-  # data, sparse history) cannot break the notification.
-  if (isTRUE(include_tsb)) {
-    tsb_line <- tryCatch({
-      pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
-                         sport = "running")
-      if (nrow(pmc) > 0) {
-        today_idx <- which(pmc$date == on_date)
-        prev_idx  <- which(pmc$date == on_date - 1)
-        pmc_today <- if (length(today_idx) > 0) pmc[today_idx[1], ] else NULL
-        pmc_prev  <- if (length(prev_idx) > 0)  pmc[prev_idx[1],  ] else NULL
-        .line_tsb_context(pmc_today, pmc_prev)
-      } else NULL
-    }, error = function(e) NULL)
-    if (!is.null(tsb_line)) parts <- c(parts, tsb_line)
-  }
-
   paste(parts, collapse = " ")
+}
+
+# ---- Latest-pass selection -----------------------------------------------
+
+# Pick latest session with optional Garmin (TCX) priority.
+#
+# When the Garmin trigger fires it can sweep in a burst of newly-
+# deduped HAE workouts whose timestamps happen to fall after the
+# actual Garmin run. Without this filter the post-workout prose would
+# describe a stray HAE walking segment rather than the run the
+# notification is reacting to.
+#
+# Falls back to "any source" when no TCX is present so an HAE-only
+# day still gets prose instead of "Ingen data.".
+.session_latest_garmin <- function(runs, trigger_source = "garmin") {
+  if (is.null(runs) || nrow(runs) == 0) return(NULL)
+  filtered <- runs
+  if (identical(trigger_source, "garmin") &&
+      "source" %in% names(runs)) {
+    src <- runs$source
+    filtered <- runs[is.na(src) | src == "tcx", , drop = FALSE]
+    if (nrow(filtered) == 0) filtered <- runs  # HAE-only fallback
+  }
+  filtered <- filtered %>% dplyr::arrange(.data$sessionStart)
+  utils::tail(filtered, 1)
+}
+
+# ---- "Tidigare idag" context ---------------------------------------------
+
+# Return sessions that share the date with `latest` but are not the
+# latest session itself. Filters out HAE autopause noise (very short
+# segments) so the context line doesn't list 8 cycling micro-segments.
+.session_other_today <- function(summaries, latest, on_date,
+                                  min_km = 1.0, min_min = 10) {
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    return(summaries[0, , drop = FALSE])
+  }
+  on_date <- as.Date(on_date)
+  latest_ts <- latest$sessionStart[1]
+
+  others <- summaries %>%
+    dplyr::filter(as.Date(.data$sessionStart) == on_date,
+                  .data$sessionStart != latest_ts)
+  if (nrow(others) == 0) return(others)
+
+  km  <- as.numeric(others$distance) / 1000
+  min <- as.numeric(others$durationMoving, units = "mins")
+  is_tcx <- if ("source" %in% names(others)) {
+    is.na(others$source) | others$source == "tcx"
+  } else rep(TRUE, nrow(others))
+
+  # Keep all TCX (Garmin) sessions verbatim. For HAE, require either
+  # ≥1 km OR ≥10 min so autopaused micro-segments drop out.
+  keep <- is_tcx | (km >= min_km | min >= min_min)
+  others[keep, , drop = FALSE]
+}
+
+# Format the other-passes-today line. Reuses .day_per_sport() so the
+# sport ordering / wording matches what day_summary_prose() produces.
+.session_today_context_line <- function(other_today) {
+  if (is.null(other_today) || nrow(other_today) == 0) return(NULL)
+  per <- .day_per_sport(other_today)
+  if (nrow(per) == 0) return(NULL)
+  parts <- vapply(seq_len(nrow(per)), function(i) {
+    label <- tolower(.sport_label_sv(per$sport[i]))
+    n  <- per$n[i]
+    km <- per$km[i]
+    mn <- per$min[i]
+    base <- if (km >= 1) sprintf("%s %.1f km", label, km)
+             else if (mn > 0) sprintf("%s %d min", label, round(mn))
+             else label
+    if (n > 1) sprintf("%s (%d pass)", base, n) else base
+  }, character(1))
+  paste0("Tidigare idag: ", paste(parts, collapse = " + "), ".")
 }
 
 # Compose the optional second line with recovery hint + Z2/Z3 triggers.
