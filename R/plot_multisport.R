@@ -43,9 +43,13 @@
 
   # Resolve hr_max from the *unfiltered* input before any date/sport
   # narrowing so the TRIMP scale is comparable across windows.
+  # sport = "all" so users with no running history still get a
+  # data-driven estimate; restricting to "running" would silently
+  # fall through to env/default for cycling-only / strength-only
+  # datasets.
   trimp_hr_max <- if (metric == "trimp") {
     if (is.null(hr_max)) {
-      tryCatch(get_hr_max(summaries, sport = "running"),
+      tryCatch(get_hr_max(summaries, sport = "all"),
                error = function(e) NULL)
     } else hr_max
   } else NULL
@@ -89,7 +93,10 @@
   if (nrow(df) == 0) return(numeric(0))
   hr_obs <- suppressWarnings(as.numeric(df$avgHeartRateMoving))
   dur    <- suppressWarnings(as.numeric(df$durationMoving, units = "mins"))
-  ok <- !is.na(hr_obs) & hr_obs > 0 & !is.na(dur) & dur > 10
+  date_v <- suppressWarnings(as.Date(df$sessionStart))
+  ok <- !is.na(hr_obs) & hr_obs > 0 &
+        !is.na(dur)    & dur > 10 &
+        !is.na(date_v)
 
   if (is.null(hr_max)) {
     # Last-resort fallback: observed max over the frame. Documented
@@ -99,9 +106,18 @@
   if (!is.finite(hr_max) || hr_max <= 0) {
     return(rep(NA_real_, nrow(df)))
   }
-  hr_rest <- tryCatch(get_hr_rest(as.Date(df$sessionStart)),
-                       error = function(e) rep(50, nrow(df)))
-  if (length(hr_rest) != nrow(df)) hr_rest <- rep(50, nrow(df))
+
+  # Look up HRrest only for rows that already passed the OK filter —
+  # otherwise an NA sessionStart could make get_hr_rest error and
+  # the tryCatch fallback would replace the entire vector with a
+  # fixed 50, contaminating all valid sessions' TRIMP scores.
+  hr_rest <- rep(NA_real_, nrow(df))
+  if (any(ok)) {
+    looked_up <- tryCatch(get_hr_rest(date_v[ok]),
+                          error = function(e) rep(50, sum(ok)))
+    if (length(looked_up) != sum(ok)) looked_up <- rep(50, sum(ok))
+    hr_rest[ok] <- looked_up
+  }
 
   delta <- (hr_obs - hr_rest) / (hr_max - hr_rest)
   delta <- pmax(0, pmin(1, delta))
@@ -144,6 +160,10 @@
 #' @param min_value Numeric. Drop (period, sport) cells whose summed
 #'   value is below this threshold (default 0.1). Units follow
 #'   \code{metric}.
+#' @param hr_max Numeric or NULL. Physiological max HR used by the
+#'   TRIMP path. NULL (default) resolves via \code{get_hr_max()} on
+#'   the full input so the scale stays comparable across windows.
+#'   Ignored for non-TRIMP metrics.
 #' @return ggplot2 object.
 #' @export
 plot_sport_mix <- function(summaries, period = "month",
