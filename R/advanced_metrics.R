@@ -1088,30 +1088,43 @@ load_decoupling <- function(summaries, myruns,
 #' curve. Median (not mean) makes a single spike week's km not pull the
 #' whole schedule above what the athlete is actually maintaining.
 #'
+#' A complete ISO window is built first and any week without a run
+#' contributes 0 to the median — otherwise a 3-on / 1-off pattern
+#' would silently look like steady training and inflate the taper
+#' targets.
+#'
 #' @keywords internal
 .recent_baseline_km <- function(summaries, lookback_weeks = 4L) {
   if (is.null(summaries) || nrow(summaries) == 0L) return(0)
   runs <- .filter_sport(summaries, "running")
-  if (nrow(runs) == 0L) return(0)
 
+  lookback_weeks <- as.integer(lookback_weeks)
   iso_dow <- function(d) as.integer(format(d, "%u"))
+  iso_week_key <- function(d) paste0(format(d, "%G"), "-W", format(d, "%V"))
+
   today <- Sys.Date()
   this_monday <- today - (iso_dow(today) - 1L)
-  start <- this_monday - as.integer(lookback_weeks) * 7L
+  start <- this_monday - lookback_weeks * 7L
 
-  d <- as.Date(runs$sessionStart)
-  recent <- runs[!is.na(d) & d >= start & d < this_monday, , drop = FALSE]
-  if (nrow(recent) == 0L) return(0)
+  # Spine: one entry per ISO week in the window. A "no-run" week
+  # contributes 0 to the median through the spine, not by being
+  # dropped from the grouping.
+  week_starts <- start + 7L * (seq_len(lookback_weeks) - 1L)
+  spine_keys  <- iso_week_key(week_starts)
 
-  recent_d <- as.Date(recent$sessionStart)
-  iso_week <- paste0(format(recent_d, "%G"), "-W",
-                     format(recent_d, "%V"))
-  km_per_week <- tapply(
-    as.numeric(recent$distance) / 1000,
-    iso_week,
-    function(x) sum(x, na.rm = TRUE)
-  )
-  median(km_per_week, na.rm = TRUE)
+  km_per_week <- setNames(rep(0, lookback_weeks), spine_keys)
+  if (nrow(runs) > 0L) {
+    d <- as.Date(runs$sessionStart)
+    recent <- runs[!is.na(d) & d >= start & d < this_monday, , drop = FALSE]
+    if (nrow(recent) > 0L) {
+      keys <- iso_week_key(as.Date(recent$sessionStart))
+      km   <- as.numeric(recent$distance) / 1000
+      observed <- tapply(km, keys, function(x) sum(x, na.rm = TRUE))
+      hit <- intersect(names(observed), names(km_per_week))
+      km_per_week[hit] <- observed[hit]
+    }
+  }
+  median(km_per_week)
 }
 
 

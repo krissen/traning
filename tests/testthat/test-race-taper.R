@@ -73,6 +73,34 @@ test_that("compute_taper_plan rejects invalid taper_weeks", {
 })
 
 
+test_that("baseline_km counts zero-run weeks toward the median", {
+  # Two recent ISO weeks have runs (30 km / 30 km), the other two
+  # have no running at all. Median over [30, 30, 0, 0] is 15.
+  # If the baseline silently dropped no-run weeks the median would
+  # come out 30 instead and a taper schedule for an athlete
+  # recovering from a layoff would aim 2× too high.
+  iso_dow <- function(d) as.integer(format(d, "%u"))
+  today <- Sys.Date()
+  end <- today - iso_dow(today)
+  # Only place runs in the two most recent weeks (i = 3, 4 of 4).
+  rows <- list()
+  for (i in c(3L, 4L)) {
+    wk_start <- end - (4L - i + 1L) * 7L + 1L
+    d <- wk_start + c(0L, 2L, 4L, 6L)
+    rows[[length(rows) + 1L]] <- tibble::tibble(
+      sessionStart   = as.POSIXct(paste0(d, " 08:00:00"), tz = "UTC"),
+      distance       = 7.5 * 1000,
+      sport          = "running",
+      durationMoving = as.difftime(rep(45, 4), units = "mins"),
+      duration       = as.difftime(rep(45, 4), units = "mins")
+    )
+  }
+  s <- dplyr::bind_rows(rows)
+  plan <- compute_taper_plan(s, Sys.Date() + 14L, taper_weeks = 2L)
+  expect_equal(plan$baseline_km[[1]], 15, tolerance = 0.1)
+})
+
+
 test_that("compute_taper_plan baseline_km is the 4-week median, not mean", {
   # Build a fixture with three 30-km weeks and one 80-km spike — median
   # is 30, mean is 42.5. Confirm the plan uses the median so a single
