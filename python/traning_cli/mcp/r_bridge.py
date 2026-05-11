@@ -75,6 +75,8 @@ _KNOWN_FUNCTIONS = frozenset({
     "health_insight_readiness", "recent_data_dump", "latest_known_metrics",
     # Multi-sport plots
     "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
+    # Phase 5d race tools
+    "compute_taper_plan", "compute_race_readiness",
 })
 
 

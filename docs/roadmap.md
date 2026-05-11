@@ -1,5 +1,21 @@
 # tRäning — Roadmap
 
+## Service hardening and ingress control
+
+**Goal:** Make tRanat private-by-default on kailash, with one explicit ingress
+layer for the web UI and Tailscale-only binds for machine-to-machine services.
+
+**Deliverables:**
+- Bind `traning-shiny` to loopback and publish it only through reverse proxy.
+- Bind `traning-receiver` and `traning-vayu` to Tailscale instead of
+  `0.0.0.0`.
+- Keep the web UI on its own host name (`traning.niemi.cc`) while restricting
+  access to trusted networks only.
+- Document the supported kailash deployment so the host can be rebuilt from
+  repo state plus secrets.
+
+---
+
 ## Phase 5d: Taper planning & race analysis
 
 **Goal:** Answer "I have a race on date X — help me prepare."

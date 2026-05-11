@@ -360,6 +360,28 @@ Insight always ends on a positive note: faster → longer → monthly total.
 
 ---
 
+## 2026-05-11 — Service hardening for kailash ingress
+
+### Deployment defaults (`python/traning_cli/server/deploy/`)
+- `traning-shiny.service` now reads `TRANING_SHINY_HOST` /
+  `TRANING_SHINY_PORT` from `/etc/traning/env` so the dashboard can stay on
+  loopback behind a reverse proxy.
+- `traning-receiver.service` now reads `TRANING_RECEIVER_HOST` /
+  `TRANING_RECEIVER_PORT` from `/etc/traning/env` instead of binding to
+  `0.0.0.0`.
+- `traning-vayu.service` now relies on `VAYU_HOST` / `VAYU_PORT` from the env
+  file rather than hardcoding a public bind in the unit.
+- `traning-env.example` documents the kailash default: Shiny on loopback,
+  receiver + Vayu on the Tailscale IP.
+
+### Operations docs
+- `docs/user/pipeline-setup.md` now points Health Auto Export and ad-hoc curls
+  at kailash's Tailscale IP for the receiver.
+- `docs/roadmap.md` gained an ingress-hardening item so the deployment model is
+  explicit in the repo, not only in host-local config.
+
+---
+
 ## 2026-04-06 — Phase 5b: Automated health and training data pipeline
 
 ### FastAPI receiver (`python/traning_cli/server/`)

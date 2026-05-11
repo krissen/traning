@@ -299,6 +299,132 @@ _SPORT_MIX_PERIODS = ("month", "week", "year")
 _SPORT_MIX_METRICS = ("distance", "duration", "trimp")
 
 
+def get_taper_plan(
+    race_date: str,
+    distance_km: Optional[float] = None,
+    taper_weeks: int = 2,
+) -> dict:
+    """Weekly km schedule from this Monday through race week.
+
+    Returns the per-week target volumes for the build / taper / race
+    phases, anchored on the median of the last four complete ISO
+    weeks of running. See docs/dev/race-taper-design.md for the
+    algorithm.
+
+    Args:
+        race_date: ISO date of the race (YYYY-MM-DD). Must be on or
+            after today.
+        distance_km: Race distance in km. Surfaced in the response's
+            `_meta` block; does not change the volume curve.
+        taper_weeks: Number of reduced-volume weeks before the race
+            (race week itself excluded). 1–4, default 2.
+    """
+    try:
+        rd = date.fromisoformat(race_date)
+    except ValueError as e:
+        return {"type": "error",
+                "message": f"race_date must be YYYY-MM-DD: {e}"}
+    if rd < date.today():
+        return {"type": "error",
+                "message": f"race_date must be today or later: {race_date}"}
+    if not (1 <= taper_weeks <= 4):
+        return {"type": "error",
+                "message": "taper_weeks must be between 1 and 4"}
+
+    args: dict = {"race_date": rd.isoformat(),
+                  "taper_weeks": int(taper_weeks)}
+    if distance_km is not None:
+        args["distance_km"] = float(distance_km)
+    out = r_report("compute_taper_plan", args)
+    # The R tibble carries race_date / distance_km / the insufficient-
+    # baseline marker only as attributes, which jsonlite drops.
+    # Re-surface them in _meta so the MCP client can label the plan
+    # and explain a zero-row payload without re-deriving anything
+    # from the request.
+    if isinstance(out, dict):
+        meta = dict(out.get("_meta", {}))
+        meta["race_date"] = rd.isoformat()
+        if distance_km is not None:
+            meta["distance_km"] = float(distance_km)
+        meta["taper_weeks"] = int(taper_weeks)
+        summary = out.get("summary") or {}
+        if summary.get("record_count") == 0:
+            meta["insufficient_baseline"] = True
+            meta["explanation"] = (
+                "Ingen löpning de senaste 4 veckorna — taper-planen "
+                "behöver en baseline. Logga några pass och försök igen."
+            )
+        out["_meta"] = meta
+    return out
+
+
+def get_race_readiness(
+    target_date: str,
+    taper_weeks: int = 2,
+) -> dict:
+    """Composite race-day readiness score with Swedish prose.
+
+    Fuses CTL trend (fitness), projected TSB (form), HRV stability
+    and resting-HR stability into a 0–100 score and a status label
+    ("Klar" / "Tveksam" / "Inte klar"). Missing health data lowers
+    the number of contributing components rather than the score
+    itself.
+
+    Args:
+        target_date: ISO date of the race (YYYY-MM-DD).
+        taper_weeks: How many reduced-volume weeks the TSB
+            projection should assume. 1–4, default 2.
+    """
+    try:
+        td = date.fromisoformat(target_date)
+    except ValueError as e:
+        return {"type": "error",
+                "message": f"target_date must be YYYY-MM-DD: {e}"}
+    if not (1 <= taper_weeks <= 4):
+        return {"type": "error",
+                "message": "taper_weeks must be between 1 and 4"}
+
+    args: dict = {"target_date": td.isoformat(),
+                  "taper_weeks": int(taper_weeks)}
+    raw = _run_r("compute_race_readiness", args)
+    # r_report() assumes tabular data; compute_race_readiness returns
+    # a structured list (score / status / prose / components) so we
+    # hand-roll a consistent envelope that surfaces the key fields in
+    # `summary` instead of burying them in a dict-shaped `details`.
+    if raw.get("type") == "error":
+        return {
+            "schema_version": "1.0",
+            "summary": {"status": "error",
+                         "message": raw.get("message", "")},
+            "details": {},
+            "_meta": {
+                "func": "compute_race_readiness",
+                "query_date": datetime.now().isoformat(),
+                "target_date": td.isoformat(),
+                "taper_weeks": int(taper_weeks),
+            },
+        }
+    data = raw.get("data", {}) or {}
+    return {
+        "schema_version": "1.0",
+        "summary": {
+            "status": "ok",
+            "readiness_score": data.get("score"),
+            "readiness_status": data.get("status"),
+            "days_until": data.get("days_until"),
+            "target_date": data.get("target_date"),
+            "prose": data.get("prose"),
+        },
+        "details": data.get("components", {}),
+        "_meta": {
+            "func": "compute_race_readiness",
+            "query_date": datetime.now().isoformat(),
+            "target_date": td.isoformat(),
+            "taper_weeks": int(taper_weeks),
+        },
+    }
+
+
 def get_sport_mix(
     period: str = "month",
     metric: str = "distance",

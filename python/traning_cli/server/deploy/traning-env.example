@@ -15,3 +15,12 @@ HA_TOKEN=
 
 # Optional
 TRANING_OPEN=false
+
+# Bind policy on kailash. The web UI stays on loopback behind Caddy, while
+# machine-to-machine services listen only on Tailscale by default.
+TRANING_RECEIVER_HOST=100.93.126.68
+TRANING_RECEIVER_PORT=8421
+TRANING_SHINY_HOST=127.0.0.1
+TRANING_SHINY_PORT=8423
+VAYU_HOST=100.93.126.68
+VAYU_PORT=8422

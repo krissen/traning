@@ -9,7 +9,7 @@ User=krisse
 EnvironmentFile=/etc/traning/env
 Environment=R_LIBS_USER=/home/krisse/R/library
 WorkingDirectory=/home/krisse/dev/traning
-ExecStart=/usr/bin/Rscript -e "shiny::runApp('app/tRanat', host='0.0.0.0', port=8423)"
+ExecStart=/usr/bin/Rscript -e "shiny::runApp('app/tRanat', host='${TRANING_SHINY_HOST}', port=${TRANING_SHINY_PORT})"
 Restart=on-failure
 RestartSec=10
 StandardOutput=journal
