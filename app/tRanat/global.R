@@ -31,7 +31,7 @@ rm(my_templist)
 if (dir.exists(gc_json_dir) &&
     !any(grepl("^garmin_", names(summaries)))) {
   message("global.R: cache saknar garmin_*-kolumner — augmenterar ",
-          "som fallback. Kör cli.R --import för permanent fix.")
+          "som fallback. Kör `traning import all` för permanent fix.")
   garmin_data <- tryCatch(
     load_garmin_json(gc_json_dir),
     error = function(e) {

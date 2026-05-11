@@ -267,7 +267,8 @@ import_garmin_json <- function(gc_dir) {
 #'   Rows are preserved in their original order.
 #' @export
 augment_summaries <- function(summaries, garmin_data,
-                               tolerance_secs = 120) {
+                               tolerance_secs = 120,
+                               force = FALSE) {
   if (nrow(garmin_data) == 0) {
     message("garmin_data är tom — inga Garmin-kolumner läggs till.")
     return(summaries)
@@ -275,10 +276,6 @@ augment_summaries <- function(summaries, garmin_data,
   if (!("sessionStart" %in% names(summaries))) {
     stop("summaries saknar kolumnen 'sessionStart'.")
   }
-
-  # Work in UTC throughout
-  session_utc <- as.POSIXct(summaries$sessionStart, tz = "UTC")
-  gc_ts       <- as.POSIXct(garmin_data$gc_timestamp_utc, tz = "UTC")
 
   garmin_cols <- c(
     "garmin_maxHR", "garmin_vO2MaxValue",
@@ -288,14 +285,43 @@ augment_summaries <- function(summaries, garmin_data,
     "garmin_averageTemperature", "garmin_minHR"
   )
 
-  # Pre-allocate result columns as NA
-  result_cols <- lapply(garmin_cols, function(cn) rep(NA_real_, nrow(summaries)))
-  names(result_cols) <- garmin_cols
+  # Reset existing garmin_* columns when explicitly forced (e.g. when
+  # garmin_data has been refreshed and the caller wants every row
+  # re-matched). Default is incremental: previously-augmented rows are
+  # left alone so import time scales O(n_new_rows * n_garmin_rows)
+  # rather than the original O(n_total * n_garmin_rows) on every call.
+  if (force) {
+    for (cn in garmin_cols) summaries[[cn]] <- NA_real_
+  } else {
+    for (cn in garmin_cols) {
+      if (!cn %in% names(summaries)) summaries[[cn]] <- NA_real_
+    }
+  }
+
+  # Pick the subset of rows that still need augmentation. A row is
+  # "needs_aug" when every garmin_* column is NA — i.e. it has not
+  # been touched by a prior augment_summaries call (or was reset by
+  # force=TRUE above). Rows where at least one garmin_* value exists
+  # are assumed already matched (or definitively unmatchable) and
+  # skipped.
+  garmin_block <- summaries[, garmin_cols, drop = FALSE]
+  na_counts <- rowSums(!is.na(garmin_block))
+  needs_aug <- na_counts == 0L
+
+  if (!any(needs_aug)) {
+    message("Garmin JSON: alla rader redan augmenterade — inget att göra.")
+    return(summaries)
+  }
+
+  # Work in UTC throughout
+  session_utc <- as.POSIXct(summaries$sessionStart, tz = "UTC")
+  gc_ts       <- as.POSIXct(garmin_data$gc_timestamp_utc, tz = "UTC")
 
   matched_count   <- 0L
   ambiguous_count <- 0L
+  candidate_idx   <- which(needs_aug)
 
-  for (i in seq_len(nrow(summaries))) {
+  for (i in candidate_idx) {
     s_ts <- session_utc[[i]]
     if (is.na(s_ts)) next
 
@@ -312,34 +338,23 @@ augment_summaries <- function(summaries, garmin_data,
     matched_count <- matched_count + 1L
     j <- within_tol[[1L]]
     for (cn in garmin_cols) {
-      result_cols[[cn]][[i]] <- garmin_data[[cn]][[j]]
+      summaries[[cn]][[i]] <- garmin_data[[cn]][[j]]
     }
   }
 
   if (ambiguous_count > 0L) {
     warning(ambiguous_count,
-            " aktivitet(er) matchades mot fler \u00e4n en JSON-fil;",
-            " n\u00e4rmaste tidsstampel anv\u00e4ndes.",
+            " aktivitet(er) matchades mot fler än en JSON-fil;",
+            " närmaste tidsstampel användes.",
             call. = FALSE)
   }
 
   message(
-    "Garmin JSON: ", matched_count, " av ", nrow(summaries),
-    " aktiviteter matchade (tolerans \u00b1", tolerance_secs, " s)."
+    "Garmin JSON: ", matched_count, " av ", length(candidate_idx),
+    " kandidater matchade (tolerans ±", tolerance_secs, " s)."
   )
 
-  # Drop pre-existing garmin_* columns so re-augmentation overwrites
-  # rather than appends suffixed duplicates via bind_cols(). Without
-  # this guard a second call would leave the old (possibly NA-only)
-  # garmin_maxHR alongside a fresh garmin_maxHR...1, and downstream
-  # code keeps reading the stale original. Make augment_summaries()
-  # idempotent so import-time and load-time augmentation can both
-  # call it without bookkeeping.
-  if (any(grepl("^garmin_", names(summaries)))) {
-    summaries <- summaries[, !grepl("^garmin_", names(summaries)),
-                           drop = FALSE]
-  }
-  dplyr::bind_cols(summaries, tibble::as_tibble(result_cols))
+  summaries
 }
 
 #' Load Garmin JSON data with incremental caching
