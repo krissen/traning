@@ -12,13 +12,20 @@ page_sport_mix_ui <- function(id) {
       bslib::card_header("Sport-mix per period"),
       bslib::card_body(
         bslib::layout_columns(
-          col_widths = bslib::breakpoints(sm = 12, md = 4),
+          col_widths = bslib::breakpoints(sm = 12, md = c(4, 4)),
           shiny::selectInput(ns("period"), "Period",
             choices = c("Månad" = "month",
                         "Vecka" = "week",
                         "År"    = "year"),
             selected = "month",
             width = "100%"
+          ),
+          shiny::radioButtons(ns("metric"), "Mätare",
+            choices = c("Distans (km)" = "distance",
+                        "Tid (min)"    = "duration",
+                        "TRIMP"        = "trimp"),
+            selected = "distance",
+            inline = TRUE
           )
         ),
         plotly::plotlyOutput(ns("plot_mix"), height = "420px")
@@ -137,8 +144,9 @@ page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
     })
 
     output$plot_mix <- plotly::renderPlotly({
-      shiny::req(input$period)
+      shiny::req(input$period, input$metric)
       ply(plot_sport_mix(scoped_summaries(), period = input$period,
+                          metric = input$metric,
                           from = dr_from(), to = dr_to(),
                           sport = "all"))  # already scoped
     })

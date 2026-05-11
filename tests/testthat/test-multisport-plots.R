@@ -17,28 +17,59 @@
 
 # --- .sport_mix_data --------------------------------------------------------
 
-test_that(".sport_mix_data aggregates per period × sport", {
+test_that(".sport_mix_data aggregates per period × sport (distance default)", {
   df <- .fixture_multisport_plots()
   res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m")
   expect_s3_class(res, "data.frame")
-  expect_named(res, c("period", "sport", "km"))
+  expect_named(res, c("period", "sport", "value", "metric"))
+  expect_true(all(res$metric == "distance"))
   # 4 sports × ~6 months = up to 24 cells, but strength has 0 km so
-  # gets filtered out via min_km = 0.1.
+  # gets filtered out via min_value = 0.1.
   expect_setequal(unique(res$sport), c("running", "cycling", "walking"))
-  expect_true(all(res$km >= 0.1))
+  expect_true(all(res$value >= 0.1))
 })
 
-test_that(".sport_mix_data respects min_km filter", {
+test_that(".sport_mix_data respects min_value filter", {
   df <- .fixture_multisport_plots()
   # Set the bar very high so no sport survives
-  res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m", min_km = 1e6)
+  res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m", min_value = 1e6)
   expect_equal(nrow(res), 0)
 })
 
 test_that(".sport_mix_data returns empty tibble on empty input", {
   res <- traning:::.sport_mix_data(NULL)
   expect_equal(nrow(res), 0)
-  expect_named(res, c("period", "sport", "km"))
+  expect_named(res, c("period", "sport", "value", "metric"))
+})
+
+test_that(".sport_mix_data metric=duration sums active minutes", {
+  df <- .fixture_multisport_plots()
+  res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m",
+                                    metric = "duration")
+  expect_true(all(res$metric == "duration"))
+  # The fixture has strength sessions at 45 min each — zero distance
+  # would drop them in metric=distance, but they survive on duration.
+  expect_true("strength" %in% res$sport)
+})
+
+test_that(".sport_mix_data metric=trimp picks up sessions with HR + duration > 10 min", {
+  df <- .fixture_multisport_plots()
+  res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m",
+                                    metric = "trimp")
+  expect_true(all(res$metric == "trimp"))
+  # All four sports have avgHeartRateMoving + durationMoving > 10
+  # in the fixture, so every sport surfaces under TRIMP.
+  expect_setequal(unique(res$sport),
+                   c("running", "cycling", "walking", "strength"))
+  expect_true(all(res$value > 0))
+})
+
+test_that(".sport_mix_data metric=trimp returns no rows when HR data is missing", {
+  df <- .fixture_multisport_plots()
+  df$avgHeartRateMoving <- NA_real_
+  res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m",
+                                    metric = "trimp")
+  expect_equal(nrow(res), 0)
 })
 
 # --- plot_sport_mix ---------------------------------------------------------
