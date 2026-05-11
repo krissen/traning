@@ -1,5 +1,19 @@
 # tRäning — Changelog
 
+## 2026-04-08 — MCP transport: SSH stdio → persistent SSE
+
+Roadmap item "MCP transport: SSH → SSE over Tailscale" closed out
+(commit `af3cbac`). Vayu now runs as a persistent SSE server
+(`http://kailash:8422/sse`) instead of SSH stdio. `--sse` flag in
+`python/traning_cli/mcp/server.py:67` selects the transport; host/port
+come from `VAYU_HOST` / `VAYU_PORT` env vars. The systemd unit
+`traning-vayu.service` launches `vayu --sse` directly, so each Claude
+Code MCP call avoids the SSH handshake + R session startup cost.
+
+Stdio mode remains available locally (default when `--sse` is absent)
+but is no longer wired into a systemd unit; the SSE path has been
+production-stable since April.
+
 ## 2026-05-07 — Per-sport training load (CTL/ATL/TSB)
 
 Roadmap item "Per-sport CTL overlay" closed out as part of the
