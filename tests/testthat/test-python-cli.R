@@ -31,6 +31,10 @@ test_that(".parse_backfill_counts handles empty input", {
 })
 
 test_that("traning_cli_path honours TRANING_CLI override", {
+  # POSIX-specific: we rely on chmod execute bits + a /bin/sh shebang.
+  # The exec-permission check on Windows works differently (file
+  # extensions, ACLs) so the helper's resolution path would diverge.
+  skip_on_os("windows")
   fake_bin <- tempfile("fake_traning_")
   writeLines("#!/bin/sh\necho fake", fake_bin)
   Sys.chmod(fake_bin, "0755")
@@ -47,10 +51,11 @@ test_that("traning_cli_path rejects non-executable TRANING_CLI override", {
   # the structured error this helper guarantees. The exec check must
   # fall through to the next candidate (here: bundled venv if present,
   # otherwise NA).
+  skip_on_os("windows")  # see above re: chmod / exec-bit semantics
   fake_bin <- tempfile("fake_traning_noexec_")
   writeLines("not a real binary", fake_bin)
-  # Explicitly strip execute bits in case the platform mounts /tmp
-  # with permissive defaults.
+  # Explicitly strip execute bits in case the platform mounts the
+  # tempdir with permissive defaults.
   Sys.chmod(fake_bin, "0644")
   on.exit(unlink(fake_bin), add = TRUE)
   withr::with_envvar(c(TRANING_CLI = fake_bin), {
@@ -92,7 +97,23 @@ test_that("traning_backfill rejects missing archive", {
   # invoke system2 in that case.
   skip_if(is.na(traning_cli_path()),
           "TRANING_CLI / bundled venv not available on this host")
-  out <- traning_backfill("/tmp/this-does-not-exist.zip")
+  fake_zip <- file.path(tempdir(), "this-does-not-exist.zip")
+  out <- traning_backfill(fake_zip)
   expect_false(out$success)
   expect_match(out$stderr, "does not exist")
+})
+
+test_that("traning_backfill flags no_new_dates from CLI no-op line", {
+  # The CLI prints "Inga nya datum att backfilla." when nothing
+  # needs writing; the wrapper must surface that as a structured
+  # flag so the Shiny page can show the right card.
+  stdout_lines <- c(
+    "Identified archive as: withings",
+    "Inga nya datum att backfilla."
+  )
+  no_new <- any(grepl("Inga nya datum att backfilla",
+                       stdout_lines, fixed = TRUE))
+  counts <- traning:::.parse_backfill_counts(stdout_lines)
+  expect_true(no_new)
+  expect_equal(length(counts), 0L)
 })

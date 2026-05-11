@@ -98,7 +98,16 @@ traning_cli_path <- function() {
 #'     \item{success}{Logical: did the subprocess exit cleanly?}
 #'     \item{exit_code}{Integer exit code.}
 #'     \item{counts}{Named integer vector: metric → n new files.
-#'       Empty when the CLI reports nothing or when parsing fails.}
+#'       Empty when the CLI reports nothing or when parsing fails;
+#'       use \code{no_new_dates} / \code{parse_ok} to tell the two
+#'       apart.}
+#'     \item{no_new_dates}{Logical: did the CLI explicitly print
+#'       "Inga nya datum att backfilla."? Distinguishes a clean
+#'       no-op from a parser regression.}
+#'     \item{parse_ok}{Logical: TRUE if either the per-metric lines
+#'       parsed at least one entry OR the CLI explicitly signalled
+#'       a no-op. FALSE means stdout was non-empty but didn't match
+#'       any known shape.}
 #'     \item{stdout}{Character vector, raw stdout lines.}
 #'     \item{stderr}{Character vector, raw stderr lines.}
 #'   }
@@ -106,6 +115,7 @@ traning_cli_path <- function() {
 traning_backfill <- function(zip_path, dry_run = FALSE, cli_path = NULL) {
   .fail <- function(msg) {
     list(success = FALSE, exit_code = -1L, counts = integer(0),
+         no_new_dates = FALSE, parse_ok = FALSE,
          stdout = character(0), stderr = msg)
   }
 
@@ -161,13 +171,23 @@ traning_backfill <- function(zip_path, dry_run = FALSE, cli_path = NULL) {
   } else character(0)
 
   counts <- .parse_backfill_counts(out)
+  # Match the explicit no-op line printed by the CLI when total == 0;
+  # see python/traning_cli/main.py:backfill(). Without this signal,
+  # the Shiny page can't tell "CLI ran clean, nothing to do" from
+  # "stdout parser regressed and missed every per-metric line".
+  no_new <- any(grepl("Inga nya datum att backfilla",
+                       as.character(out), fixed = TRUE))
+  parse_ok <- length(counts) > 0L || no_new ||
+              length(as.character(out)) == 0L
 
   list(
-    success   = exit_code == 0L,
-    exit_code = as.integer(exit_code),
-    counts    = counts,
-    stdout    = as.character(out),
-    stderr    = stderr_lines
+    success      = exit_code == 0L,
+    exit_code    = as.integer(exit_code),
+    counts       = counts,
+    no_new_dates = no_new,
+    parse_ok     = parse_ok,
+    stdout       = as.character(out),
+    stderr       = stderr_lines
   )
 }
 

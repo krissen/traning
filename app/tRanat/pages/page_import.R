@@ -18,9 +18,9 @@ page_import_ui <- function(id) {
         shiny::tagList(
           shiny::p(
             "Ladda upp ett zip-arkiv (t.ex. Withings-export). ",
-            "Sidan visar en förhandsgranskning av vilka mått ",
-            "och datum som skulle skrivas, innan något hamnar ",
-            "i datalagret."
+            "Sidan visar en förhandsgranskning per mått av hur ",
+            "många nya canonical-filer som skulle skrivas, innan ",
+            "något hamnar i datalagret."
           ),
           shiny::fileInput(
             ns("zip"), "Välj zip-arkiv",
@@ -76,13 +76,13 @@ page_import_server <- function(id) {
         ))
       }
       counts <- out$counts
-      # Distinguish "CLI ran clean and reported no new dates" from
-      # "CLI ran clean but our parser couldn't pull any metric: N
-      # lines out of the stdout". Without this distinction a parser
-      # regression would silently look identical to a quiet archive.
-      parsed_empty_but_output <- length(counts) == 0L &&
-                                  length(out$stdout) > 0L
-      if (parsed_empty_but_output) {
+      # Distinguish "CLI ran clean and explicitly reported no new
+      # dates" from "CLI ran clean but our parser couldn't pull any
+      # metric: N lines out of the stdout". The no_new_dates flag
+      # comes from spotting the CLI's literal "Inga nya datum att
+      # backfilla."-line; without it the parser regression and a
+      # quiet archive look identical.
+      if (isFALSE(out$parse_ok)) {
         return(bslib::card(
           class = "section-spacer",
           bslib::card_header(
@@ -90,14 +90,15 @@ page_import_server <- function(id) {
             "Förhandsgranskning — kunde inte tolka räknarna"
           ),
           bslib::card_body(
-            shiny::p("CLI:n gick igenom utan fel men ingen rad ",
-                     "matchade förväntat format. Rå-utskrift:"),
+            shiny::p("CLI:n gick igenom utan fel men varken ",
+                     "per-mått-rader eller no-op-signalen kände ",
+                     "vi igen. Rå-utskrift:"),
             shiny::pre(paste(out$stdout, collapse = "\n"))
           )
         ))
       }
       total <- sum(counts)
-      if (total == 0L) {
+      if (isTRUE(out$no_new_dates) || total == 0L) {
         return(bslib::card(
           class = "section-spacer",
           bslib::card_header("Förhandsgranskning"),
@@ -179,11 +180,10 @@ page_import_server <- function(id) {
         ))
       }
       counts <- out$counts
-      # Same parse-failure detection as the preview branch — if the
-      # CLI exited cleanly but our stdout parser came up empty, fall
-      # back to the raw output so we don't tell the user "0 nya
-      # filer" when the CLI in fact wrote some.
-      if (length(counts) == 0L && length(out$stdout) > 0L) {
+      # Mirror the preview branch's parse_ok check — only flag a
+      # parser failure when the CLI didn't also signal the explicit
+      # no-op shape.
+      if (isFALSE(out$parse_ok)) {
         return(bslib::card(
           class = "section-spacer",
           bslib::card_header(
@@ -191,8 +191,9 @@ page_import_server <- function(id) {
             "Backfill klart — kunde inte tolka räknarna"
           ),
           bslib::card_body(
-            shiny::p("CLI:n rapporterade lyckat men inga rader ",
-                     "matchade förväntat format. Rå-utskrift:"),
+            shiny::p("CLI:n rapporterade lyckat men varken ",
+                     "per-mått-rader eller no-op-signalen kände ",
+                     "vi igen. Rå-utskrift:"),
             shiny::pre(paste(out$stdout, collapse = "\n")),
             shiny::p("Kör ", shiny::code("traning import health --force"),
                      " för att hämta in eventuellt nyskrivna filer.")
@@ -200,6 +201,16 @@ page_import_server <- function(id) {
         ))
       }
       total <- sum(counts)
+      if (isTRUE(out$no_new_dates) && total == 0L) {
+        return(bslib::card(
+          class = "section-spacer",
+          bslib::card_header("Backfill klart"),
+          bslib::card_body(
+            shiny::p("Inga nya datum att skriva — datalagret var ",
+                     "redan komplett.")
+          )
+        ))
+      }
       bslib::card(
         class = "section-spacer",
         bslib::card_header(
