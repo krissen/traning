@@ -42,27 +42,39 @@ Reasons for "running only" for the volume target:
 
 ### Taper schedule
 
-For `taper_weeks = 2` (the default), produce these week rows from
-**this Monday** through the race week (inclusive):
+For each week in the lookback window, the schedule produces a row with
+a target volume relative to the baseline:
 
-| Phase | Window | target_km |
+- **Build** weeks (where `weeks_until_race > taper_weeks`): full
+  baseline.
+- **Taper** weeks (where `1 <= weeks_until_race <= taper_weeks`) and
+  the **race** week (`weeks_until_race == 0`): linear interpolation
+  between the **0.45 race-week floor** and **1.0** at
+  `weeks_until_race == taper_weeks + 1`, i.e.
+  `relative = 0.45 + 0.55 × weeks_until_race / (taper_weeks + 1)`.
+
+For the default `taper_weeks = 2` this yields:
+
+| weeks_until_race | phase | relative_to_baseline |
 |---|---|---|
-| Build / maintain | Today → (taper start - 1 week) | baseline_km |
-| Taper -1 | First taper week | 0.65 × baseline_km |
-| Race week | Final week containing race_date | 0.45 × baseline_km |
+| 0 (race) | race | 0.45 |
+| 1 (taper -1) | taper | ≈ 0.63 |
+| 2 (taper -2) | taper | ≈ 0.82 |
+| ≥ 3 | build | 1.00 |
 
-Race week is identified by the week (Mon–Sun) containing `race_date`.
-The two preceding weeks become the taper window.
+Race week is the ISO week (Mon–Sun) containing `race_date`. The 0.45
+floor sits inside the 40–55 % race-week envelope from Bosquet 2007
+and Mujika 2010; the linear ramp keeps each taper step proportional
+so a longer `taper_weeks` lowers volume more gradually rather than
+crashing it.
 
-Rationales for the 65 % / 45 % coefficients (round numbers, within the
-65–80 % / 40–55 % envelope from Bosquet 2007 and Mujika 2010):
-- 65 % keeps a stimulus that limits detraining (CTL falls only slowly).
-- 45 % gives the legs roughly half-volume the race week — race-day
-  effort still feels familiar but accumulated fatigue (ATL) has time
-  to decay.
+### Empty-baseline edge case
 
-For shorter or longer tapers, `taper_weeks` scales the schedule
-linearly: each taper week step reduces by `(1 - 0.45) / taper_weeks`.
+When the four-week lookback contains no running at all,
+`compute_taper_plan()` returns an empty tibble with the attribute
+`insufficient_baseline = TRUE`. The renderer surfaces a clear
+"Otillräcklig baseline"-message rather than a chart of zero-km
+targets that nominally read "100 % av baseline".
 
 ### Outputs
 
@@ -92,9 +104,14 @@ Four components, each producing a 0–100 sub-score:
    - Falling (`delta < -10`): 0.
    - Linear between.
 
-2. **TSB projection (form)** — project today's TSB through `target_date`
-   using the taper plan's target_km converted to expected TRIMP, then
-   score the projected TSB:
+2. **TSB projection (form)** — project today's TSB toward an
+   asymptote of `0.3 × CTL` (a typical well-tapered form/fitness
+   ratio), with the time-to-reach scaled by `taper_weeks`. Past
+   race-day passes today's TSB through unchanged. The simplified
+   blend avoids tightly coupling the readiness score to the taper
+   plan's per-week TRIMP estimate — that estimate carries its own
+   assumptions about session pacing and would compound errors.
+   Score the projected TSB:
    - `5 <= TSB <= 15`: 100 (the well-tapered band).
    - `0 <= TSB < 5` or `15 < TSB <= 25`: 50.
    - Otherwise: 0.

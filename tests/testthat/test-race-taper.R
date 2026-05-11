@@ -141,6 +141,58 @@ test_that("render_taper_plan_prose mentions baseline, race date and distance", {
 
 # --- compute_race_readiness -------------------------------------------------
 
+test_that("compute_taper_plan handles a zero baseline (no recent running)", {
+  # No sessions in the last 4 weeks at all. The schedule should not
+  # silently produce zero-km rows pretending to be "100% av baseline";
+  # it must signal insufficient_baseline and let the renderer say so.
+  iso_dow <- function(d) as.integer(format(d, "%u"))
+  today <- Sys.Date()
+  # Place the only run well outside the lookback window.
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(paste0(today - 90L, " 08:00:00"),
+                               tz = "UTC"),
+    distance = 8000,
+    sport = "running",
+    durationMoving = as.difftime(45, units = "mins"),
+    duration       = as.difftime(45, units = "mins")
+  )
+  plan <- compute_taper_plan(s, today + 14L, taper_weeks = 2L)
+  expect_equal(nrow(plan), 0L)
+  expect_true(isTRUE(attr(plan, "insufficient_baseline")))
+  prose <- render_taper_plan_prose(plan)
+  expect_match(prose, "Otillräcklig baseline")
+})
+
+
+test_that("compute_race_readiness validates inputs", {
+  s <- .fixture_summaries_for_taper(weeks_back = 12L, weekly_km = 40)
+  expect_error(compute_race_readiness(s, NULL, NA),
+               "target_date")
+  expect_error(compute_race_readiness(s, NULL, Sys.Date() + 14L,
+                                       taper_weeks = 0L),
+               "taper_weeks")
+  expect_error(compute_race_readiness(s, NULL, Sys.Date() + 14L,
+                                       taper_weeks = 9L),
+               "taper_weeks")
+})
+
+
+test_that("render_taper_plan_prose dates are locale-invariant ISO", {
+  # The Shiny host's LC_TIME isn't always Swedish; %a/%b would emit
+  # English on a C-locale server. Render must produce stable ISO
+  # dates regardless of locale (or via an explicit Swedish mapping).
+  s <- .fixture_summaries_for_taper(weeks_back = 8L, weekly_km = 40)
+  race_date <- Sys.Date() + 28L
+  plan <- compute_taper_plan(s, race_date, distance_km = 10.0,
+                              taper_weeks = 2L)
+  withr::with_locale(c("LC_TIME" = "C"), {
+    prose <- render_taper_plan_prose(plan)
+  })
+  # ISO date is YYYY-MM-DD on Date objects regardless of locale.
+  expect_match(prose, format(race_date), fixed = TRUE)
+})
+
+
 test_that("compute_race_readiness returns Otillräcklig data with empty inputs", {
   empty <- tibble::tibble(
     sessionStart = as.POSIXct(character(0)),

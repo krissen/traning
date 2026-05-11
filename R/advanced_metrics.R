@@ -1161,6 +1161,25 @@ compute_taper_plan <- function(summaries, race_date,
   }
 
   baseline_km <- .recent_baseline_km(summaries, lookback_weeks = 4L)
+  if (!is.finite(baseline_km) || baseline_km <= 0) {
+    # No running in the lookback window. Returning an empty tibble
+    # plus an "insufficient_baseline" attribute lets the UI render
+    # a clear message instead of a chart of zero-km targets that
+    # nominally say "100% av baseline".
+    out <- tibble::tibble(
+      week_start = as.Date(character(0)),
+      week_end = as.Date(character(0)),
+      weeks_until_race = integer(0),
+      phase = character(0),
+      baseline_km = numeric(0),
+      target_km = numeric(0),
+      relative_to_baseline = numeric(0)
+    )
+    attr(out, "race_date") <- race_date
+    attr(out, "distance_km") <- distance_km
+    attr(out, "insufficient_baseline") <- TRUE
+    return(out)
+  }
 
   iso_dow <- function(d) as.integer(format(d, "%u"))
   today <- Sys.Date()
@@ -1196,11 +1215,22 @@ compute_taper_plan <- function(summaries, race_date,
 
 #' Render a taper plan as Swedish prose
 #'
+#' Dates are formatted in a locale-invariant way (\code{format(date)},
+#' which on Date objects produces ISO YYYY-MM-DD regardless of
+#' LC_TIME). Without that, the systemd-launched Shiny renderer on
+#' a server with the C locale would emit English weekday/month
+#' abbreviations next to Swedish prose.
+#'
 #' @param plan Output of \code{compute_taper_plan()}.
 #' @return Character scalar (multi-line).
 #' @export
 render_taper_plan_prose <- function(plan) {
   if (is.null(plan) || nrow(plan) == 0L) {
+    if (isTRUE(attr(plan, "insufficient_baseline"))) {
+      return(paste("Otillräcklig baseline — ingen löpning de senaste",
+                   "4 veckorna. Logga några pass innan taper-planen",
+                   "kan beräknas."))
+    }
     return("Ingen taper-plan att visa.")
   }
   race_date   <- attr(plan, "race_date")
@@ -1210,7 +1240,7 @@ render_taper_plan_prose <- function(plan) {
   header_bits <- character(0)
   if (!is.null(race_date)) {
     header_bits <- c(header_bits,
-                     sprintf("Tävling: %s", format(race_date, "%a %d %b %Y")))
+                     sprintf("Tävling: %s", format(race_date)))
   }
   if (length(distance_km) && !is.na(distance_km)) {
     header_bits <- c(header_bits, sprintf("%.1f km", distance_km))
@@ -1221,11 +1251,11 @@ render_taper_plan_prose <- function(plan) {
 
   for (i in seq_len(nrow(plan))) {
     row <- plan[i, ]
+    week_iso <- format(row$week_start)
     label <- switch(row$phase,
-      race  = sprintf("Tävlingsvecka (%s)", format(row$week_start, "%d %b")),
-      taper = sprintf("Taper -%d (%s)", row$weeks_until_race,
-                       format(row$week_start, "%d %b")),
-      build = sprintf("Bygg (%s)",    format(row$week_start, "%d %b"))
+      race  = sprintf("Tävlingsvecka (%s)", week_iso),
+      taper = sprintf("Taper -%d (%s)", row$weeks_until_race, week_iso),
+      build = sprintf("Bygg (%s)",      week_iso)
     )
     lines <- c(lines,
                sprintf("  %s: %.1f km (%.0f %% av baseline)",
@@ -1276,6 +1306,14 @@ render_taper_plan_prose <- function(plan) {
 compute_race_readiness <- function(summaries, health_daily, target_date,
                                     taper_weeks = 2L) {
   target_date <- as.Date(target_date)
+  if (length(target_date) != 1L || is.na(target_date)) {
+    stop("target_date must be a non-NA, length-1 Date")
+  }
+  taper_weeks <- as.integer(taper_weeks)
+  if (length(taper_weeks) != 1L || is.na(taper_weeks) ||
+      taper_weeks < 1L || taper_weeks > 4L) {
+    stop("taper_weeks must be an integer between 1 and 4")
+  }
   days_until  <- as.integer(as.numeric(target_date - Sys.Date()))
 
   components <- list()

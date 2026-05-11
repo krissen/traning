@@ -89,8 +89,14 @@ page_race_server <- function(id, summaries, health_daily, dates,
                                               paging = FALSE,
                                               searching = FALSE)))
       }
+      # ISO weekdays via %u (1=Mon..7=Sun) keeps the label rendering
+      # identical regardless of the Shiny host's LC_TIME — same trick
+      # the activity calendar uses.
+      swedish_wdays <- c("mån", "tis", "ons", "tor", "fre", "lör", "sön")
+      wday <- swedish_wdays[as.integer(format(plan$week_start, "%u"))]
+      vecka <- sprintf("%s %s", wday, format(plan$week_start))
       display <- data.frame(
-        Vecka           = format(plan$week_start, "%a %d %b"),
+        Vecka           = vecka,
         Fas             = c(build = "Bygg", taper = "Taper",
                              race  = "Tävling")[plan$phase],
         `Mål (km)`      = plan$target_km,
