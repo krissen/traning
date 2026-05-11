@@ -2,15 +2,49 @@
 
 import base64
 import json
+import logging
 import os
 import re
+import secrets
+import stat as stat_lib
 import subprocess
-from datetime import datetime
+import tempfile
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 TRANING_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 MCP_BRIDGE_R = TRANING_ROOT / "inst" / "mcp_bridge.R"
+
+# Python owns the directory R writes plot PNGs into, so the file
+# survives the R subprocess exit. R's own tempdir() is wiped when the
+# bridge process ends, which used to race with Python's read.
+#
+# The directory name carries the process uid + 0o700 perms so another
+# local user cannot list/read plots or pre-create a symlinked trap on
+# shared hosts. The path is resolved lazily inside _plot_dir() rather
+# than at import time: os.getuid() is POSIX-only and would otherwise
+# break `import` on Windows even for callers that never plot.
+VAYU_PLOTS_MAX_AGE_SEC = 3600
+
+
+def _plot_dir() -> Path:
+    """Compute the per-uid plot directory path (POSIX only).
+
+    Raises:
+        OSError: on platforms without os.getuid() (e.g. Windows).
+    """
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        raise OSError(
+            "vayu plot output requires a POSIX uid; "
+            "os.getuid() is not available on this platform"
+        )
+    return Path(tempfile.gettempdir()) / f"vayu_plots_uid{getuid()}"
+
 
 # Date expression pattern: YYYY, YYYY-MM, YYYY-MM-DD, or relative (-3w, -1y, etc.)
 _DATE_EXPR_RE = re.compile(
@@ -48,6 +82,76 @@ def _sanitize(value: str) -> str:
     return re.sub(r"[\x00-\x1f\x7f]", "", str(value))
 
 
+def _prepare_plot_dir() -> Path:
+    """Ensure the plot directory exists and prune stale files.
+
+    On a shared `/tmp` an attacker could otherwise pre-create the
+    target as a symlink, so `mkdir(..., exist_ok=False)` is used to
+    refuse adoption of any pre-existing entry; if creation fails with
+    `FileExistsError` we re-validate the existing entry with `lstat()`
+    (does not follow symlinks), reject anything that is not a real
+    directory owned by the current uid, and only then chmod.
+    `chmod` failures are fatal — silently continuing with potentially
+    world-readable `/tmp` perms would defeat the point.
+
+    Plot files are unlinked immediately after read, so the directory
+    is normally empty. Age-based GC (>1 h) on every call covers
+    crashed-bridge cases without needing a separate timer.
+    """
+    target = _plot_dir()
+    try:
+        target.mkdir(mode=0o700, parents=True, exist_ok=False)
+    except FileExistsError:
+        # Pre-existing entry — validate it's safe to reuse.
+        try:
+            st = target.lstat()
+        except OSError as e:
+            raise RuntimeError(
+                f"vayu plot dir lstat failed: {target}: {e}"
+            ) from e
+        if stat_lib.S_ISLNK(st.st_mode):
+            raise RuntimeError(
+                f"vayu plot dir is a symlink, refusing: {target}"
+            )
+        if not stat_lib.S_ISDIR(st.st_mode):
+            raise RuntimeError(
+                f"vayu plot path is not a directory: {target}"
+            )
+        if st.st_uid != os.getuid():
+            raise RuntimeError(
+                f"vayu plot dir owned by uid {st.st_uid}, expected "
+                f"{os.getuid()}: {target}"
+            )
+
+    # Fail-closed chmod: if we cannot lock perms down, the dir is
+    # not safe to keep using.
+    try:
+        os.chmod(target, 0o700)
+    except OSError as e:
+        raise RuntimeError(
+            f"Could not chmod {target} to 0o700: {e}"
+        ) from e
+
+    cutoff = time.time() - VAYU_PLOTS_MAX_AGE_SEC
+    for entry in target.iterdir():
+        try:
+            if entry.is_file() and entry.stat().st_mtime < cutoff:
+                entry.unlink()
+        except OSError as e:
+            logger.debug("vayu_plots GC skipped %s: %s", entry, e)
+    return target
+
+
+def _new_plot_path() -> Path:
+    """Generate a unique plot path Python controls.
+
+    Two concurrent calls cannot collide: filename carries both a UTC
+    timestamp and 8 hex chars of randomness.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    return _plot_dir() / f"vayu_{stamp}_{secrets.token_hex(4)}.png"
+
+
 def _validate_date(expr: str) -> str:
     """Validate and return a date expression, or raise ValueError."""
     expr = _sanitize(expr).strip()
@@ -61,6 +165,7 @@ def _run_r(
     args: dict[str, Any] | None = None,
     *,
     plot: bool = False,
+    plot_path: Path | None = None,
     timeout: int = 120,
 ) -> dict:
     """Call an R function via mcp_bridge.R and return parsed JSON result.
@@ -69,6 +174,8 @@ def _run_r(
         func: Function name (must be in _KNOWN_FUNCTIONS).
         args: Dict of arguments to pass as JSON.
         plot: If True, request PNG plot output.
+        plot_path: Target path R should write the PNG to. Required when
+            plot=True so the file survives the R subprocess.
         timeout: Subprocess timeout in seconds (clamped to 10-300).
 
     Returns:
@@ -76,6 +183,12 @@ def _run_r(
     """
     if func not in _KNOWN_FUNCTIONS:
         return {"type": "error", "message": f"Unknown function: {func}"}
+
+    # Enforced rather than fallen-back: a None path would silently
+    # reintroduce the R-tempdir race the rest of this module exists
+    # to prevent.
+    if plot and plot_path is None:
+        raise ValueError("_run_r(plot=True) requires plot_path")
 
     timeout = max(10, min(300, timeout))
     args = args or {}
@@ -99,7 +212,9 @@ def _run_r(
         f"--args={json.dumps(clean_args)}",
     ]
     if plot:
+        # plot_path is non-None here: enforced above.
         cmd.append("--plot")
+        cmd.append(f"--plot_path={plot_path}")
 
     env = {**os.environ, "TRANING_OPEN": "false"}
 
@@ -203,26 +318,49 @@ def r_plot(
 ) -> dict:
     """Call an R plot function and return base64-encoded PNG.
 
-    Returns a dict with type="plot", base64 image data, and summary text.
+    Returns a dict with ``type``, ``base64`` (PNG bytes), ``media_type``
+    (``"image/png"``), and ``func`` (the R function that produced it).
+    On failure: ``{"type": "error", "message": ...}``.
     """
-    raw = _run_r(func, args, plot=True, timeout=timeout)
+    _prepare_plot_dir()
+    png_path = _new_plot_path()
+
+    raw = _run_r(func, args, plot=True, plot_path=png_path, timeout=timeout)
 
     if raw.get("type") == "error":
         return raw
 
-    png_path = raw.get("path")
-    if not png_path or not Path(png_path).exists():
+    # Defend against a future bridge refactor that returns a non-plot
+    # envelope for a plot request — would otherwise surface as the
+    # misleading "Plot file not found" below.
+    if raw.get("type") != "plot":
+        return {
+            "type": "error",
+            "message": (
+                f"Unexpected response from R bridge: type="
+                f"{raw.get('type')!r}"
+            ),
+        }
+    if raw.get("path") and raw["path"] != str(png_path):
+        return {
+            "type": "error",
+            "message": (
+                f"R bridge wrote to unexpected path: {raw['path']!r} "
+                f"(expected {str(png_path)!r})"
+            ),
+        }
+
+    if not png_path.exists():
         return {"type": "error", "message": "Plot file not found"}
 
     try:
-        png_data = Path(png_path).read_bytes()
+        png_data = png_path.read_bytes()
         b64 = base64.b64encode(png_data).decode("ascii")
     finally:
-        # Clean up temp file
         try:
-            Path(png_path).unlink()
-        except OSError:
-            pass
+            png_path.unlink()
+        except OSError as e:
+            logger.debug("Failed to unlink %s: %s", png_path, e)
 
     return {
         "type": "plot",
