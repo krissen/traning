@@ -22,12 +22,18 @@ options <- parse_args(OptionParser(option_list = list(
   make_option("--args", type = "character", default = "{}",
               help = "JSON-encoded arguments"),
   make_option("--plot", type = "logical", action = "store_true",
-              default = FALSE, help = "Return plot as PNG")
+              default = FALSE, help = "Return plot as PNG"),
+  make_option("--plot_path", type = "character", default = NULL,
+              help = paste("Target PNG path supplied by the caller.",
+                           "Used so the file outlives this R subprocess;",
+                           "without it, fall back to tempfile() and risk",
+                           "the path being wiped on exit."))
 )))
 
 func_name <- options$func
 func_args <- jsonlite::fromJSON(options$args, simplifyVector = FALSE)
 do_plot   <- options$plot
+plot_path <- options$plot_path
 
 # --- Output helpers ---
 emit_json <- function(x) {
@@ -336,11 +342,18 @@ tryCatch({
   result <- do.call(func_name, call_args)
 
   if (do_plot || inherits(result, "gg") || inherits(result, "patchwork")) {
-    # Save plot to temp PNG
-    tmp <- tempfile(pattern = "vayu_", fileext = ".png")
-    ggplot2::ggsave(tmp, plot = result, width = 10, height = 6,
+    # Prefer the path Python passed in (--plot_path) so the PNG survives
+    # this subprocess's exit. tempfile() lives under R's per-process
+    # tempdir, which gets removed on quit() before Python can read it.
+    out_path <- if (!is.null(plot_path) && nzchar(plot_path)) {
+      plot_path
+    } else {
+      tempfile(pattern = "vayu_", fileext = ".png")
+    }
+    dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
+    ggplot2::ggsave(out_path, plot = result, width = 10, height = 6,
                     dpi = 150, bg = "white")
-    emit_json(list(type = "plot", path = tmp))
+    emit_json(list(type = "plot", path = out_path))
   } else if (is.data.frame(result)) {
     emit_json(list(
       type = "data",

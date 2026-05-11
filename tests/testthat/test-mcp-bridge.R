@@ -90,6 +90,30 @@ test_that("plot mode with health data works", {
   expect_match(out$path, "\\.png$")
 })
 
+test_that("plot_path argument writes to caller-owned path", {
+  # The Python MCP bridge passes --plot_path so the PNG survives the R
+  # subprocess exit. Without this, tempfile() lives under R's per-process
+  # tempdir and is wiped on quit, racing the Python reader.
+  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  target_dir <- tempfile("vayu_plot_path_test_")
+  target <- file.path(target_dir, "probe.png")
+  bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
+  result <- system2("Rscript",
+                    args = c(bridge,
+                             "--func=fetch.plot.ef",
+                             paste0("--args=", shQuote('{"from":"2025-01-01"}')),
+                             "--plot",
+                             paste0("--plot_path=", target)),
+                    stdout = TRUE, stderr = NULL)
+  out <- jsonlite::fromJSON(paste(result, collapse = "\n"),
+                            simplifyVector = FALSE)
+  expect_equal(out$type, "plot")
+  expect_equal(out$path, target)
+  expect_true(file.exists(target))
+  expect_gt(file.info(target)$size, 1000)  # sanity: real PNG, not stub
+  unlink(target_dir, recursive = TRUE)
+})
+
 # --- Args passing ---
 
 test_that("empty args object is valid", {
