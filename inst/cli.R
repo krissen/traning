@@ -210,13 +210,31 @@ rm(my_templist)
 # command (--pmc, --acwr, --ef, --decoupling, ...) operates on the same
 # enriched view. The upgrade is persisted so subsequent invocations
 # (and other processes reading the same cache) skip the augment step.
-if (!("garmin_matched" %in% names(summaries)) && dir.exists(gc_json_dir)) {
+# Decide whether the JSON cache has grown since the last augmentation
+# pass — if so, re-run augment_summaries() with force=TRUE so rows
+# that were "no match yet" at the time get a fresh look. Garmin
+# Connect occasionally delivers JSON for an activity hours or days
+# after its TCX file, and without this comparison those rows would
+# stay garmin_matched=TRUE / metrics=NA forever.
+gc_json_cache <- file.path(traning_data, "cache", "garmin_json.RData")
+augmented_at <- attr(summaries, "garmin_augmented_at")
+json_cache_newer <-
+  file.exists(gc_json_cache) &&
+  !is.null(augmented_at) &&
+  file.mtime(gc_json_cache) > augmented_at
+
+if ((!("garmin_matched" %in% names(summaries)) || json_cache_newer) &&
+    dir.exists(gc_json_dir)) {
   # Presence of `garmin_matched` is the canonical "this cache has been
-  # augmented" signal. augment_summaries() creates it even when the
-  # garmin_data tibble is empty, so this block fires exactly once per
-  # cache regardless of whether the gconnect directory contains JSON
-  # files yet.
-  message("Auto-upgrading cache: lägger till garmin_*-kolumner från Garmin JSON …")
+  # augmented" signal; the mtime comparison handles JSON-backfill.
+  # augment_summaries() creates the marker even when garmin_data is
+  # empty, so this block fires exactly once per cache for a given
+  # JSON-cache state.
+  if (json_cache_newer) {
+    message("Auto-upgrading cache: Garmin JSON-cachen är nyare än senaste augmentation — kör om med force=TRUE …")
+  } else {
+    message("Auto-upgrading cache: lägger till garmin_*-kolumner från Garmin JSON …")
+  }
   garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
                            error = function(e) {
                              warning("load_garmin_json failed: ",
@@ -228,12 +246,12 @@ if (!("garmin_matched" %in% names(summaries)) && dir.exists(gc_json_dir)) {
     # still creates the garmin_* columns and the garmin_matched
     # marker, which makes the cache canonically structured so this
     # upgrade block fires exactly once instead of on every invocation.
-    augmented <- tryCatch(augment_summaries(summaries, garmin_data),
-                           error = function(e) {
-                             warning("augment_summaries failed: ",
-                                     conditionMessage(e))
-                             NULL
-                           })
+    augmented <- tryCatch(
+      augment_summaries(summaries, garmin_data, force = json_cache_newer),
+      error = function(e) {
+        warning("augment_summaries failed: ", conditionMessage(e))
+        NULL
+      })
     if (!is.null(augmented)) {
       summaries <- augmented
       my_dbs_save(db_summaries, db_myruns, summaries, myruns)
@@ -302,8 +320,17 @@ if (do_import) {
       # rows acquire garmin_* columns and garmin_matched in the
       # canonical shape; without this the new rows would carry NA
       # marker values that break the NA-safe incremental check.
+      # Re-check the JSON-cache mtime here too — load_garmin_json()
+      # may have appended new files when we called it for the
+      # cache-load block above, but the legacy code path may also
+      # have skipped that block on a previously-augmented cache.
+      augmented_at <- attr(summaries, "garmin_augmented_at")
+      json_cache_newer <-
+        file.exists(gc_json_cache) &&
+        !is.null(augmented_at) &&
+        file.mtime(gc_json_cache) > augmented_at
       summaries <- tryCatch(
-        augment_summaries(summaries, garmin_data),
+        augment_summaries(summaries, garmin_data, force = json_cache_newer),
         error = function(e) {
           warning("augment_summaries failed: ", conditionMessage(e))
           summaries

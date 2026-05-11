@@ -397,6 +397,13 @@ augment_summaries <- function(summaries, garmin_data,
     " kandidater matchade (tolerans ±", tolerance_secs, " s)."
   )
 
+  # Stamp the augmentation time so callers can detect when garmin_data
+  # has grown since the last augment (e.g. Garmin Connect sync delayed
+  # the JSON for an activity that was imported earlier). Compare this
+  # attribute against the garmin_json.RData mtime; if the cache is
+  # newer, pass force = TRUE to rerun against the refreshed JSON pool
+  # — that's how no-match rows get retried after a backfill.
+  attr(summaries, "garmin_augmented_at") <- Sys.time()
   summaries
 }
 
