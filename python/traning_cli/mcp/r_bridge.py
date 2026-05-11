@@ -312,6 +312,26 @@ def r_plot(
     if raw.get("type") == "error":
         return raw
 
+    # Defend against a future bridge refactor that returns a non-plot
+    # envelope for a plot request — would otherwise surface as the
+    # misleading "Plot file not found" below.
+    if raw.get("type") != "plot":
+        return {
+            "type": "error",
+            "message": (
+                f"Unexpected response from R bridge: type="
+                f"{raw.get('type')!r}"
+            ),
+        }
+    if raw.get("path") and raw["path"] != str(png_path):
+        return {
+            "type": "error",
+            "message": (
+                f"R bridge wrote to unexpected path: {raw['path']!r} "
+                f"(expected {str(png_path)!r})"
+            ),
+        }
+
     if not png_path.exists():
         return {"type": "error", "message": "Plot file not found"}
 
