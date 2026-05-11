@@ -23,13 +23,28 @@ MCP_BRIDGE_R = TRANING_ROOT / "inst" / "mcp_bridge.R"
 # survives the R subprocess exit. R's own tempdir() is wiped when the
 # bridge process ends, which used to race with Python's read.
 #
-# Per-uid dir name + 0o700 perms prevent another local user from
-# listing/reading plots or pre-creating a symlinked trap on shared
-# hosts. os.getuid() is preferred over getpass.getuser() because the
-# latter reads USER/LOGNAME env vars first, and a maliciously-set
-# value containing `/` or `..` could escape the tempdir sandbox.
-VAYU_PLOTS_DIR = Path(tempfile.gettempdir()) / f"vayu_plots_uid{os.getuid()}"
+# The directory name carries the process uid + 0o700 perms so another
+# local user cannot list/read plots or pre-create a symlinked trap on
+# shared hosts. The path is resolved lazily inside _plot_dir() rather
+# than at import time: os.getuid() is POSIX-only and would otherwise
+# break `import` on Windows even for callers that never plot.
 VAYU_PLOTS_MAX_AGE_SEC = 3600
+
+
+def _plot_dir() -> Path:
+    """Compute the per-uid plot directory path (POSIX only).
+
+    Raises:
+        OSError: on platforms without os.getuid() (e.g. Windows).
+    """
+    getuid = getattr(os, "getuid", None)
+    if getuid is None:
+        raise OSError(
+            "vayu plot output requires a POSIX uid; "
+            "os.getuid() is not available on this platform"
+        )
+    return Path(tempfile.gettempdir()) / f"vayu_plots_uid{getuid()}"
+
 
 # Date expression pattern: YYYY, YYYY-MM, YYYY-MM-DD, or relative (-3w, -1y, etc.)
 _DATE_EXPR_RE = re.compile(
@@ -83,47 +98,48 @@ def _prepare_plot_dir() -> Path:
     is normally empty. Age-based GC (>1 h) on every call covers
     crashed-bridge cases without needing a separate timer.
     """
+    target = _plot_dir()
     try:
-        VAYU_PLOTS_DIR.mkdir(mode=0o700, parents=True, exist_ok=False)
+        target.mkdir(mode=0o700, parents=True, exist_ok=False)
     except FileExistsError:
         # Pre-existing entry — validate it's safe to reuse.
         try:
-            st = VAYU_PLOTS_DIR.lstat()
+            st = target.lstat()
         except OSError as e:
             raise RuntimeError(
-                f"vayu plot dir lstat failed: {VAYU_PLOTS_DIR}: {e}"
+                f"vayu plot dir lstat failed: {target}: {e}"
             ) from e
         if stat_lib.S_ISLNK(st.st_mode):
             raise RuntimeError(
-                f"vayu plot dir is a symlink, refusing: {VAYU_PLOTS_DIR}"
+                f"vayu plot dir is a symlink, refusing: {target}"
             )
         if not stat_lib.S_ISDIR(st.st_mode):
             raise RuntimeError(
-                f"vayu plot path is not a directory: {VAYU_PLOTS_DIR}"
+                f"vayu plot path is not a directory: {target}"
             )
         if st.st_uid != os.getuid():
             raise RuntimeError(
                 f"vayu plot dir owned by uid {st.st_uid}, expected "
-                f"{os.getuid()}: {VAYU_PLOTS_DIR}"
+                f"{os.getuid()}: {target}"
             )
 
     # Fail-closed chmod: if we cannot lock perms down, the dir is
     # not safe to keep using.
     try:
-        os.chmod(VAYU_PLOTS_DIR, 0o700)
+        os.chmod(target, 0o700)
     except OSError as e:
         raise RuntimeError(
-            f"Could not chmod {VAYU_PLOTS_DIR} to 0o700: {e}"
+            f"Could not chmod {target} to 0o700: {e}"
         ) from e
 
     cutoff = time.time() - VAYU_PLOTS_MAX_AGE_SEC
-    for entry in VAYU_PLOTS_DIR.iterdir():
+    for entry in target.iterdir():
         try:
             if entry.is_file() and entry.stat().st_mtime < cutoff:
                 entry.unlink()
         except OSError as e:
             logger.debug("vayu_plots GC skipped %s: %s", entry, e)
-    return VAYU_PLOTS_DIR
+    return target
 
 
 def _new_plot_path() -> Path:
@@ -133,7 +149,7 @@ def _new_plot_path() -> Path:
     timestamp and 8 hex chars of randomness.
     """
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
-    return VAYU_PLOTS_DIR / f"vayu_{stamp}_{secrets.token_hex(4)}.png"
+    return _plot_dir() / f"vayu_{stamp}_{secrets.token_hex(4)}.png"
 
 
 def _validate_date(expr: str) -> str:
@@ -302,7 +318,9 @@ def r_plot(
 ) -> dict:
     """Call an R plot function and return base64-encoded PNG.
 
-    Returns a dict with type="plot", base64 image data, and summary text.
+    Returns a dict with ``type``, ``base64`` (PNG bytes), ``media_type``
+    (``"image/png"``), and ``func`` (the R function that produced it).
+    On failure: ``{"type": "error", "message": ...}``.
     """
     _prepare_plot_dir()
     png_path = _new_plot_path()
