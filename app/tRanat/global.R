@@ -23,8 +23,15 @@ summaries   <- my_templist[["summaries"]]
 myruns      <- my_templist[["myruns"]]
 rm(my_templist)
 
-# --- Berika med Garmin JSON-data om katalogen finns ---
-if (dir.exists(gc_json_dir)) {
+# --- Berika med Garmin JSON-data (endast om cache saknar det) ---
+# `cli.R --import` augmenterar nu cachen vid import, så vid normal
+# drift har `summaries` redan garmin_*-kolumner. Detta block är en
+# fallback för legacy-caches och kan tas bort när alla caches
+# (kedar, kailash, ev. andra hostar) re-importats minst en gång.
+if (dir.exists(gc_json_dir) &&
+    !any(grepl("^garmin_", names(summaries)))) {
+  message("global.R: cache saknar garmin_*-kolumner — augmenterar ",
+          "som fallback. Kör cli.R --import för permanent fix.")
   garmin_data <- tryCatch(
     load_garmin_json(gc_json_dir),
     error = function(e) {
