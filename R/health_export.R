@@ -573,28 +573,38 @@ read_canonical_file <- function(path, verbose = FALSE) {
     return(tibble::tibble())
   }
 
-  # Fast path: high-volume sum metrics (step_count, active_energy, ...)
-  # carry a precomputed `daily_total` field that the Python writer
-  # populates. Returning a one-row tibble here avoids parsing 1000+
-  # samples per day just to sum them. Older canonical files without
-  # the field fall through to the full parser, which sums the samples
-  # itself via .aggregate_daily() — both paths produce the same value.
-  if (metric_name %in% .sum_metrics &&
-      !is.null(raw$daily_total) &&
-      length(raw$daily_total) == 1) {
-    first_src <- if (length(samples)) {
-      s <- samples[[1]]$source
-      if (is.null(s)) NA_character_ else as.character(s)
-    } else NA_character_
-    return(tibble::tibble(
-      date = as.Date(raw$date),
-      metric = metric_name,
-      value = as.numeric(raw$daily_total),
-      source = first_src
-    ))
+  # Sum metrics produce one daily total. Two paths feed it:
+  #   1. Fast path: `daily_total` precomputed by the Python writer
+  #      (post-2026-05-11 canonical files). Single-row tibble, no
+  #      sample parsing.
+  #   2. Fallback: older canonical files predate the field. Parse the
+  #      samples and aggregate IN THIS FILE — the downstream import
+  #      pipeline uses `distinct(date, metric, .keep_all = TRUE)`,
+  #      which would otherwise keep a single intra-day sample and
+  #      undercount the day. Both paths emit the same shape.
+  if (metric_name %in% .sum_metrics) {
+    if (!is.null(raw$daily_total) && length(raw$daily_total) == 1) {
+      first_src <- if (length(samples)) {
+        s <- samples[[1]]$source
+        if (is.null(s)) NA_character_ else as.character(s)
+      } else NA_character_
+      return(tibble::tibble(
+        date = as.Date(raw$date),
+        metric = metric_name,
+        value = as.numeric(raw$daily_total),
+        source = first_src
+      ))
+    }
+    metric_obj <- list(name = metric_name, data = samples)
+    parsed <- .parse_metric(metric_obj)
+    if (nrow(parsed) > 1) {
+      parsed <- .aggregate_daily(parsed)
+    }
+    return(parsed)
   }
 
-  # Convert to HAE-compatible format for .parse_metric()
+  # Non-sum metrics: parse and defer aggregation to the global
+  # pipeline (mean / min / max semantics differ per metric).
   metric_obj <- list(name = metric_name, data = samples)
   result <- .parse_metric(metric_obj)
 
@@ -603,7 +613,6 @@ read_canonical_file <- function(path, verbose = FALSE) {
         nrow(result), "rader\n")
   }
 
-  # No per-file cleaning/aggregation — the global pipeline handles that
   result
 }
 

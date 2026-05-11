@@ -366,9 +366,12 @@ test_that("read_canonical_file uses daily_total fast path when present", {
   expect_equal(result$source, "AW")
 })
 
-test_that("read_canonical_file falls back to sample parsing when daily_total missing", {
-  # Older canonical files (pre-2026-05-11) have no daily_total — reader
-  # must still produce a usable value by parsing samples.
+test_that("read_canonical_file aggregates sum-metric samples when daily_total missing", {
+  # Older canonical files (pre-2026-05-11) have no daily_total. The
+  # downstream import pipeline collapses (date, metric) with
+  # distinct(.keep_all=TRUE), so the reader must hand it a single
+  # pre-summed row — otherwise a 1100-sample day collapses to one
+  # tiny intra-day reading instead of the true total.
   tmp <- tempfile(fileext = ".json")
   on.exit(unlink(tmp), add = TRUE)
   jsonlite::write_json(list(
@@ -381,10 +384,9 @@ test_that("read_canonical_file falls back to sample parsing when daily_total mis
     )
   ), tmp, auto_unbox = TRUE)
   result <- read_canonical_file(tmp)
-  # .parse_metric returns one row per sample at this stage; aggregation
-  # happens later in the pipeline (.aggregate_daily).
-  expect_true(nrow(result) >= 1)
+  expect_equal(nrow(result), 1)
   expect_equal(result$metric[[1]], "step_count")
+  expect_equal(result$value[[1]], 10000)
 })
 
 test_that("read_canonical_file ignores daily_total for non-sum metrics", {
