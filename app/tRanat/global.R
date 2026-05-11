@@ -23,15 +23,20 @@ summaries   <- my_templist[["summaries"]]
 myruns      <- my_templist[["myruns"]]
 rm(my_templist)
 
-# --- Berika med Garmin JSON-data (endast om cache saknar det) ---
+# --- Berika med Garmin JSON-data (endast om cache saknar markören) ---
 # `cli.R --import` augmenterar nu cachen vid import, så vid normal
-# drift har `summaries` redan garmin_*-kolumner. Detta block är en
-# fallback för legacy-caches och kan tas bort när alla caches
-# (kedar, kailash, ev. andra hostar) re-importats minst en gång.
+# drift har `summaries` redan både garmin_*-kolumner och markören
+# `garmin_matched`. Detta block är en fallback för legacy-caches och
+# kan tas bort när alla caches (kedar, kailash, ev. andra hostar)
+# re-importats minst en gång. Vi nyckar på markörens närvaro (samma
+# canonical signal som cli.R använder) snarare än en regex-träff på
+# kolumnnamn — det undviker att missa partiella caches där bara
+# något garmin_*-fält råkar finnas.
 if (dir.exists(gc_json_dir) &&
-    !any(grepl("^garmin_", names(summaries)))) {
-  message("global.R: cache saknar garmin_*-kolumner — augmenterar ",
-          "som fallback. Kör `traning import all` för permanent fix.")
+    !("garmin_matched" %in% names(summaries))) {
+  message("global.R: cache saknar garmin_matched-markören — ",
+          "augmenterar som fallback. Kör `traning import all` ",
+          "för permanent fix.")
   garmin_data <- tryCatch(
     load_garmin_json(gc_json_dir),
     error = function(e) {

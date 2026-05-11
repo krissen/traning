@@ -223,7 +223,11 @@ if (!("garmin_matched" %in% names(summaries)) && dir.exists(gc_json_dir)) {
                                      conditionMessage(e))
                              NULL
                            })
-  if (!is.null(garmin_data) && nrow(garmin_data) > 0) {
+  if (!is.null(garmin_data)) {
+    # Call augment_summaries even on an empty garmin_data tibble; it
+    # still creates the garmin_* columns and the garmin_matched
+    # marker, which makes the cache canonically structured so this
+    # upgrade block fires exactly once instead of on every invocation.
     augmented <- tryCatch(augment_summaries(summaries, garmin_data),
                            error = function(e) {
                              warning("augment_summaries failed: ",
@@ -293,7 +297,11 @@ if (do_import) {
                                        conditionMessage(e))
                                NULL
                              })
-    if (!is.null(garmin_data) && nrow(garmin_data) > 0) {
+    if (!is.null(garmin_data)) {
+      # Empty garmin_data is still passed through so newly imported
+      # rows acquire garmin_* columns and garmin_matched in the
+      # canonical shape; without this the new rows would carry NA
+      # marker values that break the NA-safe incremental check.
       summaries <- tryCatch(
         augment_summaries(summaries, garmin_data),
         error = function(e) {

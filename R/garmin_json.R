@@ -335,7 +335,14 @@ augment_summaries <- function(summaries, garmin_data,
     return(summaries)
   }
 
-  needs_aug <- !summaries$garmin_matched
+  # NA-safe: rows where garmin_matched was set to NA (e.g. when
+  # .rbind_align() copies in new TCX/HAE rows that didn't have the
+  # column yet) are treated as "not yet processed". Without this
+  # guard the !NA propagates into any()/which() and the new rows
+  # would be silently skipped.
+  marker <- summaries$garmin_matched
+  marker[is.na(marker)] <- FALSE
+  needs_aug <- !marker
   if (!any(needs_aug)) {
     message("Garmin JSON: alla rader redan augmenterade — inget att göra.")
     return(summaries)
