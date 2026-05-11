@@ -136,8 +136,23 @@ traning_backfill <- function(zip_path, dry_run = FALSE, cli_path = NULL) {
       "Could not locate an executable `traning` CLI. Set TRANING_CLI."
     ))
   }
-  if (!file.exists(zip_path)) {
-    return(.fail(paste0("Archive does not exist: ", zip_path)))
+
+  # Mirror the cli_ok validation for the archive — a NULL,
+  # zero-length, vector, or directory zip_path would let
+  # file.exists() throw or let the CLI invocation fail in obscure
+  # ways later. We promise a clean envelope; produce one.
+  zip_ok <- !is.null(zip_path) &&
+            is.character(zip_path) &&
+            length(zip_path) == 1L &&
+            !is.na(zip_path) &&
+            nzchar(zip_path) &&
+            file.exists(zip_path) &&
+            !isTRUE(file.info(zip_path)$isdir)
+  if (!zip_ok) {
+    return(.fail(paste0(
+      "Archive does not exist or is not a regular file: ",
+      paste(zip_path, collapse = ", ")
+    )))
   }
 
   args <- c("backfill", zip_path)

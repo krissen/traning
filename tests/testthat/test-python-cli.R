@@ -103,6 +103,35 @@ test_that("traning_backfill rejects missing archive", {
   expect_match(out$stderr, "does not exist")
 })
 
+test_that("traning_backfill rejects unusable zip_path inputs", {
+  # The wrapper promises a structured envelope; a NULL / empty
+  # vector / directory must fall back to that contract rather than
+  # crashing inside file.exists() or the CLI.
+  skip_if(is.na(traning_cli_path()),
+          "TRANING_CLI / bundled venv not available on this host")
+
+  # NULL
+  out_null <- traning_backfill(NULL)
+  expect_false(out_null$success)
+  expect_match(out_null$stderr, "Archive")
+
+  # character(0)
+  out_empty <- traning_backfill(character(0))
+  expect_false(out_empty$success)
+
+  # vector
+  out_vec <- traning_backfill(c("a.zip", "b.zip"))
+  expect_false(out_vec$success)
+
+  # directory
+  tmp_dir <- tempfile("zip_path_dir_")
+  dir.create(tmp_dir)
+  on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+  out_dir <- traning_backfill(tmp_dir)
+  expect_false(out_dir$success)
+  expect_match(out_dir$stderr, "regular file|Archive")
+})
+
 test_that("traning_backfill flags no_new_dates from CLI no-op line", {
   # The CLI prints "Inga nya datum att backfilla." when nothing
   # needs writing; the wrapper must surface that as a structured
