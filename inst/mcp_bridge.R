@@ -246,7 +246,10 @@ build_call_args <- function(func_name, func_args) {
   # Multi-sport plot extras
   if (func_name == "plot_sport_mix") {
     if (!is.null(func_args$period)) a$period <- as.character(func_args$period)
-    if (!is.null(func_args$min_km)) a$min_km <- as.numeric(func_args$min_km)
+    if (!is.null(func_args$min_value))
+      a$min_value <- as.numeric(func_args$min_value)
+    # `metric` is already injected above (it's a generic forwarded arg);
+    # plot_sport_mix accepts "distance" / "duration" / "trimp".
   }
   if (func_name == "plot_sport_ctl_overlay") {
     if (!is.null(func_args$sports)) {

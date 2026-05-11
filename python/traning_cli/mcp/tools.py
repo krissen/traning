@@ -297,22 +297,30 @@ def get_yearly_summary(
 
 def get_sport_mix(
     period: str = "month",
+    metric: str = "distance",
     after: Optional[str] = None,
     before: Optional[str] = None,
-    min_km: float = 0.1,
+    min_value: float = 0.1,
 ) -> Image | dict:
-    """Stacked bar chart: distance per period broken down by sport.
+    """Stacked bar chart: chosen metric per period broken down by sport.
 
     Useful for spotting sport-rotation patterns, training-camp blocks,
     and seasonal shifts (summer cycling vs winter running).
 
     Args:
         period: Bar resolution. One of 'month' (default), 'week', 'year'.
+        metric: Aggregation axis. 'distance' (km, default), 'duration'
+            (active minutes — visible for gym/strength too), or 'trimp'
+            (Banister TRIMP, the effort axis that lets strength and
+            endurance share the chart; requires HR + duration > 10 min).
         after: Start date filter.
         before: End date filter.
-        min_km: Drop (period, sport) cells below this threshold (km).
+        min_value: Drop (period, sport) cells whose summed value falls
+            below this threshold. Units follow `metric`.
     """
-    args = _build_args(after, before, period=period, min_km=min_km)
+    args = _build_args(after, before,
+                       period=period, metric=metric,
+                       min_value=min_value)
     return r_plot("plot_sport_mix", args)
 
 
