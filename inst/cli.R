@@ -235,7 +235,11 @@ if (!any(grepl("^garmin_", names(summaries))) && dir.exists(gc_json_dir)) {
 # --- Import ---
 if (do_import) {
   files <- get_my_files(mytcxpath)
-  summaries_oldlength <- dplyr::count(summaries)
+  # nrow() gives an integer scalar; dplyr::count() returned a 1-row
+  # tibble which propagated through the arithmetic below and only
+  # happened to coerce cleanly via as.numeric() because of dplyr's
+  # tibble subtraction behaviour. Plain nrow() is the right primitive.
+  summaries_oldlength <- nrow(summaries)
   my_templist <- get_new_workouts(files, summaries, myruns, verbose = do_verbose,
                                   db_summaries = db_summaries, db_myruns = db_myruns)
   summaries <- my_templist[["summaries"]]
@@ -266,8 +270,8 @@ if (do_import) {
     }
   }
 
-  summaries_newlength <- dplyr::count(summaries)
-  summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
+  summaries_newlength <- nrow(summaries)
+  summaries_lengthdiff <- summaries_newlength - summaries_oldlength
 
   # Re-augment so any newly imported rows pick up their garmin_*
   # enrichment too. augment_summaries() drops pre-existing garmin_*
