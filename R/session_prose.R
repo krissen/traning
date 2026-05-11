@@ -329,7 +329,7 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
 #
 # Falls back to "any source" when no TCX is present so an HAE-only
 # day still gets prose instead of "Ingen data.".
-.session_latest_garmin <- function(runs, trigger_source = "garmin") {
+.session_latest_garmin <- function(runs, trigger_source = "any") {
   if (is.null(runs) || nrow(runs) == 0) return(NULL)
   filtered <- runs
   if (identical(trigger_source, "garmin") &&
@@ -362,8 +362,8 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
                   .data$sessionStart != latest_ts)
   if (nrow(others) == 0) return(others)
 
-  km  <- as.numeric(others$distance) / 1000
-  min <- as.numeric(others$durationMoving, units = "mins")
+  km   <- as.numeric(others$distance) / 1000
+  mins <- as.numeric(others$durationMoving, units = "mins")
   is_tcx <- if ("source" %in% names(others)) {
     is.na(others$source) | others$source == "tcx"
   } else rep(TRUE, nrow(others))
@@ -373,8 +373,8 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
   # distance/duration → treat the size-check as FALSE so the row is
   # only kept via the TCX path; without this guard, an NA-only row
   # leaks an `NA sport` fragment into the "Tidigare idag" line.
-  size_ok <- (is.finite(km)   & km  >= min_km) |
-             (is.finite(min)  & min >= min_min)
+  size_ok <- (is.finite(km)   & km   >= min_km) |
+             (is.finite(mins) & mins >= min_min)
   keep <- is_tcx | size_ok
   keep[is.na(keep)] <- FALSE
   others[keep, , drop = FALSE]
