@@ -117,15 +117,19 @@ Four components, each producing a 0–100 sub-score:
    - Otherwise: 0.
 
 3. **HRV stability (autonomic)** — compare 7-day mean HRV against the
-   28-day mean.
-   - Within ±0.5 ms or rising: 100.
-   - 0.5–3 ms below 28d: 50.
-   - More than 3 ms below: 0.
+   28-day mean (or as many days as the cache holds — the actual
+   baseline-window length is surfaced in the component output and the
+   prose). Scoring is a *linear ramp* between 100 at "good" and 0 at
+   "bad" (see `.score_stability()`):
+   - ≥ -0.5 ms (within band or rising): 100.
+   - ≤ -3 ms (well below): 0.
+   - Linear in between (e.g. -1.75 ms ≈ 50/100).
 
-4. **Resting HR stability** — same shape as HRV, opposite direction:
-   - Within ±1 bpm or falling vs 28d: 100.
-   - 1–3 bpm above: 50.
-   - More than 3 bpm above: 0.
+4. **Resting HR stability** — same linear ramp as HRV, opposite
+   direction (lower-is-better):
+   - ≤ +1 bpm above baseline: 100.
+   - ≥ +3 bpm above: 0.
+   - Linear in between.
 
 Components without enough data (e.g. health_daily missing) are dropped
 from the average rather than scored as 0; the prose call-out makes

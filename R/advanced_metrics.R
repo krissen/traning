@@ -1374,7 +1374,11 @@ compute_race_readiness <- function(summaries, health_daily, target_date,
       m28 <- mean(last28, na.rm = TRUE)
       delta <- m7 - m28
       score <- .score_stability(delta, good, bad, direction = direction)
-      list(score = score, raw_today = m7, raw_baseline = m28, delta = delta)
+      # baseline_days is the actual length of last28, not always 28
+      # — accounts for users with < 28 days of cached data. Carried
+      # through so the prose label stays honest.
+      list(score = score, raw_today = m7, raw_baseline = m28, delta = delta,
+           baseline_days = length(last28))
     }
     hrv <- .stability_component("heart_rate_variability",
                                  good = 0.5, bad = 3,
@@ -1442,18 +1446,21 @@ compute_race_readiness <- function(summaries, health_daily, target_date,
       c0$raw_today, c0$raw_projected
     ))
   }
+  .bdays <- function(c0) {
+    if (is.null(c0$baseline_days)) 28L else c0$baseline_days
+  }
   if (!is.null(components$hrv_stability)) {
     c0 <- components$hrv_stability
     lines <- c(lines, sprintf(
-      "  HRV: 7d %.1f vs 28d %.1f (%+.1f ms)",
-      c0$raw_today, c0$raw_baseline, c0$delta
+      "  HRV: 7d %.1f vs %dd %.1f (%+.1f ms)",
+      c0$raw_today, .bdays(c0), c0$raw_baseline, c0$delta
     ))
   }
   if (!is.null(components$resting_hr_stability)) {
     c0 <- components$resting_hr_stability
     lines <- c(lines, sprintf(
-      "  Vilopuls: 7d %.0f vs 28d %.0f (%+.1f bpm)",
-      c0$raw_today, c0$raw_baseline, c0$delta
+      "  Vilopuls: 7d %.0f vs %dd %.0f (%+.1f bpm)",
+      c0$raw_today, .bdays(c0), c0$raw_baseline, c0$delta
     ))
   }
 

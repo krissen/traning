@@ -378,7 +378,43 @@ def get_race_readiness(
 
     args: dict = {"target_date": td.isoformat(),
                   "taper_weeks": int(taper_weeks)}
-    return r_report("compute_race_readiness", args)
+    raw = _run_r("compute_race_readiness", args)
+    # r_report() assumes tabular data; compute_race_readiness returns
+    # a structured list (score / status / prose / components) so we
+    # hand-roll a consistent envelope that surfaces the key fields in
+    # `summary` instead of burying them in a dict-shaped `details`.
+    if raw.get("type") == "error":
+        return {
+            "schema_version": "1.0",
+            "summary": {"status": "error",
+                         "message": raw.get("message", "")},
+            "details": {},
+            "_meta": {
+                "func": "compute_race_readiness",
+                "query_date": datetime.now().isoformat(),
+                "target_date": td.isoformat(),
+                "taper_weeks": int(taper_weeks),
+            },
+        }
+    data = raw.get("data", {}) or {}
+    return {
+        "schema_version": "1.0",
+        "summary": {
+            "status": "ok",
+            "readiness_score": data.get("score"),
+            "readiness_status": data.get("status"),
+            "days_until": data.get("days_until"),
+            "target_date": data.get("target_date"),
+            "prose": data.get("prose"),
+        },
+        "details": data.get("components", {}),
+        "_meta": {
+            "func": "compute_race_readiness",
+            "query_date": datetime.now().isoformat(),
+            "target_date": td.isoformat(),
+            "taper_weeks": int(taper_weeks),
+        },
+    }
 
 
 def get_sport_mix(
