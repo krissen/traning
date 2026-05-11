@@ -271,6 +271,91 @@ def _schedule_health_import(files: list[str]) -> None:
         _pending_timer.start()
 
 
+# --- Debounced HAE workout import -------------------------------------------
+#
+# HAE workouts arrive via /v1/workouts and previously sat on disk until the
+# next Garmin-fetch triggered import_hae_workouts() as a side effect. On
+# rest days that meant workouts accumulated for 1–3 days and arrived in a
+# single bunt on the next Garmin run — visible to the user as
+# "Import: 16 pass (...)" notifications. We now run a silent debounced
+# import on every workout push so the cache is current within ~10 min.
+#
+# Silent by design: per-pass notifications remain Garmin-exclusive. The
+# 21:30 day-summary picks the HAE rows up as usual; here we only ensure
+# they reach summaries.RData in time.
+
+_DEBOUNCE_WORKOUTS_SECS = int(os.environ.get(
+    "TRANING_WORKOUTS_DEBOUNCE", str(_DEBOUNCE_SECS)
+))
+_pending_workouts_count: int = 0
+_workouts_timer: threading.Timer | None = None
+_workouts_lock = threading.Lock()
+
+
+def _flush_pending_workouts() -> None:
+    """Silently rebuild summaries.RData via `cli.R --import`.
+
+    Shares the global ``_import_lock`` with the Garmin-trigger path so the
+    two cannot race. Failure is logged to journal; no notification is
+    sent — HAE pushes are dags-kontext, not per-pass events.
+    """
+    global _workouts_timer, _pending_workouts_count
+    with _workouts_lock:
+        n = _pending_workouts_count
+        _pending_workouts_count = 0
+        _workouts_timer = None
+    if n <= 0:
+        return
+
+    with _import_lock:
+        t0 = time.time()
+        try:
+            result = subprocess.run(
+                ["Rscript", str(_CLI_R), "--import"],
+                capture_output=True, text=True, timeout=300,
+                cwd=str(_CLI_R.parent.parent),
+            )
+            elapsed = int(time.time() - t0)
+            if result.returncode != 0:
+                log.warning(
+                    "HAE auto-import failed (%ds, %d pending): %s",
+                    elapsed, n, result.stderr.strip()[-300:],
+                )
+            else:
+                # Surface the trailing import-summary line for journal logs.
+                lines = [l.strip() for l in result.stdout.strip().splitlines()
+                         if l.strip()]
+                summary = next(
+                    (l for l in reversed(lines)
+                     if any(w in l.lower() for w in ["import", "inget att"])),
+                    "klart",
+                )
+                log.info("HAE auto-import OK (%ds, %d pending): %s",
+                         elapsed, n, summary)
+        except subprocess.TimeoutExpired:
+            elapsed = int(time.time() - t0)
+            log.warning("HAE auto-import timed out after %ds (%d pending)",
+                        elapsed, n)
+        except Exception:
+            log.exception("HAE auto-import: unexpected error")
+
+
+def _schedule_workouts_import(n_new: int) -> None:
+    """Note new workouts and (re)start the debounce timer."""
+    global _workouts_timer, _pending_workouts_count
+    if n_new <= 0:
+        return
+    with _workouts_lock:
+        _pending_workouts_count += n_new
+        if _workouts_timer is not None:
+            _workouts_timer.cancel()
+        _workouts_timer = threading.Timer(
+            _DEBOUNCE_WORKOUTS_SECS, _flush_pending_workouts
+        )
+        _workouts_timer.daemon = True
+        _workouts_timer.start()
+
+
 # Track state for /v1/status endpoint
 _start_time = time.time()
 _last_received: datetime | None = None
@@ -372,6 +457,9 @@ def create_app() -> FastAPI:
         n = save_workout_push(payload)
         if n > 0:
             commit_health_data(n_workouts=n)
+            # Schedule a silent debounced import so HAE workouts hit
+            # summaries.RData without waiting for the next Garmin fetch.
+            _schedule_workouts_import(n)
 
         _last_received = datetime.now()
         _total_received += 1
