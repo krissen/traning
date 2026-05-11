@@ -1,7 +1,6 @@
 """R bridge — subprocess helpers for calling R functions from the MCP server."""
 
 import base64
-import getpass
 import json
 import logging
 import os
@@ -24,11 +23,12 @@ MCP_BRIDGE_R = TRANING_ROOT / "inst" / "mcp_bridge.R"
 # survives the R subprocess exit. R's own tempdir() is wiped when the
 # bridge process ends, which used to race with Python's read.
 #
-# Per-user dir name + 0o700 perms prevent another local user from
+# Per-uid dir name + 0o700 perms prevent another local user from
 # listing/reading plots or pre-creating a symlinked trap on shared
-# hosts. getpass.getuser() avoids hard-coding the username so the
-# same code runs under `krisse` on kailash, `krisniem` on macOS, etc.
-VAYU_PLOTS_DIR = Path(tempfile.gettempdir()) / f"vayu_plots_{getpass.getuser()}"
+# hosts. os.getuid() is preferred over getpass.getuser() because the
+# latter reads USER/LOGNAME env vars first, and a maliciously-set
+# value containing `/` or `..` could escape the tempdir sandbox.
+VAYU_PLOTS_DIR = Path(tempfile.gettempdir()) / f"vayu_plots_uid{os.getuid()}"
 VAYU_PLOTS_MAX_AGE_SEC = 3600
 
 # Date expression pattern: YYYY, YYYY-MM, YYYY-MM-DD, or relative (-3w, -1y, etc.)
