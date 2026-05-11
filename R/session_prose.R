@@ -254,6 +254,10 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
   latest <- .session_latest_garmin(runs, trigger_source = trigger_source)
   if (is.null(latest) || nrow(latest) == 0) return("Ingen data.")
   if (is.null(on_date)) on_date <- as.Date(latest$sessionStart[1])
+  # Coerce caller-supplied "YYYY-MM-DD" strings so downstream date
+  # arithmetic (e.g. `on_date - 1` inside .day_state_line()) works for
+  # both Date and character inputs.
+  on_date <- as.Date(on_date)
 
   # Non-running sports → legacy quantitative line.
   if (!stringr::str_detect(tolower(sport), "running")) {

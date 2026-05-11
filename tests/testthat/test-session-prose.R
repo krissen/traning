@@ -42,6 +42,46 @@ test_that("session_prose: Röd readiness overrides Form på topp", {
   expect_match(txt, "återhämtningssignaler dominerar")
 })
 
+test_that("session_prose: Röd vs Grön on the same data yields different prose", {
+  # Stronger regression guard for the readiness-override path: with
+  # one synthetic session compute_pmc() seeds TSB at 0 so neither
+  # branch hits "Form på topp" on its own. By comparing two
+  # readiness verdicts on identical data we prove the verdict
+  # actually influences the prose (the bug fixed here was that it
+  # didn't).
+  s <- .sp_mk_run("2026-05-11 09:00", source = "tcx", km = 8,
+                   pace = 5.0, hr = 145, rpe = 30)
+  red <- list(status = "Röd", score = 40, kvalitet = "full",
+              components = list(), components_present = list())
+  green <- list(status = "Grön", score = 85, kvalitet = "full",
+                components = list(), components_present = list())
+  txt_red   <- session_prose(s, on_date = "2026-05-11",
+                              readiness = red,
+                              health_daily = data.frame())
+  txt_green <- session_prose(s, on_date = "2026-05-11",
+                              readiness = green,
+                              health_daily = data.frame())
+  expect_false(identical(txt_red, txt_green))
+  expect_match(txt_red, "Röd 40")
+  expect_false(grepl("Röd", txt_green))
+})
+
+test_that("session_prose: on_date as character is coerced safely", {
+  # Regression: caller-supplied "YYYY-MM-DD" must not break TSB
+  # arithmetic in .day_state_line(). Before the coerce, on_date - 1
+  # raised inside compute_pmc()'s tryCatch and dropped the state line
+  # silently.
+  s <- .sp_mk_run("2026-05-11 09:00", source = "tcx", km = 8,
+                   pace = 5.0, hr = 145, rpe = 30)
+  txt <- session_prose(s, on_date = "2026-05-11",
+                       readiness = list(status = "Gul", score = 60,
+                                         kvalitet = "full",
+                                         components = list(),
+                                         components_present = list()),
+                       health_daily = data.frame())
+  expect_match(txt, "Gul 60")
+})
+
 test_that("session_prose: Gul readiness prepends to TSB text", {
   s <- .sp_mk_run("2026-05-11 09:00", source = "tcx", km = 8,
                    pace = 5.0, hr = 145, rpe = 30)
