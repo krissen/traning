@@ -228,6 +228,19 @@ test_that("compute_race_readiness prose mentions days_until and status", {
 })
 
 
+test_that("readiness prose lists missing components", {
+  # PMC only — health_daily is NULL so HRV and resting HR get
+  # dropped from the average. The prose must say so explicitly,
+  # not silently use the running-only components and pretend
+  # everything was measured.
+  s <- .fixture_summaries_for_taper(weeks_back = 12L, weekly_km = 40)
+  r <- compute_race_readiness(s, NULL, Sys.Date() + 21L)
+  expect_match(r$prose, "Saknade komponenter")
+  expect_match(r$prose, "HRV")
+  expect_match(r$prose, "Vilopuls")
+})
+
+
 test_that(".score_stability hits the linear band", {
   # Symmetric "higher-is-better" semantics: good = within 0.5 of
   # baseline, bad = >3 below. Score 100 at delta=0, 0 at delta=-3.

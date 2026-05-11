@@ -1433,6 +1433,22 @@ compute_race_readiness <- function(summaries, health_daily, target_date,
             abs(days_until), status, round(total_score))
   }
 
+  # Surface which components weren't measured (per the design doc:
+  # we never zero-score absent data, we drop it — and the prose
+  # should say so explicitly so the user knows the score is being
+  # averaged over a partial set).
+  all_components <- c(
+    ctl_trend            = "CTL",
+    tsb_projection       = "TSB",
+    hrv_stability        = "HRV",
+    resting_hr_stability = "Vilopuls"
+  )
+  missing <- setdiff(names(all_components), names(components))
+  missing_line <- if (length(missing) > 0L) {
+    sprintf("Saknade komponenter (ingår inte i snittet): %s",
+            paste(all_components[missing], collapse = ", "))
+  } else NULL
+
   lines <- character(0)
   if (!is.null(components$ctl_trend)) {
     c0 <- components$ctl_trend
@@ -1467,7 +1483,7 @@ compute_race_readiness <- function(summaries, health_daily, target_date,
     ))
   }
 
-  paste(c(hdr, lines), collapse = "\n")
+  paste(c(hdr, lines, missing_line), collapse = "\n")
 }
 
 

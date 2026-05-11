@@ -101,7 +101,7 @@ Four components, each producing a 0–100 sub-score:
 
 1. **CTL trend (fitness)** — compare CTL today vs CTL 28 days ago.
    - Rising or flat (`delta >= -2`): 100.
-   - Falling (`delta < -10`): 0.
+   - Falling (`delta <= -10`): 0.
    - Linear between.
 
 2. **TSB projection (form)** — project today's TSB toward an
