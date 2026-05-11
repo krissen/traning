@@ -13,7 +13,7 @@ and syncs to kedar via GitHub.
 
 | Name | Role | OS | Tailscale |
 |------|------|----|-----------|
-| **kailash** | Server — runs FastAPI, timers, HA | Arch Linux | Yes |
+| **kailash** | Server — runs FastAPI, timers, HA, Caddy ingress | Arch Linux | Yes |
 | **anandavani** | iPhone — HAE app, health data source | iOS | Yes |
 | **kedar** | Development Mac — code, R analysis | macOS | Yes |
 
@@ -44,7 +44,7 @@ GitHub requires unique deploy keys per repo, hence two keys.
 HAE app (anandavani)
   │ HTTP POST (JSON, API key auth)
   ▼
-FastAPI /v1/health (kailash:8421)
+FastAPI /v1/health (kailash Tailscale IP:8421)
   │ save_health_push() — one file per metric
   │ {metric}_{first_date}_{last_date}.json
   ▼
@@ -82,7 +82,7 @@ ha_strava HACS integration (sensor update)
 HA automation (state trigger on sensor.strava_kristian_niemi_recent_activity)
   │ REST command POST
   ▼
-FastAPI /v1/trigger/garmin (kailash:8421)
+FastAPI /v1/trigger/garmin (kailash Tailscale IP:8421)
   │ BackgroundTasks → subprocess: traning fetch garmin
   ▼
 traning fetch garmin
@@ -344,6 +344,15 @@ deploy.sh all       code + secrets + tokens + enable services
 Code is deployed via git (not rsync). Both kailash and kedar work from
 the same GitHub remote. Sensitive files (credentials, tokens, .Renviron)
 are never committed — transferred via SCP only.
+
+### Runtime bind policy
+
+- `traning-receiver` binds to kailash's Tailscale IP (`100.93.126.68:8421`).
+- `traning-vayu` binds to kailash's Tailscale IP (`100.93.126.68:8422`).
+- `traning-shiny` binds to loopback (`127.0.0.1:8423`) and is published only
+  through host-level reverse proxy.
+- Public subdomain routing for `traning.niemi.cc` lives in the host/infra repo,
+  not in this application repo.
 
 ### R dependencies
 

@@ -139,19 +139,23 @@ ssh kailash 'cd ~/dokument/traning-data && git log --since="24h ago" --format="%
 # Manual Garmin fetch on kailash
 ssh kailash 'TRANING_DATA=~/dokument/traning-data ~/dev/traning/python/.venv/bin/traning fetch garmin -v'
 
-# Test FastAPI
-curl http://kailash:8421/health
-curl -H "X-API-Key: <key>" http://kailash:8421/v1/status
+# Test FastAPI over Tailscale
+curl http://100.93.126.68:8421/health
+curl -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status
 ```
 
 ## HAE configuration (iPhone)
 
 Two automations in Health Auto Export app on anandavani:
 
-1. **Health metrics:** REST API POST to `http://<kailash-ip>:8421/v1/health`
-2. **Workouts:** REST API POST to `http://<kailash-ip>:8421/v1/workouts`
+1. **Health metrics:** REST API POST to `http://100.93.126.68:8421/v1/health`
+2. **Workouts:** REST API POST to `http://100.93.126.68:8421/v1/workouts`
 
 Both with header `X-API-Key: <key from traning-env.local>`.
+
+The receiver is intended to be Tailscale-only on kailash. If you later move
+the HAE client off tailnet, change `TRANING_RECEIVER_HOST` in
+`/etc/traning/env` and redeploy the units from the repo.
 
 HAE pushes automatically in the background. iOS may delay execution;
 frequency depends on Background App Refresh and device state (charging
