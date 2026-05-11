@@ -69,6 +69,24 @@ test_that(".insight_streak_line silent on empty inputs", {
   expect_null(traning:::.insight_streak_line(tibble::tibble(), Sys.Date()))
 })
 
+test_that(".insight_streak_line tolerates NA sessionStart rows", {
+  # A row with NA sessionStart used to crash the helper through
+  # max(prior) returning NA. Bad data should be silently dropped,
+  # leaving the remaining valid rows to drive the decision.
+  today <- as.Date("2026-05-11")
+  summaries <- tibble::tibble(
+    sessionStart = as.POSIXct(c(NA, "2026-05-07 08:00:00",
+                                 "2026-05-11 08:00:00"),
+                               tz = "UTC"),
+    distance = c(0, 8000, 6000),
+    sport = "running"
+  )
+  expect_no_error(
+    line <- traning:::.insight_streak_line(summaries, today)
+  )
+  expect_match(line, "Första löpningen på 4 dagar")
+})
+
 
 # --- ACWR commentary --------------------------------------------------------
 

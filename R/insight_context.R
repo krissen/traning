@@ -39,7 +39,12 @@
   runs <- .filter_sport(summaries, "running")
   if (nrow(runs) == 0L) return(NULL)
 
+  # Drop sessions whose sessionStart didn't parse — otherwise an NA
+  # propagates through max(prior) and the comparison below errors
+  # ("missing value where TRUE/FALSE needed").
   run_dates <- unique(as.Date(runs$sessionStart))
+  run_dates <- run_dates[!is.na(run_dates)]
+  if (length(run_dates) == 0L) return(NULL)
   if (!(on_date %in% run_dates)) return(NULL)
 
   prior <- run_dates[run_dates < on_date]
