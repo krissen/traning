@@ -328,6 +328,17 @@ augment_summaries <- function(summaries, garmin_data,
     " aktiviteter matchade (tolerans \u00b1", tolerance_secs, " s)."
   )
 
+  # Drop pre-existing garmin_* columns so re-augmentation overwrites
+  # rather than appends suffixed duplicates via bind_cols(). Without
+  # this guard a second call would leave the old (possibly NA-only)
+  # garmin_maxHR alongside a fresh garmin_maxHR...1, and downstream
+  # code keeps reading the stale original. Make augment_summaries()
+  # idempotent so import-time and load-time augmentation can both
+  # call it without bookkeeping.
+  if (any(grepl("^garmin_", names(summaries)))) {
+    summaries <- summaries[, !grepl("^garmin_", names(summaries)),
+                           drop = FALSE]
+  }
   dplyr::bind_cols(summaries, tibble::as_tibble(result_cols))
 }
 
