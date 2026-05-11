@@ -202,6 +202,36 @@ summaries <- my_templist[["summaries"]]
 myruns <- my_templist[["myruns"]]
 rm(my_templist)
 
+# Auto-upgrade legacy caches missing the garmin_* columns. Before this
+# block existed the cache held only raw TCX/HAE rows and each consumer
+# (Shiny, MCP, R-tests) had to re-augment in memory — and they often
+# did so differently. After this block, garmin_* columns are guaranteed
+# present whenever Garmin JSON data is available, so every downstream
+# command (--pmc, --acwr, --ef, --decoupling, ...) operates on the same
+# enriched view. The upgrade is persisted so subsequent invocations
+# (and other processes reading the same cache) skip the augment step.
+if (!any(grepl("^garmin_", names(summaries))) && dir.exists(gc_json_dir)) {
+  message("Auto-upgrading cache: lägger till garmin_*-kolumner från Garmin JSON …")
+  garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
+                           error = function(e) {
+                             warning("load_garmin_json failed: ",
+                                     conditionMessage(e))
+                             NULL
+                           })
+  if (!is.null(garmin_data) && nrow(garmin_data) > 0) {
+    augmented <- tryCatch(augment_summaries(summaries, garmin_data),
+                           error = function(e) {
+                             warning("augment_summaries failed: ",
+                                     conditionMessage(e))
+                             NULL
+                           })
+    if (!is.null(augmented)) {
+      summaries <- augmented
+      my_dbs_save(db_summaries, db_myruns, summaries, myruns)
+    }
+  }
+}
+
 # --- Import ---
 if (do_import) {
   files <- get_my_files(mytcxpath)
@@ -239,13 +269,11 @@ if (do_import) {
   summaries_newlength <- dplyr::count(summaries)
   summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
 
-  # Augment with Garmin JSON details before persisting so the cache is
-  # the canonical "ready-to-read" view. Consumers (Shiny, MCP, R-tests)
-  # then all see the same enriched data — without this step, compute_pmc()
-  # quietly falls back to bTRIMP for rows missing hrTimeInZone_* / RPE
-  # and Shiny had to re-augment on every app start, drifting from MCP
-  # which read raw rows. Augmentation is idempotent: re-running with the
-  # same JSON cache just refreshes the same garmin_* columns.
+  # Re-augment so any newly imported rows pick up their garmin_*
+  # enrichment too. augment_summaries() drops pre-existing garmin_*
+  # columns first so this is safe to re-run on an already-augmented
+  # cache. Legacy cache upgrades are handled by the cache-load block
+  # above; here we only need to refresh for new/updated rows.
   if ((summaries_lengthdiff > 0 || n_updated > 0) &&
       dir.exists(gc_json_dir)) {
     garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
@@ -294,17 +322,12 @@ if (do_repair_hr) {
   my_dbs_save(db_summaries, db_myruns, summaries, myruns)
 }
 
-# --- Augment with Garmin JSON data (fallback for legacy caches) ---
-# The cache should already contain garmin_* columns from the most
-# recent `--import` run. This block exists as a safety net for caches
-# built before that change; it can be removed once all caches have
-# been re-imported at least once.
-needs_garmin <- do_recovery_hr || do_decoupling || do_hr_zones
-if (needs_garmin && dir.exists(gc_json_dir) &&
-    !any(grepl("^garmin_", names(summaries)))) {
-  garmin_data <- load_garmin_json(gc_json_dir)
-  summaries <- augment_summaries(summaries, garmin_data)
-}
+# Note: the cache-load block at the top of this file now guarantees
+# that garmin_* columns are present whenever Garmin JSON data is
+# available, regardless of which command was invoked. The previous
+# command-specific augment block here was therefore both incomplete
+# (only covered --recovery-hr / --decoupling / --hr-zones, missing
+# --pmc which also uses get_hr_max()) and redundant.
 
 has_daterange <- !is.null(date_range$from) || !is.null(date_range$to)
 
