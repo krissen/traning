@@ -41,6 +41,36 @@ test_that("traning_cli_path honours TRANING_CLI override", {
   })
 })
 
+test_that("traning_cli_path rejects non-executable TRANING_CLI override", {
+  # A regular file at the configured path used to pass `file.exists()`
+  # and slip through; system2() would then crash instead of producing
+  # the structured error this helper guarantees. The exec check must
+  # fall through to the next candidate (here: bundled venv if present,
+  # otherwise NA).
+  fake_bin <- tempfile("fake_traning_noexec_")
+  writeLines("not a real binary", fake_bin)
+  # Explicitly strip execute bits in case the platform mounts /tmp
+  # with permissive defaults.
+  Sys.chmod(fake_bin, "0644")
+  on.exit(unlink(fake_bin), add = TRUE)
+  withr::with_envvar(c(TRANING_CLI = fake_bin), {
+    out <- traning_cli_path()
+    expect_false(identical(normalizePath(out, mustWork = FALSE),
+                            normalizePath(fake_bin)))
+  })
+})
+
+test_that("traning_cli_path rejects a directory at TRANING_CLI", {
+  tmp_dir <- tempfile("fake_traning_dir_")
+  dir.create(tmp_dir)
+  on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
+  withr::with_envvar(c(TRANING_CLI = tmp_dir), {
+    out <- traning_cli_path()
+    expect_false(identical(normalizePath(out, mustWork = FALSE),
+                            normalizePath(tmp_dir)))
+  })
+})
+
 test_that("traning_backfill returns clean error when CLI is missing", {
   # TRANING_CLI points at a non-existent path, and the bundled venv
   # lookup falls through. The function must surface a structured

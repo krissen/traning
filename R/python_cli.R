@@ -7,48 +7,85 @@
 
 #' Locate the `traning` Python CLI executable
 #'
-#' Resolution order:
+#' Resolution order, first hit wins:
 #' \enumerate{
-#'   \item \code{TRANING_CLI} environment variable, if it points at an
-#'     executable file.
-#'   \item Bundled venv at \code{<repo>/python/.venv/bin/traning}
-#'     (the layout produced by \code{python/setup_venv.sh}).
+#'   \item \code{TRANING_CLI} environment variable, if it points at
+#'     an executable file.
+#'   \item Bundled venv at
+#'     \code{<source-repo>/python/.venv/bin/traning}, discovered via
+#'     either \code{system.file()} (devtools::load_all() during dev)
+#'     or the current working directory (Shiny launched from the
+#'     repo root or \code{app/tRanat/}).
+#'   \item Known production paths
+#'     (\code{/home/krisse/dev/traning/python/.venv/bin/traning} on
+#'     kailash).
 #'   \item \code{Sys.which("traning")}.
 #' }
 #'
+#' Each candidate is checked for both existence AND execute
+#' permission — a non-executable file at the configured path would
+#' otherwise crash inside \code{system2()} instead of producing the
+#' structured error envelope this helper promises.
+#'
 #' @return Absolute path to the CLI binary, or \code{NA_character_}
-#'   if none of the candidates are found.
+#'   if no executable candidate is found.
 #' @export
 traning_cli_path <- function() {
+  .is_exec <- function(p) {
+    if (!nzchar(p)) return(FALSE)
+    info <- suppressWarnings(file.info(p))
+    if (is.na(info$isdir) || isTRUE(info$isdir)) return(FALSE)
+    file.exists(p) && file.access(p, mode = 1L) == 0L
+  }
+  .accept <- function(p) {
+    if (.is_exec(p)) normalizePath(p, mustWork = FALSE) else NA_character_
+  }
+
   env_path <- Sys.getenv("TRANING_CLI", unset = "")
-  if (nzchar(env_path) && file.exists(env_path)) {
-    return(normalizePath(env_path, mustWork = FALSE))
+  if (nzchar(env_path)) {
+    out <- .accept(env_path)
+    if (!is.na(out)) return(out)
   }
 
-  # Find the bundled venv. The package may be loaded via
-  # devtools::load_all() (development) or installed; in both cases
-  # the venv lives at <repo-root>/python/.venv/bin/traning when the
-  # standard setup_venv.sh has been run.
-  pkg_root <- tryCatch(
-    normalizePath(system.file(package = "traning"), mustWork = FALSE),
-    error = function(e) ""
-  )
+  # Collect repo-root candidates from every plausible signal: the
+  # package's source root (only meaningful under devtools::load_all,
+  # where system.file returns `<repo>/inst`), and the current
+  # working directory which typically equals the repo root or
+  # `app/tRanat/` when Shiny is launched.
+  repo_candidates <- character(0)
+  pkg_root <- suppressWarnings(system.file(package = "traning"))
   if (nzchar(pkg_root)) {
-    candidates <- c(
-      file.path(pkg_root, "..", "python", ".venv", "bin", "traning"),
-      file.path(pkg_root, "..", "..", "python", ".venv", "bin", "traning")
+    repo_candidates <- c(repo_candidates,
+      # source-package layout: <repo>/inst → <repo>
+      file.path(pkg_root, ".."),
+      # source-package layout where system.file returns <repo>
+      pkg_root
     )
-    for (cand in candidates) {
-      if (file.exists(cand)) {
-        return(normalizePath(cand, mustWork = FALSE))
-      }
-    }
+  }
+  cwd <- getwd()
+  if (nzchar(cwd)) {
+    repo_candidates <- c(repo_candidates,
+      cwd,
+      file.path(cwd, ".."),   # app/tRanat/ → app/
+      file.path(cwd, "..", "..")  # app/tRanat/ → repo root
+    )
+  }
+  for (root in repo_candidates) {
+    cand <- file.path(root, "python", ".venv", "bin", "traning")
+    out  <- .accept(cand)
+    if (!is.na(out)) return(out)
   }
 
-  which_path <- Sys.which("traning")
-  if (nzchar(which_path)) {
-    return(unname(which_path))
+  # Known production paths. Kept short on purpose — anything else
+  # should be configured via TRANING_CLI rather than baked in here.
+  for (cand in c("/home/krisse/dev/traning/python/.venv/bin/traning")) {
+    out <- .accept(cand)
+    if (!is.na(out)) return(out)
   }
+
+  which_path <- unname(Sys.which("traning"))
+  if (.is_exec(which_path)) return(normalizePath(which_path,
+                                                  mustWork = FALSE))
 
   NA_character_
 }
