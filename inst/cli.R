@@ -239,6 +239,31 @@ if (do_import) {
   summaries_newlength <- dplyr::count(summaries)
   summaries_lengthdiff <- as.numeric(summaries_newlength - summaries_oldlength)
 
+  # Augment with Garmin JSON details before persisting so the cache is
+  # the canonical "ready-to-read" view. Consumers (Shiny, MCP, R-tests)
+  # then all see the same enriched data — without this step, compute_pmc()
+  # quietly falls back to bTRIMP for rows missing hrTimeInZone_* / RPE
+  # and Shiny had to re-augment on every app start, drifting from MCP
+  # which read raw rows. Augmentation is idempotent: re-running with the
+  # same JSON cache just refreshes the same garmin_* columns.
+  if ((summaries_lengthdiff > 0 || n_updated > 0) &&
+      dir.exists(gc_json_dir)) {
+    garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
+                             error = function(e) {
+                               warning("load_garmin_json failed: ",
+                                       conditionMessage(e))
+                               NULL
+                             })
+    if (!is.null(garmin_data) && nrow(garmin_data) > 0) {
+      summaries <- tryCatch(
+        augment_summaries(summaries, garmin_data),
+        error = function(e) {
+          warning("augment_summaries failed: ", conditionMessage(e))
+          summaries
+        })
+    }
+  }
+
   # Save if new rows were added OR existing filenames were corrected
   if (summaries_lengthdiff > 0 || n_updated > 0) {
     my_dbs_save(db_summaries, db_myruns, summaries, myruns)
@@ -269,9 +294,14 @@ if (do_repair_hr) {
   my_dbs_save(db_summaries, db_myruns, summaries, myruns)
 }
 
-# --- Augment with Garmin JSON data (if needed) ---
+# --- Augment with Garmin JSON data (fallback for legacy caches) ---
+# The cache should already contain garmin_* columns from the most
+# recent `--import` run. This block exists as a safety net for caches
+# built before that change; it can be removed once all caches have
+# been re-imported at least once.
 needs_garmin <- do_recovery_hr || do_decoupling || do_hr_zones
-if (needs_garmin && dir.exists(gc_json_dir)) {
+if (needs_garmin && dir.exists(gc_json_dir) &&
+    !any(grepl("^garmin_", names(summaries)))) {
   garmin_data <- load_garmin_json(gc_json_dir)
   summaries <- augment_summaries(summaries, garmin_data)
 }
