@@ -1,5 +1,18 @@
 # tRäning — Changelog
 
+## 2026-05-07 — Per-sport training load (CTL/ATL/TSB)
+
+Roadmap item "Per-sport CTL overlay" closed out as part of the
+multi-sport refactor. `compute_pmc()` and `compute_trimp()` in
+`R/advanced_metrics.R` accept a `sport=` parameter (single sport or
+bucket name), returning CTL/ATL/TSB series isolated to the selected
+sport. The MCP tool `get_training_load(sport=<bucket>)`
+(`python/traning_cli/mcp/tools.py:126`) exposes the same view; default
+remains `running` for backwards compatibility.
+
+The companion plot `plot_sport_ctl_overlay()` is documented separately
+under "Multi-sport visualisations" below.
+
 ## 2026-05-07 — Multi-sport Shiny dashboard
 
 Final piece of the sport-agnostic refactor. The tRanat dashboard now

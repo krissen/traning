@@ -87,24 +87,6 @@ month comparison (always positive framing).
 
 ---
 
-## Per-sport CTL overlay
-
-**Goal:** Track chronic training load per discipline so a heavy cycling
-or strength week doesn't artificially deflate the running CTL story.
-
-**Default sport buckets:** cycling, walking, running, strength.
-
-**Deliverables:**
-- Extend `compute_pmc()` (or wrapper) so it returns a CTL/ATL/TSB
-  series per sport bucket alongside the existing running-only view.
-- Plot overlay (already partly present in `page_sport_mix.R`) becomes
-  a first-class metric per the four buckets.
-- MCP exposure via `get_training_load(sport=<bucket>)`.
-
-**Dependencies:** TRIMP must be computed per sport, not just running.
-
----
-
 ## Shiny "Utveckling"-fliken: full historik visas inte
 
 **Bug:** Most figures on the Utveckling page only show the last 1–2
