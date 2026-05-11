@@ -274,12 +274,14 @@ if (do_import) {
   summaries_lengthdiff <- summaries_newlength - summaries_oldlength
 
   # Re-augment so any newly imported rows pick up their garmin_*
-  # enrichment too. augment_summaries() drops pre-existing garmin_*
-  # columns first so this is safe to re-run on an already-augmented
-  # cache. Legacy cache upgrades are handled by the cache-load block
-  # above; here we only need to refresh for new/updated rows.
-  if ((summaries_lengthdiff > 0 || n_updated > 0) &&
-      dir.exists(gc_json_dir)) {
+  # enrichment too. augment_summaries() is incremental: rows already
+  # populated are skipped (cheap), only the freshly added rows are
+  # matched. Legacy cache upgrades are handled by the cache-load
+  # block above; here we only need to refresh when new rows actually
+  # arrived. (n_updated reflects filename-path corrections from
+  # get_new_workouts() — those don't change timestamps, so no
+  # additional Garmin matches would be found.)
+  if (summaries_lengthdiff > 0 && dir.exists(gc_json_dir)) {
     garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
                              error = function(e) {
                                warning("load_garmin_json failed: ",

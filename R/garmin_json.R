@@ -253,18 +253,33 @@ import_garmin_json <- function(gc_dir) {
 #' of 120 seconds, comparing the \code{gc_timestamp_utc} column in garmin_data
 #' against the \code{sessionStart} column in summaries (coerced to UTC).
 #'
+#' Incremental by default: rows whose primary match marker
+#' (\code{garmin_maxHR}) is already non-NA are skipped on subsequent calls,
+#' so re-running this on a 15 000-row history with one new session does
+#' \eqn{O(n_{new} \times n_{garmin})} work rather than the previous
+#' \eqn{O(n_{total} \times n_{garmin})}. Pass \code{force = TRUE} to reset
+#' every row and re-match — useful when \code{garmin_data} itself has been
+#' refreshed.
+#'
 #' Activities with no matching JSON record receive NA for all garmin_* columns.
 #' Ambiguous matches (multiple JSON files within the tolerance window) are
 #' resolved by taking the closest match; a warning is emitted when this occurs.
 #'
 #' @param summaries Data frame. The existing summaries tibble (must contain a
-#'   \code{sessionStart} POSIXct column).
+#'   \code{sessionStart} POSIXct column). garmin_* columns are added when
+#'   missing and overwritten in-place on candidate rows.
 #' @param garmin_data Tibble. Output of \code{import_garmin_json()}.
 #' @param tolerance_secs Numeric. Maximum allowed difference in seconds between
 #'   \code{sessionStart} and \code{gc_timestamp_utc} for a match.
 #'   Default 120.
-#' @return The summaries tibble with additional garmin_* columns appended.
-#'   Rows are preserved in their original order.
+#' @param force Logical. When \code{TRUE} every row is re-matched (the
+#'   garmin_* columns are reset to NA before scanning). Default \code{FALSE}
+#'   skips rows already augmented (i.e. those with non-NA
+#'   \code{garmin_maxHR}). Use \code{force = TRUE} after a JSON refresh that
+#'   may fill in fields previously missing.
+#' @return The summaries tibble with garmin_* columns present and populated
+#'   for matched rows. Rows are preserved in their original order; no rows
+#'   are dropped.
 #' @export
 augment_summaries <- function(summaries, garmin_data,
                                tolerance_secs = 120,
@@ -298,15 +313,16 @@ augment_summaries <- function(summaries, garmin_data,
     }
   }
 
-  # Pick the subset of rows that still need augmentation. A row is
-  # "needs_aug" when every garmin_* column is NA — i.e. it has not
-  # been touched by a prior augment_summaries call (or was reset by
-  # force=TRUE above). Rows where at least one garmin_* value exists
-  # are assumed already matched (or definitively unmatchable) and
-  # skipped.
-  garmin_block <- summaries[, garmin_cols, drop = FALSE]
-  na_counts <- rowSums(!is.na(garmin_block))
-  needs_aug <- na_counts == 0L
+  # Pick the subset of rows that still need augmentation. We use
+  # garmin_maxHR as the primary match marker: every successful JSON
+  # match populates it, so an NA value reliably means "this row has
+  # not been augmented yet". Other garmin_* fields can be NA on
+  # matched rows when the JSON itself lacked them (recoveryHeartRate,
+  # directWorkoutRpe etc. are absent in older file format) — using
+  # rowSums-on-all-NA as the marker would incorrectly flag those for
+  # endless retry. To re-populate fields that were previously NA but
+  # are now available in updated JSON, pass force = TRUE.
+  needs_aug <- is.na(summaries$garmin_maxHR)
 
   if (!any(needs_aug)) {
     message("Garmin JSON: alla rader redan augmenterade — inget att göra.")
