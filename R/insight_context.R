@@ -1,0 +1,137 @@
+# Insight context line — adds one prioritized "trend" sentence to the
+# daily readiness notification. Picks at most one of:
+#
+#   1. "Comeback" streak: today had a run after >= 3 days off.
+#   2. ACWR commentary: low (< 0.8) or elevated (> 1.3).
+#   3. HRV trend: 7-day linear slope < -0.5 ms/day.
+#
+# The first match wins; later helpers are only consulted if the
+# higher-priority one is silent. Keeps the notification readable —
+# no chance of three trend lines piling onto the morning push.
+#
+# Opt-out: TRANING_NOTIFY_CONTEXT=false in .Renviron.
+
+.notify_context_enabled <- function() {
+  v <- tolower(Sys.getenv("TRANING_NOTIFY_CONTEXT", unset = "true"))
+  !v %in% c("false", "0", "no", "off")
+}
+
+
+# --- Comeback / streak ------------------------------------------------------
+
+#' Generate a streak-comeback line when today is the first run after a layoff
+#' @keywords internal
+.insight_streak_line <- function(summaries, on_date,
+                                  threshold_days = 3L) {
+  on_date <- as.Date(on_date)
+  if (is.null(summaries) || nrow(summaries) == 0L) return(NULL)
+  runs <- .filter_sport(summaries, "running")
+  if (nrow(runs) == 0L) return(NULL)
+
+  run_dates <- unique(as.Date(runs$sessionStart))
+  if (!(on_date %in% run_dates)) return(NULL)
+
+  prior <- run_dates[run_dates < on_date]
+  if (length(prior) == 0L) return(NULL)
+
+  days_since_last_run <- as.integer(on_date - max(prior))
+  if (days_since_last_run >= threshold_days) {
+    return(sprintf("Första löpningen på %d dagar.",
+                   days_since_last_run))
+  }
+  NULL
+}
+
+
+# --- ACWR commentary --------------------------------------------------------
+
+#' Generate an ACWR commentary line when the ratio sits in a noteworthy band
+#' @keywords internal
+.insight_acwr_line <- function(summaries, on_date) {
+  if (is.null(summaries) || nrow(summaries) == 0L) return(NULL)
+  acwr_tbl <- tryCatch(compute_acwr(summaries),
+                        error = function(e) NULL)
+  if (is.null(acwr_tbl) || nrow(acwr_tbl) == 0L) return(NULL)
+  row <- acwr_tbl[acwr_tbl$date == as.Date(on_date), , drop = FALSE]
+  if (nrow(row) == 0L) return(NULL)
+
+  acwr <- row$acwr[[1]]
+  if (!is.finite(acwr) || acwr <= 0) return(NULL)
+
+  if (acwr < 0.8) {
+    return(sprintf("ACWR %.2f — låg belastning, bra återhämtning.",
+                   acwr))
+  }
+  if (acwr > 1.5) {
+    return(sprintf("ACWR %.2f — hög belastning, skadetröskeln i sikte.",
+                   acwr))
+  }
+  if (acwr > 1.3) {
+    return(sprintf("ACWR %.2f — något hög belastning, försiktigt framåt.",
+                   acwr))
+  }
+  NULL
+}
+
+
+# --- HRV trend --------------------------------------------------------------
+
+#' Generate an HRV downtrend line when the 7-day slope is meaningfully negative
+#' @keywords internal
+.insight_hrv_trend_line <- function(health_daily, on_date,
+                                     slope_threshold = -0.5,
+                                     window_days = 7L,
+                                     min_samples = 5L) {
+  if (is.null(health_daily) || nrow(health_daily) == 0L) return(NULL)
+  hrv <- health_daily[health_daily$metric == "heart_rate_variability",
+                      , drop = FALSE]
+  if (nrow(hrv) < min_samples) return(NULL)
+
+  hrv$date <- as.Date(hrv$date)
+  hrv <- hrv[order(hrv$date), ]
+  window_end   <- as.Date(on_date)
+  window_start <- window_end - (as.integer(window_days) - 1L)
+  in_window <- hrv[hrv$date >= window_start & hrv$date <= window_end, ]
+  in_window <- in_window[!is.na(in_window$value), ]
+  if (nrow(in_window) < min_samples) return(NULL)
+
+  # Linear least squares on (day_offset, value). lsfit() avoids the
+  # weight of pulling in lm()/summary().
+  x <- as.numeric(in_window$date - window_start)
+  y <- in_window$value
+  fit <- tryCatch(stats::lsfit(x, y), error = function(e) NULL)
+  if (is.null(fit)) return(NULL)
+  slope <- fit$coefficients[[2]]
+
+  if (is.finite(slope) && slope < slope_threshold) {
+    return("HRV sjunkande trend — ta det lugnt idag.")
+  }
+  NULL
+}
+
+
+# --- Composer ---------------------------------------------------------------
+
+#' Pick at most one insight-context line, by priority
+#'
+#' Priority order is fixed:
+#' \enumerate{
+#'   \item Comeback streak (\code{.insight_streak_line}).
+#'   \item ACWR commentary (\code{.insight_acwr_line}).
+#'   \item HRV downtrend (\code{.insight_hrv_trend_line}).
+#' }
+#' Returns \code{NULL} when no helper has anything to say.
+#'
+#' @keywords internal
+.insight_context_line <- function(summaries, health_daily, on_date) {
+  candidates <- list(
+    function() .insight_streak_line(summaries, on_date),
+    function() .insight_acwr_line(summaries, on_date),
+    function() .insight_hrv_trend_line(health_daily, on_date)
+  )
+  for (fn in candidates) {
+    line <- tryCatch(fn(), error = function(e) NULL)
+    if (!is.null(line) && length(line) == 1L && nzchar(line)) return(line)
+  }
+  NULL
+}

@@ -1600,6 +1600,13 @@ health_insight_readiness <- function(health_daily, summaries,
     if (!is.null(weekly_line)) parts <- c(parts, weekly_line)
   }
 
+  # Smart insight: at most one prioritized trend line (streak / ACWR /
+  # HRV-trend). Opt-out: TRANING_NOTIFY_CONTEXT=false.
+  if (.notify_context_enabled()) {
+    ctx_line <- .insight_context_line(summaries, health_daily, row$date)
+    if (!is.null(ctx_line)) parts <- c(parts, ctx_line)
+  }
+
   prosa <- paste(parts, collapse = " ")
 
   components_present <- list(
