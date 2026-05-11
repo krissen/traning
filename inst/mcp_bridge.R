@@ -246,8 +246,14 @@ build_call_args <- function(func_name, func_args) {
   # Multi-sport plot extras
   if (func_name == "plot_sport_mix") {
     if (!is.null(func_args$period)) a$period <- as.character(func_args$period)
-    if (!is.null(func_args$min_value))
+    if (!is.null(func_args$min_value)) {
       a$min_value <- as.numeric(func_args$min_value)
+    } else if (!is.null(func_args$min_km)) {
+      # Backward-compat: pre-2026-05 MCP clients sent `min_km`. Map it
+      # to the renamed `min_value` so they keep working until they
+      # upgrade. `min_value` (when both are sent) wins.
+      a$min_value <- as.numeric(func_args$min_km)
+    }
     # `metric` is already injected above (it's a generic forwarded arg);
     # plot_sport_mix accepts "distance" / "duration" / "trimp".
   }

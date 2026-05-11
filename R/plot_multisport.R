@@ -16,7 +16,14 @@
 #                   yoga sessions visible).
 #   - "trimp"     → Banister TRIMP, the effort axis that lets gym
 #                   minutes and a 20-km run be compared. Sessions
-#                   without HR or under 10 min contribute 0.
+#                   without HR or under 10 min produce NA and are
+#                   dropped (the .value filter below excludes them).
+# `hr_max` (TRIMP only) is the physiological max used in the Banister
+# formula. Defaults to get_hr_max() drawn from the *unfiltered*
+# summaries so the TRIMP scale stays stable across date / sport
+# selections — picking the window-local observed max would inflate
+# easy-week TRIMP relative to hard-week TRIMP, since hr_max should
+# be a physiological constant.
 # Returns a tibble with columns period (chr), sport (chr),
 # value (dbl), metric (chr).
 # `min_value = 0` keeps zero-buckets (useful for the calendar where
@@ -25,13 +32,23 @@
                              from = NULL, to = NULL,
                              sport = NULL,
                              min_value = 0.1,
-                             metric = c("distance", "duration", "trimp")) {
+                             metric = c("distance", "duration", "trimp"),
+                             hr_max = NULL) {
   metric <- match.arg(metric)
   empty <- tibble::tibble(period = character(0),
                           sport = character(0),
                           value = numeric(0),
                           metric = character(0))
   if (is.null(summaries) || nrow(summaries) == 0) return(empty)
+
+  # Resolve hr_max from the *unfiltered* input before any date/sport
+  # narrowing so the TRIMP scale is comparable across windows.
+  trimp_hr_max <- if (metric == "trimp") {
+    if (is.null(hr_max)) {
+      tryCatch(get_hr_max(summaries, sport = "running"),
+               error = function(e) NULL)
+    } else hr_max
+  } else NULL
 
   filtered <- if (is.null(sport)) summaries else .filter_sport(summaries, sport)
   if (nrow(filtered) == 0) return(empty)
@@ -46,7 +63,7 @@
                                             units = "mins"))
       ifelse(is.na(d_mov) | d_mov == 0, d_tot, d_mov)
     },
-    trimp = .session_trimp(filtered)
+    trimp = .session_trimp(filtered, hr_max = trimp_hr_max)
   )
 
   filtered$.value <- src_value
@@ -63,27 +80,30 @@
 }
 
 # Per-session Banister TRIMP. Returns a numeric vector aligned to
-# `df` rows; NA where HR or duration is missing. Mirrors the
-# session-level math in compute_trimp() but skips the daily
-# aggregation so .sport_mix_data() can re-bucket per (period, sport).
-# hr_max is observed over the whole frame (universal max rather than
-# per-sport) — fine for an effort-comparison axis where small
-# per-sport calibration differences are noise.
-.session_trimp <- function(df) {
+# `df` rows; NA where HR or duration is missing or below the 10-min
+# floor. Mirrors the session-level math in compute_trimp() but skips
+# the daily aggregation so .sport_mix_data() can re-bucket per
+# (period, sport). Callers must pass a stable `hr_max` — picking the
+# window-local max would make TRIMP scale depend on the date range.
+.session_trimp <- function(df, hr_max = NULL) {
   if (nrow(df) == 0) return(numeric(0))
   hr_obs <- suppressWarnings(as.numeric(df$avgHeartRateMoving))
   dur    <- suppressWarnings(as.numeric(df$durationMoving, units = "mins"))
   ok <- !is.na(hr_obs) & hr_obs > 0 & !is.na(dur) & dur > 10
 
-  hr_max_obs <- suppressWarnings(max(hr_obs[ok], na.rm = TRUE))
-  if (!is.finite(hr_max_obs) || hr_max_obs <= 0) {
+  if (is.null(hr_max)) {
+    # Last-resort fallback: observed max over the frame. Documented
+    # as a degraded mode; .sport_mix_data() always passes hr_max.
+    hr_max <- suppressWarnings(max(hr_obs[ok], na.rm = TRUE))
+  }
+  if (!is.finite(hr_max) || hr_max <= 0) {
     return(rep(NA_real_, nrow(df)))
   }
   hr_rest <- tryCatch(get_hr_rest(as.Date(df$sessionStart)),
                        error = function(e) rep(50, nrow(df)))
   if (length(hr_rest) != nrow(df)) hr_rest <- rep(50, nrow(df))
 
-  delta <- (hr_obs - hr_rest) / (hr_max_obs - hr_rest)
+  delta <- (hr_obs - hr_rest) / (hr_max - hr_rest)
   delta <- pmax(0, pmin(1, delta))
   trimp <- dur * delta * 0.64 * exp(1.92 * delta)
   ifelse(ok, trimp, NA_real_)
@@ -129,7 +149,8 @@
 plot_sport_mix <- function(summaries, period = "month",
                            metric = c("distance", "duration", "trimp"),
                            from = NULL, to = NULL,
-                           sport = NULL, min_value = 0.1) {
+                           sport = NULL, min_value = 0.1,
+                           hr_max = NULL) {
   metric <- match.arg(metric)
   # ISO week number (%V) must be paired with ISO week-year (%G), not the
   # calendar year (%Y), or weeks straddling Jan 1 get bucketed under the
@@ -141,7 +162,8 @@ plot_sport_mix <- function(summaries, period = "month",
                        stop("period must be one of: month, week, year"))
   data <- .sport_mix_data(summaries, period_fmt = period_fmt,
                           from = from, to = to, sport = sport,
-                          min_value = min_value, metric = metric)
+                          min_value = min_value, metric = metric,
+                          hr_max = hr_max)
 
   if (nrow(data) == 0) {
     msg <- switch(metric,

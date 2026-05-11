@@ -295,6 +295,10 @@ def get_yearly_summary(
 # Multi-sport visualisations
 # ---------------------------------------------------------------------------
 
+_SPORT_MIX_PERIODS = ("month", "week", "year")
+_SPORT_MIX_METRICS = ("distance", "duration", "trimp")
+
+
 def get_sport_mix(
     period: str = "month",
     metric: str = "distance",
@@ -318,8 +322,26 @@ def get_sport_mix(
         min_value: Drop (period, sport) cells whose summed value falls
             below this threshold. Units follow `metric`.
     """
+    period_norm = (period or "").strip().lower()
+    if period_norm not in _SPORT_MIX_PERIODS:
+        return {
+            "type": "error",
+            "message": (
+                f"period must be one of {_SPORT_MIX_PERIODS}, "
+                f"got {period!r}"
+            ),
+        }
+    metric_norm = (metric or "").strip().lower()
+    if metric_norm not in _SPORT_MIX_METRICS:
+        return {
+            "type": "error",
+            "message": (
+                f"metric must be one of {_SPORT_MIX_METRICS}, "
+                f"got {metric!r}"
+            ),
+        }
     args = _build_args(after, before,
-                       period=period, metric=metric,
+                       period=period_norm, metric=metric_norm,
                        min_value=min_value)
     return r_plot("plot_sport_mix", args)
 
