@@ -218,9 +218,12 @@ rm(my_templist)
 # stay garmin_matched=TRUE / metrics=NA forever.
 gc_json_cache <- file.path(traning_data, "cache", "garmin_json.RData")
 augmented_at <- attr(summaries, "garmin_augmented_at")
+# Missing attribute (legacy cache from before attr-tracking) is treated
+# as "infinitely old" so the next augment will refresh under force=TRUE
+# and stamp the cache correctly going forward.
+if (is.null(augmented_at)) augmented_at <- as.POSIXct("1970-01-01", tz = "UTC")
 json_cache_newer <-
   file.exists(gc_json_cache) &&
-  !is.null(augmented_at) &&
   file.mtime(gc_json_cache) > augmented_at
 
 if ((!("garmin_matched" %in% names(summaries)) || json_cache_newer) &&
@@ -300,15 +303,20 @@ if (do_import) {
   summaries_newlength <- nrow(summaries)
   summaries_lengthdiff <- summaries_newlength - summaries_oldlength
 
-  # Re-augment so any newly imported rows pick up their garmin_*
-  # enrichment too. augment_summaries() is incremental: rows already
-  # populated are skipped (cheap), only the freshly added rows are
-  # matched. Legacy cache upgrades are handled by the cache-load
-  # block above; here we only need to refresh when new rows actually
-  # arrived. (n_updated reflects filename-path corrections from
-  # get_new_workouts() — those don't change timestamps, so no
-  # additional Garmin matches would be found.)
-  if (summaries_lengthdiff > 0 && dir.exists(gc_json_dir)) {
+  # Re-augment when either:
+  #   (a) new TCX/HAE rows were imported above (need garmin_* match), or
+  #   (b) the Garmin JSON cache has grown since the last augment (a
+  #       delayed JSON arrived for an activity we imported earlier).
+  # augment_summaries() is incremental, so the (a)-only path stays
+  # cheap; (b) triggers force=TRUE further down so previously
+  # unmatched rows get a fresh look.
+  augmented_at <- attr(summaries, "garmin_augmented_at")
+  if (is.null(augmented_at)) augmented_at <- as.POSIXct("1970-01-01", tz = "UTC")
+  json_cache_newer <-
+    file.exists(gc_json_cache) &&
+    file.mtime(gc_json_cache) > augmented_at
+  if ((summaries_lengthdiff > 0 || json_cache_newer) &&
+      dir.exists(gc_json_dir)) {
     garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
                              error = function(e) {
                                warning("load_garmin_json failed: ",
@@ -320,15 +328,6 @@ if (do_import) {
       # rows acquire garmin_* columns and garmin_matched in the
       # canonical shape; without this the new rows would carry NA
       # marker values that break the NA-safe incremental check.
-      # Re-check the JSON-cache mtime here too — load_garmin_json()
-      # may have appended new files when we called it for the
-      # cache-load block above, but the legacy code path may also
-      # have skipped that block on a previously-augmented cache.
-      augmented_at <- attr(summaries, "garmin_augmented_at")
-      json_cache_newer <-
-        file.exists(gc_json_cache) &&
-        !is.null(augmented_at) &&
-        file.mtime(gc_json_cache) > augmented_at
       summaries <- tryCatch(
         augment_summaries(summaries, garmin_data, force = json_cache_newer),
         error = function(e) {
@@ -338,8 +337,9 @@ if (do_import) {
     }
   }
 
-  # Save if new rows were added OR existing filenames were corrected
-  if (summaries_lengthdiff > 0 || n_updated > 0) {
+  # Save when anything changed: new rows, filename corrections, or a
+  # backfill-driven re-augment refreshed the garmin_* / matched state.
+  if (summaries_lengthdiff > 0 || n_updated > 0 || json_cache_newer) {
     my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   }
   if (summaries_lengthdiff > 0) {

@@ -329,9 +329,13 @@ augment_summaries <- function(summaries, garmin_data,
   # Empty garmin_data → metric columns + the marker now exist; nothing
   # to match. Returning here makes the cache canonically structured so
   # the load-time upgrade only fires once even on hosts that have a
-  # gconnect directory but no JSON files yet.
+  # gconnect directory but no JSON files yet. Stamp the augmented-at
+  # attribute on this path too — without it the mtime-based backfill
+  # check in cli.R would treat any future garmin_json.RData as
+  # "always newer than nothing" and force-re-augment forever.
   if (nrow(garmin_data) == 0) {
     message("garmin_data är tom — kolumner skapade men inga matches gjorda.")
+    attr(summaries, "garmin_augmented_at") <- Sys.time()
     return(summaries)
   }
 
@@ -345,6 +349,11 @@ augment_summaries <- function(summaries, garmin_data,
   needs_aug <- !marker
   if (!any(needs_aug)) {
     message("Garmin JSON: alla rader redan augmenterade — inget att göra.")
+    # Refresh the timestamp so the backfill check in cli.R compares
+    # against "the most recent attempted augment" rather than an
+    # older value. Otherwise mtime drift in the JSON cache (from
+    # unrelated touches) could force unnecessary re-augments.
+    attr(summaries, "garmin_augmented_at") <- Sys.time()
     return(summaries)
   }
 
