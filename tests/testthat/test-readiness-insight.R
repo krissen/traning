@@ -349,3 +349,42 @@ test_that("TRANING_NOTIFY_SPORT=false suppresses the new lines", {
     expect_false(grepl("Senaste dygnet:", res$prosa))
   })
 })
+
+
+# --- Smart insight context line --------------------------------------------
+
+# Streak-comeback fixture: last running session 5 days before `today`,
+# plus today, so the streak helper has the cleanest possible trigger.
+.fixture_streak_comeback <- function(today) {
+  starts <- as.POSIXct(c(today - 5L, today)) +
+            as.difftime(8, units = "hours")
+  tibble::tibble(
+    sessionStart = starts,
+    sport = "running",
+    distance = c(8000, 6000),
+    durationMoving = as.difftime(c(45, 30), units = "mins"),
+    duration       = as.difftime(c(45, 30), units = "mins"),
+    avgHeartRateMoving = c(140, 138),
+    file = c("a.tcx", "b.tcx"),
+    year = format(starts, "%Y")
+  )
+}
+
+test_that("health_insight_readiness appends the context line when streak fires", {
+  today <- as.Date("2026-04-22")
+  hd <- .fixture_health_daily(today)
+  s  <- .fixture_streak_comeback(today)
+  res <- health_insight_readiness(hd, s, hr_max = 185, on_date = today)
+  expect_match(res$prosa, "Första löpningen på 5 dagar")
+})
+
+
+test_that("TRANING_NOTIFY_CONTEXT=false suppresses the context line", {
+  withr::with_envvar(c("TRANING_NOTIFY_CONTEXT" = "false"), {
+    today <- as.Date("2026-04-22")
+    hd <- .fixture_health_daily(today)
+    s  <- .fixture_streak_comeback(today)
+    res <- health_insight_readiness(hd, s, hr_max = 185, on_date = today)
+    expect_false(grepl("Första löpningen", res$prosa))
+  })
+})
