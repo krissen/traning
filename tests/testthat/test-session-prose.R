@@ -95,22 +95,33 @@ test_that("session_prose: picks latest TCX over later HAE segments", {
 
 test_that("session_prose: NA source rows are treated as TCX", {
   # Legacy rows (pre-source-column) must not be filtered out by the
-  # Garmin-priority selector.
-  s <- .sp_mk_run("2026-05-11 09:00", km = 8, pace = 5.0, hr = 145,
-                   rpe = 30)
-  s$source <- NA_character_
+  # Garmin-priority selector. Includes a separate HAE row so the filter
+  # actually has something to drop — without it the test would pass
+  # even if .session_latest_garmin() ignored the NA branch.
+  s <- dplyr::bind_rows(
+    .sp_mk_run("2026-05-11 09:00", km = 8, pace = 5.0, hr = 145,
+                rpe = 30, source = NA_character_),
+    .sp_mk_run("2026-05-11 17:00", km = 0.7, min = 8,
+                pace = 4.5, hr = 168, sport = "running", source = "hae")
+  )
   txt <- session_prose(s, on_date = "2026-05-11", readiness = NULL,
-                       health_daily = data.frame())
+                       health_daily = data.frame(),
+                       trigger_source = "garmin")
+  # The NA-source 09:00 run (RPE 30 → Distanspass) must win over the
+  # later HAE row.
   expect_match(txt, "^Distanspass")
 })
 
 test_that("session_prose: HAE-only days still produce prose (fallback)", {
-  # No TCX available → fall back to "any" source so the user still
-  # gets a notification instead of "Ingen data.".
+  # No TCX available → the Garmin-priority filter must fall back to
+  # "any" source so the user still gets prose instead of "Ingen data.".
+  # Must pass trigger_source = "garmin" so the fallback path actually
+  # fires; with the default ("any") the filter never runs.
   s <- .sp_mk_run("2026-05-11 09:00", km = 8, pace = 5.0, hr = 145,
                    rpe = 30, source = "hae")
   txt <- session_prose(s, on_date = "2026-05-11", readiness = NULL,
-                       health_daily = data.frame())
+                       health_daily = data.frame(),
+                       trigger_source = "garmin")
   expect_false(identical(txt, "Ingen data."))
 })
 
