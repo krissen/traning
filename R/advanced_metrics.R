@@ -1339,8 +1339,11 @@ compute_race_readiness <- function(summaries, health_daily, target_date,
       )
     }
 
-    # TSB projection: assume taper drives ATL down so TSB rises toward
-    # 0.7 * CTL. Approximate as linear blend with weeks_until.
+    # TSB projection: as the taper unloads ATL, TSB drifts toward a
+    # modestly-tapered ceiling of 0.3 × CTL (puts us mid-band 5–15
+    # for typical fitness levels). We linearly blend from today's
+    # TSB toward that ceiling, capped by taper_weeks; race-day-or-
+    # past returns today's TSB unchanged.
     tsb_today <- tail(pmc$tsb, 1L)
     if (days_until <= 0L) {
       tsb_proj <- tsb_today

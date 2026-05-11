@@ -336,16 +336,24 @@ def get_taper_plan(
     if distance_km is not None:
         args["distance_km"] = float(distance_km)
     out = r_report("compute_taper_plan", args)
-    # The R tibble carries race_date / distance_km only as
-    # attributes, which jsonlite drops. Re-surface them in _meta so
-    # the MCP client can label the plan without re-deriving from the
-    # request.
+    # The R tibble carries race_date / distance_km / the insufficient-
+    # baseline marker only as attributes, which jsonlite drops.
+    # Re-surface them in _meta so the MCP client can label the plan
+    # and explain a zero-row payload without re-deriving anything
+    # from the request.
     if isinstance(out, dict):
         meta = dict(out.get("_meta", {}))
         meta["race_date"] = rd.isoformat()
         if distance_km is not None:
             meta["distance_km"] = float(distance_km)
         meta["taper_weeks"] = int(taper_weeks)
+        summary = out.get("summary") or {}
+        if summary.get("record_count") == 0:
+            meta["insufficient_baseline"] = True
+            meta["explanation"] = (
+                "Ingen löpning de senaste 4 veckorna — taper-planen "
+                "behöver en baseline. Logga några pass och försök igen."
+            )
         out["_meta"] = meta
     return out
 

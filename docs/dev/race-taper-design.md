@@ -23,7 +23,7 @@ math is introduced.
 | Name | Type | Meaning |
 |---|---|---|
 | `summaries` | tibble | Augmented summaries from `my_dbs_load()`. |
-| `race_date` | Date | The race day. Must be in the future. |
+| `race_date` | Date | The race day. Must be on or after today. |
 | `distance_km` | numeric | Race distance in km. Used to label the race-week schedule but does not change the volume curve. |
 | `taper_weeks` | integer | Number of "true" taper weeks before the race. Default 2 (matches the most-cited evidence for half-marathon to marathon distances). |
 
