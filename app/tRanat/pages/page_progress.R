@@ -15,9 +15,6 @@ page_progress_ui <- function(id) {
       metric_panel_ui(ns("month_this"), "Denna m\u00e5nad")
     ),
     tags$div(class = "section-spacer",
-      metric_panel_ui(ns("monthtop"), "Toppm\u00e5nader")
-    ),
-    tags$div(class = "section-spacer",
       metric_panel_ui(ns("pace"), "Tempo")
     ),
     tags$div(class = "section-spacer",
@@ -96,11 +93,6 @@ page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
     metric_panel_server("month_this",
       plot_fn   = shiny::reactive(plot_runs_month(summaries, sport = sp())),
       report_fn = shiny::reactive(report_runs_year_month(summaries, sport = sp())),
-      is_mobile = is_mobile
-    )
-    metric_panel_server("monthtop",
-      plot_fn   = shiny::reactive(plot_monthtop(summaries, sport = sp())),
-      report_fn = shiny::reactive(report_monthtop(summaries, sport = sp())),
       is_mobile = is_mobile
     )
     metric_panel_server("pace",
