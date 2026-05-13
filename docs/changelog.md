@@ -1,5 +1,41 @@
 # tRäning — Changelog
 
+## 2026-05-13 — Pipeline notification fixes + Telegram mirror
+
+Three concurrent regressions resolved (PR #18, #20):
+
+- **Strava webhook restored.** HA `rest_command.traning_fetch_garmin`
+  pointed at `localhost:8421`, but the receiver was hardened to bind
+  only on the Tailscale IP (`100.93.126.68:8421`) in `65f850d`
+  (2026-05-11). Three Strava-triggered fetches had failed silently
+  with `Connect call failed`. HA URL repointed to Tailscale.
+- **Timer-driven Garmin notifications now visible.**
+  `scripts/garmin_fetch_import.sh` suppressed notify stderr via
+  `2>/dev/null` and never called `log_notification()`, so
+  timer-triggered imports were invisible both in the systemd journal
+  and in `notifications.jsonl`. Refactored to mirror the
+  `notify` + `log_notification` pair from `app.py`, pass payload via
+  env vars (safe against quote chars in messages), and surface logger
+  output. Triggers `garmin_timer` and `garmin_timer_insight`.
+- **Telegram mirror added.** All pipeline notifications now fan out
+  to a personal Telegram DM in addition to iOS push. Implementation
+  switched once during the work: `platform: group` (legacy fan-out)
+  silently dropped the Telegram half because the modern
+  `notify.telegram_bot_752463669_<chat>` integration is only
+  addressable via `notify.send_message` with `target.entity_id`, not
+  as a legacy notify service. Final design is a HA script
+  (`script.traning_notify`) that calls both channels explicitly.
+  Python receiver POSTs to `script/traning_notify` with `{title,
+  message}`.
+
+Removed: stale `automations/traning_garmin_fetch.yaml.bak` on kailash.
+
+Follow-up: issue #19 — morning readiness prose mixes `load_flag`
+(yesterday's TRIMP > 2× ATL) with TSB (positive form), producing texts
+like "Drar ner: hög belastning (TSB +9.4)". Plus HRV trend addendum
+can appear together with "OK: stark HRV" because the two are computed
+on independent windows.
+
 ## 2026-05-11 — Smart insight context line
 
 Roadmap item "Smart insight notifications" closed (PR #17). The

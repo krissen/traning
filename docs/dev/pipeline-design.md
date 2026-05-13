@@ -279,10 +279,24 @@ This means HAE can push hourly but commits only happen when data changes.
 
 ### Notification (`notify.py`)
 
-Calls HA REST API `notify.mobile_app_anandavani` on:
+Calls HA REST API `script.traning_notify` on:
 - Health data received
 - Workout data received
 - Garmin fetch with new activities
+
+`script.traning_notify` (defined in
+`/var/local/docker/ha-stack/homeassistant/scripts/traning_notify.yaml` on
+kailash) fans out to two channels:
+1. `notify.mobile_app_anandavani` (iOS push, legacy notify service —
+   supports `title` + `message`)
+2. `notify.send_message` targeting `notify.telegram_bot_752463669_284213061`
+   (personal Telegram DM, modern notify entity — title prefixed into the
+   message text)
+
+The script-based fan-out is required because `platform: group` only
+dispatches to *legacy* notify services. Modern Telegram entities created
+by the `telegram_bot` integration are not addressable as
+`notify.<service>` and would silently fail in a notify group.
 
 Fail-safe: notification errors are logged but never block data operations.
 
@@ -290,6 +304,11 @@ Each call logs the full message to stderr (→ systemd journal):
 ```
 INFO traning_cli.server.notify: Avisering skickad: [tRäning] Hälsodata: 29 metrics mottagna
 ```
+
+**Caveat:** HA returns 200 OK once the script *starts*, not after both
+channels deliver. `sent=True` in `notifications.jsonl` means HA accepted
+the call — it does not guarantee Telegram or push actually went through.
+Verify per-channel via HA state log on the underlying entities.
 
 ### Debugging notifications
 
