@@ -90,7 +90,7 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL,
   do_year   <- format(ref_date, "%Y")
   do_month  <- as.integer(format(ref_date, "%m"))
   title <- stringr::str_glue(
-    "Löpturer {month.name[do_month]} {do_year}"
+    "Löpturer {.swedish_months[do_month]} {do_year}"
   )
 
   data %>%
@@ -142,7 +142,7 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
 
   my_month <- as.numeric(format(Sys.time(), "%m"))
   do_month <- if (my_month == 1) 12L else my_month - 1L
-  month_name <- month.name[do_month]
+  month_name <- .swedish_months[do_month]
 
   title <- stringr::str_glue("Jämförelse {month_name} över åren")
   .plot_year_bars(data, title = title, fill = "#7BA7C9")

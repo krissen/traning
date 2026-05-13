@@ -166,6 +166,15 @@ save_atomic <- function(..., file, envir = parent.frame()) {
   invisible(file)
 }
 
+# --- Locale-independent Swedish names ----------------------------------------
+
+# Use these instead of month.name / format(..., "%B") in user-facing strings.
+# The systemd-launched Shiny renderer runs in C locale, where R's built-in
+# month.name is English ("May") even when the rest of the prose is Swedish.
+.swedish_months <- c("januari", "februari", "mars", "april", "maj", "juni",
+                     "juli", "augusti", "september", "oktober", "november",
+                     "december")
+
 # --- Utility -----------------------------------------------------------------
 
 #' Convert a decimal-minutes scalar to M:SS format
