@@ -54,11 +54,11 @@ report_datesum <- function(summaries, do_datesum_from, do_datesum_to,
 
   filtered_summaries %>%
     dplyr::summarise(
-      'Km, tot' = round(sum(distance) / 1000, 1),
-      'Km, max' = round(max(distance) / 1000, 1),
-      'Km, med' = round(mean(distance) / 1000, 1),
+      'Km, tot' = round(sum(distance, na.rm = TRUE) / 1000, 1),
+      'Km, max' = round(max(distance, na.rm = TRUE) / 1000, 1),
+      'Km, med' = round(mean(distance, na.rm = TRUE) / 1000, 1),
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
-      'Tempo, max' = dec_to_mmss(min(avgPaceMoving)),
+      'Tempo, max' = dec_to_mmss(min(avgPaceMoving, na.rm = TRUE)),
       'Puls, medel' = round(mean(as.numeric(avgHeartRateMoving), na.rm = TRUE), 0),
       Turer = dplyr::n(),
       .groups = "keep") -> datesum
@@ -82,8 +82,8 @@ report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL,
     dplyr::select(`År-mån`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År-mån`) %>%
     dplyr::summarise(
-      'Km, tot' = round(sum(distance) / 1000, 1),
-      'Km, max' = round(max(distance) / 1000, 1),
+      'Km, tot' = round(sum(distance, na.rm = TRUE) / 1000, 1),
+      'Km, max' = round(max(distance, na.rm = TRUE) / 1000, 1),
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
@@ -154,9 +154,9 @@ report_monthlast <- function(summaries, n = NULL, from = NULL, to = NULL,
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
-      'Km/dag' = round((sum(distance) / 1000) / my_day, 2),
-      'Km, tot' = round(sum(distance) / 1000, 1),
-      'Km, max' = round(max(distance) / 1000, 1),
+      'Km/dag' = round((sum(distance, na.rm = TRUE) / 1000) / my_day, 2),
+      'Km, tot' = round(sum(distance, na.rm = TRUE) / 1000, 1),
+      'Km, max' = round(max(distance, na.rm = TRUE) / 1000, 1),
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
@@ -185,9 +185,9 @@ report_yearstop <- function(summaries, n = NULL, from = NULL, to = NULL,
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
-      'Km/dag' = round((sum(distance) / 1000) / my_dayyear, 2),
-      'Km, tot' = round(sum(distance) / 1000, 1),
-      'Km, max' = round(max(distance) / 1000, 1),
+      'Km/dag' = round((sum(distance, na.rm = TRUE) / 1000) / my_dayyear, 2),
+      'Km, tot' = round(sum(distance, na.rm = TRUE) / 1000, 1),
+      'Km, max' = round(max(distance, na.rm = TRUE) / 1000, 1),
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
@@ -220,9 +220,9 @@ report_yearstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
-      'Km/dag' = round((sum(distance) / 1000) / my_dayyear, 2),
-      'Km, tot' = round(sum(distance) / 1000, 1),
-      'Km, max' = round(max(distance) / 1000, 1),
+      'Km/dag' = round((sum(distance, na.rm = TRUE) / 1000) / my_dayyear, 2),
+      'Km, tot' = round(sum(distance, na.rm = TRUE) / 1000, 1),
+      'Km, max' = round(max(distance, na.rm = TRUE) / 1000, 1),
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
@@ -258,9 +258,9 @@ report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
-      'Km/dag' = round((sum(distance) / 1000) / my_day, 2),
-      'Km, tot' = round(sum(distance) / 1000, 1),
-      'Km, max' = round(max(distance) / 1000, 1),
+      'Km/dag' = round((sum(distance, na.rm = TRUE) / 1000) / my_day, 2),
+      'Km, tot' = round(sum(distance, na.rm = TRUE) / 1000, 1),
+      'Km, max' = round(max(distance, na.rm = TRUE) / 1000, 1),
       'Tempo, medel' = dec_to_mmss(mean(avgPaceMoving, na.rm = TRUE)),
       Turer = dplyr::n(),
       .groups = "keep") %>%
