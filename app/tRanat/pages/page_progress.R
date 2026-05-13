@@ -114,8 +114,8 @@ page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
 
     # --- Datumperiod (own date range) ---
     # ignoreInit = TRUE so the initial actionButton value (0) doesn't
-    # fire all six observers at startup and clobber the dateRangeInput
-    # default (Sys.Date() - 180 → today).
+    # fire all six observers at startup and clobber the dateRangeInput's
+    # default 180-day span.
     .set_range <- function(start, end) {
       shiny::updateDateRangeInput(session, "datesum_range",
                                   start = start, end = end)

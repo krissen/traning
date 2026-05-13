@@ -10,9 +10,6 @@
   )
 }
 
-# Internal: pick year-axis breaks that won't crowd.
-# Falls back to every year when the span is small; thins to every Nth year
-# once the span exceeds `target` so labels stay readable on narrow plots.
 # Internal: thin a discrete x-axis (factor/character) to ~target labels.
 # Works with `scale_x_discrete(breaks = .thin_discrete_breaks(N))`. ggplot
 # passes the full set of levels in plot order; we keep an evenly-spaced
@@ -26,6 +23,9 @@
   }
 }
 
+# Internal: pick year-axis breaks that won't crowd.
+# Falls back to every year when the span is small; thins to every Nth year
+# once the span exceeds `target` so labels stay readable on narrow plots.
 .year_breaks <- function(target = 10) {
   function(x) {
     lo <- floor(min(x, na.rm = TRUE))
