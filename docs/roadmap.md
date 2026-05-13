@@ -22,3 +22,15 @@
   ligger först i nuvarande val).
 - **Kronisk belastning.** Förvalda sporter ska vara cykling, gång,
   löpning, paddelsporter och styrketräning (idag annan default).
+
+## Prestation-fliken
+
+- **Tomt veckokilometer-fält i EF och aerob decoupling.** Båda figurerna
+  har ett veckokilometer-fält som idag är tomt. Lokalisera kopplingen
+  mellan plot och underliggande aggregering och fyll i fältet, eller
+  ta bort det om det inte är meningsfullt här.
+- **Outliers i aerob decoupling.** Med period="allt" finns en eller två
+  rejäla outliers någonstans i mitten av datat som ser visuellt suspekta
+  ut. Undersök: är det dåligt mätta sessioner (HR-drift utan kontroll),
+  felaktiga TCX, eller äkta extremvärden? Avgör sedan om de ska filtreras
+  bort, vinsoriseras, eller markeras separat.
