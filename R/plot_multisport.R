@@ -216,8 +216,7 @@ plot_sport_mix <- function(summaries, period = "month",
                      switch(period, month = "månad", week = "vecka",
                             year = "år"))
     ) +
-    ggplot2::theme(axis.text.x = ggplot2::element_text(angle = 45,
-                                                        hjust = 1))
+    .theme_rotated_x()
 }
 
 # --- Cross-sport CTL overlay -------------------------------------------------
@@ -369,7 +368,5 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
       title = paste0("Aktivitetskalender ", format(from_d, "%Y-%m-%d"),
                      " – ", format(display_to, "%Y-%m-%d"))
     ) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 90, hjust = 1, size = 7)
-    )
+    .theme_rotated_x(angle = 90, size = 7)
 }
