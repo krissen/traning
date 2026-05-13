@@ -59,7 +59,7 @@
 #' @return ggplot2 object
 #' @export
 fetch.plot.monthly.dist <- function(month_summaries_til_day) {
-  my_month <- format(Sys.time(), "%B")
+  my_month <- .swedish_months[as.integer(format(Sys.time(), "%m"))]
   my_title <- stringr::str_glue(
     "Distans och tempo för löpande månad ({my_month})")
 

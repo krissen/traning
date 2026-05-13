@@ -10,15 +10,46 @@
   )
 }
 
+# Internal: thin a discrete x-axis (factor/character) to ~target labels.
+# Works with `scale_x_discrete(breaks = .thin_discrete_breaks(N))`. ggplot
+# passes the full set of levels in plot order; we keep an evenly-spaced
+# sample plus the last level so the most recent period stays labelled.
+.thin_discrete_breaks <- function(target = 12) {
+  function(x) {
+    if (length(x) <= target) return(x)
+    idx <- unique(round(seq(1, length(x), length.out = target)))
+    if (utils::tail(idx, 1) != length(x)) idx <- c(idx, length(x))
+    x[idx]
+  }
+}
+
+# Internal: pick year-axis breaks that won't crowd.
+# Falls back to every year when the span is small; thins to every Nth year
+# once the span exceeds `target` so labels stay readable on narrow plots.
+.year_breaks <- function(target = 10) {
+  function(x) {
+    lo <- floor(min(x, na.rm = TRUE))
+    hi <- ceiling(max(x, na.rm = TRUE))
+    span <- hi - lo + 1L
+    step <- max(1L, as.integer(ceiling(span / target)))
+    breaks <- seq(lo, hi, by = step)
+    # Ensure the most recent year is always labelled even when the span
+    # is not divisible by step (otherwise the rightmost bar is unlabelled).
+    if (utils::tail(breaks, 1) != hi) breaks <- c(breaks, hi)
+    breaks
+  }
+}
+
 # Internal helper: shared year-bar chart
 # x = År (integer), y = Km, tot (numeric)
-.plot_year_bars <- function(data, title, x_col = "År", y_col = "Km, tot") {
+.plot_year_bars <- function(data, title, x_col = "År", y_col = "Km, tot",
+                            fill = "steelblue") {
   data %>%
     ggplot2::ggplot(
       ggplot2::aes(x = as.integer(.data[[x_col]]), y = .data[[y_col]])
     ) +
-    ggplot2::geom_col(fill = "steelblue") +
-    ggplot2::scale_x_continuous(breaks = function(x) seq(floor(min(x)), ceiling(max(x)), by = 1)) +
+    ggplot2::geom_col(fill = fill) +
+    ggplot2::scale_x_continuous(breaks = .year_breaks()) +
     ggplot2::ggtitle(title) +
     ggplot2::labs(x = "År", y = "Kilometer") +
     .theme_rotated_x()
@@ -76,7 +107,7 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL,
   do_year   <- format(ref_date, "%Y")
   do_month  <- as.integer(format(ref_date, "%m"))
   title <- stringr::str_glue(
-    "Löpturer {month.name[do_month]} {do_year}"
+    "Löpturer {.swedish_months[do_month]} {do_year}"
   )
 
   data %>%
@@ -110,7 +141,8 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL,
 plot_monthstatus <- function(summaries, from = NULL, to = NULL,
                              sport = "running") {
   data <- report_monthstatus(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år")
+  .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år",
+                  fill = "#4682B4")
 }
 
 #' Last month compared across years — bar chart
@@ -127,10 +159,10 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
 
   my_month <- as.numeric(format(Sys.time(), "%m"))
   do_month <- if (my_month == 1) 12L else my_month - 1L
-  month_name <- month.name[do_month]
+  month_name <- .swedish_months[do_month]
 
   title <- stringr::str_glue("Jämförelse {month_name} över åren")
-  .plot_year_bars(data, title = title)
+  .plot_year_bars(data, title = title, fill = "#7BA7C9")
 }
 
 #' Year-to-date compared across years — bar chart
@@ -145,7 +177,8 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
 plot_yearstatus <- function(summaries, from = NULL, to = NULL,
                             sport = "running") {
   data <- report_yearstatus(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Årssammanställning (t.o.m. idag)")
+  .plot_year_bars(data, title = "Årssammanställning (t.o.m. idag)",
+                  fill = "#C97B4A")
 }
 
 #' Full-year totals compared across years — bar chart
@@ -159,7 +192,8 @@ plot_yearstatus <- function(summaries, from = NULL, to = NULL,
 plot_yearstop <- function(summaries, from = NULL, to = NULL,
                           sport = "running") {
   data <- report_yearstop(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Årssammanställning (hela år)")
+  .plot_year_bars(data, title = "Årssammanställning (hela år)",
+                  fill = "#8E5A33")
 }
 
 #' Distance per period for a date range — bar chart
@@ -219,6 +253,7 @@ plot_datesum <- function(summaries, do_datesum_from, do_datesum_to,
   data %>%
     ggplot2::ggplot(ggplot2::aes(x = period, y = km)) +
     ggplot2::geom_col(fill = "steelblue") +
+    ggplot2::scale_x_discrete(breaks = .thin_discrete_breaks(15)) +
     ggplot2::ggtitle(title) +
     ggplot2::labs(x = x_label, y = "Kilometer") +
     .theme_rotated_x()

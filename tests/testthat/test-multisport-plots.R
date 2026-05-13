@@ -97,6 +97,28 @@ test_that("plot_sport_mix returns a placeholder ggplot when no data", {
   expect_s3_class(p, "ggplot")
 })
 
+test_that("plot_sport_mix builds without error when many periods crowd the x-axis", {
+  # Forces the .thin_discrete_breaks() callback to run via ggplot_build —
+  # the breaks function is not invoked when only the ggplot object is
+  # constructed, so a regression in the helper would otherwise slip past
+  # the expect_s3_class checks above.
+  base <- as.POSIXct("2010-01-01 08:00:00", tz = "UTC")
+  many <- data.frame(
+    sessionStart = base + (0:259) * 86400 * 7,  # 5 years, weekly
+    sport = rep(c("running", "cycling"), length.out = 260),
+    distance = 5000,
+    durationMoving = as.difftime(rep(40, 260), units = "mins"),
+    avgSpeedMoving = 3.3, avgPaceMoving = 5.0,
+    avgHeartRateMoving = 140,
+    duration = as.difftime(rep(40, 260), units = "mins"),
+    stringsAsFactors = FALSE
+  )
+  for (period in c("week", "month", "year")) {
+    p <- plot_sport_mix(many, period = period)
+    expect_silent(ggplot2::ggplot_build(p))
+  }
+})
+
 # --- plot_sport_ctl_overlay -------------------------------------------------
 
 test_that("plot_sport_ctl_overlay produces a ggplot across sports", {
@@ -132,6 +154,27 @@ test_that("plot_sport_calendar default window is one year", {
   df <- .fixture_multisport_plots()
   p <- plot_sport_calendar(df)  # default from/to → today minus 365
   expect_s3_class(p, "ggplot")
+})
+
+test_that("plot_sport_calendar builds without error over a multi-year span", {
+  # Exercises .thin_discrete_breaks() applied to the synthetic year-week
+  # x-axis. A 2-year span has ~104 week-keys; without ggplot_build() the
+  # breaks function is never called.
+  base <- as.POSIXct("2024-01-01 08:00:00", tz = "UTC")
+  many <- data.frame(
+    sessionStart = base + (0:103) * 86400 * 7,
+    sport = rep(c("running", "cycling", "walking"), length.out = 104),
+    distance = 5000,
+    durationMoving = as.difftime(rep(40, 104), units = "mins"),
+    avgSpeedMoving = 3.3, avgPaceMoving = 5.0,
+    avgHeartRateMoving = 140,
+    duration = as.difftime(rep(40, 104), units = "mins"),
+    stringsAsFactors = FALSE
+  )
+  p <- plot_sport_calendar(many,
+                            from = as.Date("2024-01-01"),
+                            to = as.Date("2026-01-01"))
+  expect_silent(ggplot2::ggplot_build(p))
 })
 
 test_that("plot_sport_calendar treats 'to' as exclusive upper bound", {

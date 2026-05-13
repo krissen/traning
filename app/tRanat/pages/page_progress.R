@@ -15,15 +15,20 @@ page_progress_ui <- function(id) {
       metric_panel_ui(ns("month_this"), "Denna m\u00e5nad")
     ),
     tags$div(class = "section-spacer",
-      metric_panel_ui(ns("monthtop"), "Toppm\u00e5nader")
-    ),
-    tags$div(class = "section-spacer",
       metric_panel_ui(ns("pace"), "Tempo")
     ),
     tags$div(class = "section-spacer",
       bslib::card(
         bslib::card_header("Datumperiod"),
         bslib::card_body(
+          tags$div(class = "btn-group btn-group-sm mb-2", role = "group",
+            shiny::actionButton(ns("preset_1w"),  "1v",    class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_1m"),  "1 mån", class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_3m"),  "3 mån", class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_6m"),  "6 mån", class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_1y"),  "1 år",  class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_all"), "Allt",  class = "btn-outline-secondary")
+          ),
           bslib::layout_columns(
             col_widths = bslib::breakpoints(sm = 12, md = 4),
             shiny::dateRangeInput(ns("datesum_range"), NULL,
@@ -98,11 +103,6 @@ page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
       report_fn = shiny::reactive(report_runs_year_month(summaries, sport = sp())),
       is_mobile = is_mobile
     )
-    metric_panel_server("monthtop",
-      plot_fn   = shiny::reactive(plot_monthtop(summaries, sport = sp())),
-      report_fn = shiny::reactive(report_monthtop(summaries, sport = sp())),
-      is_mobile = is_mobile
-    )
     metric_panel_server("pace",
       plot_fn   = shiny::reactive(fetch.plot.mean.pace(
                                     fetch.my.mean.pace(summaries,
@@ -113,6 +113,33 @@ page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
     )
 
     # --- Datumperiod (own date range) ---
+    # ignoreInit = TRUE so the initial actionButton value (0) doesn't
+    # fire all six observers at startup and clobber the dateRangeInput's
+    # default 180-day span.
+    .set_range <- function(start, end) {
+      shiny::updateDateRangeInput(session, "datesum_range",
+                                  start = start, end = end)
+    }
+    shiny::observeEvent(input$preset_1w,
+      .set_range(Sys.Date() - 7,   Sys.Date()), ignoreInit = TRUE)
+    shiny::observeEvent(input$preset_1m,
+      .set_range(Sys.Date() - 30,  Sys.Date()), ignoreInit = TRUE)
+    shiny::observeEvent(input$preset_3m,
+      .set_range(Sys.Date() - 90,  Sys.Date()), ignoreInit = TRUE)
+    shiny::observeEvent(input$preset_6m,
+      .set_range(Sys.Date() - 180, Sys.Date()), ignoreInit = TRUE)
+    shiny::observeEvent(input$preset_1y,
+      .set_range(Sys.Date() - 365, Sys.Date()), ignoreInit = TRUE)
+    shiny::observeEvent(input$preset_all, {
+      earliest <- suppressWarnings(min(summaries$sessionStart, na.rm = TRUE))
+      if (is.finite(earliest)) {
+        .set_range(as.Date(earliest), Sys.Date())
+      } else {
+        # Empty cache — fall back to the dateRangeInput default span.
+        .set_range(Sys.Date() - 180, Sys.Date())
+      }
+    }, ignoreInit = TRUE)
+
     output$plot_datesum <- plotly::renderPlotly({
       shiny::req(input$datesum_range)
       ply(plot_datesum(summaries, input$datesum_range[1],
