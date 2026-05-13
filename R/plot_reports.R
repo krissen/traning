@@ -10,15 +10,29 @@
   )
 }
 
+# Internal: pick year-axis breaks that won't crowd.
+# Falls back to every year when the span is small; thins to every Nth year
+# once the span exceeds `target` so labels stay readable on narrow plots.
+.year_breaks <- function(target = 10) {
+  function(x) {
+    lo <- floor(min(x, na.rm = TRUE))
+    hi <- ceiling(max(x, na.rm = TRUE))
+    span <- hi - lo + 1L
+    step <- max(1L, as.integer(ceiling(span / target)))
+    seq(lo, hi, by = step)
+  }
+}
+
 # Internal helper: shared year-bar chart
 # x = År (integer), y = Km, tot (numeric)
-.plot_year_bars <- function(data, title, x_col = "År", y_col = "Km, tot") {
+.plot_year_bars <- function(data, title, x_col = "År", y_col = "Km, tot",
+                            fill = "steelblue") {
   data %>%
     ggplot2::ggplot(
       ggplot2::aes(x = as.integer(.data[[x_col]]), y = .data[[y_col]])
     ) +
-    ggplot2::geom_col(fill = "steelblue") +
-    ggplot2::scale_x_continuous(breaks = function(x) seq(floor(min(x)), ceiling(max(x)), by = 1)) +
+    ggplot2::geom_col(fill = fill) +
+    ggplot2::scale_x_continuous(breaks = .year_breaks()) +
     ggplot2::ggtitle(title) +
     ggplot2::labs(x = "År", y = "Kilometer") +
     .theme_rotated_x()
