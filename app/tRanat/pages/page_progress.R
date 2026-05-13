@@ -21,6 +21,14 @@ page_progress_ui <- function(id) {
       bslib::card(
         bslib::card_header("Datumperiod"),
         bslib::card_body(
+          tags$div(class = "btn-group btn-group-sm mb-2", role = "group",
+            shiny::actionButton(ns("preset_1w"),  "1v",    class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_1m"),  "1 mån", class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_3m"),  "3 mån", class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_6m"),  "6 mån", class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_1y"),  "1 år",  class = "btn-outline-secondary"),
+            shiny::actionButton(ns("preset_all"), "Allt",  class = "btn-outline-secondary")
+          ),
           bslib::layout_columns(
             col_widths = bslib::breakpoints(sm = 12, md = 4),
             shiny::dateRangeInput(ns("datesum_range"), NULL,
@@ -105,6 +113,25 @@ page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
     )
 
     # --- Datumperiod (own date range) ---
+    .set_range <- function(start, end) {
+      shiny::updateDateRangeInput(session, "datesum_range",
+                                  start = start, end = end)
+    }
+    shiny::observeEvent(input$preset_1w,
+      .set_range(Sys.Date() - 7,   Sys.Date()))
+    shiny::observeEvent(input$preset_1m,
+      .set_range(Sys.Date() - 30,  Sys.Date()))
+    shiny::observeEvent(input$preset_3m,
+      .set_range(Sys.Date() - 90,  Sys.Date()))
+    shiny::observeEvent(input$preset_6m,
+      .set_range(Sys.Date() - 180, Sys.Date()))
+    shiny::observeEvent(input$preset_1y,
+      .set_range(Sys.Date() - 365, Sys.Date()))
+    shiny::observeEvent(input$preset_all, {
+      earliest <- as.Date(min(summaries$sessionStart, na.rm = TRUE))
+      .set_range(earliest, Sys.Date())
+    })
+
     output$plot_datesum <- plotly::renderPlotly({
       shiny::req(input$datesum_range)
       ply(plot_datesum(summaries, input$datesum_range[1],
