@@ -6,8 +6,7 @@
 # a category, year, or month string that can crowd.
 .theme_rotated_x <- function(angle = 45, size = NULL) {
   ggplot2::theme(
-    axis.text.x = ggplot2::element_text(angle = angle, hjust = 1, vjust = 1,
-                                        size = size)
+    axis.text.x = ggplot2::element_text(angle = angle, hjust = 1, size = size)
   )
 }
 
