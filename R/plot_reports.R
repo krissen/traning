@@ -1,5 +1,15 @@
 # Plot variants for table-based reports
 
+# Internal: rotated x-axis label theme for bar/factor x-axes.
+# Date/datetime plots use .adaptive_*_scale() instead — they already
+# rotate based on span. Use this helper for plots where the x-axis is
+# a category, year, or month string that can crowd.
+.theme_rotated_x <- function(angle = 45, size = NULL) {
+  ggplot2::theme(
+    axis.text.x = ggplot2::element_text(angle = angle, hjust = 1, size = size)
+  )
+}
+
 # Internal helper: shared year-bar chart
 # x = År (integer), y = Km, tot (numeric)
 .plot_year_bars <- function(data, title, x_col = "År", y_col = "Km, tot") {
@@ -10,7 +20,8 @@
     ggplot2::geom_col(fill = "steelblue") +
     ggplot2::scale_x_continuous(breaks = function(x) seq(floor(min(x)), ceiling(max(x)), by = 1)) +
     ggplot2::ggtitle(title) +
-    ggplot2::labs(x = "År", y = "Kilometer")
+    ggplot2::labs(x = "År", y = "Kilometer") +
+    .theme_rotated_x()
 }
 
 #' Top 10 months by total distance — horizontal bar chart
@@ -84,7 +95,8 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL,
       name = "Tempo (min/km)"
     ) +
     ggplot2::ggtitle(title) +
-    ggplot2::labs(x = "Dag", y = "Kilometer")
+    ggplot2::labs(x = "Dag", y = "Kilometer") +
+    .theme_rotated_x()
 }
 
 #' Current month compared across years — bar chart
@@ -209,7 +221,5 @@ plot_datesum <- function(summaries, do_datesum_from, do_datesum_to,
     ggplot2::geom_col(fill = "steelblue") +
     ggplot2::ggtitle(title) +
     ggplot2::labs(x = x_label, y = "Kilometer") +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
-    )
+    .theme_rotated_x()
 }
