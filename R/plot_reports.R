@@ -124,7 +124,8 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL,
 plot_monthstatus <- function(summaries, from = NULL, to = NULL,
                              sport = "running") {
   data <- report_monthstatus(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år")
+  .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år",
+                  fill = "#4682B4")
 }
 
 #' Last month compared across years — bar chart
@@ -144,7 +145,7 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
   month_name <- month.name[do_month]
 
   title <- stringr::str_glue("Jämförelse {month_name} över åren")
-  .plot_year_bars(data, title = title)
+  .plot_year_bars(data, title = title, fill = "#7BA7C9")
 }
 
 #' Year-to-date compared across years — bar chart
@@ -159,7 +160,8 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
 plot_yearstatus <- function(summaries, from = NULL, to = NULL,
                             sport = "running") {
   data <- report_yearstatus(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Årssammanställning (t.o.m. idag)")
+  .plot_year_bars(data, title = "Årssammanställning (t.o.m. idag)",
+                  fill = "#C97B4A")
 }
 
 #' Full-year totals compared across years — bar chart
@@ -173,7 +175,8 @@ plot_yearstatus <- function(summaries, from = NULL, to = NULL,
 plot_yearstop <- function(summaries, from = NULL, to = NULL,
                           sport = "running") {
   data <- report_yearstop(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Årssammanställning (hela år)")
+  .plot_year_bars(data, title = "Årssammanställning (hela år)",
+                  fill = "#8E5A33")
 }
 
 #' Distance per period for a date range — bar chart
