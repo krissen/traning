@@ -68,7 +68,7 @@ report_datesum <- function(summaries, do_datesum_from, do_datesum_to,
       'Km, med' = round(.na_safe(distance, mean) / 1000, 1),
       'Tempo, medel' = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
       'Tempo, max' = dec_to_mmss(.na_safe(avgPaceMoving, min)),
-      'Puls, medel' = round(mean(as.numeric(avgHeartRateMoving), na.rm = TRUE), 0),
+      'Puls, medel' = round(.na_safe(as.numeric(avgHeartRateMoving), mean), 0),
       Turer = dplyr::n(),
       .groups = "keep") -> datesum
   datesum
