@@ -113,24 +113,32 @@ page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
     )
 
     # --- Datumperiod (own date range) ---
+    # ignoreInit = TRUE so the initial actionButton value (0) doesn't
+    # fire all six observers at startup and clobber the dateRangeInput
+    # default (Sys.Date() - 180 → today).
     .set_range <- function(start, end) {
       shiny::updateDateRangeInput(session, "datesum_range",
                                   start = start, end = end)
     }
     shiny::observeEvent(input$preset_1w,
-      .set_range(Sys.Date() - 7,   Sys.Date()))
+      .set_range(Sys.Date() - 7,   Sys.Date()), ignoreInit = TRUE)
     shiny::observeEvent(input$preset_1m,
-      .set_range(Sys.Date() - 30,  Sys.Date()))
+      .set_range(Sys.Date() - 30,  Sys.Date()), ignoreInit = TRUE)
     shiny::observeEvent(input$preset_3m,
-      .set_range(Sys.Date() - 90,  Sys.Date()))
+      .set_range(Sys.Date() - 90,  Sys.Date()), ignoreInit = TRUE)
     shiny::observeEvent(input$preset_6m,
-      .set_range(Sys.Date() - 180, Sys.Date()))
+      .set_range(Sys.Date() - 180, Sys.Date()), ignoreInit = TRUE)
     shiny::observeEvent(input$preset_1y,
-      .set_range(Sys.Date() - 365, Sys.Date()))
+      .set_range(Sys.Date() - 365, Sys.Date()), ignoreInit = TRUE)
     shiny::observeEvent(input$preset_all, {
-      earliest <- as.Date(min(summaries$sessionStart, na.rm = TRUE))
-      .set_range(earliest, Sys.Date())
-    })
+      earliest <- suppressWarnings(min(summaries$sessionStart, na.rm = TRUE))
+      if (is.finite(earliest)) {
+        .set_range(as.Date(earliest), Sys.Date())
+      } else {
+        # Empty cache — fall back to the dateRangeInput default span.
+        .set_range(Sys.Date() - 180, Sys.Date())
+      }
+    }, ignoreInit = TRUE)
 
     output$plot_datesum <- plotly::renderPlotly({
       shiny::req(input$datesum_range)
