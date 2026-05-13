@@ -208,6 +208,7 @@ plot_sport_mix <- function(summaries, period = "month",
   ggplot2::ggplot(data,
                   ggplot2::aes(x = period, y = value, fill = sport_sv)) +
     ggplot2::geom_col() +
+    ggplot2::scale_x_discrete(breaks = .thin_discrete_breaks(15)) +
     ggplot2::labs(
       x = switch(period, month = "År-mån", week = "ISO-vecka", year = "År"),
       y = y_label,
@@ -360,6 +361,7 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
   ggplot2::ggplot(joined,
                   ggplot2::aes(x = year_week, y = wday, fill = sport_sv)) +
     ggplot2::geom_tile(colour = "white", linewidth = 0.2) +
+    ggplot2::scale_x_discrete(breaks = .thin_discrete_breaks(20)) +
     ggplot2::scale_y_discrete(limits = rev) +
     ggplot2::labs(
       x = NULL,

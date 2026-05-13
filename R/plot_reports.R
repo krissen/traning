@@ -13,6 +13,19 @@
 # Internal: pick year-axis breaks that won't crowd.
 # Falls back to every year when the span is small; thins to every Nth year
 # once the span exceeds `target` so labels stay readable on narrow plots.
+# Internal: thin a discrete x-axis (factor/character) to ~target labels.
+# Works with `scale_x_discrete(breaks = .thin_discrete_breaks(N))`. ggplot
+# passes the full set of levels in plot order; we keep an evenly-spaced
+# sample plus the last level so the most recent period stays labelled.
+.thin_discrete_breaks <- function(target = 12) {
+  function(x) {
+    if (length(x) <= target) return(x)
+    idx <- unique(round(seq(1, length(x), length.out = target)))
+    if (utils::tail(idx, 1) != length(x)) idx <- c(idx, length(x))
+    x[idx]
+  }
+}
+
 .year_breaks <- function(target = 10) {
   function(x) {
     lo <- floor(min(x, na.rm = TRUE))
@@ -240,6 +253,7 @@ plot_datesum <- function(summaries, do_datesum_from, do_datesum_to,
   data %>%
     ggplot2::ggplot(ggplot2::aes(x = period, y = km)) +
     ggplot2::geom_col(fill = "steelblue") +
+    ggplot2::scale_x_discrete(breaks = .thin_discrete_breaks(15)) +
     ggplot2::ggtitle(title) +
     ggplot2::labs(x = x_label, y = "Kilometer") +
     .theme_rotated_x()
