@@ -19,7 +19,11 @@
     hi <- ceiling(max(x, na.rm = TRUE))
     span <- hi - lo + 1L
     step <- max(1L, as.integer(ceiling(span / target)))
-    seq(lo, hi, by = step)
+    breaks <- seq(lo, hi, by = step)
+    # Ensure the most recent year is always labelled even when the span
+    # is not divisible by step (otherwise the rightmost bar is unlabelled).
+    if (utils::tail(breaks, 1) != hi) breaks <- c(breaks, hi)
+    breaks
   }
 }
 
