@@ -25,23 +25,44 @@ echo "$import_output"
 
 # Notify: fetch result
 fetch_summary=$(echo "$fetch_output" | tail -1)
-"$VENV/python" -c "
-from traning_cli.server.notify import notify
-notify('tRäning', 'Garmin (timer): $fetch_summary')
-" 2>/dev/null || true
+TRANING_NOTIFY_TITLE="tRäning" \
+TRANING_NOTIFY_MSG="Garmin (timer): $fetch_summary" \
+TRANING_NOTIFY_TRIGGER="garmin_timer" \
+    "$VENV/python" -c "
+import os
+from traning_cli.server.notify import notify, log_notification
+title = os.environ['TRANING_NOTIFY_TITLE']
+msg = os.environ['TRANING_NOTIFY_MSG']
+trigger = os.environ['TRANING_NOTIFY_TRIGGER']
+sent = notify(title, msg)
+log_notification(trigger, title, msg, sent)
+" || true
 
 # Notify: import result
 import_line=$(echo "$import_output" | grep -iE 'import|distance' | tail -1)
 if [ -n "$import_line" ]; then
-    "$VENV/python" -c "
-from traning_cli.server.notify import notify
-notify('tRäning', 'Import garmin: $import_line')
-" 2>/dev/null || true
+    TRANING_NOTIFY_TITLE="tRäning" \
+    TRANING_NOTIFY_MSG="Import garmin: $import_line" \
+    TRANING_NOTIFY_TRIGGER="garmin_timer" \
+        "$VENV/python" -c "
+import os
+from traning_cli.server.notify import notify, log_notification
+title = os.environ['TRANING_NOTIFY_TITLE']
+msg = os.environ['TRANING_NOTIFY_MSG']
+trigger = os.environ['TRANING_NOTIFY_TRIGGER']
+sent = notify(title, msg)
+log_notification(trigger, title, msg, sent)
+" || true
 fi
 
 # Insight
-insight=$("$VENV/python" -c "
-import subprocess, sys
+TRANING_NOTIFY_REPO_ROOT="$REPO_ROOT" \
+    "$VENV/python" -c "
+import os
+import subprocess
+from traning_cli.server.notify import notify, log_notification
+
+repo_root = os.environ['TRANING_NOTIFY_REPO_ROOT']
 r = subprocess.run(
     ['Rscript', '-e',
      'devtools::load_all(\".\", quiet=TRUE); '
@@ -50,8 +71,10 @@ r = subprocess.run(
      'file.path(td,\"cache\",\"myruns.RData\")); '
      'cat(report_insight(tl[[\"summaries\"]]))'],
     capture_output=True, text=True, timeout=120,
-    cwd='$REPO_ROOT')
+    cwd=repo_root)
 if r.returncode == 0 and r.stdout.strip():
-    from traning_cli.server.notify import notify
-    notify('tRäning', r.stdout.strip())
-" 2>/dev/null) || true
+    msg = r.stdout.strip()
+    title = 'tRäning'
+    sent = notify(title, msg)
+    log_notification('garmin_timer_insight', title, msg, sent)
+" || true

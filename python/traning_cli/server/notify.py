@@ -27,7 +27,7 @@ def notify(title: str, message: str) -> bool:
 
     try:
         resp = requests.post(
-            f"{ha_url}/api/services/notify/mobile_app_anandavani",
+            f"{ha_url}/api/services/notify/traning_personal",
             headers={
                 "Authorization": f"Bearer {ha_token}",
                 "Content-Type": "application/json",
