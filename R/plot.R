@@ -197,11 +197,13 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
   }
 
   p <- p +
-    # Weekly km bars
+    # Weekly km bars — width must be in seconds for POSIXct x-axis
+    # (width = 1 would be 1 second, rendering bars as invisible
+    # hairlines over multi-month/year spans). 86400 s = 1 day.
     ggplot2::geom_col(
       data = dplyr::filter(combined, metrik == "weekly_km"),
       ggplot2::aes(y = value),
-      fill = "steelblue", alpha = 0.7, width = 1
+      fill = "steelblue", alpha = 0.7, width = 86400
     ) +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
@@ -857,11 +859,11 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
   }
 
   p <- p +
-    # Weekly km bars
+    # Weekly km bars \u2014 see fetch.plot.ef for the width-in-seconds note.
     ggplot2::geom_col(
       data = dplyr::filter(combined, metrik == "weekly_km"),
       ggplot2::aes(y = value),
-      fill = "steelblue", alpha = 0.7, width = 1
+      fill = "steelblue", alpha = 0.7, width = 86400
     ) +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
