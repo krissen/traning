@@ -455,6 +455,100 @@ test_that(".save_manifest writes atomically and survives stale temp files", {
   expect_equal(traning:::.load_manifest(manifest_path)[["a"]]$md5, "222")
 })
 
+test_that("import refreshes manifest when .import_metrics filters out all changes", {
+  # Copilot's review caught this: if every candidate file is a metric we
+  # skip, files_to_parse goes to length 0, the early-return on "no new
+  # data" fires, and the manifest is never updated — so the same files
+  # show up as "changed" on every subsequent run.
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  canonical_dir <- file.path(tmp_data, "kristian", "health_export", "canonical")
+  dir.create(file.path(canonical_dir, "ignored_metric"), recursive = TRUE)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  cache <- file.path(tmp_data, "cache", "health_daily.RData")
+
+  # Pick a metric name that is *not* in .import_metrics so the filter
+  # strips it after the manifest check.
+  testthat::skip_if(
+    "ignored_metric" %in% traning:::.import_metrics,
+    "ignored_metric is unexpectedly in .import_metrics"
+  )
+
+  f <- file.path(canonical_dir, "ignored_metric", "2024-01-01.json")
+  jsonlite::write_json(
+    list(metric = "ignored_metric", date = "2024-01-01",
+         units = "count", samples = list(list(qty = 1))),
+    f, auto_unbox = TRUE
+  )
+  expected_md5 <- unname(tools::md5sum(f))
+
+  # No seed manifest → all files are "changed" against the manifest.
+  suppressMessages(import_health_export(cache_path = cache, verbose = FALSE))
+
+  manifest <- traning:::.load_manifest()
+  key <- "ignored_metric/2024-01-01.json"
+  expect_true(key %in% names(manifest),
+              info = "filter-emptied run must still record the file in manifest")
+  expect_equal(manifest[[key]]$md5, expected_md5)
+})
+
+test_that("import recovers when on-disk manifest is corrupt", {
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  cache <- file.path(tmp_data, "cache", "health_daily.RData")
+
+  # Write garbage where the manifest should be.
+  writeLines("{ not valid json",
+             file.path(tmp_data, "cache", "health_import_manifest.json"))
+
+  raw_json <- list(data = list(metrics = list(
+    list(name = "step_count", units = "count", data = list(
+      list(date = "2026-04-01 00:00:00 +0200", qty = 5000, source = "AW")
+    ))
+  )))
+  tmp_file <- file.path(tmp_data, "f.json")
+  jsonlite::write_json(raw_json, tmp_file, auto_unbox = TRUE)
+
+  expect_no_error(
+    suppressMessages(suppressWarnings(
+      import_health_export(path = tmp_file, cache_path = cache, verbose = FALSE)
+    ))
+  )
+
+  # After the run the manifest should be valid JSON again with the new entry.
+  recovered <- traning:::.load_manifest()
+  expect_true("f.json" %in% names(recovered))
+})
+
+test_that(".compute_manifest_to_save: full run replaces, single-file merges", {
+  # Three temp files; pretend we're considering all of them.
+  a <- tempfile(fileext = ".json"); writeLines("{}", a)
+  b <- tempfile(fileext = ".json"); writeLines("{}", b)
+  c <- tempfile(fileext = ".json"); writeLines("{}", c)
+  existing <- list(
+    "old_only.json"     = list(md5 = "zzzz"),
+    "shared.json"       = list(md5 = "stale")
+  )
+
+  # Full run (path = NULL): manifest is replaced entirely; old_only.json
+  # disappears, shared.json gets the new md5.
+  res_full <- traning:::.compute_manifest_to_save(
+    files = c(a, b, c), files_to_parse = c(a, b), path = NULL,
+    existing = existing
+  )
+  expect_false("old_only.json" %in% names(res_full))
+  expect_true(all(c(basename(a), basename(b), basename(c)) %in% names(res_full)))
+
+  # Single-file run: existing entries are preserved, only touched ones overwritten.
+  res_single <- traning:::.compute_manifest_to_save(
+    files = a, files_to_parse = a, path = a,
+    existing = existing
+  )
+  expect_equal(res_single[["old_only.json"]]$md5, "zzzz")
+  expect_true(basename(a) %in% names(res_single))
+})
+
 # --- read_canonical_file daily_total fast-path ------------------------------
 
 test_that("read_canonical_file uses daily_total fast path when present", {
