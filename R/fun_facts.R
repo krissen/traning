@@ -37,15 +37,22 @@ compute_fun_facts <- function(summaries) {
     )
   }
 
-  # First registered session
+  # First registered session. Guard against NA sport — sport_label()
+  # falls back to title-casing the raw value, which produces "NANA" for
+  # NA_character_ via paste0(NA, NA). Substitute the generic label.
   first <- summaries %>%
     dplyr::filter(!is.na(.data$sessionStart)) %>%
     dplyr::slice_min(.data$sessionStart, n = 1, with_ties = FALSE)
   if (nrow(first) > 0) {
+    first_sport <- if (is.na(first$sport) || !nzchar(first$sport)) {
+      "Aktivitet"
+    } else {
+      sport_label(first$sport)
+    }
     out$first_session <- list(
       string = sprintf("Första registrerade passet: %s (%s).",
                        format(first$sessionStart, "%Y-%m-%d"),
-                       sport_label(first$sport)),
+                       first_sport),
       value  = first$sessionStart
     )
   }

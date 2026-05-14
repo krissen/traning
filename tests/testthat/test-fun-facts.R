@@ -63,3 +63,22 @@ test_that("compute_fun_facts handles empty input", {
   expect_equal(length(compute_fun_facts(NULL)), 0L)
   expect_equal(length(compute_fun_facts(.fixture_facts_summaries()[0, ])), 0L)
 })
+
+test_that("compute_fun_facts handles NA sport on the first session", {
+  # Regression: sport_label() falls back to paste0(NA, NA) = "NANA" on
+  # NA_character_, producing "Första registrerade passet: <date> (NANA)".
+  # compute_fun_facts now substitutes the generic "Aktivitet" label.
+  sm <- data.frame(
+    sessionStart       = as.POSIXct("2020-01-01"),
+    sport              = NA_character_,
+    distance           = 5000,
+    durationMoving     = as.difftime(30, units = "mins"),
+    avgSpeedMoving     = 3,
+    avgPaceMoving      = 5.5,
+    avgHeartRateMoving = 140,
+    stringsAsFactors   = FALSE
+  )
+  facts <- compute_fun_facts(sm)
+  expect_match(facts$first_session$string, "\\(Aktivitet\\)")
+  expect_no_match(facts$first_session$string, "NANA")
+})
