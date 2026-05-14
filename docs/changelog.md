@@ -2,7 +2,8 @@
 
 ## 2026-05-14 — Roadmap-städning: filter-bug, defaults, två nya kort
 
-Sex roadmap-punkter avklarade i ett svep, plus en ny dashboard-feature:
+Sju roadmap-punkter avklarade i ett svep, plus en ny dashboard-feature.
+PR #24 — slutgiltigt landade efter sju Copilot/Codex-rondsfix.
 
 - **Bug fixad: globalt "Allt"-filter visar nu hela historiken.** Tidigare
   silent-truncade `fetch.plot.acwr/monotony/pmc/readiness_score` och
@@ -15,7 +16,10 @@ Sex roadmap-punkter avklarade i ett svep, plus en ny dashboard-feature:
   `.compute_span_days()` tar nu en valfri `data_dates`-hint så
   `.adaptive_date_scale()` får rätt break-tätthet på multi-års-spans
   (annars råkade scale_x_date på 2-decennium-data med 1-månads-breaks
-  som varnade om numerisk konvertering).
+  som varnade om numerisk konvertering). `plot_sport_calendar` med
+  `from = NULL` deriverar nu start från det sport-filtrerade subsetet
+  så `sport = "ballsport"` på en 2004-dataset inte renderar 15 års
+  tomt fält innan första bollsporten.
 - **EF + aerob decoupling: veckokilometer-panelen tom**. Plottarna
   använder POSIXct på x-axeln, där `geom_col(width = 1)` betyder
   **en sekund** — bars blev sub-pixel-tunna över multi-års-spans och
@@ -26,9 +30,16 @@ Sex roadmap-punkter avklarade i ett svep, plus en ny dashboard-feature:
   med `NA avg_hr`) kommer från sessioner där per-second-HR-datat var
   trasigt men trackeR-objektet höll bogus-värden som överlevde
   validity-gaten. `compute_decoupling()` har nu ett fysiologiskt
-  sanity-tak (`cap_pct = 25`, default ±25 %) som hoppar över sessioner
-  utanför detta intervall. Cache-fältet ingår i parameterhashen så
-  äldre cacher auto-invalideras.
+  sanity-tak (`cap_pct = 25`, default ±25 %) som **markerar** sessioner
+  utanför intervallet i en ny `capped`-kolumn istället för att tyst
+  droppa dem. Den 28-dagars rullande genomsnittet exkluderar capped-
+  rader så ett enstaka -75 %-artefakt inte drar ner trendlinjen i en
+  månad. `fetch.plot.decoupling()` renderar capped-rader som röda
+  trianglar clampade till ±cap_pct så y-skalan inte sprängs men
+  användaren ser *vilka* datum som flaggades. Cache-fältet ingår i
+  parameterhashen så äldre cacher auto-invalideras; cap_pct är en
+  parameter på både compute- och plot-nivå (vidarebefordras
+  konsistent).
 - **Sport-mix förvalt mått: TRIMP** (tidigare distans). Reorder så
   TRIMP listas först i radioButtons.
 - **Kronisk belastning förvalda sporter:** cykling, gång, löpning,
@@ -39,13 +50,19 @@ Sex roadmap-punkter avklarade i ett svep, plus en ny dashboard-feature:
   i ny `R/fun_facts.R`). Sex did-you-know-fakta: topp 5 sporter, första
   registrerade pass, längsta uppehåll mellan löpturer, antal hela
   kalendermånader utan ett enda pass, längsta löpningen, snabbaste
-  löpturen >5 km. Kollapsad som default.
+  löpturen >5 km. Kollapsad som default. Hanterar NA-sport på första
+  passet med generisk "Aktivitet"-etikett (annars producerade
+  `sport_label(NA)` literala "NANA" via paste0(NA, NA)).
 - **Ny plot: Δ Mediantempo per vecka** på Träning-fliken
   (`fetch.plot.pace_week_delta()`). Per ISO-vecka: skillnad i
   mediantempo mot föregående vecka. Stapel under noll = veckan blev
-  snabbare. Använder globalt tidsfilter och `.run_profile_*`-helpers.
-- **Tre nya testfiler:** `test-plot-allt-filter.R` (regressionsskydd
-  för Allt-buggen), `test-fun-facts.R`, `test-pace-week-delta.R`.
+  snabbare. Använder globalt tidsfilter och `.run_profile_*`-helpers
+  med `pace_filter = FALSE` så cykling, gång och paddelsporter
+  (utanför löpnings 2.5–10 min/km-band) också producerar data.
+- **Fyra nya testfiler:** `test-plot-allt-filter.R` (regressionsskydd
+  för Allt-buggen), `test-fun-facts.R` (inkl. NA-sport-edge case),
+  `test-pace-week-delta.R`, plus utvidgade `test-decoupling.R`-tester
+  för `capped`-kolumnen och rolling-mean-exklusion.
 
 ## 2026-05-14 — Löpprofil-fliken: åtta nya karaktärs-plottar
 
