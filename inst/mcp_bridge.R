@@ -81,9 +81,17 @@ func_registry <- list(
   plot_runs_month        = "s",
   plot_monthstatus       = "s",
   plot_monthlast         = "s",
-  plot_yearstatus        = "s",
   plot_yearstop          = "s",
   plot_datesum           = "s",
+  # Löpprofil — yearly characterization plots
+  fetch.plot.pace_year          = "s",
+  fetch.plot.pace_year_ridges   = "s",
+  fetch.plot.pace_tertile_share = "s",
+  fetch.plot.longest_runs_year  = "s",
+  fetch.plot.season_pace        = "s",
+  fetch.plot.heatmap_km         = "s",
+  fetch.plot.cumulative_km      = "s",
+  fetch.plot.distance_pace_era  = "s",
   # Advanced plots (summaries only)
   fetch.plot.ef          = "s",
   fetch.plot.hre         = "s",
@@ -193,10 +201,15 @@ build_call_args <- function(func_name, func_args) {
     "report_monotony", "report_pmc", "report_recovery_hr",
     "report_hr_zones", "report_decoupling",
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
-    "plot_monthlast", "plot_yearstatus", "plot_yearstop", "plot_datesum",
+    "plot_monthlast", "plot_yearstop", "plot_datesum",
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
     "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
     "fetch.plot.hr_zones", "fetch.plot.decoupling",
+    # Löpprofil
+    "fetch.plot.pace_year", "fetch.plot.pace_year_ridges",
+    "fetch.plot.pace_tertile_share", "fetch.plot.longest_runs_year",
+    "fetch.plot.season_pace", "fetch.plot.heatmap_km",
+    "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era",
     # Multi-sport plots that accept `sport=` as a population filter
     # (default NULL = all sports). plot_sport_ctl_overlay is omitted
     # because it takes a `sports` vector instead of a single bucket;
@@ -237,11 +250,16 @@ build_call_args <- function(func_name, func_args) {
     "report_ef", "report_hre", "report_acwr", "report_monotony",
     "report_pmc", "report_recovery_hr",
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
-    "plot_monthlast", "plot_yearstatus", "plot_yearstop",
+    "plot_monthlast", "plot_yearstop",
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
     "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
     "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
-    "compute_taper_plan"
+    "compute_taper_plan",
+    # Löpprofil
+    "fetch.plot.pace_year", "fetch.plot.pace_year_ridges",
+    "fetch.plot.pace_tertile_share", "fetch.plot.longest_runs_year",
+    "fetch.plot.season_pace", "fetch.plot.heatmap_km",
+    "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era"
   )
   if (func_name %in% summaries_funcs) {
     a <- c(list(summaries = summaries), a)

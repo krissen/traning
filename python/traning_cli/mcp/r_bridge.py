@@ -63,11 +63,16 @@ _KNOWN_FUNCTIONS = frozenset({
     "report_metric",
     # Report plots
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
-    "plot_monthlast", "plot_yearstatus", "plot_yearstop", "plot_datesum",
+    "plot_monthlast", "plot_yearstop", "plot_datesum",
     # Advanced plots
     "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
     "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
     "fetch.plot.hr_zones", "fetch.plot.decoupling",
+    # Löpprofil — yearly characterization
+    "fetch.plot.pace_year", "fetch.plot.pace_year_ridges",
+    "fetch.plot.pace_tertile_share", "fetch.plot.longest_runs_year",
+    "fetch.plot.season_pace", "fetch.plot.heatmap_km",
+    "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era",
     # Health plots
     "fetch.plot.resting_hr", "fetch.plot.hrv", "fetch.plot.sleep",
     "fetch.plot.vo2max", "fetch.plot.readiness_score",

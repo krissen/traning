@@ -220,6 +220,82 @@ def get_zones(
 
 
 # ---------------------------------------------------------------------------
+# Run-profile (yearly characterization)
+# ---------------------------------------------------------------------------
+
+_RUN_CHARACTER_CHARTS = {
+    "pace_year": "fetch.plot.pace_year",
+    "pace_ridges": "fetch.plot.pace_year_ridges",
+    "tertile_share": "fetch.plot.pace_tertile_share",
+    "longest_runs": "fetch.plot.longest_runs_year",
+    "season_pace": "fetch.plot.season_pace",
+    "heatmap_km": "fetch.plot.heatmap_km",
+    "cumulative_km": "fetch.plot.cumulative_km",
+    "distance_pace_era": "fetch.plot.distance_pace_era",
+}
+
+
+def get_run_character(
+    chart: str = "pace_year",
+    after: Optional[str] = None,
+    before: Optional[str] = None,
+    sport: str = "running",
+) -> Image | dict:
+    """Yearly characterization plots (Löpprofil tab in the Shiny app).
+
+    Plot-only tool: returns a PNG visualization of one of eight views that
+    summarize how running has evolved year over year, season to season,
+    or epoch to epoch.
+
+    Args:
+        chart: Which chart to render. One of:
+            - 'pace_year'         — Yearly median pace with 25–75 %% ribbon
+                                    and six objective milestone labels.
+            - 'pace_ridges'       — Density ridges of pace per year,
+                                    coloured by annual km total.
+            - 'tertile_share'     — Share of annual km spent at calm /
+                                    medium / fast pace (tertile split).
+            - 'longest_runs'      — Stacked bars of each year's five
+                                    longest runs; topmost segment +
+                                    label = longest single run.
+            - 'season_pace'       — Mean pace per ISO week, all years
+                                    pooled, with season background
+                                    bands and a loess curve.
+            - 'heatmap_km'        — Heatmap of weekly km (woy × year);
+                                    missing weeks shown grey.
+            - 'cumulative_km'     — Weekly cumulative km per year;
+                                    current year highlighted vs grey
+                                    historical lines.
+            - 'distance_pace_era' — Hex-density of distance vs pace,
+                                    faceted by 5-year era, with the
+                                    dataset median as a fixed reference.
+        after: Start date filter (cuts off earlier years from the
+            visualization). Most useful for `cumulative_km` /
+            `heatmap_km`. Other charts inherently span the full
+            history; an `after` value just trims the year axis.
+        before: End date filter (exclusive upper bound, but the user-
+            facing value is treated as inclusive — see _build_args).
+        sport: Sport bucket (default 'running'). See vayu://sports.
+
+    Returns:
+        Image (PNG) on success; {"type": "error", ...} dict if `chart`
+        is unknown.
+    """
+    chart_norm = (chart or "").strip().lower()
+    plot_func = _RUN_CHARACTER_CHARTS.get(chart_norm)
+    if plot_func is None:
+        return {
+            "type": "error",
+            "message": (
+                f"Unknown chart: {chart!r}. Valid charts: "
+                f"{sorted(_RUN_CHARACTER_CHARTS)}"
+            ),
+        }
+    args = _build_args(after, before, sport=sport)
+    return r_plot(plot_func, args)
+
+
+# ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
 
@@ -288,7 +364,8 @@ def get_yearly_summary(
     args = _build_args(after, before, n, sport=sport)
     if top:
         return _data_or_plot("report_yearstop", "plot_yearstop", args, plot)
-    return _data_or_plot("report_yearstatus", "plot_yearstatus", args, plot)
+    return _data_or_plot("report_yearstatus", "fetch.plot.cumulative_km",
+                         args, plot)
 
 
 # ---------------------------------------------------------------------------
