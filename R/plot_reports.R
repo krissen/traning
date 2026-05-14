@@ -165,22 +165,6 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
   .plot_year_bars(data, title = title, fill = "#7BA7C9")
 }
 
-#' Year-to-date compared across years — bar chart
-#'
-#' Calls \code{report_yearstatus()} internally. Each bar represents one
-#' calendar year; height shows total km up to the current day-of-year for
-#' fair cross-year comparison.
-#'
-#' @param summaries Data frame from \code{my_dbs_load()}.
-#' @return ggplot2 object
-#' @export
-plot_yearstatus <- function(summaries, from = NULL, to = NULL,
-                            sport = "running") {
-  data <- report_yearstatus(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Årssammanställning (t.o.m. idag)",
-                  fill = "#C97B4A")
-}
-
 #' Full-year totals compared across years — bar chart
 #'
 #' Calls \code{report_yearstop()} internally. Each bar represents one

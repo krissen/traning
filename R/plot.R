@@ -83,25 +83,6 @@ fetch.plot.monthly.dist <- function(month_summaries_til_day) {
   return(p1)
 }
 
-#' Compute yearly mean pace statistics
-#' @param summaries Data frame of all workout summaries
-#' @param sport Sport bucket (default \code{"running"}). Pace numbers
-#'   for non-pace-based sports (e.g. cycling) reflect the same column
-#'   but the unit interpretation differs.
-#' @return Tibble with year, totDuration, meanPace, minPace
-#' @export
-fetch.my.mean.pace <- function(summaries, sport = "running") {
-  mean.pace <- .filter_sport(summaries, sport) %>%
-    dplyr::mutate(year = format(sessionStart, "%Y")) %>%
-    dplyr::group_by(year) %>%
-    dplyr::summarise(
-      totDuration = round(sum(durationMoving), 0),
-      meanPace = round(mean(avgPaceMoving, na.rm = TRUE), 2),
-      minPace = round(min(avgPaceMoving, na.rm = TRUE), 2),
-      .groups = "keep")
-  return(mean.pace)
-}
-
 #' Scatter + smooth plot of yearly total distance
 #' @param summaries Data frame of all workout summaries
 #' @param sport Sport bucket (default \code{"running"}).
@@ -122,20 +103,6 @@ fetch.plot.sum.dist <- function(summaries, sport = "running") {
     ggplot2::ggtitle("Distans över år") +
     ggplot2::labs(x = "År", y = "Kilometer") -> plot.sum.dist
   return(plot.sum.dist)
-}
-
-#' Scatter + smooth plot of yearly mean pace
-#' @param mean.pace Tibble from fetch.my.mean.pace()
-#' @return ggplot2 object
-#' @export
-fetch.plot.mean.pace <- function(mean.pace) {
-  mean.pace %>%
-    ggplot2::ggplot(ggplot2::aes(x = as.integer(year), y = meanPace)) +
-    ggplot2::geom_point() +
-    ggplot2::geom_smooth(method = 'loess', formula = 'y ~ x') +
-    ggplot2::ggtitle("Tempo över år") +
-    ggplot2::labs(x = "År", y = "Medeltempo (min/km)") -> p1
-  return(p1)
 }
 
 #' Dual-panel plot of Efficiency Factor (EF) over time
