@@ -722,6 +722,7 @@ compute_decoupling <- function(summaries, myruns,
 
   n_runs  <- length(run_idx)
   n_skip  <- 0L
+  n_capped <- 0L
   results <- vector("list", n_runs)
 
   for (k in seq_along(run_idx)) {
@@ -809,13 +810,16 @@ compute_decoupling <- function(summaries, myruns,
     decoupling_pct <- 100 * (ratio_1 - ratio_2) / ratio_1
 
     # Physiological sanity cap. Real aerobic decoupling sits in roughly
-    # ±15 %; values beyond ±cap_pct invariably trace back to per-second
-    # HR sensor dropouts or stuck values that corrupt the half-period
+    # ±15 %; values beyond ±cap_pct usually trace back to per-second HR
+    # sensor dropouts or stuck values that corrupt the half-period
     # averages (the canonical example is the 2011 sessions with NA
     # avg_hr in summaries — the trackeR object holds bogus per-second
-    # readings that survive the validity gate at line 747).
+    # readings that survive the validity gate at line 747). Genuine
+    # extremes (heat, severe under-fueling, very long efforts) can also
+    # cross the threshold, so the count is surfaced separately from the
+    # generic skip-warning so the user can investigate if needed.
     if (!is.finite(decoupling_pct) || abs(decoupling_pct) > cap_pct) {
-      n_skip <- n_skip + 1L; next
+      n_capped <- n_capped + 1L; next
     }
 
     results[[k]] <- tibble::tibble(
@@ -838,6 +842,12 @@ compute_decoupling <- function(summaries, myruns,
   if (n_skip > 0) {
     warning(n_skip, " sessioner hoppades \u00f6ver (NULL, saknar speed/HR, ",
             "eller f\u00f6r kort efter uppv\u00e4rmning).", call. = FALSE)
+  }
+  if (n_capped > 0) {
+    warning(n_capped, " sessioner hoppades \u00f6ver med |decoupling| > ",
+            cap_pct, " % (sannolikt sensorfel; h\u00f6j cap_pct f\u00f6r att ",
+            "inkludera \u00e4kta extremer som hetta/under-fueling).",
+            call. = FALSE)
   }
 
   per_run <- dplyr::bind_rows(results)
