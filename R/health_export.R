@@ -49,14 +49,24 @@
 }
 
 #' Save the import manifest
-#' @param manifest Named list: filename -> list(mtime, size)
+#'
+#' Atomic write: serialise to a temp file in the same directory, then rename.
+#' On POSIX this guarantees readers never observe a half-written manifest, and
+#' a crash mid-write leaves the previous version intact.
+#'
+#' @param manifest Named list: filename -> list(md5)
 #' @param manifest_path Path to manifest JSON. NULL = default.
 #' @keywords internal
 .save_manifest <- function(manifest, manifest_path = NULL) {
   if (is.null(manifest_path)) manifest_path <- .hae_manifest_path()
   cache_dir <- dirname(manifest_path)
   if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
-  jsonlite::write_json(manifest, manifest_path, auto_unbox = TRUE, pretty = TRUE)
+  tmp <- paste0(manifest_path, ".tmp.", Sys.getpid())
+  on.exit(if (file.exists(tmp)) unlink(tmp), add = TRUE)
+  jsonlite::write_json(manifest, tmp, auto_unbox = TRUE, pretty = TRUE)
+  if (!file.rename(tmp, manifest_path)) {
+    stop(".save_manifest: rename failed for ", manifest_path)
+  }
 }
 
 #' Compare files against manifest and return only new/changed ones
@@ -84,8 +94,14 @@
   changed <- vapply(files, function(f) {
     key <- .manifest_key(f)
     prev <- manifest[[key]]
-    if (is.null(prev)) return(TRUE)  # new file
-    tools::md5sum(f) != prev$md5
+    # Treat missing or malformed entries (no $md5, wrong type) as "new" so
+    # we re-parse instead of crashing. A corrupt manifest should degrade
+    # to full re-import, not raise.
+    if (is.null(prev) || !is.list(prev) || is.null(prev$md5) ||
+        !is.character(prev$md5) || length(prev$md5) != 1) {
+      return(TRUE)
+    }
+    unname(tools::md5sum(f)) != prev$md5
   }, logical(1))
   files[changed]
 }
@@ -746,8 +762,12 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     files <- path
   }
 
-  # Filter to new/changed files using manifest (unless forced or single file)
-  manifest <- if (is.null(path) && !force) .load_manifest() else list()
+  # Filter to new/changed files using manifest (unless forced or single file).
+  # We always load the existing manifest from disk; it is reused at save-time
+  # so that single-file or forced runs don't overwrite entries for files they
+  # didn't touch.
+  existing_manifest <- .load_manifest()
+  manifest <- if (is.null(path) && !force) existing_manifest else list()
   if (length(manifest) > 0) {
     files_to_parse <- .filter_changed_files(files, manifest)
     n_skipped <- length(files) - length(files_to_parse)
@@ -792,6 +812,20 @@ import_health_export <- function(path = NULL, cache_path = NULL,
 
   if (nrow(new_data) == 0) {
     cat("Inga nya data\n")
+    # Files were considered (md5 changed against manifest) but produced no
+    # parseable rows — still update the manifest so we don't re-evaluate them
+    # on every subsequent run.
+    if (save && length(files_to_parse) > 0) {
+      new_entries <- .build_manifest_entries(files_to_parse)
+      if (is.null(path)) {
+        all_entries <- .build_manifest_entries(files)
+        .save_manifest(all_entries)
+      } else {
+        merged <- existing_manifest
+        for (k in names(new_entries)) merged[[k]] <- new_entries[[k]]
+        .save_manifest(merged)
+      }
+    }
     return(invisible(existing))
   }
 
@@ -835,14 +869,18 @@ import_health_export <- function(path = NULL, cache_path = NULL,
 
     # Update manifest with all files (both parsed and previously imported)
     new_entries <- .build_manifest_entries(files_to_parse)
-    if (force || is.null(path)) {
-      # Full run: rebuild manifest from all files
+    if (is.null(path)) {
+      # Full run: rebuild manifest from all files in the data directory.
+      # `files` is the complete listing — every file we just considered.
       all_entries <- .build_manifest_entries(files)
       .save_manifest(all_entries)
     } else {
-      # Single-file run: merge into existing manifest
-      for (k in names(new_entries)) manifest[[k]] <- new_entries[[k]]
-      .save_manifest(manifest)
+      # Single-file run (with or without force): merge new entries into the
+      # manifest that existed on disk. Without this we'd overwrite entries
+      # for the 60k+ files we didn't touch.
+      merged <- existing_manifest
+      for (k in names(new_entries)) merged[[k]] <- new_entries[[k]]
+      .save_manifest(merged)
     }
     if (verbose) cat("Manifest uppdaterad\n")
   }
