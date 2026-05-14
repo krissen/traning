@@ -15,7 +15,9 @@ page_progress_ui <- function(id) {
       metric_panel_ui(ns("month_this"), "Denna m\u00e5nad")
     ),
     tags$div(class = "section-spacer",
-      metric_panel_ui(ns("pace"), "Tempo")
+      # use_plotly = FALSE so ggrepel milestone labels survive (plotly
+      # drops geom_label_repel).
+      metric_panel_ui(ns("pace"), "Tempo", use_plotly = FALSE)
     ),
     tags$div(class = "section-spacer",
       bslib::card(
@@ -89,7 +91,8 @@ page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
       is_mobile = is_mobile
     )
     metric_panel_server("yearstatus",
-      plot_fn   = shiny::reactive(plot_yearstatus(summaries, sport = sp())),
+      plot_fn   = shiny::reactive(fetch.plot.cumulative_km(summaries,
+                                                            sport = sp())),
       report_fn = shiny::reactive(report_yearstatus(summaries, sport = sp())),
       is_mobile = is_mobile
     )
@@ -104,11 +107,10 @@ page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
       is_mobile = is_mobile
     )
     metric_panel_server("pace",
-      plot_fn   = shiny::reactive(fetch.plot.mean.pace(
-                                    fetch.my.mean.pace(summaries,
-                                                        sport = sp()))),
-      report_fn = shiny::reactive(fetch.my.mean.pace(summaries,
-                                                      sport = sp())),
+      plot_fn   = shiny::reactive(fetch.plot.pace_year(summaries,
+                                                        sport = sp())),
+      report_fn = shiny::reactive(report_yearstop(summaries, sport = sp())),
+      use_plotly = FALSE,
       is_mobile = is_mobile
     )
 
