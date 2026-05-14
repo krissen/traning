@@ -753,7 +753,9 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
                                   cap_pct = 25,
                                   sport = "running") {
   if (is.null(decoupling_data)) {
-    decoupling_data <- compute_decoupling(summaries, myruns, sport = sport)
+    decoupling_data <- compute_decoupling(summaries, myruns,
+                                           cap_pct = cap_pct,
+                                           sport = sport)
   }
 
   if (nrow(decoupling_data) == 0) {
