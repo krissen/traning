@@ -315,14 +315,20 @@ test_that("health_insight_delta returns empty when nothing changed", {
 })
 
 test_that("import_health_export with force bypasses manifest", {
-  # Create a minimal JSON file
+  # Isolate TRANING_DATA so .hae_manifest_path() points at a tempdir.
+  # Without this the test would write to the production manifest under
+  # the developer's real $TRANING_DATA — which is exactly how this
+  # test's "test_force.json" entry leaked into prod manifests before.
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+
   raw_json <- list(data = list(metrics = list(
     list(name = "step_count", units = "count", data = list(
       list(date = "2026-04-01 00:00:00 +0200", qty = 5000, source = "AW")
     ))
   )))
-  tmp_dir <- tempdir()
-  tmp_file <- file.path(tmp_dir, "test_force.json")
+  tmp_file <- file.path(tmp_data, "test_force.json")
   jsonlite::write_json(raw_json, tmp_file, auto_unbox = TRUE)
   cache <- tempfile(fileext = ".RData")
 
@@ -338,6 +344,251 @@ test_that("import_health_export with force bypasses manifest", {
                           force = TRUE, verbose = FALSE)
   )
   expect_equal(nrow(result2), 1)
+})
+
+# --- Regression tests for manifest overwrite bug (fixed) -------------------
+#
+# Before the fix, a single-file run of import_health_export(path = X) would
+# load a *fresh* empty manifest at the top, then write {X: md5} to disk —
+# wiping every other entry. Receiver flushes call this code path on every
+# HAE push, so the production manifest was effectively reset multiple times
+# a day, and supposedly-incremental imports kept doing full re-parses of
+# 60k+ files. These tests pin the merge-not-overwrite behaviour.
+
+test_that("single-file import preserves entries it didn't touch", {
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  cache <- tempfile(fileext = ".RData")
+
+  # Seed manifest as if a previous full import wrote entries for many files.
+  seed <- list(
+    "step_count/2024-01-01.json"         = list(md5 = "aaaa"),
+    "step_count/2024-01-02.json"         = list(md5 = "bbbb"),
+    "resting_heart_rate/2024-01-01.json" = list(md5 = "cccc")
+  )
+  traning:::.save_manifest(seed)
+
+  raw_json <- list(data = list(metrics = list(
+    list(name = "step_count", units = "count", data = list(
+      list(date = "2026-04-01 00:00:00 +0200", qty = 5000, source = "AW")
+    ))
+  )))
+  tmp_file <- file.path(tmp_data, "touched.json")
+  jsonlite::write_json(raw_json, tmp_file, auto_unbox = TRUE)
+
+  suppressMessages(import_health_export(path = tmp_file, cache_path = cache,
+                                         verbose = FALSE))
+
+  after <- traning:::.load_manifest()
+  expect_true("step_count/2024-01-01.json" %in% names(after))
+  expect_true("step_count/2024-01-02.json" %in% names(after))
+  expect_true("resting_heart_rate/2024-01-01.json" %in% names(after))
+  expect_true("touched.json" %in% names(after))
+  expect_equal(after[["step_count/2024-01-01.json"]]$md5, "aaaa")
+})
+
+test_that("forced single-file import also preserves untouched entries", {
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  cache <- tempfile(fileext = ".RData")
+
+  traning:::.save_manifest(list(
+    "step_count/2024-01-01.json" = list(md5 = "keep-me")
+  ))
+
+  raw_json <- list(data = list(metrics = list(
+    list(name = "step_count", units = "count", data = list(
+      list(date = "2026-04-01 00:00:00 +0200", qty = 5000, source = "AW")
+    ))
+  )))
+  tmp_file <- file.path(tmp_data, "force_me.json")
+  jsonlite::write_json(raw_json, tmp_file, auto_unbox = TRUE)
+
+  suppressMessages(import_health_export(path = tmp_file, cache_path = cache,
+                                         force = TRUE, verbose = FALSE))
+
+  after <- traning:::.load_manifest()
+  expect_equal(after[["step_count/2024-01-01.json"]]$md5, "keep-me")
+  expect_true("force_me.json" %in% names(after))
+})
+
+test_that(".filter_changed_files tolerates corrupt manifest entries", {
+  tmp <- tempfile(fileext = ".json")
+  writeLines("{}", tmp)
+  key <- basename(tmp)
+
+  # NULL entry.
+  m1 <- setNames(list(NULL), key)
+  expect_equal(traning:::.filter_changed_files(tmp, m1), tmp)
+
+  # Wrong type for the entry (e.g. someone wrote a bare string).
+  m2 <- setNames(list("not-a-list"), key)
+  expect_equal(traning:::.filter_changed_files(tmp, m2), tmp)
+
+  # Entry is a list but $md5 missing.
+  m3 <- setNames(list(list(other = "x")), key)
+  expect_equal(traning:::.filter_changed_files(tmp, m3), tmp)
+
+  # Entry is a list and $md5 is the wrong type / length.
+  m4 <- setNames(list(list(md5 = 42)), key)
+  expect_equal(traning:::.filter_changed_files(tmp, m4), tmp)
+  m5 <- setNames(list(list(md5 = c("a", "b"))), key)
+  expect_equal(traning:::.filter_changed_files(tmp, m5), tmp)
+
+  # $md5 is NA_character_ — earlier the != comparison returned NA which
+  # poisoned the result vector. Treat as "new" instead.
+  m6 <- setNames(list(list(md5 = NA_character_)), key)
+  result <- traning:::.filter_changed_files(tmp, m6)
+  expect_equal(result, tmp)
+  expect_false(anyNA(result))
+})
+
+test_that(".load_manifest tolerates wrong-shape JSON (scalar / unnamed)", {
+  tmp <- tempfile(fileext = ".json")
+  # Valid JSON but not the named-list shape we expect.
+  writeLines("42", tmp)
+  expect_warning(loaded <- traning:::.load_manifest(tmp),
+                 "wrong shape")
+  expect_equal(loaded, list())
+
+  # Unnamed array.
+  writeLines('["a", "b"]', tmp)
+  expect_warning(loaded <- traning:::.load_manifest(tmp),
+                 "wrong shape")
+  expect_equal(loaded, list())
+
+  # JSON with at least one empty key — also rejected.
+  writeLines('{"a": {"md5": "x"}, "": {"md5": "y"}}', tmp)
+  expect_warning(loaded <- traning:::.load_manifest(tmp),
+                 "wrong shape")
+  expect_equal(loaded, list())
+
+  # Unparseable JSON.
+  writeLines("{ not json", tmp)
+  expect_warning(loaded <- traning:::.load_manifest(tmp),
+                 "unreadable")
+  expect_equal(loaded, list())
+})
+
+test_that(".save_manifest writes atomically and survives stale temp files", {
+  tmp_dir <- withr::local_tempdir()
+  manifest_path <- file.path(tmp_dir, "manifest.json")
+
+  # Seed a valid existing manifest.
+  traning:::.save_manifest(list(a = list(md5 = "111")), manifest_path)
+  expect_equal(traning:::.load_manifest(manifest_path)[["a"]]$md5, "111")
+
+  # Leave a stale .tmp file as if a previous writer crashed mid-write.
+  # The next .save_manifest must still produce a valid file and not pick
+  # up the stale temp content as its output.
+  writeLines("{ this is not json",
+             file.path(tmp_dir, "manifest.json.tmp.9999"))
+  traning:::.save_manifest(list(a = list(md5 = "222")), manifest_path)
+  expect_equal(traning:::.load_manifest(manifest_path)[["a"]]$md5, "222")
+})
+
+test_that("import refreshes manifest when .import_metrics filters out all changes", {
+  # Copilot's review caught this: if every candidate file is a metric we
+  # skip, files_to_parse goes to length 0, the early-return on "no new
+  # data" fires, and the manifest is never updated — so the same files
+  # show up as "changed" on every subsequent run.
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  canonical_dir <- file.path(tmp_data, "kristian", "health_export", "canonical")
+  dir.create(file.path(canonical_dir, "ignored_metric"), recursive = TRUE)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  cache <- file.path(tmp_data, "cache", "health_daily.RData")
+
+  # Pick a metric name that is *not* in .import_metrics so the filter
+  # strips it after the manifest check.
+  testthat::skip_if(
+    "ignored_metric" %in% traning:::.import_metrics,
+    "ignored_metric is unexpectedly in .import_metrics"
+  )
+
+  f <- file.path(canonical_dir, "ignored_metric", "2024-01-01.json")
+  jsonlite::write_json(
+    list(metric = "ignored_metric", date = "2024-01-01",
+         units = "count", samples = list(list(qty = 1))),
+    f, auto_unbox = TRUE
+  )
+  expected_md5 <- unname(tools::md5sum(f))
+
+  # No seed manifest → all files are "changed" against the manifest.
+  suppressMessages(import_health_export(cache_path = cache, verbose = FALSE))
+
+  manifest <- traning:::.load_manifest()
+  key <- "ignored_metric/2024-01-01.json"
+  expect_true(key %in% names(manifest),
+              info = "filter-emptied run must still record the file in manifest")
+  expect_equal(manifest[[key]]$md5, expected_md5)
+})
+
+test_that("import recovers when on-disk manifest is corrupt", {
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  cache <- file.path(tmp_data, "cache", "health_daily.RData")
+
+  # Write garbage where the manifest should be.
+  writeLines("{ not valid json",
+             file.path(tmp_data, "cache", "health_import_manifest.json"))
+
+  raw_json <- list(data = list(metrics = list(
+    list(name = "step_count", units = "count", data = list(
+      list(date = "2026-04-01 00:00:00 +0200", qty = 5000, source = "AW")
+    ))
+  )))
+  tmp_file <- file.path(tmp_data, "f.json")
+  jsonlite::write_json(raw_json, tmp_file, auto_unbox = TRUE)
+
+  expect_no_error(
+    suppressMessages(suppressWarnings(
+      import_health_export(path = tmp_file, cache_path = cache, verbose = FALSE)
+    ))
+  )
+
+  # After the run the manifest should be valid JSON again with the new entry.
+  recovered <- traning:::.load_manifest()
+  expect_true("f.json" %in% names(recovered))
+})
+
+test_that(".compute_manifest_to_save: full run replaces, single-file merges", {
+  # Three temp files; pretend we're considering all of them as candidates.
+  a <- tempfile(fileext = ".json"); writeLines("{}", a)
+  b <- tempfile(fileext = ".json"); writeLines("{}", b)
+  c <- tempfile(fileext = ".json"); writeLines("{}", c)
+  existing <- list("old_only.json" = list(md5 = "zzzz"))
+  # A pre-existing entry for `a`. The full run should overwrite it with
+  # the fresh md5; the single-file run should also overwrite it.
+  existing[[basename(a)]] <- list(md5 = "stale")
+
+  # Full run (path = NULL): manifest is replaced entirely. The stale entry
+  # for `a` is replaced with its fresh md5; old_only.json disappears.
+  res_full <- traning:::.compute_manifest_to_save(
+    files = c(a, b, c), path = NULL, existing = existing
+  )
+  expect_false("old_only.json" %in% names(res_full))
+  expect_true(all(c(basename(a), basename(b), basename(c)) %in% names(res_full)))
+  expect_equal(res_full[[basename(a)]]$md5, unname(tools::md5sum(a)))
+
+  # Single-file run: existing entries are preserved, only touched ones
+  # overwritten. old_only.json must survive; the entry for `a` is
+  # refreshed with the new md5.
+  res_single <- traning:::.compute_manifest_to_save(
+    files = a, path = a, existing = existing
+  )
+  expect_equal(res_single[["old_only.json"]]$md5, "zzzz")
+  expect_equal(res_single[[basename(a)]]$md5, unname(tools::md5sum(a)))
+
+  # Single-file run with a non-list `existing` (corrupt manifest) must
+  # not crash — the merge proceeds against an empty base.
+  res_corrupt <- traning:::.compute_manifest_to_save(
+    files = a, path = a, existing = "this was the JSON content"
+  )
+  expect_true(basename(a) %in% names(res_corrupt))
 })
 
 # --- read_canonical_file daily_total fast-path ------------------------------
