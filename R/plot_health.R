@@ -390,8 +390,6 @@ fetch.plot.readiness <- function(health_daily, days = 90) {
 #' @param summaries Garmin summaries tibble.
 #' @param hr_max Optional HRmax override.
 #' @param hr_rest Optional HRrest override.
-#' @param from Start date. NULL uses \code{days}.
-#' @param to End date. NULL = today.
 #' @param from,to Optional date bounds. \code{NULL} means no bound — pass
 #'   both as \code{NULL} to render the full history.
 #' @return ggplot2 object (patchwork composite).
