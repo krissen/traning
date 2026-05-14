@@ -10,7 +10,7 @@ nya gav bättre svar på samma fråga.
 - **Ny flik "Löpprofil"** mellan Prestation och Tävling. Sex kort:
   tempo per år som ridges (volym-färg), tempo-fördelning i lugn/medel/
   snabb, längsta pass per år (topp-5 staplat), säsongsmönster i tempo,
-  veckokilometer per år som heatmap, distans × tempo per 5-årsperiod.
+  veckokilometer per år som heatmap, distans × tempo per epok.
 - **Utveckling-fliken polerad.** "Tempo"-kortet visar nu medianpace per
   år med 25–75 %-band och sex objektiva milstolpar (ersätter den enkla
   scatter+loess som låg där). "Löpande år"-kortet visar nu kumulativ

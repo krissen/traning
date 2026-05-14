@@ -1394,7 +1394,7 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
     ggplot2::scale_x_log10() +
     ggplot2::scale_y_reverse() +
     ggplot2::facet_wrap(~ era, ncol = 1) +
-    ggplot2::labs(title = "Distans \u00d7 tempo per 5-\u00e5rsperiod",
+    ggplot2::labs(title = "Distans \u00d7 tempo per epok",
                    subtitle = "Hex-t\u00e4thet av enskilda pass. Vita streck + prick = hela datasetets median (samma i alla paneler).",
                    x = "Kilometer (log)", y = "Tempo (min/km)") +
     .theme_run_profile()

@@ -267,8 +267,10 @@ def get_run_character(
                                     current year highlighted vs grey
                                     historical lines.
             - 'distance_pace_era' — Hex-density of distance vs pace,
-                                    faceted by 5-year era, with the
-                                    dataset median as a fixed reference.
+                                    faceted by era (2005–2010 /
+                                    2011–2016 / 2017–2021 / 2022–2026),
+                                    with the dataset median as a fixed
+                                    reference.
         after: Start date filter (cuts off earlier years from the
             visualization). Most useful for `cumulative_km` /
             `heatmap_km`. Other charts inherently span the full
