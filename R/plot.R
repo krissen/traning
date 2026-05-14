@@ -1303,9 +1303,21 @@ fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
 
-  weekly <- runs %>% dplyr::filter(woy <= 52) %>%
+  weekly_raw <- runs %>% dplyr::filter(woy <= 52) %>%
     dplyr::group_by(year, woy) %>%
-    dplyr::summarise(km = sum(km), .groups = "drop") %>%
+    dplyr::summarise(km = sum(km), .groups = "drop")
+
+  # Complete each year to weeks 1..52 with km = 0, so cumulative km
+  # stays flat across gaps instead of linearly interpolating between
+  # the previous and next run. For the current year we still want the
+  # line to stop at the last observed week (no zero-padding into the
+  # unrun future), so trim its tail after completion.
+  current_year <- max(weekly_raw$year)
+  current_max_woy <- max(weekly_raw$woy[weekly_raw$year == current_year])
+
+  weekly <- weekly_raw %>%
+    tidyr::complete(year, woy = 1:52, fill = list(km = 0)) %>%
+    dplyr::filter(year != current_year | woy <= current_max_woy) %>%
     dplyr::arrange(year, woy) %>%
     dplyr::group_by(year) %>%
     dplyr::mutate(cumkm = cumsum(km)) %>% dplyr::ungroup()
@@ -1313,7 +1325,6 @@ fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
   end_pts <- weekly %>% dplyr::group_by(year) %>%
     dplyr::slice_max(woy, n = 1) %>% dplyr::ungroup()
 
-  current_year <- max(weekly$year)
   weekly_split <- weekly %>% dplyr::mutate(is_current = year == current_year)
 
   ggplot2::ggplot(weekly_split,
@@ -1336,11 +1347,13 @@ fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
     .theme_run_profile()
 }
 
-#' Distans \u00d7 tempo som hex-densitet per 5-\u00e5rsperiod
+#' Distans \u00d7 tempo som hex-densitet per epok
 #'
 #' Hex-bin av enskilda pass (distans vs tempo), uppdelat i fyra epoker.
 #' Vita streck + prick = hela datasetets median (samma referens i alla
 #' paneler, s\u00e5 epokernas tyngdpunkter g\u00e5r att j\u00e4mf\u00f6ra med varandra).
+#'
+#' Epok-gr\u00e4nserna \u00e4r 2005\u20132010, 2011\u20132016, 2017\u20132021, 2022\u20132026.
 #'
 #' @inheritParams fetch.plot.pace_year
 #' @return ggplot2-objekt.
