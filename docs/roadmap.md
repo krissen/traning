@@ -7,6 +7,11 @@
   registrerade pass, längsta uppehåll mellan löpturer, hela kalender­
   månader utan ett enda pass, etc. Ska kännas som "did you know" snarare
   än som verktyg.
+- **Δ-staplar mediantempo per vecka.** Per-vecka motsvarighet till
+  P01a_v09-konceptet (som sparkades för år-versionen). Stapel under noll
+  = veckan blev snabbare än föregående vecka. Använder det vanliga
+  globala tidsfiltret. Bra för att se ryckiga upp/ned-perioder vs jämn
+  träning.
 
 ## Bugs
 
