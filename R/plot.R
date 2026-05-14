@@ -750,6 +750,7 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
 fetch.plot.decoupling <- function(summaries, myruns = NULL,
                                   from = NULL, to = NULL,
                                   decoupling_data = NULL,
+                                  cap_pct = 25,
                                   sport = "running") {
   if (is.null(decoupling_data)) {
     decoupling_data <- compute_decoupling(summaries, myruns, sport = sport)
@@ -758,6 +759,12 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
   if (nrow(decoupling_data) == 0) {
     message("Ingen decoupling-data tillg\u00e4nglig.")
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen decoupling-data"))
+  }
+
+  # Older cache files predate the `capped` column \u2014 backfill so the
+  # downstream filters/layers see a consistent shape.
+  if (!"capped" %in% names(decoupling_data)) {
+    decoupling_data$capped <- FALSE
   }
 
   # Filter to date range
@@ -788,7 +795,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     "decoupling_pct"
   }
   dc_panel <- decoupling_data %>%
-    dplyr::select(sessionStart, dplyr::all_of(dc_cols)) %>%
+    dplyr::select(sessionStart, dplyr::all_of(dc_cols), capped) %>%
     tidyr::pivot_longer(
       cols = dplyr::all_of(dc_cols),
       names_to = "metrik", values_to = "value"
@@ -805,10 +812,11 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     dplyr::mutate(
       metrik = "weekly_km",
       value = weekly_km,
+      capped = FALSE,
       panel = factor("Veckokilometer",
                      levels = c("Decoupling (%)", "Veckokilometer"))
     ) %>%
-    dplyr::select(sessionStart, metrik, value, panel)
+    dplyr::select(sessionStart, metrik, value, capped, panel)
 
   combined <- dplyr::bind_rows(dc_panel, km_panel)
 
@@ -834,16 +842,35 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     ggplot2::geom_hline(yintercept = c(3, 5, 8),
       colour = "grey70", linetype = "dotted", linewidth = 0.4
     ) +
-    # Decoupling points
+    # Decoupling points (regular, non-capped)
     ggplot2::geom_point(
-      data = dplyr::filter(combined, metrik == "decoupling_pct"),
+      data = dplyr::filter(combined, metrik == "decoupling_pct", !capped),
       ggplot2::aes(y = value),
       alpha = pt_alpha, size = pt_size, colour = "grey40"
     )
 
+  # Capped sessions: render at the cap line so the y-axis isn't blown
+  # up by a single -75 % artefact, but the user can see *that* a
+  # session was flagged on this date. NA decoupling_pct rows (rare,
+  # produced when ratios are non-finite) get pinned at +cap_pct.
+  capped_layer <- combined %>%
+    dplyr::filter(metrik == "decoupling_pct", capped) %>%
+    dplyr::mutate(value_clamp = ifelse(
+      is.na(value),
+      cap_pct,
+      sign(value) * pmin(abs(value), cap_pct)
+    ))
+  if (nrow(capped_layer) > 0) {
+    p <- p + ggplot2::geom_point(
+      data = capped_layer,
+      ggplot2::aes(y = value_clamp),
+      shape = 17, colour = "#e74c3c", size = pt_size + 0.5, alpha = 0.85
+    )
+  }
+
   if (show_smooth) {
     p <- p + ggplot2::geom_smooth(
-      data = dplyr::filter(combined, metrik == "decoupling_pct"),
+      data = dplyr::filter(combined, metrik == "decoupling_pct", !capped),
       ggplot2::aes(y = value),
       method = "loess", formula = "y ~ x",
       colour = "steelblue", se = FALSE, linewidth = 0.8

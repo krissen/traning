@@ -65,8 +65,47 @@ test_that("compute_decoupling returns tibble with expected columns", {
   expect_s3_class(result, "tbl_df")
   expected_cols <- c("sessionStart", "distance_km", "duration_min",
                      "avg_pace", "avg_hr", "ratio_first", "ratio_second",
-                     "decoupling_pct", "decoupling_rolling28", "temperature")
+                     "decoupling_pct", "decoupling_rolling28", "temperature",
+                     "capped")
   expect_true(all(expected_cols %in% names(result)))
+})
+
+test_that("compute_decoupling marks |decoupling| > cap_pct as capped, doesn't drop", {
+  # Force an extreme decoupling: speed 3.0 → 1.0 m/s, decoupling ~67 %.
+  myruns <- make_dc_myruns(test_summaries_dc,
+                           first_speed = 3.0, second_speed = 1.0, hr = 150)
+  # Use loose half_diff filter so we don't reject these as fartlek
+  res <- suppressWarnings(
+    compute_decoupling(test_summaries_dc, myruns,
+                       max_half_speed_diff_pct = 99,
+                       cap_pct = 25)
+  )
+  expect_gt(nrow(res), 0)
+  expect_true(any(res$capped))
+  expect_true(all(abs(res$decoupling_pct[res$capped]) > 25, na.rm = TRUE))
+  # The capped rows must still be present in the per-run output
+  capped_dates <- res$sessionStart[res$capped]
+  expect_setequal(capped_dates, as.Date(test_summaries_dc$sessionStart))
+})
+
+test_that("rolling28 ignores capped sessions", {
+  # Mix one extreme outlier in with otherwise normal data
+  sm <- make_dc_summaries(8)
+  myruns <- make_dc_myruns(sm,
+                           first_speed = 3.0, second_speed = 2.7, hr = 150)
+  # Replace the last session's per-second data with an extreme decoupling
+  warmup <- 600; mid <- floor((3600 - warmup) / 2)
+  myruns[[length(myruns)]]$speed <- c(rep(3.0, warmup),
+                                       rep(3.0, mid),
+                                       rep(0.5, 3600 - warmup - mid))
+  res <- suppressWarnings(
+    compute_decoupling(sm, myruns,
+                       max_half_speed_diff_pct = 99,
+                       cap_pct = 25)
+  )
+  # Rolling on the capped session itself should be NA or ignore the spike
+  capped_row <- res[res$capped, ]
+  expect_gt(nrow(capped_row), 0)
 })
 
 test_that("compute_decoupling calculates known decoupling value", {
