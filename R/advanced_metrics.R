@@ -689,6 +689,7 @@ compute_decoupling <- function(summaries, myruns,
                                warmup_sec              = 600L,
                                smooth_window           = 30L,
                                max_half_speed_diff_pct = 10,
+                               cap_pct                 = 25,
                                sport                   = "running") {
   if (is.null(max_pace_min_km)) {
     max_pace_min_km <- .resolve_max_pace_min_km(sport)
@@ -806,6 +807,16 @@ compute_decoupling <- function(summaries, myruns,
     }
 
     decoupling_pct <- 100 * (ratio_1 - ratio_2) / ratio_1
+
+    # Physiological sanity cap. Real aerobic decoupling sits in roughly
+    # ±15 %; values beyond ±cap_pct invariably trace back to per-second
+    # HR sensor dropouts or stuck values that corrupt the half-period
+    # averages (the canonical example is the 2011 sessions with NA
+    # avg_hr in summaries — the trackeR object holds bogus per-second
+    # readings that survive the validity gate at line 747).
+    if (!is.finite(decoupling_pct) || abs(decoupling_pct) > cap_pct) {
+      n_skip <- n_skip + 1L; next
+    }
 
     results[[k]] <- tibble::tibble(
       sessionStart   = as.Date(summaries$sessionStart[[i]]),
@@ -934,6 +945,7 @@ load_decoupling <- function(summaries, myruns,
                             warmup_sec              = 600L,
                             smooth_window           = 30L,
                             max_half_speed_diff_pct = 10,
+                            cap_pct                 = 25,
                             force                   = FALSE,
                             cache_path              = NULL,
                             sport                   = "running") {
@@ -965,6 +977,7 @@ load_decoupling <- function(summaries, myruns,
         identical(decoupling_cache$smooth_window, smooth_window) &&
         identical(decoupling_cache$max_half_speed_diff_pct,
                   max_half_speed_diff_pct) &&
+        identical(decoupling_cache$cap_pct %||% NULL, cap_pct) &&
         identical(decoupling_cache$sport %||% NULL, sport)) {
       cached <- decoupling_cache$per_run
       cached_skipped_dates <- decoupling_cache$skipped_dates %||%
@@ -1011,6 +1024,7 @@ load_decoupling <- function(summaries, myruns,
       warmup_sec              = warmup_sec,
       smooth_window           = smooth_window,
       max_half_speed_diff_pct = max_half_speed_diff_pct,
+      cap_pct                 = cap_pct,
       sport                   = sport
     )
 
@@ -1068,6 +1082,7 @@ load_decoupling <- function(summaries, myruns,
       warmup_sec              = warmup_sec,
       smooth_window           = smooth_window,
       max_half_speed_diff_pct = max_half_speed_diff_pct,
+      cap_pct                 = cap_pct,
       sport                   = sport
     )
     save_atomic(decoupling_cache, file = cache_path)
