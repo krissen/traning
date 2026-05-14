@@ -303,10 +303,19 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
   # `_build_args` already adds +1 day for absolute ISO dates so it
   # arrives here exclusive). When `to` is NULL we default to tomorrow
   # so today's sessions are included. When `from` is NULL we use the
-  # earliest sessionStart so the calendar covers the full history.
+  # earliest sessionStart of the *scoped* sport subset — without the
+  # filter the calendar would render misleading leading empty months
+  # whenever the picked sport's first session is later than the
+  # dataset's overall first session.
   to_excl <- if (is.null(to)) (Sys.Date() + 1L) else as.Date(to)
   from_d  <- if (is.null(from)) {
-    earliest <- suppressWarnings(min(summaries$sessionStart, na.rm = TRUE))
+    scoped <- if (is.null(sport) || identical(tolower(sport), "all") ||
+                   identical(tolower(sport), "any")) {
+      summaries
+    } else {
+      tryCatch(filter_sport(summaries, sport), error = function(e) summaries)
+    }
+    earliest <- suppressWarnings(min(scoped$sessionStart, na.rm = TRUE))
     if (is.finite(earliest)) as.Date(earliest) else (to_excl - 366L)
   } else as.Date(from)
   display_to <- to_excl - 1L
