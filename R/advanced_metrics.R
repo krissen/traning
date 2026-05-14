@@ -977,7 +977,7 @@ load_decoupling <- function(summaries, myruns,
         identical(decoupling_cache$smooth_window, smooth_window) &&
         identical(decoupling_cache$max_half_speed_diff_pct,
                   max_half_speed_diff_pct) &&
-        identical(decoupling_cache$cap_pct %||% NULL, cap_pct) &&
+        identical(decoupling_cache$cap_pct, cap_pct) &&
         identical(decoupling_cache$sport %||% NULL, sport)) {
       cached <- decoupling_cache$per_run
       cached_skipped_dates <- decoupling_cache$skipped_dates %||%
