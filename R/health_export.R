@@ -45,7 +45,26 @@
 .load_manifest <- function(manifest_path = NULL) {
   if (is.null(manifest_path)) manifest_path <- .hae_manifest_path()
   if (!file.exists(manifest_path)) return(list())
-  jsonlite::fromJSON(manifest_path, simplifyVector = FALSE)
+  loaded <- tryCatch(
+    jsonlite::fromJSON(manifest_path, simplifyVector = FALSE),
+    error = function(e) {
+      warning("manifest JSON unreadable (", conditionMessage(e),
+              "), starting with an empty manifest", call. = FALSE)
+      NULL
+    }
+  )
+  # Tolerate the case where the file parses as valid JSON but isn't the
+  # shape we expect (a named list of entries). Anything else — a scalar,
+  # an unnamed array, a string — degrades to an empty manifest so the
+  # caller can still merge/replace without crashing downstream.
+  if (!is.list(loaded) || is.null(names(loaded)) || any(names(loaded) == "")) {
+    if (!is.null(loaded)) {
+      warning("manifest has wrong shape (expected a named list of entries), ",
+              "starting with an empty manifest", call. = FALSE)
+    }
+    return(list())
+  }
+  loaded
 }
 
 #' Compute what to write to the manifest after a run
@@ -56,24 +75,27 @@
 #'     file currently in the data directory — including files we didn't
 #'     parse because .import_metrics filtered them out, so they don't
 #'     re-trigger evaluation next run.
-#'   * Single-file run (path != NULL): merge the touched entries into the
-#'     existing on-disk manifest.
+#'   * Single-file run (path != NULL): merge entries for every candidate
+#'     into the existing on-disk manifest. We use `files` rather than
+#'     `files_to_parse` so candidates dropped by .import_metrics still get
+#'     their md5 recorded (otherwise a vector-path import containing only
+#'     ignored canonical metrics never updates the manifest at all).
 #'
 #' @param files All candidate files seen this run (pre-filter).
-#' @param files_to_parse Subset we actually parsed (post-filter).
 #' @param path Original path argument (NULL = full run).
-#' @param existing Manifest loaded at the top of the run.
+#' @param existing Manifest loaded at the top of the run. Expected to be a
+#'   named list; non-list values are treated as empty so the merge can't
+#'   crash on a malformed on-disk manifest.
 #' @return Named list ready to pass to .save_manifest().
 #' @keywords internal
-.compute_manifest_to_save <- function(files, files_to_parse, path, existing) {
+.compute_manifest_to_save <- function(files, path, existing) {
+  new_entries <- .build_manifest_entries(files)
   if (is.null(path)) {
-    .build_manifest_entries(files)
-  } else {
-    merged <- existing
-    new_entries <- .build_manifest_entries(files_to_parse)
-    for (k in names(new_entries)) merged[[k]] <- new_entries[[k]]
-    merged
+    return(new_entries)
   }
+  base <- if (is.list(existing)) existing else list()
+  for (k in names(new_entries)) base[[k]] <- new_entries[[k]]
+  base
 }
 
 #' Save the import manifest
@@ -122,11 +144,13 @@
   changed <- vapply(files, function(f) {
     key <- .manifest_key(f)
     prev <- manifest[[key]]
-    # Treat missing or malformed entries (no $md5, wrong type) as "new" so
-    # we re-parse instead of crashing. A corrupt manifest should degrade
-    # to full re-import, not raise.
+    # Treat missing or malformed entries (no $md5, wrong type, NA) as "new"
+    # so we re-parse instead of letting an NA propagate through `!=` and
+    # turning a path into NA in the result. A corrupt manifest should
+    # degrade to full re-import, not raise and not poison the file list.
     if (is.null(prev) || !is.list(prev) || is.null(prev$md5) ||
-        !is.character(prev$md5) || length(prev$md5) != 1) {
+        !is.character(prev$md5) || length(prev$md5) != 1 ||
+        is.na(prev$md5)) {
       return(TRUE)
     }
     unname(tools::md5sum(f)) != prev$md5
@@ -790,17 +814,13 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     files <- path
   }
 
-  # Load the existing manifest from disk and reuse it at save-time so that
-  # single-file or forced runs don't overwrite entries for files they didn't
-  # touch. Tolerate a corrupt manifest — degrade to empty so the import can
-  # still proceed (and the final save will replace the broken file).
-  existing_manifest <- tryCatch(.load_manifest(), error = function(e) {
-    if (verbose) {
-      message("Manifest unreadable (", conditionMessage(e),
-              "), continuing with empty manifest")
-    }
-    list()
-  })
+  # Skip the manifest entirely when we're not going to save (no point
+  # reading it, and the default path requires TRANING_DATA which the
+  # caller may not have set). Otherwise load it once and reuse at save
+  # time so that single-file or forced runs don't overwrite entries for
+  # files they didn't touch. .load_manifest() already tolerates corrupt
+  # JSON and wrong-shape values; it returns list() in those cases.
+  existing_manifest <- if (save) .load_manifest() else list()
   # Use the manifest to filter only when we're doing an unforced full sweep.
   manifest <- if (is.null(path) && !force) existing_manifest else list()
   if (length(manifest) > 0) {
@@ -857,7 +877,7 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     #      we don't miss this branch (the bug Copilot flagged).
     if (save && length(files) > 0) {
       .save_manifest(
-        .compute_manifest_to_save(files, files_to_parse, path, existing_manifest)
+        .compute_manifest_to_save(files, path, existing_manifest)
       )
     }
     return(invisible(existing))
@@ -904,7 +924,7 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     # Update manifest using the same rule applied at every exit path —
     # see .compute_manifest_to_save() for the policy.
     .save_manifest(
-      .compute_manifest_to_save(files, files_to_parse, path, existing_manifest)
+      .compute_manifest_to_save(files, path, existing_manifest)
     )
     if (verbose) cat("Manifest uppdaterad\n")
   }

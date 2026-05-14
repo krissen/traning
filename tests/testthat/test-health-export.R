@@ -436,6 +436,40 @@ test_that(".filter_changed_files tolerates corrupt manifest entries", {
   expect_equal(traning:::.filter_changed_files(tmp, m4), tmp)
   m5 <- setNames(list(list(md5 = c("a", "b"))), key)
   expect_equal(traning:::.filter_changed_files(tmp, m5), tmp)
+
+  # $md5 is NA_character_ — earlier the != comparison returned NA which
+  # poisoned the result vector. Treat as "new" instead.
+  m6 <- setNames(list(list(md5 = NA_character_)), key)
+  result <- traning:::.filter_changed_files(tmp, m6)
+  expect_equal(result, tmp)
+  expect_false(anyNA(result))
+})
+
+test_that(".load_manifest tolerates wrong-shape JSON (scalar / unnamed)", {
+  tmp <- tempfile(fileext = ".json")
+  # Valid JSON but not the named-list shape we expect.
+  writeLines("42", tmp)
+  expect_warning(loaded <- traning:::.load_manifest(tmp),
+                 "wrong shape")
+  expect_equal(loaded, list())
+
+  # Unnamed array.
+  writeLines('["a", "b"]', tmp)
+  expect_warning(loaded <- traning:::.load_manifest(tmp),
+                 "wrong shape")
+  expect_equal(loaded, list())
+
+  # JSON with at least one empty key — also rejected.
+  writeLines('{"a": {"md5": "x"}, "": {"md5": "y"}}', tmp)
+  expect_warning(loaded <- traning:::.load_manifest(tmp),
+                 "wrong shape")
+  expect_equal(loaded, list())
+
+  # Unparseable JSON.
+  writeLines("{ not json", tmp)
+  expect_warning(loaded <- traning:::.load_manifest(tmp),
+                 "unreadable")
+  expect_equal(loaded, list())
 })
 
 test_that(".save_manifest writes atomically and survives stale temp files", {
@@ -522,31 +556,39 @@ test_that("import recovers when on-disk manifest is corrupt", {
 })
 
 test_that(".compute_manifest_to_save: full run replaces, single-file merges", {
-  # Three temp files; pretend we're considering all of them.
+  # Three temp files; pretend we're considering all of them as candidates.
   a <- tempfile(fileext = ".json"); writeLines("{}", a)
   b <- tempfile(fileext = ".json"); writeLines("{}", b)
   c <- tempfile(fileext = ".json"); writeLines("{}", c)
-  existing <- list(
-    "old_only.json"     = list(md5 = "zzzz"),
-    "shared.json"       = list(md5 = "stale")
-  )
+  existing <- list("old_only.json" = list(md5 = "zzzz"))
+  # A pre-existing entry for `a`. The full run should overwrite it with
+  # the fresh md5; the single-file run should also overwrite it.
+  existing[[basename(a)]] <- list(md5 = "stale")
 
-  # Full run (path = NULL): manifest is replaced entirely; old_only.json
-  # disappears, shared.json gets the new md5.
+  # Full run (path = NULL): manifest is replaced entirely. The stale entry
+  # for `a` is replaced with its fresh md5; old_only.json disappears.
   res_full <- traning:::.compute_manifest_to_save(
-    files = c(a, b, c), files_to_parse = c(a, b), path = NULL,
-    existing = existing
+    files = c(a, b, c), path = NULL, existing = existing
   )
   expect_false("old_only.json" %in% names(res_full))
   expect_true(all(c(basename(a), basename(b), basename(c)) %in% names(res_full)))
+  expect_equal(res_full[[basename(a)]]$md5, unname(tools::md5sum(a)))
 
-  # Single-file run: existing entries are preserved, only touched ones overwritten.
+  # Single-file run: existing entries are preserved, only touched ones
+  # overwritten. old_only.json must survive; the entry for `a` is
+  # refreshed with the new md5.
   res_single <- traning:::.compute_manifest_to_save(
-    files = a, files_to_parse = a, path = a,
-    existing = existing
+    files = a, path = a, existing = existing
   )
   expect_equal(res_single[["old_only.json"]]$md5, "zzzz")
-  expect_true(basename(a) %in% names(res_single))
+  expect_equal(res_single[[basename(a)]]$md5, unname(tools::md5sum(a)))
+
+  # Single-file run with a non-list `existing` (corrupt manifest) must
+  # not crash — the merge proceeds against an empty base.
+  res_corrupt <- traning:::.compute_manifest_to_save(
+    files = a, path = a, existing = "this was the JSON content"
+  )
+  expect_true(basename(a) %in% names(res_corrupt))
 })
 
 # --- read_canonical_file daily_total fast-path ------------------------------
