@@ -15,8 +15,11 @@ nya gav bättre svar på samma fråga.
   år med 25–75 %-band och sex objektiva milstolpar (ersätter den enkla
   scatter+loess som låg där). "Löpande år"-kortet visar nu kumulativ
   km vecka-för-vecka med innevarande år framhävt (ersätter
-  stapeldiagrammet med en enda stapel per år). Datatabellerna i
-  accordions är oförändrade.
+  stapeldiagrammet med en enda stapel per år). Löpande år-tabellen i
+  accordion är oförändrad (`report_yearstatus`); Tempo-tabellen byter
+  schema från `fetch.my.mean.pace` (år / totDuration / meanPace /
+  minPace) till `report_yearstop` (År / Km/dag / Km, tot / Km, max /
+  Tempo, medel / Turer) — bredare data med samma medelpace-kolumn.
 - **MCP**: nytt verktyg `get_run_character(chart=..., after, before,
   sport)` med åtta chart-värden — `pace_year`, `pace_ridges`,
   `tertile_share`, `longest_runs`, `season_pace`, `heatmap_km`,
