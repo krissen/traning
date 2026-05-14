@@ -1043,7 +1043,12 @@ fetch.plot.pace_year <- function(summaries, from = NULL, to = NULL,
 #' @export
 fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
                                         sport = "running") {
-  runs <- .run_profile_runs(summaries, sport = sport, pace_filter = TRUE)
+  # pace_filter = FALSE so cycling (~1.5-3 min/km), walking (>10) and
+  # other non-running sports still produce data. The week-over-week
+  # delta is computed on the bucket's own pace distribution, so the
+  # 2.5-10 min/km running band would otherwise zero out every other
+  # sport on the global selector.
+  runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) < 4) {
     return(.run_profile_empty("F\u00f6r f\u00e5 pass f\u00f6r \u0394-vecka"))
