@@ -1032,6 +1032,70 @@ fetch.plot.pace_year <- function(summaries, from = NULL, to = NULL,
     ggplot2::theme(plot.margin = ggplot2::margin(12, 12, 28, 12))
 }
 
+#' \u0394-staplar mediantempo per vecka
+#'
+#' Per ISO-vecka: skillnaden i mediantempo mot f\u00f6reg\u00e5ende vecka. Stapel
+#' under noll = veckan blev snabbare; \u00f6ver noll = l\u00e5ngsammare. Anv\u00e4nder
+#' samma globala tidsfilter som \u00f6vriga Tr\u00e4ning-fliken-plottar.
+#'
+#' @inheritParams fetch.plot.pace_year
+#' @return ggplot2-objekt.
+#' @export
+fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
+                                        sport = "running") {
+  runs <- .run_profile_runs(summaries, sport = sport, pace_filter = TRUE)
+  runs <- .run_profile_filter_range(runs, from, to)
+  if (nrow(runs) < 4) {
+    return(.run_profile_empty("F\u00f6r f\u00e5 pass f\u00f6r \u0394-vecka"))
+  }
+
+  weekly <- runs %>%
+    dplyr::mutate(
+      week_start = lubridate::floor_date(.data$date, "week", week_start = 1)
+    ) %>%
+    dplyr::group_by(.data$week_start) %>%
+    dplyr::summarise(median_pace = stats::median(.data$pace, na.rm = TRUE),
+                     n = dplyr::n(),
+                     .groups = "drop") %>%
+    dplyr::filter(.data$n >= 1, !is.na(.data$median_pace)) %>%
+    dplyr::arrange(.data$week_start)
+
+  if (nrow(weekly) < 2) {
+    return(.run_profile_empty("F\u00f6r f\u00e5 veckor f\u00f6r \u0394"))
+  }
+
+  weekly <- weekly %>%
+    dplyr::mutate(
+      delta  = .data$median_pace - dplyr::lag(.data$median_pace),
+      faster = .data$delta < 0
+    ) %>%
+    dplyr::filter(!is.na(.data$delta))
+
+  if (nrow(weekly) == 0) {
+    return(.run_profile_empty("F\u00f6r kort intervall"))
+  }
+
+  span <- .compute_span_days(from, to, data_dates = weekly$week_start)
+
+  ggplot2::ggplot(weekly, ggplot2::aes(x = .data$week_start, y = .data$delta,
+                                        fill = .data$faster)) +
+    ggplot2::geom_col(width = 5) +
+    ggplot2::geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
+    ggplot2::scale_fill_manual(
+      values = c(`TRUE` = "#27ae60", `FALSE` = "#e74c3c"),
+      labels = c(`TRUE` = "Snabbare", `FALSE` = "L\u00e5ngsammare"),
+      name   = NULL
+    ) +
+    .adaptive_date_scale(span) +
+    ggplot2::labs(
+      title = "\u0394 Mediantempo per vecka",
+      subtitle = "Stapel under noll = snabbare \u00e4n f\u00f6reg\u00e5ende vecka.",
+      x = NULL,
+      y = "\u0394 tempo (min/km)"
+    ) +
+    .theme_run_profile()
+}
+
 #' Tempo per \u00e5r som ridges, f\u00e4rgade efter \u00e5rsvolym
 #'
 #' Densitet av tempo per \u00e5r (ggridges). F\u00e4rgfyllning = \u00e5rets totala km
