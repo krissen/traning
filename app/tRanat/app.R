@@ -23,6 +23,7 @@ source("pages/page_training.R",       local = TRUE)
 source("pages/page_progress.R",       local = TRUE)
 source("pages/page_health.R",         local = TRUE)
 source("pages/page_performance.R",    local = TRUE)
+source("pages/page_runprofile.R",     local = TRUE)
 source("pages/page_race.R",           local = TRUE)
 source("pages/page_sport_mix.R",      local = TRUE)
 source("pages/page_import.R",         local = TRUE)
@@ -92,6 +93,9 @@ ui <- page_navbar(
   nav_panel("Prestation",
     page_performance_ui("performance")
   ),
+  nav_panel("L\u00f6pprofil",
+    page_runprofile_ui("runprofile")
+  ),
   nav_panel("T\u00e4vling",
     page_race_ui("race")
   ),
@@ -122,6 +126,7 @@ server <- function(input, output, session) {
   page_health_server("health", summaries, health_daily, dates, is_mobile)
   page_performance_server("performance", summaries, myruns, health_daily,
                            decoupling_data, dates, is_mobile, sport)
+  page_runprofile_server("runprofile", summaries, dates, is_mobile, sport)
   page_race_server("race", summaries, health_daily, dates, is_mobile)
   page_import_server("import")
 }

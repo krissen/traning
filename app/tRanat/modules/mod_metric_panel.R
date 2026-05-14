@@ -1,7 +1,8 @@
 # mod_metric_panel.R — Generic plot + table card module
 
 metric_panel_ui <- function(id, title = NULL, use_plotly = TRUE,
-                            plot_height = "500px", full_screen = TRUE) {
+                            plot_height = "500px", full_screen = TRUE,
+                            with_table = TRUE) {
   ns <- shiny::NS(id)
 
   plot_output <- if (use_plotly) {
@@ -10,21 +11,28 @@ metric_panel_ui <- function(id, title = NULL, use_plotly = TRUE,
     shiny::plotOutput(ns("plot"), height = plot_height, width = "100%")
   }
 
-  bslib::card(
-    full_screen = full_screen,
-    if (!is.null(title)) bslib::card_header(title),
-    bslib::card_body(
-      fillable = FALSE,
-      plot_output
-    ),
-    bslib::accordion(
-      id = ns("acc"),
-      open = FALSE,
-      bslib::accordion_panel("Data",
-        DT::dataTableOutput(ns("table"))
+  body <- bslib::card_body(fillable = FALSE, plot_output)
+
+  if (with_table) {
+    bslib::card(
+      full_screen = full_screen,
+      if (!is.null(title)) bslib::card_header(title),
+      body,
+      bslib::accordion(
+        id = ns("acc"),
+        open = FALSE,
+        bslib::accordion_panel("Data",
+          DT::dataTableOutput(ns("table"))
+        )
       )
     )
-  )
+  } else {
+    bslib::card(
+      full_screen = full_screen,
+      if (!is.null(title)) bslib::card_header(title),
+      body
+    )
+  }
 }
 
 metric_panel_server <- function(id, plot_fn, report_fn = NULL,

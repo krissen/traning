@@ -1,5 +1,37 @@
 # tRäning — Changelog
 
+## 2026-05-14 — Löpprofil-fliken: åtta nya karaktärs-plottar
+
+Åtta plottar från `tmp/run_type_plots/`-sandlådan flyttades in i paketet
+som riktiga `fetch.plot.*`-funktioner och exponeras nu via Shiny, MCP
+(Vayu) och `inst/mcp_bridge.R`. Två befintliga plottar ersattes där den
+nya gav bättre svar på samma fråga.
+
+- **Ny flik "Löpprofil"** mellan Prestation och Tävling. Sex kort:
+  tempo per år som ridges (volym-färg), tempo-fördelning i lugn/medel/
+  snabb, längsta pass per år (topp-5 staplat), säsongsmönster i tempo,
+  veckokilometer per år som heatmap, distans × tempo per epok.
+- **Utveckling-fliken polerad.** "Tempo"-kortet visar nu medianpace per
+  år med 25–75 %-band och sex objektiva milstolpar (ersätter den enkla
+  scatter+loess som låg där). "Löpande år"-kortet visar nu kumulativ
+  km vecka-för-vecka med innevarande år framhävt (ersätter
+  stapeldiagrammet med en enda stapel per år). Löpande år-tabellen i
+  accordion är oförändrad (`report_yearstatus`); Tempo-tabellen byter
+  schema från `fetch.my.mean.pace` (år / totDuration / meanPace /
+  minPace) till `report_yearstop` (År / Km/dag / Km, tot / Km, max /
+  Tempo, medel / Turer) — bredare data med samma medelpace-kolumn.
+- **MCP**: nytt verktyg `get_run_character(chart=..., after, before,
+  sport)` med åtta chart-värden — `pace_year`, `pace_ridges`,
+  `tertile_share`, `longest_runs`, `season_pace`, `heatmap_km`,
+  `cumulative_km`, `distance_pace_era`. Plot-only (Image-retur).
+- **Borttagningar**: `fetch.my.mean.pace`, `fetch.plot.mean.pace`,
+  `plot_yearstatus`. CLI:s `--year-running --plot` använder nu
+  `fetch.plot.cumulative_km`; `--total-pace --plot` använder
+  `fetch.plot.pace_year`; `--total-pace`-tabellen är nu
+  `report_yearstop`.
+- **DESCRIPTION**: nya Imports — `ggridges`, `ggrepel`, `hexbin`,
+  `scales`, `viridisLite`.
+
 ## 2026-05-13 — Pipeline notification fixes + Telegram mirror
 
 Three concurrent regressions resolved (PR #18, #20):

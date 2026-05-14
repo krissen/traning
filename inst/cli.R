@@ -450,8 +450,10 @@ if (do_month_last) {
 
 if (do_year_running) {
   if (do_plot) {
-    emit_plot(plot_yearstatus(summaries, from = date_range$from, to = date_range$to,
-                              sport = do_sport), "year-running")
+    emit_plot(fetch.plot.cumulative_km(summaries,
+                                        from = date_range$from,
+                                        to = date_range$to,
+                                        sport = do_sport), "year-running")
   } else {
     emit_table(report_yearstatus(summaries, n = do_limit,
                                  from = date_range$from, to = date_range$to,
@@ -496,11 +498,10 @@ if (!is.null(options$datesum) || (has_daterange && !any_report)) {
 if (do_total_pace) {
   pace_data <- if (has_daterange) filter_by_daterange(summaries, date_range) else summaries
   if (do_plot) {
-    emit_plot(fetch.plot.mean.pace(fetch.my.mean.pace(pace_data,
-                                                       sport = do_sport)),
+    emit_plot(fetch.plot.pace_year(pace_data, sport = do_sport),
               "total-pace")
   } else {
-    emit_table(fetch.my.mean.pace(pace_data, sport = do_sport), "total-pace")
+    emit_table(report_yearstop(pace_data, sport = do_sport), "total-pace")
   }
 }
 

@@ -1,0 +1,99 @@
+# Build-time smoke tests for the Löpprofil tab plots.
+# Goal: every fetch.plot.* in the run-profile family returns a ggplot on a
+# realistic-enough fixture (multi-year, varied pace + distance).
+
+.fixture_run_profile <- function(n_years = 6, runs_per_year = 60,
+                                  seed = 17) {
+  set.seed(seed)
+  start <- as.POSIXct("2018-01-08 07:30:00", tz = "UTC")
+  n <- n_years * runs_per_year
+  # Spread sessionStarts roughly evenly across the n_years window.
+  step_secs <- (n_years * 365.25 * 86400) / n
+  ss <- start + (seq_len(n) - 1) * step_secs
+
+  # Pace drifts a bit year over year so tertile/era plots have variance.
+  year <- as.integer(format(ss, "%Y"))
+  base_pace <- 5.5 - (year - min(year)) * 0.08
+  pace <- pmin(pmax(base_pace + stats::rnorm(n, 0, 0.6), 3), 9)
+
+  # Km: most runs 5-12 km, a handful of long runs per year.
+  km <- pmax(stats::rnorm(n, 8.5, 4.0), 1.5)
+  long_idx <- sample(seq_len(n), size = n_years * 3)
+  km[long_idx] <- stats::runif(length(long_idx), 25, 55)
+  distance <- km * 1000
+
+  dur_min <- km * pace
+  data.frame(
+    sessionStart      = ss,
+    sport             = "running",
+    distance          = distance,
+    durationMoving    = as.difftime(dur_min, units = "mins"),
+    avgPaceMoving     = pace,
+    avgHeartRateMoving = round(stats::runif(n, 130, 175)),
+    avgSpeedMoving    = 1 / (pace / 60) * (1000/1000),
+    duration          = as.difftime(dur_min, units = "mins"),
+    stringsAsFactors  = FALSE
+  )
+}
+
+# expect_s3_class confirms the function returned a ggplot object, but
+# many scale/stat errors only surface at render time. ggplot_build()
+# forces the layers and scales to evaluate, catching e.g. invalid
+# breaks, NA-only inputs to stats, or unsupported aesthetics.
+#
+# suppressMessages() absorbs informational notes that some geoms emit
+# (e.g. ggridges' "Picking joint bandwidth of …"); we only want
+# warnings and errors to fail the test.
+.expect_renders <- function(p) {
+  expect_s3_class(p, "ggplot")
+  expect_no_warning(suppressMessages(ggplot2::ggplot_build(p)))
+}
+
+test_that("fetch.plot.pace_year builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.pace_year(df))
+})
+
+test_that("fetch.plot.pace_year_ridges builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.pace_year_ridges(df))
+})
+
+test_that("fetch.plot.pace_tertile_share builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.pace_tertile_share(df))
+})
+
+test_that("fetch.plot.longest_runs_year builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.longest_runs_year(df))
+})
+
+test_that("fetch.plot.season_pace builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.season_pace(df))
+})
+
+test_that("fetch.plot.heatmap_km builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.heatmap_km(df))
+})
+
+test_that("fetch.plot.cumulative_km builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.cumulative_km(df))
+})
+
+test_that("fetch.plot.distance_pace_era builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.distance_pace_era(df))
+})
+
+test_that("run-profile plots return empty-state when filter strips data", {
+  df <- .fixture_run_profile()
+  # Future window with no rows
+  p <- fetch.plot.pace_year(df, from = "2100-01-01", to = "2100-12-31")
+  expect_s3_class(p, "ggplot")
+  p2 <- fetch.plot.cumulative_km(df, from = "2100-01-01", to = "2100-12-31")
+  expect_s3_class(p2, "ggplot")
+})
