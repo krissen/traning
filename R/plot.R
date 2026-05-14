@@ -901,8 +901,17 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
 # Shared filter+mutate pipeline used by all run-profile plots. Mirrors the
 # iterate_round*.R sandbox: same outlier cuts, same minimum year, same
 # derived columns.
-.run_profile_runs <- function(summaries, sport = "running", year_min = 2005) {
-  .filter_sport(summaries, sport) %>%
+#
+# pace_filter = TRUE drops sessions outside running's typical pace band
+# (2.5–10 min/km). For pace-centric plots (pace_year, ridges, tertile
+# share, season_pace, distance_pace_era) this strips degenerate values
+# and keeps the y/x-axis readable. Volume-centric plots (cumulative_km,
+# heatmap_km, longest_runs_year) don't display pace and would otherwise
+# silently drop cycling (pace ~1.5–3) and walking (pace >10) sessions —
+# they pass pace_filter = FALSE.
+.run_profile_runs <- function(summaries, sport = "running", year_min = 2005,
+                               pace_filter = TRUE) {
+  out <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(
       date = as.Date(sessionStart),
       year = lubridate::year(sessionStart),
@@ -913,11 +922,14 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
       pace = avgPaceMoving
     ) %>%
     dplyr::filter(
-      !is.na(pace), pace > 2.5, pace < 10,
       !is.na(km), km > 0.5,
       !is.na(dur_min), dur_min > 5,
       year >= year_min
     )
+  if (pace_filter) {
+    out <- dplyr::filter(out, !is.na(pace), pace > 2.5, pace < 10)
+  }
+  out
 }
 
 # Apply a from/to date filter on the derived `date` column. NULL => no-op.
@@ -1121,7 +1133,9 @@ fetch.plot.pace_tertile_share <- function(summaries, from = NULL, to = NULL,
 #' @export
 fetch.plot.longest_runs_year <- function(summaries, from = NULL, to = NULL,
                                            sport = "running") {
-  runs <- .run_profile_runs(summaries, sport = sport)
+  # Volume-centric — pace isn't shown, so don't drop non-running
+  # sessions on running's pace band.
+  runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
 
@@ -1249,7 +1263,7 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
 #' @export
 fetch.plot.heatmap_km <- function(summaries, from = NULL, to = NULL,
                                     sport = "running") {
-  runs <- .run_profile_runs(summaries, sport = sport)
+  runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
 
@@ -1299,7 +1313,7 @@ fetch.plot.heatmap_km <- function(summaries, from = NULL, to = NULL,
 #' @export
 fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
                                        sport = "running") {
-  runs <- .run_profile_runs(summaries, sport = sport)
+  runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
 
