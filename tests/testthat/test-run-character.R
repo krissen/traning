@@ -36,52 +36,57 @@
   )
 }
 
-test_that("fetch.plot.pace_year builds a ggplot", {
-  df <- .fixture_run_profile()
-  p <- fetch.plot.pace_year(df)
+# expect_s3_class confirms the function returned a ggplot object, but
+# many scale/stat errors only surface at render time. ggplot_build()
+# forces the layers and scales to evaluate, catching e.g. invalid
+# breaks, NA-only inputs to stats, or unsupported aesthetics.
+#
+# suppressMessages() absorbs informational notes that some geoms emit
+# (e.g. ggridges' "Picking joint bandwidth of …"); we only want
+# warnings and errors to fail the test.
+.expect_renders <- function(p) {
   expect_s3_class(p, "ggplot")
+  expect_no_warning(suppressMessages(ggplot2::ggplot_build(p)))
+}
+
+test_that("fetch.plot.pace_year builds and renders", {
+  df <- .fixture_run_profile()
+  .expect_renders(fetch.plot.pace_year(df))
 })
 
-test_that("fetch.plot.pace_year_ridges builds a ggplot", {
+test_that("fetch.plot.pace_year_ridges builds and renders", {
   df <- .fixture_run_profile()
-  p <- fetch.plot.pace_year_ridges(df)
-  expect_s3_class(p, "ggplot")
+  .expect_renders(fetch.plot.pace_year_ridges(df))
 })
 
-test_that("fetch.plot.pace_tertile_share builds a ggplot", {
+test_that("fetch.plot.pace_tertile_share builds and renders", {
   df <- .fixture_run_profile()
-  p <- fetch.plot.pace_tertile_share(df)
-  expect_s3_class(p, "ggplot")
+  .expect_renders(fetch.plot.pace_tertile_share(df))
 })
 
-test_that("fetch.plot.longest_runs_year builds a ggplot", {
+test_that("fetch.plot.longest_runs_year builds and renders", {
   df <- .fixture_run_profile()
-  p <- fetch.plot.longest_runs_year(df)
-  expect_s3_class(p, "ggplot")
+  .expect_renders(fetch.plot.longest_runs_year(df))
 })
 
-test_that("fetch.plot.season_pace builds a ggplot", {
+test_that("fetch.plot.season_pace builds and renders", {
   df <- .fixture_run_profile()
-  p <- fetch.plot.season_pace(df)
-  expect_s3_class(p, "ggplot")
+  .expect_renders(fetch.plot.season_pace(df))
 })
 
-test_that("fetch.plot.heatmap_km builds a ggplot", {
+test_that("fetch.plot.heatmap_km builds and renders", {
   df <- .fixture_run_profile()
-  p <- fetch.plot.heatmap_km(df)
-  expect_s3_class(p, "ggplot")
+  .expect_renders(fetch.plot.heatmap_km(df))
 })
 
-test_that("fetch.plot.cumulative_km builds a ggplot", {
+test_that("fetch.plot.cumulative_km builds and renders", {
   df <- .fixture_run_profile()
-  p <- fetch.plot.cumulative_km(df)
-  expect_s3_class(p, "ggplot")
+  .expect_renders(fetch.plot.cumulative_km(df))
 })
 
-test_that("fetch.plot.distance_pace_era builds a ggplot", {
+test_that("fetch.plot.distance_pace_era builds and renders", {
   df <- .fixture_run_profile()
-  p <- fetch.plot.distance_pace_era(df)
-  expect_s3_class(p, "ggplot")
+  .expect_renders(fetch.plot.distance_pace_era(df))
 })
 
 test_that("run-profile plots return empty-state when filter strips data", {
