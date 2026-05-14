@@ -1,5 +1,54 @@
 # tRäning — Changelog
 
+## 2026-05-15 — Hälsoimport-manifest-bugg
+
+Inkrementell hälsoimport hade fallit tillbaka till full re-parse av alla
+60K+ HAE-filer flera gånger om dagen utan att vi märkt det. Symtomet syntes
+först när R 4.5→4.6-uppgraden på kailash exponerade hur långsamma "snabba"
+inkrementella körningar egentligen var.
+
+- **Bug fixad: single-file-import skrev över hela manifesten.**
+  `import_health_export(path = X)` (anropas av `notify_helper.R` på varje
+  HAE-push) startade med en tom manifest istället för att ladda den
+  existerande, mergade in `{X: md5}` och skrev tillbaka — alla andra
+  entries försvann. Receivern's flush:ar gör detta flera gånger per dag,
+  så manifest:en var i praktiken nollställd kontinuerligt. Nästa
+  "inkrementell" import såg då alla 60K+ filer som "okända" och
+  parserade om hela cachen. Fixen laddar manifest:en en gång i toppen
+  av importen och återanvänder den som merge-bas vid save.
+
+- **Bug fixad: metric-filter-tomt fall hoppade manifest-uppdatering.**
+  Om alla ändrade filer filtrerades bort av `.import_metrics`-filter
+  (de tillhör metrics vi inte importerar), gick funktionen via
+  early-return utan att uppdatera manifest:en — så filerna hamnade i
+  "okänd" på varje körning för alltid. Helper:n
+  `.compute_manifest_to_save()` centraliserar nu save-policyn och kallas
+  från varje exit-path; bygger entries från hela kandidat-setet
+  (`files`), inte bara post-filter-listan.
+
+- **Atomic manifest-skrivning.** `.save_manifest()` skrev tidigare direkt
+  med `jsonlite::write_json`; en krasch mitt i en 10MB-skrivning kunde
+  lämna en halv JSON på disk. Nu serialiseras till `.tmp` och rename:as
+  atomiskt (POSIX-invariant; pipelinen är Linux/macOS-only).
+
+- **Härdning mot korrupt manifest.** `.load_manifest()` validerar nu att
+  parsed-JSON är en named list — skalär, unnamed array eller list med
+  tomma keys degraderas till tom manifest med varning, istället för att
+  passera vidare och krascha på `manifest[[key]]`-merge senare.
+  `.filter_changed_files()` accepterar `NA_character_` i `$md5` som
+  "ny fil" istället för att förgifta result-vektorn via `tools::md5sum(f)
+  != NA → NA`.
+
+- **Test-isolation.** Det existerande `test_force.json`-testet skrev tidigare
+  till utvecklarens produktions-manifest eftersom det inte isolerade
+  `$TRANING_DATA` — vilket är exakt så `"test_force.json"` ursprungligen
+  smög in i produktionsmanifesten. `withr::local_envvar()` nu i testet,
+  plus regressionstester som låser merge-not-overwrite-beteendet,
+  filter-tomt-uppdateringen, corrupt-manifest-recovery och atomic-write-
+  semantiken.
+
+PR #26 — landade efter tre Codex/Copilot-ronder.
+
 ## 2026-05-14 — Roadmap-städning: filter-bug, defaults, två nya kort
 
 Sju roadmap-punkter avklarade i ett svep, plus en ny dashboard-feature.

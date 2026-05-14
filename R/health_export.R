@@ -101,8 +101,17 @@
 #' Save the import manifest
 #'
 #' Atomic write: serialise to a temp file in the same directory, then rename.
-#' On POSIX this guarantees readers never observe a half-written manifest, and
-#' a crash mid-write leaves the previous version intact.
+#' On POSIX `file.rename()` overwrites an existing destination as a single
+#' inode swap, so readers never observe a half-written manifest and a crash
+#' mid-write leaves the previous version intact.
+#'
+#' POSIX-only invariant. On Windows `file.rename()` fails when the
+#' destination exists, so this would abort on every save after the first.
+#' The whole pipeline (kailash systemd services, AUR-managed R packages,
+#' file paths) is Linux/macOS-only — Windows support is explicitly out of
+#' scope. If that ever changes, this function needs an atomic replace that
+#' works on NTFS (e.g. fs::file_move(), or a copy + unlink fallback that
+#' accepts the loss of crash-atomicity on Windows).
 #'
 #' @param manifest Named list: filename -> list(md5)
 #' @param manifest_path Path to manifest JSON. NULL = default.
