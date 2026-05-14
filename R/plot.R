@@ -1091,7 +1091,7 @@ fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
     dplyr::summarise(median_pace = stats::median(.data$pace, na.rm = TRUE),
                      n = dplyr::n(),
                      .groups = "drop") %>%
-    dplyr::filter(.data$n >= 1, !is.na(.data$median_pace)) %>%
+    dplyr::filter(!is.na(.data$median_pace)) %>%
     dplyr::arrange(.data$week_start)
 
   if (nrow(weekly) < 2) {
@@ -1113,7 +1113,9 @@ fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
 
   ggplot2::ggplot(weekly, ggplot2::aes(x = .data$week_start, y = .data$delta,
                                         fill = .data$faster)) +
-    ggplot2::geom_col(width = 5) +
+    # width = 6 (Date axis) gives bars that almost touch on the 7-day
+    # ISO grid without overlapping into the next week.
+    ggplot2::geom_col(width = 6) +
     ggplot2::geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
     ggplot2::scale_fill_manual(
       values = c(`TRUE` = "#27ae60", `FALSE` = "#e74c3c"),

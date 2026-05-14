@@ -315,6 +315,9 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
     } else {
       tryCatch(filter_sport(summaries, sport), error = function(e) summaries)
     }
+    # suppressWarnings: empty scoped (sport filter strips everything,
+    # or dataset is empty) makes min() emit a "no non-missing arguments"
+    # warning. The is.finite() check below handles the Inf result.
     earliest <- suppressWarnings(min(scoped$sessionStart, na.rm = TRUE))
     if (is.finite(earliest)) as.Date(earliest) else (to_excl - 366L)
   } else as.Date(from)
