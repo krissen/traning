@@ -21,10 +21,10 @@ page_sport_mix_ui <- function(id) {
             width = "100%"
           ),
           shiny::radioButtons(ns("metric"), "Mätare",
-            choices = c("Distans (km)" = "distance",
-                        "Tid (min)"    = "duration",
-                        "TRIMP"        = "trimp"),
-            selected = "distance",
+            choices = c("TRIMP"        = "trimp",
+                        "Distans (km)" = "distance",
+                        "Tid (min)"    = "duration"),
+            selected = "trimp",
             inline = TRUE
           )
         ),
@@ -132,9 +132,14 @@ page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
 
     output$ctl_sports_ui <- shiny::renderUI({
       choices <- ctl_choices()
-      # Default-select up to four members + the "Totalt" series so the
-      # overlay starts with something meaningful regardless of bucket.
-      preselect <- utils::head(choices, 4)
+      # Preferred default: cycling, walking, running, paddel, strength —
+      # the five sports the user actually wants to see overlaid by
+      # default. Fall back to the first four available choices when the
+      # active bucket strips any of them out.
+      preferred <- c("cycling", "walking", "running",
+                     "paddelsporter", "strength")
+      preselect <- intersect(preferred, choices)
+      if (length(preselect) == 0) preselect <- utils::head(choices, 4)
       shiny::checkboxGroupInput(session$ns("ctl_sports"),
         "Sporter att överlagra",
         choices  = choices,

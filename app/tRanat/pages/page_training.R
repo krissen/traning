@@ -9,6 +9,12 @@ page_training_ui <- function(id) {
     ),
     tags$div(class = "section-spacer",
       metric_panel_ui(ns("monotony"), "Monotoni & Strain", use_plotly = FALSE)
+    ),
+    tags$div(class = "section-spacer",
+      metric_panel_ui(ns("pace_week_delta"),
+                      "Δ Mediantempo per vecka",
+                      use_plotly = FALSE,
+                      with_table = FALSE)
     )
   )
 }
@@ -53,6 +59,14 @@ page_training_server <- function(id, summaries, dates, is_mobile, sport) {
                                                    from = dr_from(),
                                                    to = dr_to(),
                                                    sport = sp())),
+      use_plotly = FALSE,
+      is_mobile = is_mobile
+    )
+    metric_panel_server("pace_week_delta",
+      plot_fn = shiny::reactive(fetch.plot.pace_week_delta(summaries,
+                                                            from = dr_from(),
+                                                            to = dr_to(),
+                                                            sport = sp())),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )

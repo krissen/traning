@@ -689,6 +689,7 @@ compute_decoupling <- function(summaries, myruns,
                                warmup_sec              = 600L,
                                smooth_window           = 30L,
                                max_half_speed_diff_pct = 10,
+                               cap_pct                 = 25,
                                sport                   = "running") {
   if (is.null(max_pace_min_km)) {
     max_pace_min_km <- .resolve_max_pace_min_km(sport)
@@ -703,7 +704,8 @@ compute_decoupling <- function(summaries, myruns,
     ratio_second       = numeric(0),
     decoupling_pct     = numeric(0),
     decoupling_rolling28 = numeric(0),
-    temperature        = numeric(0)
+    temperature        = numeric(0),
+    capped             = logical(0)
   )
 
   # Filter qualifying sessions at summary level. We work with row indices
@@ -721,6 +723,7 @@ compute_decoupling <- function(summaries, myruns,
 
   n_runs  <- length(run_idx)
   n_skip  <- 0L
+  n_capped <- 0L
   results <- vector("list", n_runs)
 
   for (k in seq_along(run_idx)) {
@@ -807,6 +810,21 @@ compute_decoupling <- function(summaries, myruns,
 
     decoupling_pct <- 100 * (ratio_1 - ratio_2) / ratio_1
 
+    # Physiological sanity cap. Real aerobic decoupling sits in roughly
+    # ±15 %; values beyond ±cap_pct usually trace back to per-second HR
+    # sensor dropouts or stuck values that corrupt the half-period
+    # averages (the canonical example is the 2011 sessions with NA
+    # avg_hr in summaries — the trackeR object holds bogus per-second
+    # readings that survive the validity gate at line 747). Genuine
+    # extremes (heat, severe under-fueling, very long efforts) can also
+    # cross the threshold, so the row is kept with `capped = TRUE` and
+    # the rolling mean / plot can decide how to surface it (the default
+    # plot renders capped sessions as red triangles at the cap line so
+    # the user sees that something happened, but the y-axis isn't
+    # blown up by a single -75 % artefact).
+    is_capped <- !is.finite(decoupling_pct) || abs(decoupling_pct) > cap_pct
+    if (is_capped) n_capped <- n_capped + 1L
+
     results[[k]] <- tibble::tibble(
       sessionStart   = as.Date(summaries$sessionStart[[i]]),
       distance_km    = as.numeric(summaries$distance[[i]]) / 1000,
@@ -820,13 +838,20 @@ compute_decoupling <- function(summaries, myruns,
         as.numeric(summaries$garmin_averageTemperature[[i]])
       } else {
         NA_real_
-      }
+      },
+      capped         = is_capped
     )
   }
 
   if (n_skip > 0) {
     warning(n_skip, " sessioner hoppades \u00f6ver (NULL, saknar speed/HR, ",
             "eller f\u00f6r kort efter uppv\u00e4rmning).", call. = FALSE)
+  }
+  if (n_capped > 0) {
+    warning(n_capped, " sessioner flaggade som outliers (|decoupling| > ",
+            cap_pct, " %) \u2014 m\u00e4rks visuellt men exkluderas fr\u00e5n ",
+            "rullande medel. H\u00f6j cap_pct f\u00f6r att inkludera \u00e4kta extremer ",
+            "som hetta eller under-fueling.", call. = FALSE)
   }
 
   per_run <- dplyr::bind_rows(results)
@@ -835,12 +860,26 @@ compute_decoupling <- function(summaries, myruns,
 
   per_run <- dplyr::arrange(per_run, sessionStart)
 
-  # 28-day rolling mean on date spine
+  # 28-day rolling mean on date spine \u2014 exclude capped sessions so a
+  # single -75 % artefact doesn't pull the trend line down for a month.
   daily <- per_run %>%
+    dplyr::filter(!.data$capped) %>%
     dplyr::group_by(sessionStart) %>%
     dplyr::summarise(daily_dc = mean(decoupling_pct, na.rm = TRUE),
                      .groups = "drop") %>%
     dplyr::arrange(sessionStart)
+
+  if (nrow(daily) == 0) {
+    # Every session was capped (only happens in synthetic test fixtures
+    # with extreme decoupling) \u2014 no rolling reference possible.
+    return(per_run %>%
+      dplyr::mutate(decoupling_rolling28 = NA_real_) %>%
+      dplyr::select(
+        sessionStart, distance_km, duration_min, avg_pace, avg_hr,
+        ratio_first, ratio_second, decoupling_pct, decoupling_rolling28,
+        temperature, capped
+      ))
+  }
 
   date_spine <- tibble::tibble(
     sessionStart = seq(min(daily$sessionStart), max(daily$sessionStart),
@@ -859,7 +898,7 @@ compute_decoupling <- function(summaries, myruns,
     dplyr::select(
       sessionStart, distance_km, duration_min, avg_pace, avg_hr,
       ratio_first, ratio_second, decoupling_pct, decoupling_rolling28,
-      temperature
+      temperature, capped
     )
 }
 
@@ -934,6 +973,7 @@ load_decoupling <- function(summaries, myruns,
                             warmup_sec              = 600L,
                             smooth_window           = 30L,
                             max_half_speed_diff_pct = 10,
+                            cap_pct                 = 25,
                             force                   = FALSE,
                             cache_path              = NULL,
                             sport                   = "running") {
@@ -965,6 +1005,7 @@ load_decoupling <- function(summaries, myruns,
         identical(decoupling_cache$smooth_window, smooth_window) &&
         identical(decoupling_cache$max_half_speed_diff_pct,
                   max_half_speed_diff_pct) &&
+        identical(decoupling_cache$cap_pct, cap_pct) &&
         identical(decoupling_cache$sport %||% NULL, sport)) {
       cached <- decoupling_cache$per_run
       cached_skipped_dates <- decoupling_cache$skipped_dates %||%
@@ -1011,6 +1052,7 @@ load_decoupling <- function(summaries, myruns,
       warmup_sec              = warmup_sec,
       smooth_window           = smooth_window,
       max_half_speed_diff_pct = max_half_speed_diff_pct,
+      cap_pct                 = cap_pct,
       sport                   = sport
     )
 
@@ -1033,29 +1075,37 @@ load_decoupling <- function(summaries, myruns,
 
   if (!exists("all_skipped")) all_skipped <- cached_skipped_dates
 
-  # Recompute rolling mean on the merged data
+  # Recompute rolling mean on the merged data — exclude capped sessions
+  # so a single -75 % artefact doesn't pull the trend line down. Older
+  # caches lacking the column behave as if no rows were capped.
   if (nrow(per_run) > 0) {
+    if (!"capped" %in% names(per_run)) per_run$capped <- FALSE
     daily <- per_run %>%
+      dplyr::filter(!.data$capped) %>%
       dplyr::group_by(sessionStart) %>%
       dplyr::summarise(daily_dc = mean(decoupling_pct, na.rm = TRUE),
                        .groups = "drop") %>%
       dplyr::arrange(sessionStart)
 
-    date_spine <- tibble::tibble(
-      sessionStart = seq(min(daily$sessionStart), max(daily$sessionStart),
-                         by = "day")
-    )
+    if (nrow(daily) > 0) {
+      date_spine <- tibble::tibble(
+        sessionStart = seq(min(daily$sessionStart), max(daily$sessionStart),
+                           by = "day")
+      )
 
-    rolling <- date_spine %>%
-      dplyr::left_join(daily, by = "sessionStart") %>%
-      dplyr::mutate(
-        decoupling_rolling28 = .rolling_mean(daily_dc, window = 28)
-      ) %>%
-      dplyr::select(sessionStart, decoupling_rolling28)
+      rolling <- date_spine %>%
+        dplyr::left_join(daily, by = "sessionStart") %>%
+        dplyr::mutate(
+          decoupling_rolling28 = .rolling_mean(daily_dc, window = 28)
+        ) %>%
+        dplyr::select(sessionStart, decoupling_rolling28)
 
-    per_run <- per_run %>%
-      dplyr::select(-decoupling_rolling28) %>%
-      dplyr::left_join(rolling, by = "sessionStart")
+      per_run <- per_run %>%
+        dplyr::select(-decoupling_rolling28) %>%
+        dplyr::left_join(rolling, by = "sessionStart")
+    } else {
+      per_run$decoupling_rolling28 <- NA_real_
+    }
   }
 
   # Save cache
@@ -1068,6 +1118,7 @@ load_decoupling <- function(summaries, myruns,
       warmup_sec              = warmup_sec,
       smooth_window           = smooth_window,
       max_half_speed_diff_pct = max_half_speed_diff_pct,
+      cap_pct                 = cap_pct,
       sport                   = sport
     )
     save_atomic(decoupling_cache, file = cache_path)

@@ -41,6 +41,15 @@ overview_ui <- function(id) {
           DT::dataTableOutput(ns("recent_runs"))
         )
       )
+    ),
+    # --- Fun facts ---
+    tags$div(class = "section-spacer",
+      bslib::accordion(
+        open = FALSE,
+        bslib::accordion_panel("Trivia",
+          shiny::uiOutput(ns("fun_facts"))
+        )
+      )
     )
   )
 }
@@ -187,6 +196,12 @@ overview_server <- function(id, summaries, health_daily, myruns,
           yaxis = list(fixedrange = TRUE)
         )
       pp
+    })
+
+    # --- Fun facts ---
+    output$fun_facts <- shiny::renderUI({
+      facts <- compute_fun_facts(summaries)
+      .format_fun_facts_html(facts)
     })
 
     # --- Recent runs table ---

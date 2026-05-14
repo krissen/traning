@@ -2,13 +2,22 @@
 
 # --- Adaptive granularity helpers --------------------------------------------
 
-# Compute span in days from from/to, with a fallback default
-.compute_span_days <- function(from, to, fallback_days = 365) {
+# Compute span in days from from/to, with a fallback default. If
+# `data_dates` is supplied and from/to are not both set, the span is
+# derived from the data range — this keeps .adaptive_date_scale() in
+# sync when callers pass NULL/NULL ("Allt"-presetet) on a multi-year
+# dataset (otherwise the 365-day fallback would pick monthly breaks
+# for a chart spanning two decades, triggering scale_x_date warnings).
+.compute_span_days <- function(from, to, fallback_days = 365,
+                               data_dates = NULL) {
   if (!is.null(from) && !is.null(to)) {
-    as.numeric(as.Date(to) - as.Date(from))
-  } else {
-    fallback_days
+    return(as.numeric(as.Date(to) - as.Date(from)))
   }
+  if (!is.null(data_dates) && length(data_dates) > 0) {
+    rng <- suppressWarnings(range(as.Date(data_dates), na.rm = TRUE))
+    if (all(is.finite(rng))) return(as.numeric(diff(rng)))
+  }
+  fallback_days
 }
 
 # Return a scale_x_date() layer with appropriate breaks/labels for the span
@@ -188,11 +197,13 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
   }
 
   p <- p +
-    # Weekly km bars
+    # Weekly km bars — width must be in seconds for POSIXct x-axis
+    # (width = 1 would be 1 second, rendering bars as invisible
+    # hairlines over multi-month/year spans). 86400 s = 1 day.
     ggplot2::geom_col(
       data = dplyr::filter(combined, metrik == "weekly_km"),
       ggplot2::aes(y = value),
-      fill = "steelblue", alpha = 0.7, width = 1
+      fill = "steelblue", alpha = 0.7, width = 86400
     ) +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
@@ -293,30 +304,22 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
 #' Calls \code{compute_acwr()} internally.  The ACWR line is coloured by
 #' zone (green = sweet spot 0.8-1.3, yellow = caution 1.3-1.5, red = danger
 #' > 1.5 or undertraining < 0.5).  Horizontal reference lines mark the zone
-#' boundaries.  A bar panel below shows weekly km.  Defaults to the last 365
-#' days to keep the chart readable over a long training history.
+#' boundaries.  A bar panel below shows weekly km.  When \code{from} and
+#' \code{to} are both \code{NULL} the full history is shown.
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
-#' @param days Integer.  Number of trailing days to show.  Default 365.
+#' @param from,to Optional date bounds. \code{NULL} means no bound — pass
+#'   both as \code{NULL} to render the full history.
+#' @param sport Sport bucket (default \code{"running"}). Forwarded to
+#'   \code{compute_acwr()}.
 #' @return ggplot2 object
 #' @export
-fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL,
+fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
                             sport = "running") {
   acwr_data <- compute_acwr(summaries, sport = sport)
 
-  # Date range overrides the days parameter
-  if (!is.null(from)) {
-    cutoff <- as.Date(from)
-  } else {
-    cutoff <- max(acwr_data$date, na.rm = TRUE) - days
-  }
-
-  acwr_window <- acwr_data %>%
-    dplyr::filter(date > cutoff, !is.na(acwr))
-
-  if (!is.null(to)) {
-    acwr_window <- acwr_window %>% dplyr::filter(date < as.Date(to))
-  }
+  acwr_window <- .filter_date_range(acwr_data, "date", from, to) %>%
+    dplyr::filter(!is.na(acwr))
 
   # Assign each observation to an ACWR zone for colouring
   # Hulin (2016): sweet spot 0.8-1.3; below 0.8 = underloading
@@ -370,6 +373,8 @@ fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL,
     panel = factor("ACWR", levels = c("ACWR", "Veckokilometer"))
   )
 
+  span <- .compute_span_days(from, to, data_dates = acwr_window$date)
+
   combined %>%
     ggplot2::ggplot(ggplot2::aes(x = date)) +
     # Sweet-spot band (ACWR 0.8-1.3)
@@ -416,19 +421,18 @@ fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL,
       scales = "free_y",
       space  = "fixed"
     ) +
-    .adaptive_date_scale(.compute_span_days(from, to)) +
+    .adaptive_date_scale(span) +
     ggplot2::ggtitle("Akut:kronisk belastningskvot") +
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
       strip.text   = ggplot2::element_text(face = "bold"),
       legend.position = "bottom",
       axis.text.x = ggplot2::element_text(
-        angle = if (.compute_span_days(from, to) <= 60) 45 else 0,
-        hjust = if (.compute_span_days(from, to) <= 60) 1 else 0.5)
+        angle = if (span <= 60) 45 else 0,
+        hjust = if (span <= 60) 1 else 0.5)
     ) -> p
 
   # Show individual data points at short spans
-  span <- .compute_span_days(from, to)
   if (span <= 60) {
     p <- p + ggplot2::geom_point(
       data = dplyr::filter(combined, panel == "ACWR"),
@@ -443,28 +447,21 @@ fetch.plot.acwr <- function(summaries, days = 365, from = NULL, to = NULL,
 #'
 #' Calls \code{compute_monotony_strain()} internally.  Upper panel shows
 #' weekly monotony with a threshold line at 2.0 (overtraining risk).  Lower
-#' panel shows training strain.  Defaults to the last 365 days.
+#' panel shows training strain.  When \code{from} and \code{to} are both
+#' \code{NULL} the full history is shown.
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
-#' @param days Integer.  Number of trailing days to show.  Default 365.
+#' @param from,to Optional date bounds. \code{NULL} means no bound — pass
+#'   both as \code{NULL} to render the full history.
+#' @param sport Sport bucket (default \code{"running"}).
 #' @return ggplot2 object
 #' @export
-fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL,
+fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
                                 sport = "running") {
   ms_data <- compute_monotony_strain(summaries, sport = sport)
 
-  if (!is.null(from)) {
-    cutoff <- as.Date(from)
-  } else {
-    cutoff <- max(ms_data$date, na.rm = TRUE) - days
-  }
-
-  ms_window <- ms_data %>%
-    dplyr::filter(date > cutoff)
-
-  if (!is.null(to)) {
-    ms_window <- ms_window %>% dplyr::filter(date < as.Date(to))
-  }
+  ms_window <- .filter_date_range(ms_data, "date", from, to)
+  span <- .compute_span_days(from, to, data_dates = ms_window$date)
 
   # Build long format for facet_grid — one panel per metric
   long <- ms_window %>%
@@ -486,8 +483,6 @@ fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL,
   ref_df <- data.frame(
     metrik = factor("Monotoni", levels = c("Monotoni", "Belastning"))
   )
-
-  span <- .compute_span_days(from, to)
 
   p <- long %>%
     ggplot2::ggplot(ggplot2::aes(x = date, y = value)) +
@@ -527,18 +522,18 @@ fetch.plot.monotony <- function(summaries, days = 365, from = NULL, to = NULL,
 #' Three-panel chart showing CTL (fitness), ATL (fatigue), and TSB (form)
 #' derived from daily TRIMP via exponentially weighted moving averages.
 #' TSB zones use coaching heuristics — not validated for recreational running.
+#' When \code{from} and \code{to} are both \code{NULL} the full history is shown.
 #'
 #' @param summaries Summaries data frame.
-#' @param days Integer. Number of trailing days to show. Default 365.
 #' @param hr_max Numeric or NULL. HRmax override.
 #' @param hr_rest Numeric or NULL. HRrest override.
-#' @param from Date or NULL. Start of display window (overrides days).
-#' @param to Date or NULL. End of display window.
+#' @param from,to Optional date bounds. \code{NULL} means no bound — pass
+#'   both as \code{NULL} to render the full history.
 #' @param sport Sport bucket (default \code{"running"}). Forwarded to
 #'   \code{compute_pmc()}.
 #' @return ggplot2 object
 #' @export
-fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
+fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
                            from = NULL, to = NULL, sport = "running") {
   pmc_data <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
                           sport = sport)
@@ -547,15 +542,8 @@ fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
   }
 
-  if (!is.null(from)) {
-    cutoff <- as.Date(from)
-  } else {
-    cutoff <- max(pmc_data$date, na.rm = TRUE) - days
-  }
-  pmc_window <- pmc_data %>% dplyr::filter(date > cutoff)
-  if (!is.null(to)) {
-    pmc_window <- pmc_window %>% dplyr::filter(date < as.Date(to))
-  }
+  pmc_window <- .filter_date_range(pmc_data, "date", from, to)
+  span <- .compute_span_days(from, to, data_dates = pmc_window$date)
 
   # Panel 1: CTL + ATL lines
   fitness_fatigue <- pmc_window %>%
@@ -641,7 +629,7 @@ fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
       scales = "free_y",
       space = "fixed"
     ) +
-    .adaptive_date_scale(.compute_span_days(from, to)) +
+    .adaptive_date_scale(span) +
     ggplot2::ggtitle("Performance Management Chart (PMC)") +
     ggplot2::labs(
       x = NULL, y = NULL,
@@ -651,8 +639,8 @@ fetch.plot.pmc <- function(summaries, days = 365, hr_max = NULL, hr_rest = NULL,
       strip.text      = ggplot2::element_text(face = "bold"),
       legend.position = "bottom",
       axis.text.x = ggplot2::element_text(
-        angle = if (.compute_span_days(from, to) <= 60) 45 else 0,
-        hjust = if (.compute_span_days(from, to) <= 60) 1 else 0.5)
+        angle = if (span <= 60) 45 else 0,
+        hjust = if (span <= 60) 1 else 0.5)
     )
 }
 
@@ -762,14 +750,23 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
 fetch.plot.decoupling <- function(summaries, myruns = NULL,
                                   from = NULL, to = NULL,
                                   decoupling_data = NULL,
+                                  cap_pct = 25,
                                   sport = "running") {
   if (is.null(decoupling_data)) {
-    decoupling_data <- compute_decoupling(summaries, myruns, sport = sport)
+    decoupling_data <- compute_decoupling(summaries, myruns,
+                                           cap_pct = cap_pct,
+                                           sport = sport)
   }
 
   if (nrow(decoupling_data) == 0) {
     message("Ingen decoupling-data tillg\u00e4nglig.")
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen decoupling-data"))
+  }
+
+  # Older cache files predate the `capped` column \u2014 backfill so the
+  # downstream filters/layers see a consistent shape.
+  if (!"capped" %in% names(decoupling_data)) {
+    decoupling_data$capped <- FALSE
   }
 
   # Filter to date range
@@ -800,7 +797,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     "decoupling_pct"
   }
   dc_panel <- decoupling_data %>%
-    dplyr::select(sessionStart, dplyr::all_of(dc_cols)) %>%
+    dplyr::select(sessionStart, dplyr::all_of(dc_cols), capped) %>%
     tidyr::pivot_longer(
       cols = dplyr::all_of(dc_cols),
       names_to = "metrik", values_to = "value"
@@ -817,10 +814,11 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     dplyr::mutate(
       metrik = "weekly_km",
       value = weekly_km,
+      capped = FALSE,
       panel = factor("Veckokilometer",
                      levels = c("Decoupling (%)", "Veckokilometer"))
     ) %>%
-    dplyr::select(sessionStart, metrik, value, panel)
+    dplyr::select(sessionStart, metrik, value, capped, panel)
 
   combined <- dplyr::bind_rows(dc_panel, km_panel)
 
@@ -846,16 +844,35 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     ggplot2::geom_hline(yintercept = c(3, 5, 8),
       colour = "grey70", linetype = "dotted", linewidth = 0.4
     ) +
-    # Decoupling points
+    # Decoupling points (regular, non-capped)
     ggplot2::geom_point(
-      data = dplyr::filter(combined, metrik == "decoupling_pct"),
+      data = dplyr::filter(combined, metrik == "decoupling_pct", !capped),
       ggplot2::aes(y = value),
       alpha = pt_alpha, size = pt_size, colour = "grey40"
     )
 
+  # Capped sessions: render at the cap line so the y-axis isn't blown
+  # up by a single -75 % artefact, but the user can see *that* a
+  # session was flagged on this date. NA decoupling_pct rows (rare,
+  # produced when ratios are non-finite) get pinned at +cap_pct.
+  capped_layer <- combined %>%
+    dplyr::filter(metrik == "decoupling_pct", capped) %>%
+    dplyr::mutate(value_clamp = ifelse(
+      is.na(value),
+      cap_pct,
+      sign(value) * pmin(abs(value), cap_pct)
+    ))
+  if (nrow(capped_layer) > 0) {
+    p <- p + ggplot2::geom_point(
+      data = capped_layer,
+      ggplot2::aes(y = value_clamp),
+      shape = 17, colour = "#e74c3c", size = pt_size + 0.5, alpha = 0.85
+    )
+  }
+
   if (show_smooth) {
     p <- p + ggplot2::geom_smooth(
-      data = dplyr::filter(combined, metrik == "decoupling_pct"),
+      data = dplyr::filter(combined, metrik == "decoupling_pct", !capped),
       ggplot2::aes(y = value),
       method = "loess", formula = "y ~ x",
       colour = "steelblue", se = FALSE, linewidth = 0.8
@@ -871,11 +888,11 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
   }
 
   p <- p +
-    # Weekly km bars
+    # Weekly km bars \u2014 see fetch.plot.ef for the width-in-seconds note.
     ggplot2::geom_col(
       data = dplyr::filter(combined, metrik == "weekly_km"),
       ggplot2::aes(y = value),
-      fill = "steelblue", alpha = 0.7, width = 1
+      fill = "steelblue", alpha = 0.7, width = 86400
     ) +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
@@ -1042,6 +1059,77 @@ fetch.plot.pace_year <- function(summaries, from = NULL, to = NULL,
                    x = NULL, y = "Tempo (min/km)") +
     .theme_run_profile() +
     ggplot2::theme(plot.margin = ggplot2::margin(12, 12, 28, 12))
+}
+
+#' \u0394-staplar mediantempo per vecka
+#'
+#' Per ISO-vecka: skillnaden i mediantempo mot f\u00f6reg\u00e5ende vecka. Stapel
+#' under noll = veckan blev snabbare; \u00f6ver noll = l\u00e5ngsammare. Anv\u00e4nder
+#' samma globala tidsfilter som \u00f6vriga Tr\u00e4ning-fliken-plottar.
+#'
+#' @inheritParams fetch.plot.pace_year
+#' @return ggplot2-objekt.
+#' @export
+fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
+                                        sport = "running") {
+  # pace_filter = FALSE so cycling (~1.5-3 min/km), walking (>10) and
+  # other non-running sports still produce data. The week-over-week
+  # delta is computed on the bucket's own pace distribution, so the
+  # 2.5-10 min/km running band would otherwise zero out every other
+  # sport on the global selector.
+  runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
+  runs <- .run_profile_filter_range(runs, from, to)
+  if (nrow(runs) < 4) {
+    return(.run_profile_empty("F\u00f6r f\u00e5 pass f\u00f6r \u0394-vecka"))
+  }
+
+  weekly <- runs %>%
+    dplyr::mutate(
+      week_start = lubridate::floor_date(.data$date, "week", week_start = 1)
+    ) %>%
+    dplyr::group_by(.data$week_start) %>%
+    dplyr::summarise(median_pace = stats::median(.data$pace, na.rm = TRUE),
+                     n = dplyr::n(),
+                     .groups = "drop") %>%
+    dplyr::filter(!is.na(.data$median_pace)) %>%
+    dplyr::arrange(.data$week_start)
+
+  if (nrow(weekly) < 2) {
+    return(.run_profile_empty("F\u00f6r f\u00e5 veckor f\u00f6r \u0394"))
+  }
+
+  weekly <- weekly %>%
+    dplyr::mutate(
+      delta  = .data$median_pace - dplyr::lag(.data$median_pace),
+      faster = .data$delta < 0
+    ) %>%
+    dplyr::filter(!is.na(.data$delta))
+
+  if (nrow(weekly) == 0) {
+    return(.run_profile_empty("F\u00f6r kort intervall"))
+  }
+
+  span <- .compute_span_days(from, to, data_dates = weekly$week_start)
+
+  ggplot2::ggplot(weekly, ggplot2::aes(x = .data$week_start, y = .data$delta,
+                                        fill = .data$faster)) +
+    # width = 6 (Date axis) gives bars that almost touch on the 7-day
+    # ISO grid without overlapping into the next week.
+    ggplot2::geom_col(width = 6) +
+    ggplot2::geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
+    ggplot2::scale_fill_manual(
+      values = c(`TRUE` = "#27ae60", `FALSE` = "#e74c3c"),
+      labels = c(`TRUE` = "Snabbare", `FALSE` = "L\u00e5ngsammare"),
+      name   = NULL
+    ) +
+    .adaptive_date_scale(span) +
+    ggplot2::labs(
+      title = "\u0394 Mediantempo per vecka",
+      subtitle = "Stapel under noll = snabbare \u00e4n f\u00f6reg\u00e5ende vecka.",
+      x = NULL,
+      y = "\u0394 tempo (min/km)"
+    ) +
+    .theme_run_profile()
 }
 
 #' Tempo per \u00e5r som ridges, f\u00e4rgade efter \u00e5rsvolym
