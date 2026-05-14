@@ -357,8 +357,12 @@ def get_yearly_summary(
         n: Number of entries to show.
         after: Start date filter.
         before: End date filter.
-        top: If True, show full-year totals. If False, year-to-date comparison.
-        plot: If True, return bar chart (PNG).
+        top: If True, summary covers full calendar years. If False,
+            year-to-date (each year truncated at today's day-of-year).
+        plot: If True, return a chart. With top=True the chart is a
+            year-totals bar; with top=False it is a weekly cumulative
+            km line plot with the current year highlighted against
+            grey historical years.
         sport: Sport bucket (default 'running'). See vayu://sports.
     """
     args = _build_args(after, before, n, sport=sport)
