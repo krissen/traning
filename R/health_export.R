@@ -48,6 +48,34 @@
   jsonlite::fromJSON(manifest_path, simplifyVector = FALSE)
 }
 
+#' Compute what to write to the manifest after a run
+#'
+#' Centralised so every exit path (success, "no new data", filter-emptied)
+#' goes through the same rule:
+#'   * Full run (path = NULL): replace the manifest with the md5 of every
+#'     file currently in the data directory — including files we didn't
+#'     parse because .import_metrics filtered them out, so they don't
+#'     re-trigger evaluation next run.
+#'   * Single-file run (path != NULL): merge the touched entries into the
+#'     existing on-disk manifest.
+#'
+#' @param files All candidate files seen this run (pre-filter).
+#' @param files_to_parse Subset we actually parsed (post-filter).
+#' @param path Original path argument (NULL = full run).
+#' @param existing Manifest loaded at the top of the run.
+#' @return Named list ready to pass to .save_manifest().
+#' @keywords internal
+.compute_manifest_to_save <- function(files, files_to_parse, path, existing) {
+  if (is.null(path)) {
+    .build_manifest_entries(files)
+  } else {
+    merged <- existing
+    new_entries <- .build_manifest_entries(files_to_parse)
+    for (k in names(new_entries)) merged[[k]] <- new_entries[[k]]
+    merged
+  }
+}
+
 #' Save the import manifest
 #'
 #' Atomic write: serialise to a temp file in the same directory, then rename.
@@ -762,11 +790,18 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     files <- path
   }
 
-  # Filter to new/changed files using manifest (unless forced or single file).
-  # We always load the existing manifest from disk; it is reused at save-time
-  # so that single-file or forced runs don't overwrite entries for files they
-  # didn't touch.
-  existing_manifest <- .load_manifest()
+  # Load the existing manifest from disk and reuse it at save-time so that
+  # single-file or forced runs don't overwrite entries for files they didn't
+  # touch. Tolerate a corrupt manifest — degrade to empty so the import can
+  # still proceed (and the final save will replace the broken file).
+  existing_manifest <- tryCatch(.load_manifest(), error = function(e) {
+    if (verbose) {
+      message("Manifest unreadable (", conditionMessage(e),
+              "), continuing with empty manifest")
+    }
+    list()
+  })
+  # Use the manifest to filter only when we're doing an unforced full sweep.
   manifest <- if (is.null(path) && !force) existing_manifest else list()
   if (length(manifest) > 0) {
     files_to_parse <- .filter_changed_files(files, manifest)
@@ -812,19 +847,18 @@ import_health_export <- function(path = NULL, cache_path = NULL,
 
   if (nrow(new_data) == 0) {
     cat("Inga nya data\n")
-    # Files were considered (md5 changed against manifest) but produced no
-    # parseable rows — still update the manifest so we don't re-evaluate them
-    # on every subsequent run.
-    if (save && length(files_to_parse) > 0) {
-      new_entries <- .build_manifest_entries(files_to_parse)
-      if (is.null(path)) {
-        all_entries <- .build_manifest_entries(files)
-        .save_manifest(all_entries)
-      } else {
-        merged <- existing_manifest
-        for (k in names(new_entries)) merged[[k]] <- new_entries[[k]]
-        .save_manifest(merged)
-      }
+    # We still need to refresh the manifest. Two reasons we get here with
+    # candidates outstanding:
+    #   1. Files were considered (md5 changed against manifest) but parsed
+    #      to zero rows.
+    #   2. The .import_metrics filter just above reduced files_to_parse to
+    #      zero — in that case files_to_parse is empty but `files` still
+    #      lists everything we evaluated. Use `files` to gate the save so
+    #      we don't miss this branch (the bug Copilot flagged).
+    if (save && length(files) > 0) {
+      .save_manifest(
+        .compute_manifest_to_save(files, files_to_parse, path, existing_manifest)
+      )
     }
     return(invisible(existing))
   }
@@ -867,21 +901,11 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     save_health_data(health_daily, cache_path)
     if (verbose) cat("Sparad:", cache_path, "\n")
 
-    # Update manifest with all files (both parsed and previously imported)
-    new_entries <- .build_manifest_entries(files_to_parse)
-    if (is.null(path)) {
-      # Full run: rebuild manifest from all files in the data directory.
-      # `files` is the complete listing — every file we just considered.
-      all_entries <- .build_manifest_entries(files)
-      .save_manifest(all_entries)
-    } else {
-      # Single-file run (with or without force): merge new entries into the
-      # manifest that existed on disk. Without this we'd overwrite entries
-      # for the 60k+ files we didn't touch.
-      merged <- existing_manifest
-      for (k in names(new_entries)) merged[[k]] <- new_entries[[k]]
-      .save_manifest(merged)
-    }
+    # Update manifest using the same rule applied at every exit path —
+    # see .compute_manifest_to_save() for the policy.
+    .save_manifest(
+      .compute_manifest_to_save(files, files_to_parse, path, existing_manifest)
+    )
     if (verbose) cat("Manifest uppdaterad\n")
   }
 
