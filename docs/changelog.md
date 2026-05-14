@@ -1,5 +1,52 @@
 # tRäning — Changelog
 
+## 2026-05-14 — Roadmap-städning: filter-bug, defaults, två nya kort
+
+Sex roadmap-punkter avklarade i ett svep, plus en ny dashboard-feature:
+
+- **Bug fixad: globalt "Allt"-filter visar nu hela historiken.** Tidigare
+  silent-truncade `fetch.plot.acwr/monotony/pmc/readiness_score` och
+  `plot_sport_calendar` till 365/90/366 dagar när Shiny skickade
+  `from = NULL` (det "Allt"-presetet faktiskt levererar). De fem
+  funktionerna refaktoriserades till den befintliga
+  `.filter_date_range()`-helpern som tolkar `NULL` som "ingen gräns".
+  `days`-parametern droppad från acwr/monotony/pmc-signaturerna (inga
+  anropare skickade den explicit). CLI:s `--help` uppdaterad.
+  `.compute_span_days()` tar nu en valfri `data_dates`-hint så
+  `.adaptive_date_scale()` får rätt break-tätthet på multi-års-spans
+  (annars råkade scale_x_date på 2-decennium-data med 1-månads-breaks
+  som varnade om numerisk konvertering).
+- **EF + aerob decoupling: veckokilometer-panelen tom**. Plottarna
+  använder POSIXct på x-axeln, där `geom_col(width = 1)` betyder
+  **en sekund** — bars blev sub-pixel-tunna över multi-års-spans och
+  panelen såg tom ut. Bytt till `width = 86400` (1 dag i sekunder).
+  ACWR/PMC var oberörda eftersom de använder Date-axel där `width = 1`
+  redan är 1 dag.
+- **Aerob decoupling: outliers** (–74.6 % och –53.1 % från 2011, båda
+  med `NA avg_hr`) kommer från sessioner där per-second-HR-datat var
+  trasigt men trackeR-objektet höll bogus-värden som överlevde
+  validity-gaten. `compute_decoupling()` har nu ett fysiologiskt
+  sanity-tak (`cap_pct = 25`, default ±25 %) som hoppar över sessioner
+  utanför detta intervall. Cache-fältet ingår i parameterhashen så
+  äldre cacher auto-invalideras.
+- **Sport-mix förvalt mått: TRIMP** (tidigare distans). Reorder så
+  TRIMP listas först i radioButtons.
+- **Kronisk belastning förvalda sporter:** cykling, gång, löpning,
+  paddel, styrka (tidigare `head(choices, 4)` som plockade fyra första
+  sporterna i bucket-ordning). Implementerad som `intersect(preferred,
+  choices)` så vi inte försöker pre-välja en sport som saknas i datat.
+- **Ny widget: Trivia-accordion på Översikt** (`compute_fun_facts()`
+  i ny `R/fun_facts.R`). Sex did-you-know-fakta: topp 5 sporter, första
+  registrerade pass, längsta uppehåll mellan löpturer, antal hela
+  kalendermånader utan ett enda pass, längsta löpningen, snabbaste
+  löpturen >5 km. Kollapsad som default.
+- **Ny plot: Δ Mediantempo per vecka** på Träning-fliken
+  (`fetch.plot.pace_week_delta()`). Per ISO-vecka: skillnad i
+  mediantempo mot föregående vecka. Stapel under noll = veckan blev
+  snabbare. Använder globalt tidsfilter och `.run_profile_*`-helpers.
+- **Tre nya testfiler:** `test-plot-allt-filter.R` (regressionsskydd
+  för Allt-buggen), `test-fun-facts.R`, `test-pace-week-delta.R`.
+
 ## 2026-05-14 — Löpprofil-fliken: åtta nya karaktärs-plottar
 
 Åtta plottar från `tmp/run_type_plots/`-sandlådan flyttades in i paketet
