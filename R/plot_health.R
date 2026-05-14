@@ -392,16 +392,13 @@ fetch.plot.readiness <- function(health_daily, days = 90) {
 #' @param hr_rest Optional HRrest override.
 #' @param from Start date. NULL uses \code{days}.
 #' @param to End date. NULL = today.
-#' @param days Number of recent days if from/to not specified. Default 90.
+#' @param from,to Optional date bounds. \code{NULL} means no bound — pass
+#'   both as \code{NULL} to render the full history.
 #' @return ggplot2 object (patchwork composite).
 #' @export
 fetch.plot.readiness_score <- function(health_daily, summaries,
                                         hr_max = NULL, hr_rest = NULL,
-                                        from = NULL, to = NULL,
-                                        days = 90) {
-  if (is.null(from)) from <- Sys.Date() - days
-  if (is.null(to))   to   <- Sys.Date()
-
+                                        from = NULL, to = NULL) {
   r <- compute_readiness(health_daily, summaries,
                           hr_max = hr_max, hr_rest = hr_rest,
                           after = from, before = to)
@@ -416,7 +413,7 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
     return(ggplot2::ggplot())
   }
 
-  span_days <- .compute_span_days(from, to)
+  span_days <- .compute_span_days(from, to, data_dates = r$date)
   date_scale <- .adaptive_date_scale(span_days)
   pt_size  <- if (span_days <= 30) 2.5 else 1.5
 

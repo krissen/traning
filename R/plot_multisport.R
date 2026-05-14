@@ -302,9 +302,13 @@ plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
   # rest of the bridged R functions (see report_datesum, the MCP
   # `_build_args` already adds +1 day for absolute ISO dates so it
   # arrives here exclusive). When `to` is NULL we default to tomorrow
-  # so today's sessions are included.
-  to_excl    <- if (is.null(to)) (Sys.Date() + 1L) else as.Date(to)
-  from_d     <- if (is.null(from)) (to_excl - 366L) else as.Date(from)
+  # so today's sessions are included. When `from` is NULL we use the
+  # earliest sessionStart so the calendar covers the full history.
+  to_excl <- if (is.null(to)) (Sys.Date() + 1L) else as.Date(to)
+  from_d  <- if (is.null(from)) {
+    earliest <- suppressWarnings(min(summaries$sessionStart, na.rm = TRUE))
+    if (is.finite(earliest)) as.Date(earliest) else (to_excl - 366L)
+  } else as.Date(from)
   display_to <- to_excl - 1L
 
   # min_value = 0 so gym/strength sessions (0 km but still training)
