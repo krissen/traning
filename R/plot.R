@@ -1323,15 +1323,20 @@ fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
 
   # Complete each year to weeks 1..52 with km = 0, so cumulative km
   # stays flat across gaps instead of linearly interpolating between
-  # the previous and next run. For the current year we still want the
-  # line to stop at the last observed week (no zero-padding into the
-  # unrun future), so trim its tail after completion.
-  current_year <- max(weekly_raw$year)
-  current_max_woy <- max(weekly_raw$woy[weekly_raw$year == current_year])
+  # the previous and next run. The current year still gets trimmed to
+  # today's ISO week — extending zero-padded into unrun future weeks
+  # would suggest a flat plateau that hasn't happened yet.
+  #
+  # current_year is anchored on the system date, not on max(year) in
+  # the filtered data: a historical from/to range would otherwise paint
+  # the range's last year orange even though the subtitle calls it the
+  # innevarande år.
+  current_year <- lubridate::year(Sys.Date())
+  current_woy  <- as.integer(lubridate::isoweek(Sys.Date()))
 
   weekly <- weekly_raw %>%
     tidyr::complete(year, woy = 1:52, fill = list(km = 0)) %>%
-    dplyr::filter(year != current_year | woy <= current_max_woy) %>%
+    dplyr::filter(year != current_year | woy <= current_woy) %>%
     dplyr::arrange(year, woy) %>%
     dplyr::group_by(year) %>%
     dplyr::mutate(cumkm = cumsum(km)) %>% dplyr::ungroup()
