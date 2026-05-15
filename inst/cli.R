@@ -129,11 +129,43 @@ my_options <- list(
       "Examples: 'cycling', 'walking', 'strength', 'all' (no filter), ",
       "'endurance' (running+cycling+walking+swimming). ",
       "Swedish aliases ('löpning', 'cykling', 'gång') also accepted."
-    ))
+    )),
+  # --- Health checks ---
+  make_option("--doctor",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Run deployment health checks"),
+  make_option("--doctor-check",
+    type = "character", default = "all",
+    help = "Comma-separated subset: all|packages|services|configs (default %default)"),
+  make_option("--doctor-json",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Emit doctor results as JSON instead of human-readable text"),
+  make_option("--rebuild-stale",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Rebuild user-lib R packages built against a previous R version")
 )
 
 opt_parser <- OptionParser(option_list = my_options)
 options <- parse_args(opt_parser)
+
+# --- Doctor / rebuild-stale (no data load required) ---
+# Run before TRANING_DATA validation so doctor works on hosts where the
+# data repo is not configured (or to diagnose why it isn't).
+if (isTRUE(options$`rebuild-stale`)) {
+  rebuild_stale_userlib()
+  quit(status = 0L, save = "no")
+}
+if (isTRUE(options$doctor)) {
+  raw_checks <- options$`doctor-check`
+  checks <- if (identical(raw_checks, "all"))
+              c("packages", "services", "configs")
+            else trimws(strsplit(raw_checks, ",")[[1]])
+  res <- doctor_run(checks = checks)
+  cat(if (isTRUE(options$`doctor-json`))
+        as.character(format_doctor_json(res))
+      else format_doctor_human(res))
+  quit(status = if (isTRUE(res$ok)) 0L else 1L, save = "no")
+}
 
 do_import       <- options$import
 do_repair       <- options$repair
