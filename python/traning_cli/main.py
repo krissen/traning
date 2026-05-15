@@ -895,15 +895,19 @@ def doctor(ctx):
         ctx.invoke(doctor_run)
 
 
+_DOCTOR_CHECKS = ("all", "packages", "services", "configs")
+
+
 @doctor.command(name="run")
-@click.option("--check", "checks", default="all",
-              type=click.Choice(["all", "packages", "services", "configs"]),
-              help="Subset of checks to run (default: all)")
+@click.option("--check", "checks", default=("all",), multiple=True,
+              type=click.Choice(_DOCTOR_CHECKS),
+              help="Subset of checks to run (repeatable, default: all)")
 @click.option("--json", "as_json", is_flag=True,
               help="Emit results as JSON instead of human-readable text")
 def doctor_run(checks, as_json):
     """Run deployment health checks. Exits 0 if all pass, 1 otherwise."""
-    cmd = ["Rscript", str(CLI_R), "--doctor", f"--doctor-check={checks}"]
+    spec = "all" if "all" in checks else ",".join(checks)
+    cmd = ["Rscript", str(CLI_R), "--doctor", f"--doctor-check={spec}"]
     if as_json:
         cmd.append("--doctor-json")
     _exec(cmd)

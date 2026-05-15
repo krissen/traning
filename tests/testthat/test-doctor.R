@@ -148,19 +148,23 @@ test_that("doctor_run reports ok=FALSE when any check fails", {
     list(Package = "rlang", LibPath = "/home/user/R/library",
          Built = "R 4.5.3; x86_64-pc-linux-gnu; 2025-12-01 12:00:00 UTC; unix")
   ))
+  # Inject all external probes so the test is hermetic — no real
+  # systemctl/curl/installed.packages reads.
   res <- doctor_run(
     checks = c("packages", "services"),
     installed_pkgs = pkgs,
+    r_version = "4.6",
     services = "svc-a",
     shiny_url = "http://invalid",
+    systemctl_check = function(unit) TRUE,
+    http_check = function(url) TRUE,
     expected_configs = list(),
     marker_file = tempfile()
   )
-  # packages is fail, services depends on env — just assert ok mirrors
-  # the underlying statuses.
   statuses <- vapply(res$results, `[[`, character(1), "status")
   expect_false(res$ok)
-  expect_true("fail" %in% statuses)
+  expect_equal(res$results$packages$status, "fail")
+  expect_equal(res$results$services$status, "ok")
 })
 
 test_that("doctor_run only runs the checks requested", {
@@ -171,6 +175,27 @@ test_that("doctor_run only runs the checks requested", {
   expect_equal(names(res$results), "configs")
 })
 
+test_that("doctor_run rejects unknown check names", {
+  expect_error(doctor_run(checks = "packges"), "Unknown doctor check")
+})
+
+test_that("doctor_run uses injected r_version end-to-end", {
+  pkgs <- make_pkg_matrix(list(
+    list(Package = "foo", LibPath = "/usr/lib/R/library",
+         Built = "R 4.5.0; x86_64-pc-linux-gnu; 2025-12-01 12:00:00 UTC; unix")
+  ))
+  # Same matrix is OK against R 4.5 and stale against R 4.6 — proves
+  # r_version is propagated to check_stale_builds and to the report.
+  ok_res <- doctor_run(checks = "packages", installed_pkgs = pkgs,
+                        r_version = "4.5", marker_file = tempfile())
+  fail_res <- doctor_run(checks = "packages", installed_pkgs = pkgs,
+                          r_version = "4.6", marker_file = tempfile())
+  expect_equal(ok_res$results$packages$status, "ok")
+  expect_equal(ok_res$r_version, "4.5")
+  expect_equal(fail_res$results$packages$status, "fail")
+  expect_equal(fail_res$r_version, "4.6")
+})
+
 test_that("format_doctor_json round-trips via jsonlite::fromJSON", {
   pkgs <- make_pkg_matrix(list(
     list(Package = "foo", LibPath = "/usr/lib/R/library",
@@ -179,6 +204,7 @@ test_that("format_doctor_json round-trips via jsonlite::fromJSON", {
   res <- doctor_run(
     checks = "packages",
     installed_pkgs = pkgs,
+    r_version = "4.6",
     expected_configs = list(),
     marker_file = tempfile()
   )
@@ -195,6 +221,7 @@ test_that("format_doctor_human produces a human-readable summary", {
   res <- doctor_run(
     checks = "packages",
     installed_pkgs = pkgs,
+    r_version = "4.6",
     expected_configs = list(),
     marker_file = tempfile()
   )

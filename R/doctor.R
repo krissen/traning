@@ -7,20 +7,24 @@
 # HAE pipeline silently, and missing pacman/caddy config files that
 # explain why a fresh boot didn't recover automatically.
 #
-# All functions here are internal — they're consumed by inst/cli.R.
+# Functions here are exported via NAMESPACE's exportPattern("^[^\\.]")
+# alongside the rest of the package; constants and small helpers are
+# dot-prefixed to stay internal.
 
-REBUILD_MARKER <- "/var/lib/traning/needs-rebuild"
+.REBUILD_MARKER <- "/var/lib/traning/needs-rebuild"
 
 # Pinned SHA-256 digests for config files that live outside the repo.
 # Update via scripts/compute_config_digests.R when the canonical source
 # changes — the manual step is intentional, it forces an explicit
 # acknowledgement that production config has drifted.
-EXPECTED_CONFIG_DIGESTS <- list(
+.EXPECTED_CONFIG_DIGESTS <- list(
   "/etc/pacman.d/hooks/traning-r-postupgrade.hook" =
-    "1b5dfc9f6794b7eeb916224be31088c74768f5e2e032a5d8dcce4955bd40cb77",
+    "13204c4e50c919c0ee05e9cb03806e517de9b90ac63da4d5796209b9df39b245",
   "/etc/systemd/system/caddy.service.d/override.conf" =
     "f247bfc5ea105114cc9a1a6d99de5ce7f10779cb9819fefb317a7d734a04cbd1"
 )
+
+VALID_DOCTOR_CHECKS <- c("packages", "services", "configs")
 
 # --- Built-tag parsing ---------------------------------------------------
 
@@ -50,7 +54,7 @@ EXPECTED_CONFIG_DIGESTS <- list(
 
 check_stale_builds <- function(installed_pkgs = NULL,
                                 r_version = NULL,
-                                marker_file = REBUILD_MARKER) {
+                                marker_file = .REBUILD_MARKER) {
   current <- .r_xy(r_version)
   if (is.null(installed_pkgs)) {
     installed_pkgs <- utils::installed.packages(
@@ -155,7 +159,7 @@ check_services <- function(services = c("traning-receiver",
             length(services)), details)
 }
 
-check_configs <- function(expected = EXPECTED_CONFIG_DIGESTS) {
+check_configs <- function(expected = .EXPECTED_CONFIG_DIGESTS) {
   if (length(expected) == 0L) {
     return(.check_result("configs", "ok",
       "No config digests pinned."))
@@ -210,20 +214,32 @@ check_configs <- function(expected = EXPECTED_CONFIG_DIGESTS) {
 
 # --- Orchestration -------------------------------------------------------
 
-doctor_run <- function(checks = c("packages", "services", "configs"),
+doctor_run <- function(checks = VALID_DOCTOR_CHECKS,
                         installed_pkgs = NULL,
                         services = NULL,
                         shiny_url = "http://127.0.0.1:8423/",
-                        expected_configs = EXPECTED_CONFIG_DIGESTS,
-                        marker_file = REBUILD_MARKER) {
+                        expected_configs = .EXPECTED_CONFIG_DIGESTS,
+                        marker_file = .REBUILD_MARKER,
+                        r_version = NULL,
+                        systemctl_check = NULL,
+                        http_check = NULL) {
+  invalid <- setdiff(checks, VALID_DOCTOR_CHECKS)
+  if (length(invalid) > 0L) {
+    stop("Unknown doctor check(s): ", paste(invalid, collapse = ", "),
+         ". Valid: ", paste(VALID_DOCTOR_CHECKS, collapse = ", "))
+  }
+
   results <- list()
   if ("packages" %in% checks) {
     results$packages <- check_stale_builds(installed_pkgs = installed_pkgs,
+                                            r_version = r_version,
                                             marker_file = marker_file)
   }
   if ("services" %in% checks) {
     args <- list(shiny_url = shiny_url)
-    if (!is.null(services)) args$services <- services
+    if (!is.null(services))         args$services <- services
+    if (!is.null(systemctl_check))  args$systemctl_check <- systemctl_check
+    if (!is.null(http_check))       args$http_check <- http_check
     results$services <- do.call(check_services, args)
   }
   if ("configs" %in% checks) {
@@ -235,7 +251,7 @@ doctor_run <- function(checks = c("packages", "services", "configs"),
   list(
     ok = ok,
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S %z"),
-    r_version = .r_xy(),
+    r_version = .r_xy(r_version),
     results = results,
     summary = sprintf("%d ok, %d warn, %d fail",
                        sum(statuses == "ok"),
@@ -275,7 +291,7 @@ format_doctor_json <- function(result) {
 rebuild_stale_userlib <- function(lib = Sys.getenv("R_LIBS_USER",
                                                      "~/R/library"),
                                    r_version = NULL,
-                                   marker_file = REBUILD_MARKER) {
+                                   marker_file = .REBUILD_MARKER) {
   lib <- path.expand(lib)
   if (!dir.exists(lib)) {
     message("User library does not exist: ", lib)

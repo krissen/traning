@@ -121,8 +121,16 @@ cmd_status() {
 
 cmd_check() {
     _info "Running traning doctor on $REMOTE ..."
-    # set -e + ssh propagate exit code; doctor exits 1 on any check fail.
-    ssh "$REMOTE" "/home/krisse/dev/traning/python/.venv/bin/traning doctor run"
+    # Mirror the systemd unit's runtime environment (env file, R lib
+    # path, working directory) so that .libPaths() and config paths
+    # resolve identically — otherwise an unprivileged ssh invocation
+    # could read different libraries than the daily timer and report
+    # "healthy" while production is broken. set -e + ssh propagate
+    # exit code; doctor exits 1 on any check fail.
+    ssh "$REMOTE" "set -a && . /etc/traning/env && set +a && \
+        export R_LIBS_USER=/home/krisse/R/library && \
+        cd /home/krisse/dev/traning && \
+        python/.venv/bin/traning doctor run"
 }
 
 cmd_all() {

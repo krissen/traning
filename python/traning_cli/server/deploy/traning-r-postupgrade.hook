@@ -21,4 +21,4 @@ Target = r
 [Action]
 Description = Mark traning user R-lib as needing rebuild after R upgrade
 When = PostTransaction
-Exec = /usr/bin/install -d -o krisse -g krisse /var/lib/traning && /usr/bin/touch /var/lib/traning/needs-rebuild
+Exec = /usr/bin/install -d -o krisse -g krisse /var/lib/traning && /usr/bin/install -m 644 -o krisse -g krisse /dev/null /var/lib/traning/needs-rebuild

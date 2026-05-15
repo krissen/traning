@@ -15,16 +15,31 @@ from .notify import notify, log_notification
 
 
 def _journal_tail(unit: str, since: str = "5min ago", lines: int = 20) -> str:
-    """Return the last journal lines for `unit`. Best-effort, never raises."""
+    """Return the last journal lines for `unit`. Best-effort, never raises.
+
+    journalctl writes permission errors and other failures to stderr
+    with empty stdout; surface those instead of a misleading
+    "(no recent journal output)" so the HA notification carries
+    actionable context.
+    """
     try:
         result = subprocess.run(
             ["journalctl", "-u", unit, "--since", since,
              "--no-pager", "-n", str(lines)],
             capture_output=True, text=True, timeout=10,
         )
-        return result.stdout.strip() or "(no recent journal output)"
     except Exception as e:
         return f"(could not read journal: {e})"
+
+    out = result.stdout.strip()
+    if out:
+        return out
+    err = result.stderr.strip()
+    if err:
+        return f"(journalctl exit {result.returncode}: {err})"
+    if result.returncode != 0:
+        return f"(journalctl exit {result.returncode}, no output)"
+    return "(no recent journal output)"
 
 
 def main(argv: list[str] | None = None) -> int:
