@@ -24,15 +24,23 @@
     "f247bfc5ea105114cc9a1a6d99de5ce7f10779cb9819fefb317a7d734a04cbd1"
 )
 
-VALID_DOCTOR_CHECKS <- c("packages", "services", "configs")
+.VALID_DOCTOR_CHECKS <- c("packages", "services", "configs")
 
 # --- Built-tag parsing ---------------------------------------------------
 
 .r_xy <- function(version = NULL) {
-  if (is.null(version)) version <- paste(R.version$major,
-                                          strsplit(R.version$minor, "\\.")[[1]][1],
-                                          sep = ".")
-  version
+  if (is.null(version)) {
+    return(paste(R.version$major,
+                  strsplit(R.version$minor, "\\.")[[1]][1],
+                  sep = "."))
+  }
+  # Normalise caller-supplied versions ("4.6", "4.6.0", "R 4.6.0",
+  # even "R 4.6.0; ...") down to "X.Y" so equality compares against
+  # .parse_built_xy() output without surprise mismatches.
+  s <- trimws(sub("^R\\s+", "", as.character(version)))
+  s <- strsplit(s, "[;\\s]")[[1]][1]
+  bits <- strsplit(s, "\\.")[[1]]
+  if (length(bits) >= 2L) paste(bits[1], bits[2], sep = ".") else s
 }
 
 .parse_built_xy <- function(built) {
@@ -218,7 +226,7 @@ check_configs <- function(expected = .EXPECTED_CONFIG_DIGESTS) {
 
 # --- Orchestration -------------------------------------------------------
 
-doctor_run <- function(checks = VALID_DOCTOR_CHECKS,
+doctor_run <- function(checks = .VALID_DOCTOR_CHECKS,
                         installed_pkgs = NULL,
                         services = NULL,
                         shiny_url = "http://127.0.0.1:8423/",
@@ -227,10 +235,10 @@ doctor_run <- function(checks = VALID_DOCTOR_CHECKS,
                         r_version = NULL,
                         systemctl_check = NULL,
                         http_check = NULL) {
-  invalid <- setdiff(checks, VALID_DOCTOR_CHECKS)
+  invalid <- setdiff(checks, .VALID_DOCTOR_CHECKS)
   if (length(invalid) > 0L) {
     stop("Unknown doctor check(s): ", paste(invalid, collapse = ", "),
-         ". Valid: ", paste(VALID_DOCTOR_CHECKS, collapse = ", "))
+         ". Valid: ", paste(.VALID_DOCTOR_CHECKS, collapse = ", "))
   }
 
   results <- list()

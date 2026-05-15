@@ -21,7 +21,12 @@ run_doctor <- function(json = TRUE, check = "packages") {
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
 test_that("--doctor --doctor-json --doctor-check=packages returns valid JSON", {
-  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  # Doctor dispatches before TRANING_DATA validation in inst/cli.R, so
+  # this must work even with TRANING_DATA unset. Clear it explicitly
+  # here to lock that contract — a regression where doctor starts
+  # depending on TRANING_DATA would silently make the test pass on
+  # dev boxes and fail in minimal environments.
+  withr::local_envvar(TRANING_DATA = "")
   out <- run_doctor(json = TRUE, check = "packages")
   parsed <- jsonlite::fromJSON(out$text, simplifyVector = FALSE)
   expect_named(parsed,
@@ -32,7 +37,7 @@ test_that("--doctor --doctor-json --doctor-check=packages returns valid JSON", {
 })
 
 test_that("--doctor (human) prints a summary line", {
-  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  withr::local_envvar(TRANING_DATA = "")
   out <- run_doctor(json = FALSE, check = "packages")
   expect_match(out$text, "traning doctor")
   expect_match(out$text, "packages")

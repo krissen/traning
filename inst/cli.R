@@ -158,13 +158,13 @@ if (isTRUE(options$`rebuild-stale`)) {
 if (isTRUE(options$doctor)) {
   raw_checks <- options$`doctor-check`
   checks <- if (identical(raw_checks, "all"))
-              VALID_DOCTOR_CHECKS
+              .VALID_DOCTOR_CHECKS
             else trimws(strsplit(raw_checks, ",")[[1]])
-  invalid <- setdiff(checks, VALID_DOCTOR_CHECKS)
+  invalid <- setdiff(checks, .VALID_DOCTOR_CHECKS)
   if (length(invalid) > 0L) {
     message("Unknown --doctor-check value(s): ",
             paste(invalid, collapse = ", "),
-            ". Valid: all, ", paste(VALID_DOCTOR_CHECKS, collapse = ", "))
+            ". Valid: all, ", paste(.VALID_DOCTOR_CHECKS, collapse = ", "))
     quit(status = 2L, save = "no")
   }
   res <- doctor_run(checks = checks)
