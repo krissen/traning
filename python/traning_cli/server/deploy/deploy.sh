@@ -44,7 +44,10 @@ cmd_code() {
         sudo systemctl daemon-reload"
 
     _info "Installing pacman post-upgrade hook ..."
-    ssh "$REMOTE" "sudo install -m 644 -o root -g root \
+    # /etc/pacman.d/hooks/ is optional on Arch; create it before
+    # dropping the file so a fresh install doesn't fail here.
+    ssh "$REMOTE" "sudo install -d -m 755 -o root -g root /etc/pacman.d/hooks && \
+        sudo install -m 644 -o root -g root \
         $REMOTE_CODE/python/traning_cli/server/deploy/traning-r-postupgrade.hook \
         /etc/pacman.d/hooks/"
 

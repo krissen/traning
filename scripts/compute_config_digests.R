@@ -54,6 +54,6 @@ if (!is.null(opts$caddy)) {
   caddy_sha <- strsplit(trimws(out[1]), "\\s+")[[1]][1]
 }
 
-cat("Paste into R/doctor.R::EXPECTED_CONFIG_DIGESTS:\n\n")
-cat(sprintf('EXPECTED_CONFIG_DIGESTS <- list(\n  "/etc/pacman.d/hooks/traning-r-postupgrade.hook" = "%s",\n  "/etc/systemd/system/caddy.service.d/override.conf" = "%s"\n)\n',
+cat("Paste into R/doctor.R::.EXPECTED_CONFIG_DIGESTS:\n\n")
+cat(sprintf('.EXPECTED_CONFIG_DIGESTS <- list(\n  "/etc/pacman.d/hooks/traning-r-postupgrade.hook" = "%s",\n  "/etc/systemd/system/caddy.service.d/override.conf" = "%s"\n)\n',
             hook_sha, caddy_sha))
