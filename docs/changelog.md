@@ -1,5 +1,76 @@
 # tRäning — Changelog
 
+## 2026-05-15 — R-pipeline omläggning till pacman-managed på kailash
+
+Arch pacman uppgraderade `r` `4.5.3-1 → 4.6.0-1` 2026-05-14 15:56. Det är
+en major-ABI-bump där flera C-API-symboler togs bort (`SETLENGTH`,
+`Rf_findVarInFrame`); alla R-paket i `~/R/library/` som var kompilerade
+mot R 4.5 vägrar därefter laddas mot R 4.6. Första HAE-pushen efter
+rebooten failade med `unable to load shared object '.../rlang.so':
+undefined symbol: SETLENGTH` och hälsoimporten gick ner.
+
+Felsökningen avslöjade att hela R-paketstacken på kailash hade varit
+manuellt installerad (`sudo R -e install.packages` historiskt) till
+`/usr/lib/R/library/` — pacman ägde bara `r` själv (base + recommended).
+Av 281 paket i system-lib var 250 "orphans" som pacman inte trackade,
+vilket innebar att de inte uppdaterades automatiskt vid `pacman -Syu`
+och därför hängde sig kvar mot gammal R. Praxis ändrades:
+
+- **R-paket installeras nu via pacman/AUR i första hand.** Av de 137
+  paket projektet behöver finns 135 i AUR under namnkonventionen
+  `r-<lowercase>`. `yay -S` installerar dem till `/usr/lib/R/library/`
+  med pacman-DB-registrering, så nästa `pacman -Syu` håller dem i
+  ABI-synk med R-uppgraderingar.
+- **`r-tracker` och `r-bsicons` publicerade som nya AUR-paket** (krissen
+  som maintainer). Båda saknades helt i AUR; vi behövde dem i pacman-
+  trädet för att inte ha en stor exception från policyn. PKGBUILDs i
+  `~/dev/aurbuild/`.
+- **14 outdated AUR-paket fork-byggda lokalt.** AUR PKGBUILDs för
+  `r-viridislite`, `r-uuid`, `r-getopt`, `r-data.table`, `r-backports`,
+  `r-s7`, `r-selectr`, `r-rvest`, `r-optparse`, `r-dbplyr`, `r-ggstats`,
+  `r-haven`, `r-httr2`, `r-lazyeval` pekar på CRAN-tarballs som flyttats
+  till `src/contrib/Archive/`, så `yay` failar på download. Patchade
+  versioner byggda lokalt i `~/aurbuild-local/` på kailash, flaggade
+  som out-of-date på AUR. `r-getopt`, `r-rvest`, `r-uuid` hade också
+  bug-fix för en typo (`${scrdir}` istället för `${srcdir}`) i sina
+  PKGBUILDs.
+- **System-lib rensad från 157 orphans.** Sedan installerades 70+
+  pacman/AUR-byggda paket med `pacman -U`. Manifestet "vad har pacman
+  ansvar för" är nu konsistent igen.
+- **`install.packages` är dokumenterad fallback för paket AUR inte
+  täcker.** ~110 paket lever fortsatt i user-lib (`~/R/library/`)
+  eftersom inget AUR-paket finns för dem; de byggs om manuellt vid
+  R-major-bump. Den vägen är begränsad och dokumenterad
+  (se `feedback_pacman_first_on_arch`-memory).
+
+**Graphics API mismatch (uppföljning).** Efter omläggningen kvarstod
+två paket — `plotly` och `ragg` — byggda mot R 4.5 i user-lib. De
+producerar grobs/grid-objekt som binder till nuvarande `grid`-API-
+version vid creation; vid render mot R 4.6:s grid blev resultatet
+`Graphics API version mismatch` på alla Shiny-plottar. Fixen:
+installera `r-plotly` + `r-ragg` via yay, ta bort de stale user-lib-
+kopiorna, rebuilda 6 paket (RSQLite, devtools, ggmap, pkgdown,
+roxygen2, usethis) som saknar AUR-version mot R 4.6 via
+`install.packages`. tRanat-dashboarden renderar plottar normalt igen.
+
+**Caddy-startup-race.** Caddys `traning`-block binder explicit till
+tailnet-IP:n `100.93.126.68`. Vid kall boot på kailash startar
+`caddy.service` innan `tailscaled` hunnit aktivera interfacet, så
+`bind: cannot assign requested address` failar hela Caddy — även
+`fbkstats.niemi.cc` togs ner. Drop-in
+(`/etc/systemd/system/caddy.service.d/override.conf`) med
+`After=tailscaled.service` och `Wants=tailscaled.service` löser
+ordningen. Versionshanterad i `vastushastra`-repot under
+`enheter/kailash/caddy/caddy.service.d/`; installationsanvisningar
+i Caddy-README:n där.
+
+**Kailash är IPv4-only.** ISP:n routar inte IPv6 till bostaden; bara
+Tailscale ger IPv6 (link-local + tailnet-prefix). Glibcs default-
+prioritering föredrar IPv6 vid AAAA-svar, så `git clone` mot AUR
+hängde i 10-sekunders-timeouter per paket innan IPv4-fallback. Fixen:
+`/etc/gai.conf` med `precedence ::ffff:0:0/96 100` avkommenterad —
+standardpraxis för IPv4-only Arch-hostar. Permanent.
+
 ## 2026-05-15 — Hälsoimport-manifest-bugg
 
 Inkrementell hälsoimport hade fallit tillbaka till full re-parse av alla
