@@ -1,22 +1,5 @@
 # tRäning — Roadmap
 
-## Health-import-manifest ofullständigt på kailash
-
-`health_import_manifest.json` på kailash innehåller bara 19 entries
-(filerna från 2026-05-14, dagen för rebooten). Resterande ~60K HAE-filer
-saknas i manifestet, så `traning import health` skulle se dem alla som
-"okända" och göra full re-parse — flera timmars jobb. Den bug:en som
-tomde manifesten är fixad (PR #26, `(health-export)` commit `330cf57`),
-men manifesten har inte återbyggts efter rebooten.
-
-Mitigation: receiver-vägen (`import_health_export(path = X)` per push)
-fortsätter fungera incrementellt och fyller på manifesten en fil i taget.
-Konsekvensen är bara att en framtida full-import skulle vara dyr.
-
-**Att göra:** rebuilda manifesten på **kedar** (inte kailash —
-`feedback_kailash_heavy_r`), `scp` cache + manifest tillbaka. Inte
-brådskande; pipeline självläker över tid via receivern.
-
 ## Deploy healthcheck & ABI-resilience
 
 Se separat design-dokument när det landar (väntar på samma PR som

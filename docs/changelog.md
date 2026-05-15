@@ -1,5 +1,28 @@
 # tRäning — Changelog
 
+## 2026-05-15 — Health-import-manifest återställd på kailash
+
+Kailash-manifestet hade fallit ner till 19 entries efter rebooten
+2026-05-14 — alla ~60K HAE-filer hade förlorats ur manifestet och
+nästa `traning import health` skulle ha degenererat till en
+flera-timmars-full-rebuild (tester visade ca 7 minuter och ingen synlig
+progress, killed innan slutfört). Manifesten överwrite-buggen som
+ursprungligen tomde den är fixad sedan PR #26
+(`(health-export)` commit `330cf57`); det som saknades var en
+re-base av manifesten på existerande data.
+
+- **Rebuild på kedar.** Inkrementell `import_health_export()` på kedar
+  fångade upp 23 nya rader på 42 sek (kedar hade redan ett komplett
+  manifest från 2026-05-14 23:42). 73,372 rader totalt, period
+  2012-07-24 → 2026-05-15, 62,458 manifest-entries.
+- **scp till kailash.** `health_daily.RData` (323 KB) +
+  `health_import_manifest.json` (5.6 MB) shippade. Kailash-manifestet
+  växte från 19 → 62,458 entries. Receivern fortsätter att fylla på
+  inkrementellt vid nästa push.
+- **`.notify_state.json` + `health.db` gitignorade.** Båda är runtime
+  state, inte data, och blockerade commit på kailash. `health.db` är
+  också tom (0 bytes) sedan 2026-04-25 och kan tas bort separat.
+
 ## 2026-05-15 — User-lib dubbletter borttagna på kailash (Fas 4b)
 
 `~/R/library/` på kailash innehöll 263 paket varav 99 hade en exakt
