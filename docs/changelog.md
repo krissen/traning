@@ -50,6 +50,11 @@ user-lib-kopian. Roadmap-Fas 4b efter R 4.5→4.6-omläggningen.
   `devtools::load_all(\"~/dev/traning\")` OK, traning-shiny restartad
   och svarar HTTP 200 med 100 KB HTML utan `Graphics API`-fel i
   journalen.
+- **End-to-end via HAE-push.** Receiver-flushen 11:01:37 efter en
+  riktig HAE-push (31 metrics + 1 workout) körde igenom hela R-kedjan
+  utan fel; tier-1-triggern fyrade (Grön 84 → Gul 55) och Telegram-
+  pushen levererades. Bekräftar att hela pipelinen är funktionellt
+  identisk med pre-cleanup, bara renare under huven.
 
 ## 2026-05-15 — R-pipeline omläggning till pacman-managed på kailash
 
