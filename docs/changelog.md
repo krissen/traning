@@ -1,5 +1,33 @@
 # tRäning — Changelog
 
+## 2026-05-15 — User-lib dubbletter borttagna på kailash (Fas 4b)
+
+`~/R/library/` på kailash innehöll 263 paket varav 99 hade en exakt
+versionsidentisk kopia i `/usr/lib/R/library/` (pacman-managed system-lib).
+Eftersom user-lib står först i `.libPaths()` skuggade dubbletterna
+pacman-versionen, vilket betyder att framtida `pacman -Syu`-uppdateringar
+av AUR-paketen inte skulle få effekt — man skulle fortsatt ladda gamla
+user-lib-kopian. Roadmap-Fas 4b efter R 4.5→4.6-omläggningen.
+
+- **Audit-skript.** `scripts/audit_r_libs.sh` rapporterar `system-orphan`
+  (paket pacman inte äger), `user-duplicate` (skuggar system-lib) och
+  `user-unique` (CRAN-fallback). Kör `--summary` för räkning,
+  `--list <kategori>` för parseable utdata. Lämnas i repot för
+  regelbunden kontroll innan framtida R-uppgraderingar.
+- **Audit på kailash.** 0 system-orphans (Fas 4a redan klar efter
+  R 4.6-städet), 99 user-duplicates, 164 user-uniques. Samtliga
+  dubbletter hade identisk versionsnummer i båda lib-katalogerna —
+  ingen "user newer"-konflikt att hantera manuellt.
+- **Backup + radering.** 99 katalogerna paketerades först som
+  `~/r-userlib-dupes-backup-2026-05-15.tar.gz` (112 MB) på kailash,
+  därefter `rm -rf` på dubbletterna i user-lib. Efter: 164 unika
+  paket kvar (CRAN-fallback), 0 dubbletter.
+- **Smoke-test grön.** `.libPaths()` oförändrat, core libraries
+  (rlang, ggplot2, plotly, dplyr, …) laddar nu från system-lib,
+  `devtools::load_all(\"~/dev/traning\")` OK, traning-shiny restartad
+  och svarar HTTP 200 med 100 KB HTML utan `Graphics API`-fel i
+  journalen.
+
 ## 2026-05-15 — R-pipeline omläggning till pacman-managed på kailash
 
 Arch pacman uppgraderade `r` `4.5.3-1 → 4.6.0-1` 2026-05-14 15:56. Det är
