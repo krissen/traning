@@ -32,6 +32,31 @@ implementationen). Kort sammanfattat:
 - `traning-doctor.timer` som kör doctor dagligen 03:30 och notifierar
   vid icke-noll exit.
 
+**Krav på doctor-checks som måste finnas innan PR-en landar** (lärt av
+2026-05-14/15-incidenterna):
+
+- **Stale-build-detection.** Iterera `installed.packages()` (både
+  user-lib och system-lib) och flagga varje paket vars `Built`-tag inte
+  börjar med samma `R X.Y` som `R.version`. När R-major-bumpas och
+  något paket är kvar på gamla R-versionen ger Shiny *Graphics API
+  version mismatch* på första render — buggen som kostade oss två
+  fixeringar i sessionen. Hade fångats direkt vid en doctor-körning.
+- **Service-checks.** Verifiera att `traning-receiver`, `traning-shiny`
+  och `caddy` är aktiva. Shiny ska dessutom svara HTTP 200 på
+  `http://127.0.0.1:8423/`. Caddy är inte traning-ägd men hela
+  Tailscale-ingressen beror på den (failade vid boot 2026-05-14 pga
+  service-ordningen mot tailscaled).
+- **Config-installation-checks.** Att en fil ligger i repot betyder
+  inte att den är installerad på kailash. Verifiera att
+  `/etc/pacman.d/hooks/traning-r-postupgrade.hook` och
+  `/etc/systemd/system/caddy.service.d/override.conf` existerar och
+  har förväntat innehåll.
+
+**Tester:** stale-build-detection enhetstestas mot mockad
+`installed.packages()`-output. Service-/config-checks testas
+integration-style via `bash deploy.sh check` mot kailash; de är
+inherent svåra att unitt-testa.
+
 ## AUR-paket vi själva borde sköta
 
 14 r-cran-paket i AUR är out-of-date (CRAN-versioner finns men maintainer
