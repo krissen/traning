@@ -1,0 +1,15 @@
+[Unit]
+Description=tRäning daily health check
+After=network-online.target
+Wants=network-online.target
+OnFailure=traning-notify@%n.service
+
+[Service]
+Type=oneshot
+User=krisse
+EnvironmentFile=/etc/traning/env
+Environment=R_LIBS_USER=/home/krisse/R/library
+WorkingDirectory=/home/krisse/dev/traning
+ExecStart=/home/krisse/dev/traning/python/.venv/bin/traning doctor run --json
+StandardOutput=journal
+StandardError=journal
