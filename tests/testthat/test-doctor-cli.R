@@ -2,8 +2,9 @@
 #
 # Keeps assumptions minimal: only the packages-check is exercised so
 # the test does not depend on systemctl / curl / config files being
-# present in the test environment. JSON shape is the contract that
-# `traning-doctor.service` and `bash deploy.sh check` rely on.
+# present in the test environment. The JSON shape is the contract
+# that `traning-doctor.service` writes to the journal and that any
+# downstream JSON consumers parse.
 
 run_doctor <- function(json = TRUE, check = "packages") {
   cli <- file.path(testthat::test_path("..", ".."), "inst", "cli.R")

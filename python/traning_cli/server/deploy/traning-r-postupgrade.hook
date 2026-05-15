@@ -21,4 +21,7 @@ Target = r
 [Action]
 Description = Mark traning user R-lib as needing rebuild after R upgrade
 When = PostTransaction
-Exec = /usr/bin/install -d -o krisse -g krisse /var/lib/traning && /usr/bin/install -m 644 -o krisse -g krisse /dev/null /var/lib/traning/needs-rebuild
+# ALPM Exec= splits arguments on whitespace — shell operators are not
+# interpreted, so a chained `cmd1 && cmd2` would silently no-op the
+# second command. Wrap in /bin/sh -c so the chained install works.
+Exec = /bin/sh -c "install -d -o krisse -g krisse /var/lib/traning && install -m 644 -o krisse -g krisse /dev/null /var/lib/traning/needs-rebuild"

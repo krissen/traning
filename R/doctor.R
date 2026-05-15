@@ -19,7 +19,7 @@
 # acknowledgement that production config has drifted.
 .EXPECTED_CONFIG_DIGESTS <- list(
   "/etc/pacman.d/hooks/traning-r-postupgrade.hook" =
-    "13204c4e50c919c0ee05e9cb03806e517de9b90ac63da4d5796209b9df39b245",
+    "80eb31f98204fbf20d651e8e5bbe392ad113d276487687691b42298c0e195ee6",
   "/etc/systemd/system/caddy.service.d/override.conf" =
     "f247bfc5ea105114cc9a1a6d99de5ce7f10779cb9819fefb317a7d734a04cbd1"
 )
@@ -116,12 +116,16 @@ check_stale_builds <- function(installed_pkgs = NULL,
   identical(as.integer(status), 0L)
 }
 
-.http_ok <- function(url, timeout = 5L) {
-  status <- suppressWarnings(system2("curl",
-    c("-fs", "--max-time", as.character(timeout),
-      "-o", "/dev/null", url),
-    stdout = FALSE, stderr = FALSE))
-  identical(as.integer(status), 0L)
+.http_ok <- function(url, timeout = 5L, expected_status = "200") {
+  # `curl -f` accepts any status < 400 (including 302 redirects), but
+  # we want to assert that Shiny is genuinely serving — capture the
+  # actual status and compare. `--max-time` covers connect+transfer.
+  out <- suppressWarnings(system2("curl",
+    c("-s", "--max-time", as.character(timeout),
+      "-o", "/dev/null",
+      "-w", "%{http_code}", url),
+    stdout = TRUE, stderr = FALSE))
+  identical(as.character(out)[1], expected_status)
 }
 
 check_services <- function(services = c("traning-receiver",

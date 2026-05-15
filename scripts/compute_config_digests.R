@@ -40,9 +40,16 @@ if (!is.null(opts$caddy)) {
   caddy_sha <- unname(digest::digest(file = caddy_path, algo = "sha256"))
 } else {
   message("Fetching caddy override SHA from ", opts$remote, " via ssh ...")
-  out <- system2("ssh", c(opts$remote,
+  # Merge stderr into stdout so ssh/journalctl errors surface in the
+  # stop() message rather than disappearing into a generic "no output".
+  out <- suppressWarnings(system2("ssh", c(opts$remote,
     "sha256sum /etc/systemd/system/caddy.service.d/override.conf"),
-    stdout = TRUE, stderr = FALSE)
+    stdout = TRUE, stderr = TRUE))
+  status <- attr(out, "status")
+  if (!is.null(status) && status != 0L) {
+    stop("ssh ", opts$remote, " failed (exit ", status, "): ",
+         paste(out, collapse = "\n"))
+  }
   if (length(out) == 0L) stop("ssh ", opts$remote, " returned no output")
   caddy_sha <- strsplit(trimws(out[1]), "\\s+")[[1]][1]
 }
