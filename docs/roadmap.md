@@ -57,6 +57,26 @@ implementationen). Kort sammanfattat:
 integration-style via `bash deploy.sh check` mot kailash; de är
 inherent svåra att unitt-testa.
 
+## Dashboard — observerade rendering-buggar
+
+Hittade vid manuell genomgång efter R 4.6-uppgraden men oberoende av
+den (gäller även i tidigare versioner).
+
+- **Säsongsmönster i tempo — bakgrundsbild visas inte.** Plotten
+  förväntar sig en season-band-bakgrund (vinter/vår/sommar/höst) men
+  den renderas tom. Kontrollera om bakgrunds-geom:en faktiskt läggs
+  till och, om så, varför den inte syns (möjligen z-ordning, alpha,
+  scale-domain).
+- **Veckokilometer per år — månadsheaders avklippta.** X-axis-faceten
+  klipper bort/överlappar månadsetiketterna. Justera `theme(strip.text)`
+  / `panel.spacing` eller axis-margin.
+- **Distans×tempo per epok — saknar hover.** *Inte ett krav; valfri.*
+  Plotten är statisk där andra liknande är interaktiva (plotly).
+  Hover/tooltip ger ingen info. Om det är enkelt att slå på `ggplotly()`
+  eller ett `plotly`-event-handler hade det varit en trevlighet. Stor
+  refaktorering är inte motiverad. (Bilden blir också ganska utsmetad
+  på bred skärm — kan vara värt en aspect-ratio-cap, men sekundärt.)
+
 ## AUR-paket vi själva borde sköta
 
 14 r-cran-paket i AUR är out-of-date (CRAN-versioner finns men maintainer
