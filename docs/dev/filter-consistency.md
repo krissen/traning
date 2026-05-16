@@ -37,10 +37,10 @@ förklarar varför, och (2) en rad i listan nedan.
 
 ### 1. Snapshot-vyer (Översikt → värde-boxar)
 
-`app/tRanat/modules/mod_overview.R` (`vb_readiness`, `vb_weekly_km`,
-`vb_ctl`, `vb_tsb`, `vb_acwr`) plockar `slice_max(date, n = 1)` ur
-respektive `compute_*()`-output och visar dagens snapshot oberoende
-av navbar.
+`app/tRanat/modules/mod_overview.R:87-148` (`vb_readiness`,
+`vb_weekly_km`, `vb_ctl`, `vb_tsb`, `vb_acwr`) plockar
+`slice_max(date, n = 1)` ur respektive `compute_*()`-output och
+visar dagens snapshot oberoende av navbar.
 
 **Varför:** dessa fem boxar är "nu-läge"-indikatorer (form, fitness,
 beredskap, ACWR). Att låta dem följa ett historiskt datumspann skulle
