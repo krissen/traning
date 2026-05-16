@@ -1,5 +1,53 @@
 # tRäning — Changelog
 
+## 2026-05-16 — Enhetligt visuellt tema över alla plottar
+
+Roadmap-itemet "Enhetligt visuellt tema (figurer + tabeller)"
+(`docs/roadmap.md`) är åtgärdat. Designdocet ligger kvar i
+`docs/dev/visual-theme-design.md`.
+
+- **Ny modul `R/theme.R`** introducerar:
+  - `traning_palette` — en namngiven lista som speglar Shiny-appens
+    CSS-variabler (`--primary`, `--accent`, `--status-*` m.fl.) plus
+    domän-specifika sub-paletter: HR-zoner (Z1–Z5), pace traffic-
+    light, PMC-zon-bakgrunder, readiness-pastellbakgrunder,
+    sömnstadier, säsongsband, run-profile-terracotta och en ordnad
+    brun ramp (`sequence`). CSS-filen `app/tRanat/www/styles.css` är
+    fortsatt source of truth — header-kommentaren i `R/theme.R` listar
+    varje `--var → palette-entry`-mappning.
+  - `theme_traning(base_size, rotated_x, angle)` — gemensam ggplot-
+    theme som ersätter de tidigare `.theme_run_profile()` och
+    `.theme_rotated_x()`. De gamla helpers ligger kvar som tunna
+    wrappers så befintliga callsites slipper röras.
+  - `scale_fill_traning()` och `scale_colour_traning()` — diskreta
+    skalor på `traning_palette$sequence`.
+- **Migrerade callsites (~40+):** `R/plot.R`, `R/plot_reports.R`,
+  `R/plot_health.R`, `R/plot_zones.R` och
+  `app/tRanat/modules/mod_overview.R` läser nu paletten istället för
+  hex-literaler. Bland annat: `steelblue`/`firebrick`-trender och
+  -staplar går till `primary`/`status$red`/`accent`, ACWR- och
+  decoupling-zonband till `traffic_bg`, ATL/CTL-paret till
+  Allen/Coggan-konventionen (zones$Z1 + traffic_bg$red), Seiler-zoner
+  och säsongsband till sina respektive sub-paletter, och
+  `plot_monthtop` får en interpolerad brun ramp över de år som råkar
+  ingå i top-10 (istället för ggplot:s default-rainbow).
+- **AVVIKELSE FRÅN TEMA-konvention:** sub-paletter som behöver
+  saturerad domänfärg (HR-zoner, traffic-light, sleep stages,
+  Material readiness, Wong VO2max-source-distinction) dokumenteras
+  per callsite eller i `R/theme.R` med en `AVVIKELSE FRÅN TEMA`-
+  kommentar som motiverar undantaget. Inline-hex utan sådan
+  kommentar är efter migrationen att betrakta som bugg.
+- **Tabeller** kontrollerades separat: alla fem `DT::datatable`-
+  callsites i `app/tRanat/modules/` och `app/tRanat/pages/` är
+  okolorerade på R-nivå och ärver styles.css direkt — ingen ändring
+  behövdes där.
+- **Tester:** ny `tests/testthat/test-theme.R` (27 tester) verifierar
+  palettnycklar, CSS-mirrored hex-värden, väldefinierade hex-format,
+  theme-applicering och scale-applicering. Full svit 1011/1011
+  gröna; CLI render-sweep körde 9 typer (acwr, pmc, ef, decoupling,
+  hre, monotony, readiness, zones, month-top, year-running,
+  month-running) utan fel.
+
 ## 2026-05-16 — Översikt: mini-graferna följer globalt datumspann
 
 Roadmap-itemet "Filter-konsistens: tabeller och figurer ska följa globala
