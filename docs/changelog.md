@@ -14,28 +14,33 @@ visade stale data efter import (observerat 2026-05-15 ~21:00) är åtgärdat.
   när R-processen startade.
 - **`reactivePoll`-watcher i `app.R`** tittar på mtime för
   `summaries.RData` och `health_daily.RData` med 5 s poll + 2 s debounce.
-  Vid förändring visas en icke-störande notis ("Ny träningsdata
-  importerad. Ladda om sidan för att se den.") med "Uppdatera nu"-knapp;
-  användaren får då en ny session med färska data. Max latens ~7 s, väl
+  Vid förändring (jämfört mot en baseline capture:ad innan
+  per-session-loaden, så ingen write missas under startup-race-fönstret)
+  visas en icke-störande notis ("Ny träningsdata importerad. Ladda om
+  sidan för att se den.") med "Uppdatera nu"-knapp. Existerande
+  sessioner får prompten; nya/omladdade sessioner ser direkt
+  färska data via per-session-loaden. Stabilt notis-id så
+  back-to-back-imports inte staplar banners. Max latens ~7 s, väl
   under acceptanskriteriets 30 s-budget.
-- **Inga Python-ändringar.** `save_atomic()` (R/utils.R) gör redan atomär
-  rename så watchern är race-fri. Skrivflöden som triggar watchern:
-  `_flush_pending_workouts()` och `_run_import_garmin()` shellar
-  `cli.R --import` som via `my_dbs_save()` skriver `myruns.RData`
-  följt av `summaries.RData` (trailing write); `_flush_pending_health()`
-  går via `notify_helper.R` som anropar `import_health_export()` →
+- **Inga Python-ändringar.** `save_atomic()` (R/utils.R) gör atomär
+  rename så watchern aldrig läser en delvis skriven fil. Skrivflöden
+  som triggar watchern: `_flush_pending_workouts()` och
+  `_run_import_garmin()` shellar `cli.R --import` som via
+  `my_dbs_save()` skriver `myruns.RData` följt av `summaries.RData`
+  (trailing write); `_flush_pending_health()` går via
+  `notify_helper.R` som anropar `import_health_export()` →
   `save_health_data()` och skriver `health_daily.RData`. Watchern
   täcker bägge filerna.
 - **Tester:** 10 nya assertions i `test-shiny-helpers.R` för
-  `load_session_data()` (returstruktur, byte-för-byte-match mot
-  `my_dbs_load()`, missing-cache-resilience, reentrans, env-var-validering).
-  Full suite: 936/936.
+  `load_session_data()` (returstruktur, objekt-equality mot
+  `my_dbs_load()`, missing-cache-resilience, reentrans,
+  env-var-validering). Full suite: 936/936.
 - **page_import.R-precisering:** Withings-backfill skriver enbart
   canonical JSON; för att få in dem i `health_daily.RData` krävs
   fortfarande `traning import health --force` (receiverns flush
   importerar bara den pushade fil-listan). Texten efter backfill
-  påminner nu om kommandot men nämner att dashboarden uppdateras
-  automatiskt när den körningen är klar.
+  påminner nu om kommandot och om att dashboarden visar reload-notis
+  när den körningen är klar.
 
 ## 2026-05-16 — `traning doctor` health-check + ABI-resilience landat
 

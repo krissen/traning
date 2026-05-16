@@ -222,8 +222,9 @@ page_import_server <- function(id) {
                    shiny::code("traning import health --force"),
                    " för att läsa in dem i R-cachen — receiverns ",
                    "automatiska health-flush importerar bara filer ",
-                   "som pushas via HAE. Dashboarden uppdateras ",
-                   "automatiskt när importen är klar.")
+                   "som pushas via HAE. När importen är klar visas en ",
+                   "notis i dashboarden; klicka ", shiny::strong("Uppdatera nu"),
+                   " för att ladda om sidan med de nya datan.")
         )
       )
     })
