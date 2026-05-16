@@ -1499,8 +1499,36 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
   all_median_pace <- stats::median(runs$pace)
   all_median_km   <- stats::median(runs$km)
 
+  # Pre-bin with cut() so plotly::ggplotly() can render hover-able tiles.
+  # geom_bin2d() is not supported by ggplotly; geom_tile() is.
+  # Use log10 binning on km (matches scale_x_log10), linear on pace.
+  nbins       <- 30
+  km_range    <- range(runs_era$km,   na.rm = TRUE)
+  pace_range  <- range(runs_era$pace, na.rm = TRUE)
+  km_breaks   <- 10^seq(log10(km_range[1]),  log10(km_range[2]),  length.out = nbins + 1)
+  pace_breaks <-     seq(pace_range[1],      pace_range[2],       length.out = nbins + 1)
+
+  binned <- runs_era %>%
+    dplyr::mutate(
+      km_bin   = cut(km,   breaks = km_breaks,   include.lowest = TRUE, labels = FALSE),
+      pace_bin = cut(pace, breaks = pace_breaks, include.lowest = TRUE, labels = FALSE)
+    ) %>%
+    dplyr::group_by(era, km_bin, pace_bin) %>%
+    dplyr::summarise(count = dplyr::n(), .groups = "drop") %>%
+    dplyr::mutate(
+      km_mid   = (km_breaks[km_bin]     + km_breaks[km_bin + 1])     / 2,
+      pace_mid = (pace_breaks[pace_bin] + pace_breaks[pace_bin + 1]) / 2,
+      km_lo    = km_breaks[km_bin],
+      km_hi    = km_breaks[km_bin + 1],
+      pace_lo  = pace_breaks[pace_bin],
+      pace_hi  = pace_breaks[pace_bin + 1]
+    )
+
   ggplot2::ggplot(runs_era, ggplot2::aes(x = km, y = pace)) +
-    ggplot2::geom_hex(bins = 30, alpha = 0.92) +
+    ggplot2::geom_tile(data = binned,
+      ggplot2::aes(x = km_mid, y = pace_mid, fill = count,
+                   width = km_hi - km_lo, height = pace_hi - pace_lo),
+      alpha = 0.92, inherit.aes = FALSE) +
     ggplot2::geom_hline(yintercept = all_median_pace,
                          colour = "white", linewidth = 0.6,
                          linetype = "dashed") +
@@ -1517,7 +1545,8 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
     ggplot2::scale_y_reverse() +
     ggplot2::facet_wrap(~ era, ncol = 1) +
     ggplot2::labs(title = "Distans \u00d7 tempo per epok",
-                   subtitle = "Hex-t\u00e4thet av enskilda pass. Vita streck + prick = hela datasetets median (samma i alla paneler).",
+                   subtitle = "Bin-t\u00e4thet av enskilda pass. Vita streck + prick = hela datasetets median (samma i alla paneler).",
                    x = "Kilometer (log)", y = "Tempo (min/km)") +
-    .theme_run_profile()
+    .theme_run_profile() +
+    ggplot2::theme(aspect.ratio = 0.7)
 }
