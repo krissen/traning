@@ -37,12 +37,24 @@ visade stale data efter import (observerat 2026-05-15 ~21:00) är åtgärdat.
   env-var-validering, explicit `traning_data`-arg overrider env)
   och 5 nya för `load_decoupling(read_only = TRUE)` i
   `test-decoupling.R`. Full suite: 942/942.
+- **`load_decoupling(read_only = TRUE)`:** Ny parameter på den
+  publika hjälparen. Aktiverar all validering (sport, parametrar,
+  incremental compute för nya sessioner) men hoppar över
+  `save_atomic()`-skrivningen. Designad för in-process-konsumenter
+  som Shiny som annars skulle generera disk-writes per session och
+  race mot parallella anrop. CLI-vägen (`traning decoupling`)
+  behåller default `read_only = FALSE`.
 - **page_import.R-precisering:** Withings-backfill skriver enbart
   canonical JSON; för att få in dem i `health_daily.RData` krävs
   fortfarande `traning import health --force` (receiverns flush
   importerar bara den pushade fil-listan). Texten efter backfill
   påminner nu om kommandot och om att dashboarden visar reload-notis
   när den körningen är klar.
+- **Bot-review-loop:** 5 ronder (Codex + Copilot). Round 1: 7 fynd
+  åtgärdade; round 2: 13 fynd inkl. race-window, notification-stacking,
+  decoupling cache-write-per-session; round 3: 6 fynd inkl. C-P1
+  decoupling sport-validering; round 4: 2 fynd → arkitekturell fix
+  via ny `read_only`-parameter; round 5: 0 nya, break-point.
 
 ## 2026-05-16 — `traning doctor` health-check + ABI-resilience landat
 
