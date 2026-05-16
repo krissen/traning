@@ -106,6 +106,12 @@ ui <- page_navbar(
 
 # --- Server ---
 server <- function(input, output, session) {
+  # Per-session-cache-snapshot. global.R definierar load_session_data()
+  # och behåller dessutom globala summaries/myruns/... för
+  # bakåtkompatibilitet. Per-session-anropet säkerställer att varje
+  # ny eller omladdad dashboard ser cachen som finns på disk just nu.
+  data <- load_session_data()
+
   # Global date range + sport
   dates <- date_preset_server("dates")
   sport <- sport_select_server("sport")
@@ -115,19 +121,60 @@ server <- function(input, output, session) {
     isTRUE(input$is_mobile)
   })
 
+  # Cache-watcher: poll mtime på de två headline-cacherna och visa
+  # icke-störande notis när de uppdateras. summaries.RData är trailing
+  # write i my_dbs_save() (myruns skrivs först), så när dess mtime
+  # ändras är båda inkrementerade. health_daily.RData skrivs av
+  # health-importflödet och är oberoende. 5 s poll + 2 s debounce
+  # absorberar back-to-back-skrivningar och håller latensen under
+  # 30 s-budgeten.
+  cache_dir <- file.path(Sys.getenv("TRANING_DATA"), "cache")
+  cache_mtime <- shiny::reactivePoll(
+    intervalMillis = 5000,
+    session = session,
+    checkFunc = function() {
+      summary_path <- file.path(cache_dir, "summaries.RData")
+      health_path  <- file.path(cache_dir, "health_daily.RData")
+      paste(
+        if (file.exists(summary_path)) as.numeric(file.info(summary_path)$mtime) else 0,
+        if (file.exists(health_path))  as.numeric(file.info(health_path)$mtime)  else 0,
+        sep = "|"
+      )
+    },
+    valueFunc = function() Sys.time()
+  )
+  cache_mtime_debounced <- shiny::debounce(cache_mtime, 2000)
+
+  shiny::observeEvent(
+    cache_mtime_debounced(),
+    {
+      shiny::showNotification(
+        "Ny träningsdata importerad. Ladda om sidan för att se den.",
+        duration = NULL,
+        type = "message",
+        action = shiny::tags$a(
+          href = "javascript:window.location.reload()",
+          "Uppdatera nu"
+        )
+      )
+    },
+    ignoreInit = TRUE
+  )
+
   # Page servers — sport= is forwarded to every page that has any
   # sport-aware compute_*/report_*/plot_* call. Pages that are
   # genuinely sport-blind (overview, health, race) can ignore it.
-  page_overview_server("overview", summaries, health_daily, myruns,
-                        decoupling_data, dates, is_mobile)
-  page_training_server("training", summaries, dates, is_mobile, sport)
-  page_progress_server("progress", summaries, dates, is_mobile, sport)
-  page_sport_mix_server("sport_mix", summaries, dates, is_mobile, sport)
-  page_health_server("health", summaries, health_daily, dates, is_mobile)
-  page_performance_server("performance", summaries, myruns, health_daily,
-                           decoupling_data, dates, is_mobile, sport)
-  page_runprofile_server("runprofile", summaries, dates, is_mobile, sport)
-  page_race_server("race", summaries, health_daily, dates, is_mobile)
+  page_overview_server("overview", data$summaries, data$health_daily,
+                        data$myruns, data$decoupling_data, dates, is_mobile)
+  page_training_server("training", data$summaries, dates, is_mobile, sport)
+  page_progress_server("progress", data$summaries, dates, is_mobile, sport)
+  page_sport_mix_server("sport_mix", data$summaries, dates, is_mobile, sport)
+  page_health_server("health", data$summaries, data$health_daily, dates, is_mobile)
+  page_performance_server("performance", data$summaries, data$myruns,
+                           data$health_daily, data$decoupling_data,
+                           dates, is_mobile, sport)
+  page_runprofile_server("runprofile", data$summaries, dates, is_mobile, sport)
+  page_race_server("race", data$summaries, data$health_daily, dates, is_mobile)
   page_import_server("import")
 }
 
