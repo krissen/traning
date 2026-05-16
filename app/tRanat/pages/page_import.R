@@ -224,7 +224,7 @@ page_import_server <- function(id) {
                    "automatiska health-flush importerar bara filer ",
                    "som pushas via HAE. När importen är klar visas en ",
                    "notis i dashboarden; klicka ", shiny::strong("Uppdatera nu"),
-                   " för att ladda om sidan med de nya datan.")
+                   " för att ladda om sidan med den nya datan.")
         )
       )
     })

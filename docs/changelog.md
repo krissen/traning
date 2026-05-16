@@ -31,10 +31,11 @@ visade stale data efter import (observerat 2026-05-15 ~21:00) är åtgärdat.
   `notify_helper.R` som anropar `import_health_export()` →
   `save_health_data()` och skriver `health_daily.RData`. Watchern
   täcker bägge filerna.
-- **Tester:** 10 nya assertions i `test-shiny-helpers.R` för
+- **Tester:** 11 nya assertions i `test-shiny-helpers.R` för
   `load_session_data()` (returstruktur, objekt-equality mot
   `my_dbs_load()`, missing-cache-resilience, reentrans,
-  env-var-validering). Full suite: 936/936.
+  env-var-validering, explicit `traning_data`-arg overrider env).
+  Full suite: 937/937.
 - **page_import.R-precisering:** Withings-backfill skriver enbart
   canonical JSON; för att få in dem i `health_daily.RData` krävs
   fortfarande `traning import health --force` (receiverns flush

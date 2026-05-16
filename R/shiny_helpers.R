@@ -75,13 +75,21 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
   # ovillkorligt även vid cache-hit (R/advanced_metrics.R:1124), så
   # en per-session-användning skulle generera onödiga disk-writes och
   # race mot parallella Shiny-sessioner. Vi läser därför cachen direkt
-  # när den finns. Sessioner som lagts till sedan senaste cache-bygget
+  # när den finns OCH dess metadata matchar Shinys förväntningar
+  # (sport == "running" — samma cache-fil delas mellan sporterna och
+  # en cykling-byggd cache får inte serveras som löpning). Vid
+  # mismatch faller vi tillbaka till load_decoupling() som rebuildar
+  # för rätt sport. Sessioner som lagts till sedan senaste cache-bygget
   # syns utan decoupling-värde tills nästa `cli.R --decoupling`.
   decoupling_data <- tryCatch({
+    cache <- NULL
     if (file.exists(decoupling_cache_path)) {
       e <- new.env()
       load(decoupling_cache_path, envir = e)
-      e$decoupling_cache$per_run
+      cache <- e$decoupling_cache
+    }
+    if (!is.null(cache) && isTRUE(identical(cache$sport, "running"))) {
+      cache$per_run
     } else {
       load_decoupling(summaries, myruns, cache_path = decoupling_cache_path)
     }

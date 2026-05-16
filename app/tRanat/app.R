@@ -110,10 +110,12 @@ ui <- page_navbar(
 # --- Server ---
 server <- function(input, output, session) {
   # Cache-watcher-paths. Definieras före per-session-snapshoten så
-  # att vi kan capture:a mtime-baseline EXAKT när load_session_data()
-  # läser cachen — annars öppnar sig ett race-fönster där en import
-  # som landar mellan load() och första reactivePoll-check skulle bli
-  # baseline:n och sessionen aldrig fick reload-notis.
+  # att vi kan capture:a mtime-baseline strax INNAN load_session_data()
+  # läser cachen. Det stänger race-fönstret där en import som landar
+  # mellan load() och första reactivePoll-check annars skulle bli
+  # baseline:n och sessionen aldrig fick reload-notis. (Vi accepterar
+  # det mindre fönstret där en import landar mellan baseline-capture
+  # och load — den ger en tidig notis snarare än en tappad.)
   cache_dir    <- file.path(Sys.getenv("TRANING_DATA"), "cache")
   summary_path <- file.path(cache_dir, "summaries.RData")
   health_path  <- file.path(cache_dir, "health_daily.RData")
@@ -147,10 +149,11 @@ server <- function(input, output, session) {
   # ändras är båda inkrementerade. health_daily.RData skrivs av
   # health-importflödet och är oberoende. 5 s poll + 2 s debounce
   # absorberar back-to-back-skrivningar och håller latensen under
-  # 30 s-budgeten. observerar jämför mot baseline_mtime (capture:ad
-  # före load) så vi inte missar en write som landade mellan load
-  # och första poll. Stabilt id på notisen så återkommande imports
-  # uppdaterar samma banner istället för att stapla nya.
+  # 30 s-budgeten. Observern jämför det debouncade poll-värdet mot
+  # baseline_mtime (capture:ad före load) så vi inte missar en write
+  # som landade mellan load och första poll. Stabilt id på notisen så
+  # återkommande imports uppdaterar samma banner istället för att
+  # stapla nya.
   cache_mtime <- shiny::reactivePoll(
     intervalMillis = 5000,
     session = session,

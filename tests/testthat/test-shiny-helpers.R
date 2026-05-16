@@ -8,7 +8,7 @@ make_fake_cache <- function(traning_data) {
 
   # `load_decoupling()` (cold path) konsulterar `durationMoving` och
   # `avgPaceMoving` på summaries. Inkludera dem i fixturen så vi
-  # exercerar succesvägen, inte bara error-fångsten.
+  # exercerar success-vägen, inte bara error-fångsten.
   summaries <- data.frame(
     sessionStart    = as.POSIXct(c("2026-05-01 06:30:00",
                                    "2026-05-02 18:00:00"),
