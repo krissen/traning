@@ -582,8 +582,11 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
     )
 
   # TSB zone palette maps to traffic_bg + cool/neutral tones. "Utvilad"
-  # uses the blue zone1 colour (rested/cool); "Produktiv" stays neutral
-  # grey since it falls between sweet-spot and overload.
+  # uses the blue zone1 colour (rested/cool).
+  # AVVIKELSE FRÅN TEMA: "Produktiv" stays neutral grey (#95a5a6) — it
+  # sits between sweet-spot (green) and overload (red), and a chromatic
+  # palette tone would imply it leans toward one or the other. The
+  # neutral grey communicates "intermediate, no judgement".
   zon_farger <- c(
     "Utvilad"       = traning_palette$zones[["Z1"]],
     "Tävlingsredo"  = traning_palette$traffic_bg[["green"]],

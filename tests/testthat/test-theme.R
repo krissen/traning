@@ -100,6 +100,25 @@ test_that("scale_fill_traning() can be applied to a real ggplot", {
   expect_silent(ggplot2::ggplot_build(p))
 })
 
+test_that("scale_fill_traning() interpolates past the 5 anchor colours", {
+  df <- data.frame(x = 1:8, y = 1:8, g = letters[1:8])
+  p <- ggplot2::ggplot(df, ggplot2::aes(x, y, fill = g)) +
+    ggplot2::geom_col() +
+    scale_fill_traning()
+  built <- ggplot2::ggplot_build(p)
+  fills <- unique(built$data[[1]]$fill)
+  expect_length(fills, 8)
+  expect_true(all(grepl("^#[0-9a-fA-F]{6}$", fills)))
+})
+
+test_that("scale_colour_traning() interpolates past the 5 anchor colours", {
+  df <- data.frame(x = 1:7, y = 1:7, g = letters[1:7])
+  p <- ggplot2::ggplot(df, ggplot2::aes(x, y, colour = g)) +
+    ggplot2::geom_point() +
+    scale_colour_traning()
+  expect_silent(ggplot2::ggplot_build(p))
+})
+
 # --- back-compat wrappers ---------------------------------------------------
 
 test_that(".theme_run_profile() and .theme_rotated_x() still work", {

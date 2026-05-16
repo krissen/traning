@@ -98,13 +98,14 @@ traning_palette <- list(
     low    = "#f0e8e6"
   ),
 
-  # AVVIKELSE FRÅN TEMA: sleep stages map to a deep→light blue gradient
-  # (deep/core/REM) plus red for wake. Domain convention from Withings,
-  # Garmin Connect, Apple Health.
+  # AVVIKELSE FRÅN TEMA: sleep stages map to a blue gradient plus red
+  # for wake. Apple Health convention: core (light sleep) gets the
+  # lightest blue, REM (active sleep) gets a medium-saturation blue,
+  # deep stays darkest, wake is red.
   sleep_stages = c(
     deep  = "#1a3a5c",
-    core  = "#4a90d9",
-    rem   = "#7fb3e0",
+    core  = "#7fb3e0",
+    rem   = "#4a90d9",
     awake = "#d9534f"
   ),
 
@@ -174,20 +175,44 @@ theme_traning <- function(base_size = 12, rotated_x = FALSE, angle = 45) {
   th
 }
 
+# Interpolate the sequence palette to exactly `n` colours. The
+# sequence has 5 anchor colours (--primary → --border-warm); callers
+# with more categories get an interpolated brown ramp instead of a
+# "Insufficient values in manual scale" error.
+.traning_sequence_n <- function(n) {
+  anchors <- unname(traning_palette$sequence)
+  if (n <= length(anchors)) anchors[seq_len(n)]
+  else grDevices::colorRampPalette(anchors)(n)
+}
+
 #' Discrete fill scale using `traning_palette$sequence`
 #'
-#' @param ... Passed to `ggplot2::scale_fill_manual()`.
+#' Interpolates the 5-anchor sequence palette to the number of levels
+#' in the mapping, so charts with 6+ categories don't error out.
+#'
+#' @param ... Passed to `ggplot2::discrete_scale()`.
 #' @export
 scale_fill_traning <- function(...) {
-  ggplot2::scale_fill_manual(values = unname(traning_palette$sequence), ...)
+  ggplot2::discrete_scale(
+    aesthetics = "fill",
+    palette = function(n) .traning_sequence_n(n),
+    ...
+  )
 }
 
 #' Discrete colour scale using `traning_palette$sequence`
 #'
-#' @param ... Passed to `ggplot2::scale_colour_manual()`.
+#' Interpolates the 5-anchor sequence palette to the number of levels
+#' in the mapping, so charts with 6+ categories don't error out.
+#'
+#' @param ... Passed to `ggplot2::discrete_scale()`.
 #' @export
 scale_colour_traning <- function(...) {
-  ggplot2::scale_colour_manual(values = unname(traning_palette$sequence), ...)
+  ggplot2::discrete_scale(
+    aesthetics = "colour",
+    palette = function(n) .traning_sequence_n(n),
+    ...
+  )
 }
 
 # Back-compat wrapper. .theme_run_profile() callsites in R/plot.R
