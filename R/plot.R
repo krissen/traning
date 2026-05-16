@@ -1347,7 +1347,10 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
     ggplot2::scale_y_reverse() +
     ggplot2::scale_x_continuous(breaks = woy_breaks, labels = woy_labels,
                                   expand = c(0.01, 0.01)) +
-    ggplot2::coord_cartesian(clip = "off") +
+    # ylim locks the panel to the season-band extent so the
+    # geom_smooth() CI ribbon (which can extend past mean_pace) does
+    # not leave unshaded gaps above or below the bands.
+    ggplot2::coord_cartesian(ylim = c(y_lo, y_hi), clip = "off") +
     ggplot2::labs(title = "S\u00e4songsm\u00f6nster i tempo",
                    subtitle = "Veckans medeltempo \u00f6ver alla \u00e5r. Bakgrund = \u00e5rstid; kurva = loess.",
                    x = NULL, y = "Tempo (min/km)") +
@@ -1473,11 +1476,12 @@ fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
     .theme_run_profile()
 }
 
-#' Distans \u00d7 tempo som hex-densitet per epok
+#' Distans \u00d7 tempo som bin-densitet per epok
 #'
-#' Hex-bin av enskilda pass (distans vs tempo), uppdelat i fyra epoker.
-#' Vita streck + prick = hela datasetets median (samma referens i alla
-#' paneler, s\u00e5 epokernas tyngdpunkter g\u00e5r att j\u00e4mf\u00f6ra med varandra).
+#' Rektangul\u00e4r bin-densitet av enskilda pass (distans vs tempo),
+#' uppdelat i fyra epoker. Vita streck + prick = hela datasetets
+#' median (samma referens i alla paneler, s\u00e5 epokernas tyngdpunkter
+#' g\u00e5r att j\u00e4mf\u00f6ra med varandra).
 #'
 #' Epok-gr\u00e4nserna \u00e4r 2005\u20132010, 2011\u20132016, 2017\u20132021, 2022\u20132026.
 #'
@@ -1519,6 +1523,11 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
   km_breaks   <- 10^seq(log10(km_range[1]),  log10(km_range[2]),  length.out = nbins + 1)
   pace_breaks <-     seq(pace_range[1],      pace_range[2],       length.out = nbins + 1)
 
+  # Use xmin/xmax/ymin/ymax (geom_rect) instead of x/width (geom_tile)
+  # because scale_x_log10() transforms positional aesthetics but not
+  # `width` — so log-spaced tile widths get applied in log-space and
+  # high-km bins render too wide in plotly. geom_rect's bounds are
+  # transformed by the scale, so the bins land at correct extents.
   binned <- runs_era %>%
     dplyr::mutate(
       km_bin   = cut(km,   breaks = km_breaks,   include.lowest = TRUE, labels = FALSE),
@@ -1527,18 +1536,17 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
     dplyr::group_by(era, km_bin, pace_bin) %>%
     dplyr::summarise(count = dplyr::n(), .groups = "drop") %>%
     dplyr::mutate(
-      km_mid   = (km_breaks[km_bin]     + km_breaks[km_bin + 1])     / 2,
-      pace_mid = (pace_breaks[pace_bin] + pace_breaks[pace_bin + 1]) / 2,
-      km_lo    = km_breaks[km_bin],
-      km_hi    = km_breaks[km_bin + 1],
-      pace_lo  = pace_breaks[pace_bin],
-      pace_hi  = pace_breaks[pace_bin + 1]
+      km_lo   = km_breaks[km_bin],
+      km_hi   = km_breaks[km_bin + 1],
+      pace_lo = pace_breaks[pace_bin],
+      pace_hi = pace_breaks[pace_bin + 1]
     )
 
   ggplot2::ggplot(runs_era, ggplot2::aes(x = km, y = pace)) +
-    ggplot2::geom_tile(data = binned,
-      ggplot2::aes(x = km_mid, y = pace_mid, fill = count,
-                   width = km_hi - km_lo, height = pace_hi - pace_lo),
+    ggplot2::geom_rect(data = binned,
+      ggplot2::aes(xmin = km_lo, xmax = km_hi,
+                   ymin = pace_lo, ymax = pace_hi,
+                   fill = count),
       alpha = 0.92, inherit.aes = FALSE) +
     ggplot2::geom_hline(yintercept = all_median_pace,
                          colour = "white", linewidth = 0.6,
@@ -1558,6 +1566,8 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
     ggplot2::labs(title = "Distans \u00d7 tempo per epok",
                    subtitle = "Bin-t\u00e4thet av enskilda pass. Vita streck + prick = hela datasetets median (samma i alla paneler).",
                    x = "Kilometer (log)", y = "Tempo (min/km)") +
-    .theme_run_profile() +
-    ggplot2::theme(aspect.ratio = 0.7)
+    .theme_run_profile()
+  # `theme(aspect.ratio = ...)` is silently dropped by plotly::ggplotly,
+  # so the wide-screen layout cap is applied via a max-width container
+  # in app/tRanat/pages/page_runprofile.R instead.
 }
