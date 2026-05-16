@@ -65,8 +65,12 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL,
 
   # Interpolate the brown sequence palette to span the actual number
   # of distinct years in the top-10 (typically 3–7, but flexible).
-  years_n <- length(unique(data$year))
-  year_colours <- grDevices::colorRampPalette(traning_palette$sequence)(years_n)
+  # Named vector — pairs colour to year explicitly so the mapping is
+  # robust even if the `year` column ever becomes a factor with
+  # extra unused levels.
+  year_levels <- sort(unique(data$year))
+  year_colours <- grDevices::colorRampPalette(traning_palette$sequence)(length(year_levels))
+  names(year_colours) <- year_levels
 
   data %>%
     ggplot2::ggplot(

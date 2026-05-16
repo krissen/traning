@@ -133,9 +133,12 @@ traning_palette <- list(
     )
   ),
 
-  # AVVIKELSE FRÅN TEMA: ordered green gradient for duration-rank
-  # heatmaps (light=short, dark=long). Hue chosen for legibility on the
-  # warm-brown background of the rest of the app.
+  # AVVIKELSE FRÅN TEMA: ordered green gradient for the longest-runs
+  # stacked bars in plot.R. The chart stacks the top-5 longest runs
+  # per year — index 1 lands at the base of the stack (the 5th-longest,
+  # smallest contribution → darkest) and index 5 sits on top (the
+  # longest, biggest contribution → lightest). Hue chosen for legibility
+  # on the warm-brown background of the rest of the app.
   duration_rank = c("#1F4D33", "#3F7D5C", "#6FA887", "#9CC1A8", "#CFE0D5"),
 
   # Ordered categorical palette for stacked / grouped bars. Brown ramp
