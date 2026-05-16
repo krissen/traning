@@ -1,5 +1,9 @@
 # global.R — laddas en gång vid appstart
-# Laddar paketet och all träningsdata i global miljö
+#
+# Laddar paketet och binder den initiala session-snapshoten till
+# globala namn för bakåtkompatibilitet. `server()` i app.R anropar
+# `load_session_data()` igen per session så varje omladdad dashboard
+# ser senaste cachen utan service-restart.
 
 # Paketrot är två nivåer upp från app/tRanat/
 # Shiny sätter working directory till app-katalogen när global.R körs,
@@ -7,68 +11,13 @@
 pkg_root <- normalizePath(file.path(getwd(), "..", ".."))
 suppressMessages(devtools::load_all(pkg_root, quiet = TRUE))
 
-# --- Datasökvägar (från TRANING_DATA-miljövariabeln) ---
-traning_data <- Sys.getenv("TRANING_DATA")
-if (traning_data == "") {
-  stop("TRANING_DATA is not set. Copy .Renviron.example to .Renviron and set the path.")
-}
-
-db_summaries <- file.path(traning_data, "cache", "summaries.RData")
-db_myruns    <- file.path(traning_data, "cache", "myruns.RData")
-gc_json_dir  <- file.path(traning_data, "kristian", "filer", "gconnect")
-
-# --- Ladda summaries och myruns ---
-my_templist <- my_dbs_load(db_summaries, db_myruns)
-summaries   <- my_templist[["summaries"]]
-myruns      <- my_templist[["myruns"]]
-rm(my_templist)
-
-# --- Berika med Garmin JSON-data (endast om cache saknar markören) ---
-# `cli.R --import` augmenterar nu cachen vid import, så vid normal
-# drift har `summaries` redan både garmin_*-kolumner och markören
-# `garmin_matched`. Detta block är en fallback för legacy-caches och
-# kan tas bort när alla caches (kedar, kailash, ev. andra hostar)
-# re-importats minst en gång. Vi nyckar på markörens närvaro (samma
-# canonical signal som cli.R använder) snarare än en regex-träff på
-# kolumnnamn — det undviker att missa partiella caches där bara
-# något garmin_*-fält råkar finnas.
-if (dir.exists(gc_json_dir) &&
-    !("garmin_matched" %in% names(summaries))) {
-  message("global.R: cache saknar garmin_matched-markören — ",
-          "augmenterar som fallback. Kör `traning import all` ",
-          "för permanent fix.")
-  garmin_data <- tryCatch(
-    load_garmin_json(gc_json_dir),
-    error = function(e) {
-      warning("Kunde inte ladda Garmin JSON-data: ", conditionMessage(e))
-      NULL
-    }
-  )
-  if (!is.null(garmin_data)) {
-    summaries <- tryCatch(
-      augment_summaries(summaries, garmin_data),
-      error = function(e) {
-        warning("augment_summaries misslyckades: ", conditionMessage(e))
-        summaries
-      }
-    )
-  }
-}
-
-# --- Ladda decoupling-cache (per-second-beroende, tar tid utan cache) ---
-decoupling_data <- tryCatch(
-  load_decoupling(summaries, myruns),
-  error = function(e) {
-    warning("Kunde inte ladda decoupling-data: ", conditionMessage(e))
-    NULL
-  }
-)
-
-# --- Ladda Apple Watch hälsodata ---
-health_daily <- tryCatch(
-  load_health_data(),
-  error = function(e) {
-    warning("Kunde inte ladda hälsodata: ", conditionMessage(e))
-    NULL
-  }
-)
+# --- Initial load vid process-start --------------------------------------
+# Binder till globala så ev. legacy-konsumenter (utanför server()) ser
+# samma data som tidigare. server() anropar load_session_data() på
+# nytt per session och använder de färska värdena.
+.initial_session_data <- load_session_data()
+summaries       <- .initial_session_data[["summaries"]]
+myruns          <- .initial_session_data[["myruns"]]
+decoupling_data <- .initial_session_data[["decoupling_data"]]
+health_daily    <- .initial_session_data[["health_daily"]]
+rm(.initial_session_data)

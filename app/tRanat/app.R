@@ -11,7 +11,10 @@ library(plotly)
 library(ggplot2)
 
 # --- Data (global.R sourced by Shiny, but ensure objects are here) ---
-if (!exists("summaries")) source("global.R", local = FALSE)
+# Guarda på funktionen, inte på `summaries` — i interaktiva
+# dev-flöden kan `summaries` finnas kvar i workspacet utan att
+# load_session_data() laddats, vilket skulle få server() att krascha.
+if (!exists("load_session_data")) source("global.R", local = FALSE)
 
 # --- Source modules and pages ---
 source("modules/mod_date_preset.R",   local = TRUE)
@@ -106,6 +109,31 @@ ui <- page_navbar(
 
 # --- Server ---
 server <- function(input, output, session) {
+  # Cache-watcher-paths. Definieras före per-session-snapshoten så
+  # att vi kan capture:a mtime-baseline strax INNAN load_session_data()
+  # läser cachen. Det stänger race-fönstret där en import som landar
+  # mellan load() och första reactivePoll-check annars skulle bli
+  # baseline:n och sessionen aldrig fick reload-notis. (Vi accepterar
+  # det mindre fönstret där en import landar mellan baseline-capture
+  # och load — den ger en tidig notis snarare än en tappad.)
+  cache_dir    <- file.path(Sys.getenv("TRANING_DATA"), "cache")
+  summary_path <- file.path(cache_dir, "summaries.RData")
+  health_path  <- file.path(cache_dir, "health_daily.RData")
+  read_cache_mtimes <- function() {
+    paste(
+      if (file.exists(summary_path)) as.numeric(file.info(summary_path)$mtime) else 0,
+      if (file.exists(health_path))  as.numeric(file.info(health_path)$mtime)  else 0,
+      sep = "|"
+    )
+  }
+  baseline_mtime <- read_cache_mtimes()
+
+  # Per-session-cache-snapshot. global.R definierar load_session_data()
+  # och behåller dessutom globala summaries/myruns/... för
+  # bakåtkompatibilitet. Per-session-anropet säkerställer att varje
+  # ny eller omladdad dashboard ser cachen som finns på disk just nu.
+  data <- load_session_data()
+
   # Global date range + sport
   dates <- date_preset_server("dates")
   sport <- sport_select_server("sport")
@@ -115,19 +143,54 @@ server <- function(input, output, session) {
     isTRUE(input$is_mobile)
   })
 
+  # Cache-watcher: poll mtime på de två headline-cacherna och visa
+  # icke-störande notis när de uppdateras. summaries.RData är trailing
+  # write i my_dbs_save() (myruns skrivs först), så när dess mtime
+  # ändras är båda inkrementerade. health_daily.RData skrivs av
+  # health-importflödet och är oberoende. 5 s poll + 2 s debounce
+  # absorberar back-to-back-skrivningar och håller latensen under
+  # 30 s-budgeten. Observern jämför det debouncade poll-värdet mot
+  # baseline_mtime (capture:ad före load) så vi inte missar en write
+  # som landade mellan load och första poll. Stabilt id på notisen så
+  # återkommande imports uppdaterar samma banner istället för att
+  # stapla nya.
+  cache_mtime <- shiny::reactivePoll(
+    intervalMillis = 5000,
+    session = session,
+    checkFunc = read_cache_mtimes,
+    valueFunc = read_cache_mtimes
+  )
+  cache_mtime_debounced <- shiny::debounce(cache_mtime, 2000)
+
+  shiny::observe({
+    if (!identical(cache_mtime_debounced(), baseline_mtime)) {
+      shiny::showNotification(
+        "Ny träningsdata importerad. Ladda om sidan för att se den.",
+        duration = NULL,
+        type = "message",
+        id = "tranat_cache_update",
+        action = shiny::tags$a(
+          href = "javascript:window.location.reload()",
+          "Uppdatera nu"
+        )
+      )
+    }
+  })
+
   # Page servers — sport= is forwarded to every page that has any
   # sport-aware compute_*/report_*/plot_* call. Pages that are
   # genuinely sport-blind (overview, health, race) can ignore it.
-  page_overview_server("overview", summaries, health_daily, myruns,
-                        decoupling_data, dates, is_mobile)
-  page_training_server("training", summaries, dates, is_mobile, sport)
-  page_progress_server("progress", summaries, dates, is_mobile, sport)
-  page_sport_mix_server("sport_mix", summaries, dates, is_mobile, sport)
-  page_health_server("health", summaries, health_daily, dates, is_mobile)
-  page_performance_server("performance", summaries, myruns, health_daily,
-                           decoupling_data, dates, is_mobile, sport)
-  page_runprofile_server("runprofile", summaries, dates, is_mobile, sport)
-  page_race_server("race", summaries, health_daily, dates, is_mobile)
+  page_overview_server("overview", data$summaries, data$health_daily,
+                        data$myruns, data$decoupling_data, dates, is_mobile)
+  page_training_server("training", data$summaries, dates, is_mobile, sport)
+  page_progress_server("progress", data$summaries, dates, is_mobile, sport)
+  page_sport_mix_server("sport_mix", data$summaries, dates, is_mobile, sport)
+  page_health_server("health", data$summaries, data$health_daily, dates, is_mobile)
+  page_performance_server("performance", data$summaries, data$myruns,
+                           data$health_daily, data$decoupling_data,
+                           dates, is_mobile, sport)
+  page_runprofile_server("runprofile", data$summaries, dates, is_mobile, sport)
+  page_race_server("race", data$summaries, data$health_daily, dates, is_mobile)
   page_import_server("import")
 }
 

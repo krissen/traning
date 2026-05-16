@@ -1,5 +1,61 @@
 # tRäning — Changelog
 
+## 2026-05-16 — Shiny ser senaste cachen efter import (post-import flush)
+
+Roadmap-itemet "Shiny-konsistens efter import" som beskrev hur dashboarden
+visade stale data efter import (observerat 2026-05-15 ~21:00) är åtgärdat.
+
+- **`load_session_data()` i R-paketet** (`R/shiny_helpers.R`) konsoliderar
+  laddningen av alla fyra cacher (`summaries`, `myruns`, `decoupling_data`,
+  `health_daily`) till en återanvändbar funktion. Anropas både vid app-start
+  (från `global.R`, för bakåtkompatibel global-binding) och **per session**
+  från `server()` i `app.R`. Varje ny eller omladdad dashboard ser därmed
+  cachen som finns på disk just då — inte den som råkade ligga i minnet
+  när R-processen startade.
+- **`reactivePoll`-watcher i `app.R`** tittar på mtime för
+  `summaries.RData` och `health_daily.RData` med 5 s poll + 2 s debounce.
+  Vid förändring (jämfört mot en baseline capture:ad innan
+  per-session-loaden, så ingen write missas under startup-race-fönstret)
+  visas en icke-störande notis ("Ny träningsdata importerad. Ladda om
+  sidan för att se den.") med "Uppdatera nu"-knapp. Existerande
+  sessioner får prompten; nya/omladdade sessioner ser direkt
+  färska data via per-session-loaden. Stabilt notis-id så
+  back-to-back-imports inte staplar banners. Max latens ~7 s, väl
+  under acceptanskriteriets 30 s-budget.
+- **Inga Python-ändringar.** `save_atomic()` (R/utils.R) gör atomär
+  rename så watchern aldrig läser en delvis skriven fil. Skrivflöden
+  som triggar watchern: `_flush_pending_workouts()` och
+  `_run_import_garmin()` shellar `cli.R --import` som via
+  `my_dbs_save()` skriver `myruns.RData` följt av `summaries.RData`
+  (trailing write); `_flush_pending_health()` går via
+  `notify_helper.R` som anropar `import_health_export()` →
+  `save_health_data()` och skriver `health_daily.RData`. Watchern
+  täcker bägge filerna.
+- **Tester:** 11 nya assertions i `test-shiny-helpers.R` för
+  `load_session_data()` (returstruktur, objekt-equality mot
+  `my_dbs_load()`, missing-cache-resilience, reentrans,
+  env-var-validering, explicit `traning_data`-arg overrider env)
+  och 5 nya för `load_decoupling(read_only = TRUE)` i
+  `test-decoupling.R`. Full suite: 942/942.
+- **`load_decoupling(read_only = TRUE)`:** Ny parameter på den
+  publika hjälparen. Aktiverar all validering (sport, parametrar,
+  incremental compute för nya sessioner) men hoppar över
+  `save_atomic()`-skrivningen. Designad för in-process-konsumenter
+  som Shiny som annars skulle generera disk-writes per session och
+  race mot parallella anrop. CLI-vägen (`traning decoupling`)
+  behåller default `read_only = FALSE`.
+- **page_import.R-precisering:** Withings-backfill skriver enbart
+  canonical JSON; för att få in dem i `health_daily.RData` krävs
+  fortfarande `traning import health --force` (receiverns flush
+  importerar bara den pushade fil-listan). Texten efter backfill
+  påminner nu om kommandot och om att dashboarden visar reload-notis
+  när den körningen är klar.
+- **Bot-review-loop:** 5 ronder (Codex + Copilot). Round 1: 7 fynd
+  åtgärdade; round 2: 13 fynd inkl. race-window, notification-stacking,
+  decoupling cache-write-per-session; round 3: 6 fynd inkl. C-P1
+  decoupling sport-validering; round 4: 2 fynd → arkitekturell fix
+  via ny `read_only`-parameter; round 5: 0 nya, break-point.
+
 ## 2026-05-16 — `traning doctor` health-check + ABI-resilience landat
 
 PR #27 implementerar roadmap-itemet "Deploy healthcheck & ABI-resilience"

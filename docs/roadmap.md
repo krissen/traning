@@ -1,36 +1,5 @@
 # tRäning — Roadmap
 
-## Shiny-konsistens efter import
-
-Observerat 2026-05-15 ca 21:00: dagens andra löppass importerades och
-aviseringen om importen kom fram, men `tRanat`-dashboarden visade
-fortfarande bara dagens första pass när den öppnades senare på kvällen.
-Dagsformen stod också kvar på morgonens tidigaste värde (~90) trots
-att den hade reviderats lägre under dagen. Båda är samma symptom:
-**Shiny ser inte den senaste cachen**.
-
-Hypotes: import-pipelinen avslutar sin "klar"-signal vid avisering
-skickad, men Shiny-processen läser RData-cachen vid app-start (eller
-sällan därefter), så fram tills nästa restart visar dashboarden stale
-data. Aviseringen är då ärligt felaktig — den lovar att senaste
-informationen finns på sidan, men gör det inte.
-
-**Föreslagna åtgärder:**
-
-- Identifiera om Shiny-servern faktiskt re-läser RData efter import
-  eller om den cachar i minnet. `reactiveFileReader` / `invalidateLater`
-  i `app/tRanat/server.R` finns redan på vissa filer — verifiera
-  täckningen mot ALLA filer importen kan röra (summaries, myruns,
-  health_daily, day_summaries, readiness-cache, …).
-- Lägg in en explicit "post-import flush"-steg som rörselar shinyns
-  reactiveFileReader (t.ex. genom att touch:a cache-fil eller skicka
-  en notify till loopback). Alternativt restart:a `traning-shiny`
-  efter större importer — men det är tungt och stör pågående
-  sessioner.
-- Acceptanskriterium: efter en lyckad `traning import health` eller
-  `traning fetch garmin` ska en omladdad dashboard på samma host visa
-  den nya datan inom 30 sekunder utan service-restart.
-
 ## Dashboard — observerade rendering-buggar
 
 Hittade vid manuell genomgång efter R 4.6-uppgraden men oberoende av
