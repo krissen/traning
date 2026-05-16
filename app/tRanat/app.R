@@ -11,7 +11,10 @@ library(plotly)
 library(ggplot2)
 
 # --- Data (global.R sourced by Shiny, but ensure objects are here) ---
-if (!exists("summaries")) source("global.R", local = FALSE)
+# Guarda på funktionen, inte på `summaries` — i interaktiva
+# dev-flöden kan `summaries` finnas kvar i workspacet utan att
+# load_session_data() laddats, vilket skulle få server() att krascha.
+if (!exists("load_session_data")) source("global.R", local = FALSE)
 
 # --- Source modules and pages ---
 source("modules/mod_date_preset.R",   local = TRUE)
@@ -106,6 +109,23 @@ ui <- page_navbar(
 
 # --- Server ---
 server <- function(input, output, session) {
+  # Cache-watcher-paths. Definieras före per-session-snapshoten så
+  # att vi kan capture:a mtime-baseline EXAKT när load_session_data()
+  # läser cachen — annars öppnar sig ett race-fönster där en import
+  # som landar mellan load() och första reactivePoll-check skulle bli
+  # baseline:n och sessionen aldrig fick reload-notis.
+  cache_dir    <- file.path(Sys.getenv("TRANING_DATA"), "cache")
+  summary_path <- file.path(cache_dir, "summaries.RData")
+  health_path  <- file.path(cache_dir, "health_daily.RData")
+  read_cache_mtimes <- function() {
+    paste(
+      if (file.exists(summary_path)) as.numeric(file.info(summary_path)$mtime) else 0,
+      if (file.exists(health_path))  as.numeric(file.info(health_path)$mtime)  else 0,
+      sep = "|"
+    )
+  }
+  baseline_mtime <- read_cache_mtimes()
+
   # Per-session-cache-snapshot. global.R definierar load_session_data()
   # och behåller dessutom globala summaries/myruns/... för
   # bakåtkompatibilitet. Per-session-anropet säkerställer att varje
@@ -127,39 +147,32 @@ server <- function(input, output, session) {
   # ändras är båda inkrementerade. health_daily.RData skrivs av
   # health-importflödet och är oberoende. 5 s poll + 2 s debounce
   # absorberar back-to-back-skrivningar och håller latensen under
-  # 30 s-budgeten.
-  cache_dir <- file.path(Sys.getenv("TRANING_DATA"), "cache")
+  # 30 s-budgeten. observerar jämför mot baseline_mtime (capture:ad
+  # före load) så vi inte missar en write som landade mellan load
+  # och första poll. Stabilt id på notisen så återkommande imports
+  # uppdaterar samma banner istället för att stapla nya.
   cache_mtime <- shiny::reactivePoll(
     intervalMillis = 5000,
     session = session,
-    checkFunc = function() {
-      summary_path <- file.path(cache_dir, "summaries.RData")
-      health_path  <- file.path(cache_dir, "health_daily.RData")
-      paste(
-        if (file.exists(summary_path)) as.numeric(file.info(summary_path)$mtime) else 0,
-        if (file.exists(health_path))  as.numeric(file.info(health_path)$mtime)  else 0,
-        sep = "|"
-      )
-    },
-    valueFunc = function() Sys.time()
+    checkFunc = read_cache_mtimes,
+    valueFunc = read_cache_mtimes
   )
   cache_mtime_debounced <- shiny::debounce(cache_mtime, 2000)
 
-  shiny::observeEvent(
-    cache_mtime_debounced(),
-    {
+  shiny::observe({
+    if (!identical(cache_mtime_debounced(), baseline_mtime)) {
       shiny::showNotification(
         "Ny träningsdata importerad. Ladda om sidan för att se den.",
         duration = NULL,
         type = "message",
+        id = "tranat_cache_update",
         action = shiny::tags$a(
           href = "javascript:window.location.reload()",
           "Uppdatera nu"
         )
       )
-    },
-    ignoreInit = TRUE
-  )
+    }
+  })
 
   # Page servers — sport= is forwarded to every page that has any
   # sport-aware compute_*/report_*/plot_* call. Pages that are
