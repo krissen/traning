@@ -97,3 +97,62 @@ test_that("run-profile plots return empty-state when filter strips data", {
   p2 <- fetch.plot.cumulative_km(df, from = "2100-01-01", to = "2100-12-31")
   expect_s3_class(p2, "ggplot")
 })
+
+# Regression: distance_pace_era is rendered through plotly::ggplotly() in
+# page_runprofile.R (use_plotly = TRUE). plotly silently drops layers
+# from unsupported geoms (geom_hex, geom_bin2d) — the panels render
+# blank in the dashboard. Lock in geom_tile (the supported equivalent
+# we pre-bin into) so a regression to an unsupported geom is caught.
+test_that("fetch.plot.distance_pace_era converts to plotly without dropping the density layer", {
+  skip_if_not_installed("plotly")
+  df <- .fixture_run_profile()
+  p <- fetch.plot.distance_pace_era(df)
+  unsupported_warnings <- character()
+  pp <- withCallingHandlers(
+    plotly::ggplotly(p),
+    warning = function(w) {
+      if (grepl("yet to be implemented in plotly", w$message, fixed = TRUE)) {
+        unsupported_warnings <<- c(unsupported_warnings, w$message)
+      }
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_s3_class(pp, "plotly")
+  expect_length(unsupported_warnings, 0)
+})
+
+# Regression: cut()-based binning in distance_pace_era previously
+# failed with "'breaks' are not unique" when every run shared the
+# same km or pace (Codex P1 finding on PR #29). Now guarded by an
+# early return to the empty-state ggplot.
+test_that("fetch.plot.distance_pace_era handles degenerate km/pace ranges", {
+  df <- .fixture_run_profile()
+  # Force all runs to identical km — pace_range stays varied, but
+  # cut(km, ...) would explode without the guard.
+  df_same_km <- df
+  df_same_km$distance <- 8000
+  p <- fetch.plot.distance_pace_era(df_same_km)
+  expect_s3_class(p, "ggplot")
+
+  df_same_pace <- df
+  df_same_pace$avgPaceMoving <- 5.5
+  p2 <- fetch.plot.distance_pace_era(df_same_pace)
+  expect_s3_class(p2, "ggplot")
+})
+
+# Regression: season_pace season bands previously had zero height
+# when woy_data had a constant mean_pace (single week, or all weeks
+# with same average) because pad = diff(y_rng) * 0.08 collapsed to 0
+# (Copilot finding on PR #29). Floor pad ensures non-zero band height.
+test_that("fetch.plot.season_pace renders non-degenerate season bands on a single week of data", {
+  df <- .fixture_run_profile()
+  # Restrict to a single ISO week so woy_data has one row.
+  one_week <- df[format(df$sessionStart, "%Y-%V") == format(df$sessionStart[1], "%Y-%V"), ]
+  p <- fetch.plot.season_pace(one_week)
+  expect_s3_class(p, "ggplot")
+  b <- suppressMessages(ggplot2::ggplot_build(p))
+  # The annotate("rect") layer is layer 1. ymin and ymax must differ
+  # (scale_y_reverse() flips the sign so use abs()).
+  rect_data <- b$data[[1]]
+  expect_true(all(abs(rect_data$ymax - rect_data$ymin) > 0))
+})

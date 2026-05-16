@@ -1298,6 +1298,7 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
                       p25 = stats::quantile(pace, .25),
                       p75 = stats::quantile(pace, .75),
                       n = dplyr::n(), .groups = "drop")
+  if (nrow(woy_data) == 0) return(.run_profile_empty())
 
   seasons <- tibble::tribble(
     ~name,     ~start, ~end, ~fill,
@@ -1323,7 +1324,10 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
   # propagate -Inf/Inf through the reversed scale, causing rectangles
   # to fall outside the plot domain.
   y_rng <- range(woy_data$mean_pace, na.rm = TRUE)
-  pad   <- diff(y_rng) * 0.08
+  # Floor pad so degenerate ranges (single week, constant pace across
+  # weeks) still produce non-zero band height. 0.25 min/km is a
+  # sensible fallback when there's no spread to compute against.
+  pad   <- max(diff(y_rng) * 0.08, 0.25)
   y_lo  <- y_rng[1] - pad   # lower numeric value = faster pace (top of reversed axis)
   y_hi  <- y_rng[2] + pad   # higher numeric value = slower pace (bottom of reversed axis)
 
@@ -1505,6 +1509,13 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
   nbins       <- 30
   km_range    <- range(runs_era$km,   na.rm = TRUE)
   pace_range  <- range(runs_era$pace, na.rm = TRUE)
+  # Guard against degenerate ranges: when every run has the same km
+  # or the same pace, seq(..., length.out = nbins + 1) produces
+  # repeated breakpoints and cut() fails with "'breaks' are not
+  # unique". A density heatmap is meaningless in that case anyway.
+  if (diff(km_range) == 0 || diff(pace_range) == 0) {
+    return(.run_profile_empty())
+  }
   km_breaks   <- 10^seq(log10(km_range[1]),  log10(km_range[2]),  length.out = nbins + 1)
   pace_breaks <-     seq(pace_range[1],      pace_range[2],       length.out = nbins + 1)
 
