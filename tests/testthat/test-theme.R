@@ -6,7 +6,7 @@ test_that("traning_palette has expected top-level keys", {
   expect_true(exists("traning_palette"))
   expected <- c(
     "accent", "primary", "secondary", "accent_warm", "border_warm",
-    "bg_card", "status", "zones", "traffic", "traffic_bg",
+    "bg_card", "text_dark", "status", "zones", "traffic", "traffic_bg",
     "readiness_bg", "sleep_stages", "seasons", "run_profile",
     "duration_rank", "sequence"
   )

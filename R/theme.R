@@ -12,6 +12,9 @@
 #   --secondary:   #6d4c41   →  traning_palette$secondary
 #   --accent:      #8d6e63   →  traning_palette$accent
 #   --accent-warm: #c8a882   →  traning_palette$accent_warm
+#   --bg-card:     #faf8f5   →  traning_palette$bg_card
+#   --text-dark:   #2c2013   →  traning_palette$text_dark
+#   --border-warm: #d4c8b8   →  traning_palette$border_warm
 #   --status-green:#5a8a5a   →  traning_palette$status[["green"]]
 #   --status-yellow:#b8963a  →  traning_palette$status[["yellow"]]
 #   --status-red:  #a85a4a   →  traning_palette$status[["red"]]
@@ -45,6 +48,8 @@ traning_palette <- list(
   border_warm = "#d4c8b8",
   # CSS --bg-card: card background (used in Shiny mini-charts)
   bg_card = "#faf8f5",
+  # CSS --text-dark: deep brown body text
+  text_dark = "#2c2013",
 
   # CSS --status-*: muted semantics (matches bslib theme in app.R:37-44)
   status = c(
