@@ -28,9 +28,11 @@ page_runprofile_ui <- function(id) {
     # Distance × pace eras — plotly interactive bin density per era.
     # max-width caps the panel on wide screens (theme(aspect.ratio) is
     # silently dropped by plotly::ggplotly, so the cap has to live in
-    # the container rather than the ggplot theme).
+    # the container rather than the ggplot theme). Only horizontal
+    # margins are auto here; the vertical margin from .section-spacer
+    # (margin-top: 1rem in www/styles.css) is preserved.
     tags$div(class = "section-spacer",
-      style = "max-width: 1200px; margin: 0 auto;",
+      style = "max-width: 1200px; margin-left: auto; margin-right: auto;",
       metric_panel_ui(ns("dist_pace_era"),
         "Distans × tempo per epok",
         use_plotly = TRUE, plot_height = "800px", with_table = FALSE)
