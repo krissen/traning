@@ -1,5 +1,61 @@
 # tRäning — Changelog
 
+## 2026-05-15 — Health-import-manifest återställd på kailash
+
+Kailash-manifestet hade fallit ner till 19 entries efter rebooten
+2026-05-14 — alla ~60K HAE-filer hade förlorats ur manifestet och
+nästa `traning import health` skulle ha degenererat till en
+flera-timmars-full-rebuild (tester visade ca 7 minuter och ingen synlig
+progress, killed innan slutfört). Manifesten överwrite-buggen som
+ursprungligen tomde den är fixad sedan PR #26
+(`(health-export)` commit `330cf57`); det som saknades var en
+re-base av manifesten på existerande data.
+
+- **Rebuild på kedar.** Inkrementell `import_health_export()` på kedar
+  fångade upp 23 nya rader på 42 sek (kedar hade redan ett komplett
+  manifest från 2026-05-14 23:42). 73,372 rader totalt, period
+  2012-07-24 → 2026-05-15, 62,458 manifest-entries.
+- **scp till kailash.** `health_daily.RData` (323 KB) +
+  `health_import_manifest.json` (5.6 MB) shippade. Kailash-manifestet
+  växte från 19 → 62,458 entries. Receivern fortsätter att fylla på
+  inkrementellt vid nästa push.
+- **`.notify_state.json` + `health.db` gitignorade.** Båda är runtime
+  state, inte data, och blockerade commit på kailash. `health.db` är
+  också tom (0 bytes) sedan 2026-04-25 och kan tas bort separat.
+
+## 2026-05-15 — User-lib dubbletter borttagna på kailash (Fas 4b)
+
+`~/R/library/` på kailash innehöll 263 paket varav 99 hade en exakt
+versionsidentisk kopia i `/usr/lib/R/library/` (pacman-managed system-lib).
+Eftersom user-lib står först i `.libPaths()` skuggade dubbletterna
+pacman-versionen, vilket betyder att framtida `pacman -Syu`-uppdateringar
+av AUR-paketen inte skulle få effekt — man skulle fortsatt ladda gamla
+user-lib-kopian. Roadmap-Fas 4b efter R 4.5→4.6-omläggningen.
+
+- **Audit-skript.** `scripts/audit_r_libs.sh` rapporterar `system-orphan`
+  (paket pacman inte äger), `user-duplicate` (skuggar system-lib) och
+  `user-unique` (CRAN-fallback). Kör `--summary` för räkning,
+  `--list <kategori>` för parseable utdata. Lämnas i repot för
+  regelbunden kontroll innan framtida R-uppgraderingar.
+- **Audit på kailash.** 0 system-orphans (Fas 4a redan klar efter
+  R 4.6-städet), 99 user-duplicates, 164 user-uniques. Samtliga
+  dubbletter hade identisk versionsnummer i båda lib-katalogerna —
+  ingen "user newer"-konflikt att hantera manuellt.
+- **Backup + radering.** 99 katalogerna paketerades först som
+  `~/r-userlib-dupes-backup-2026-05-15.tar.gz` (112 MB) på kailash,
+  därefter `rm -rf` på dubbletterna i user-lib. Efter: 164 unika
+  paket kvar (CRAN-fallback), 0 dubbletter.
+- **Smoke-test grön.** `.libPaths()` oförändrat, core libraries
+  (rlang, ggplot2, plotly, dplyr, …) laddar nu från system-lib,
+  `devtools::load_all(\"~/dev/traning\")` OK, traning-shiny restartad
+  och svarar HTTP 200 med 100 KB HTML utan `Graphics API`-fel i
+  journalen.
+- **End-to-end via HAE-push.** Receiver-flushen 11:01:37 efter en
+  riktig HAE-push (31 metrics + 1 workout) körde igenom hela R-kedjan
+  utan fel; tier-1-triggern fyrade (Grön 84 → Gul 55) och Telegram-
+  pushen levererades. Bekräftar att hela pipelinen är funktionellt
+  identisk med pre-cleanup, bara renare under huven.
+
 ## 2026-05-15 — R-pipeline omläggning till pacman-managed på kailash
 
 Arch pacman uppgraderade `r` `4.5.3-1 → 4.6.0-1` 2026-05-14 15:56. Det är

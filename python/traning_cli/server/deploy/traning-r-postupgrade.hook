@@ -1,0 +1,27 @@
+# Pacman hook installed by deploy.sh into /etc/pacman.d/hooks/.
+# Triggers on R upgrades and marks the user-lib for rebuild.
+#
+# Background: 2026-05-14 the r 4.5.3 -> 4.6.0 upgrade left every package
+# in ~/R/library/ unloadable (ABI break: SETLENGTH, Rf_findVarInFrame
+# removed). The HAE pipeline failed silently because nothing detected
+# the stale builds until the user noticed broken Shiny graphics.
+#
+# This hook is intentionally light: it only touches a marker file, it
+# does NOT auto-rebuild. Auto-rebuild inside a pacman transaction would
+# block `pacman -Syu` for 10-30 minutes on a single-user machine and
+# offers no good failure handling. Instead, `traning doctor` reports
+# the marker on its next run (timer fires daily 03:30) and tells the
+# operator to invoke `traning doctor rebuild-stale` interactively.
+
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = r
+
+[Action]
+Description = Mark traning user R-lib as needing rebuild after R upgrade
+When = PostTransaction
+# ALPM Exec= splits arguments on whitespace — shell operators are not
+# interpreted, so a chained `cmd1 && cmd2` would silently no-op the
+# second command. Wrap in /bin/sh -c so the chained install works.
+Exec = /bin/sh -c "install -d -o krisse -g krisse /var/lib/traning && install -m 644 -o krisse -g krisse /dev/null /var/lib/traning/needs-rebuild"

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run tRäning health check daily at 03:30
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+Unit=traning-doctor.service
+
+[Install]
+WantedBy=timers.target

@@ -1,24 +1,5 @@
 # tRäning — Roadmap
 
-## Pacman-managed R-bibliotek på kailash — uppstädning
-
-Efter R 4.5→4.6-incidenten 2026-05-14 flyttades 70 R-paket från manuellt
-installerade orphans till pacman/AUR-managed system-lib. Två rensningar
-återstår:
-
-- **Fas 4a — system-lib orphans.** `/usr/lib/R/library/` har städats från
-  157 paket som pacman inte ägde, men ytterligare orphans kan dyka upp om
-  framtida `pacman -Syu` lämnar AUR-paket out-of-sync. `scripts/audit_r_libs.sh`
-  rapporterar nuläget — se `system-orphan`-listan.
-- **Fas 4b — user-lib dubbletter.** `~/R/library/` har 267 paket varav
-  ~157 är dubbletter med system-lib (legacy från före pacman-städet).
-  De skuggar pacman-versionerna eftersom user-lib är först i `.libPaths()`.
-  Bör tas bort så pacman-versionen vinner; de ~110 unika user-lib paketen
-  (CRAN-fallback för AUR-out-of-date) ska behållas.
-
-Båda är kosmetiska — pipeline fungerar idag. Värt att städa innan nästa
-R-upgrade så vi har en känd baseline.
-
 ## Deploy healthcheck & ABI-resilience
 
 Se separat design-dokument när det landar (väntar på samma PR som
@@ -76,6 +57,14 @@ den (gäller även i tidigare versioner).
   eller ett `plotly`-event-handler hade det varit en trevlighet. Stor
   refaktorering är inte motiverad. (Bilden blir också ganska utsmetad
   på bred skärm — kan vara värt en aspect-ratio-cap, men sekundärt.)
+
+## Enhetligt visuellt tema (figurer + tabeller)
+
+Plotterna har idag mix av brun temafärg och default ggplot-blått; det finns
+inget centralt `theme_traning()` eller delad palett mellan R och CSS. Behöver
+en sanningskälla för färger, ett tema-objekt som alla plotter använder, och
+en konvention för dokumenterade avvikelser. Tabeller dubbelkollas separat —
+borde redan följa CSS-temat. Detaljer: `docs/dev/visual-theme-design.md`.
 
 ## AUR-paket vi själva borde sköta
 

@@ -6,6 +6,7 @@
 #   deploy.sh secrets   SCP credentials to kailash
 #   deploy.sh tokens    SCP Garmin auth tokens to kailash
 #   deploy.sh status    Show service status and recent logs
+#   deploy.sh check     Run `traning doctor` against kailash
 #   deploy.sh all       code + secrets + tokens + enable services
 
 set -euo pipefail
@@ -41,6 +42,14 @@ cmd_code() {
         $REMOTE_CODE/python/traning_cli/server/deploy/traning-*.timer \
         /etc/systemd/system/ && \
         sudo systemctl daemon-reload"
+
+    _info "Installing pacman post-upgrade hook ..."
+    # /etc/pacman.d/hooks/ is optional on Arch; create it before
+    # dropping the file so a fresh install doesn't fail here.
+    ssh "$REMOTE" "sudo install -d -m 755 -o root -g root /etc/pacman.d/hooks && \
+        sudo install -m 644 -o root -g root \
+        $REMOTE_CODE/python/traning_cli/server/deploy/traning-r-postupgrade.hook \
+        /etc/pacman.d/hooks/"
 
     _info "Restarting traning-receiver, traning-shiny, traning-vayu ..."
     ssh "$REMOTE" "sudo systemctl restart traning-receiver.service && \
@@ -113,6 +122,20 @@ cmd_status() {
     "
 }
 
+cmd_check() {
+    _info "Running traning doctor on $REMOTE ..."
+    # Mirror the systemd unit's runtime environment (env file, R lib
+    # path, working directory) so that .libPaths() and config paths
+    # resolve identically — otherwise an unprivileged ssh invocation
+    # could read different libraries than the daily timer and report
+    # "healthy" while production is broken. set -e + ssh propagate
+    # exit code; doctor exits 1 on any check fail.
+    ssh "$REMOTE" "set -a && . /etc/traning/env && set +a && \
+        export R_LIBS_USER=/home/krisse/R/library && \
+        cd /home/krisse/dev/traning && \
+        python/.venv/bin/traning doctor run"
+}
+
 cmd_all() {
     cmd_code
     cmd_secrets
@@ -125,6 +148,7 @@ cmd_all() {
         sudo systemctl enable --now traning-garmin.timer
         sudo systemctl enable --now traning-push.timer
         sudo systemctl enable --now traning-daysummary.timer
+        sudo systemctl enable --now traning-doctor.timer
     "
 
     cmd_status
@@ -136,14 +160,16 @@ case "${1:-}" in
     secrets) cmd_secrets ;;
     tokens)  cmd_tokens ;;
     status)  cmd_status ;;
+    check)   cmd_check ;;
     all)     cmd_all ;;
     *)
-        echo "Usage: deploy.sh {code|secrets|tokens|status|all}"
+        echo "Usage: deploy.sh {code|secrets|tokens|status|check|all}"
         echo ""
         echo "  code      Pull code, install deps, restart services"
         echo "  secrets   SCP credentials (traning-env.local) to kailash"
         echo "  tokens    SCP Garmin auth tokens to kailash"
         echo "  status    Show service status and recent logs"
+        echo "  check     Run \`traning doctor\` against kailash"
         echo "  all       code + secrets + tokens + enable all services"
         exit 1
         ;;

@@ -885,6 +885,40 @@ def insight_day(ref_date, push, force):
     click.echo(msg)
 
 
+# -- doctor -----------------------------------------------------------------
+
+@cli.group(invoke_without_command=True)
+@click.pass_context
+def doctor(ctx):
+    """Health checks for the traning deployment."""
+    if ctx.invoked_subcommand is None:
+        ctx.invoke(doctor_run)
+
+
+_DOCTOR_CHECKS = ("all", "packages", "services", "configs")
+
+
+@doctor.command(name="run")
+@click.option("--check", "checks", default=("all",), multiple=True,
+              type=click.Choice(_DOCTOR_CHECKS),
+              help="Subset of checks to run (repeatable, default: all)")
+@click.option("--json", "as_json", is_flag=True,
+              help="Emit results as JSON instead of human-readable text")
+def doctor_run(checks, as_json):
+    """Run deployment health checks. Exits 0 if all pass, 1 otherwise."""
+    spec = "all" if "all" in checks else ",".join(checks)
+    cmd = ["Rscript", str(CLI_R), "--doctor", f"--doctor-check={spec}"]
+    if as_json:
+        cmd.append("--doctor-json")
+    _exec(cmd)
+
+
+@doctor.command(name="rebuild-stale")
+def doctor_rebuild():
+    """Rebuild user-lib R packages built against a previous R version."""
+    _exec(["Rscript", str(CLI_R), "--rebuild-stale"])
+
+
 # -- mcp --------------------------------------------------------------------
 
 @cli.command()

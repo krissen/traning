@@ -20,7 +20,8 @@ Imports:
     scales,
     viridisLite,
     jsonlite,
-    optparse
+    optparse,
+    digest
 Suggests:
     shiny,
     bslib (>= 0.6.0),

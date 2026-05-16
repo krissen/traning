@@ -1,0 +1,11 @@
+[Unit]
+Description=Notify Home Assistant on failure of %i
+
+[Service]
+Type=oneshot
+User=krisse
+EnvironmentFile=/etc/traning/env
+WorkingDirectory=/home/krisse/dev/traning
+ExecStart=/home/krisse/dev/traning/python/.venv/bin/python -m traning_cli.server.notify_cli failure %i
+StandardOutput=journal
+StandardError=journal
