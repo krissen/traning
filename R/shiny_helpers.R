@@ -102,3 +102,25 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
     health_daily    = health_daily
   )
 }
+
+# Filtrera readiness-rader till ett datumspann. NULL-gräns = öppen.
+# Privat (dot-prefix) — exportPattern("^[^\\.]") i NAMESPACE hoppar
+# över dot-funktioner. Konsumeras av `mod_overview.R` mini_readiness.
+.filter_readiness_range <- function(rd, from = NULL, to = NULL) {
+  if (is.null(rd) || nrow(rd) == 0) return(rd)
+  out <- rd
+  if (!is.null(from)) out <- out[!is.na(out$date) & out$date >= from, , drop = FALSE]
+  if (!is.null(to))   out <- out[!is.na(out$date) & out$date <= to,   , drop = FALSE]
+  out
+}
+
+# Filtrera summaries (löppass) till ett datumspann via sessionStart.
+# NULL-gräns = öppen. Privat — se `.filter_readiness_range`.
+.filter_running_range <- function(summaries, from = NULL, to = NULL) {
+  if (is.null(summaries) || nrow(summaries) == 0) return(summaries)
+  d <- as.Date(summaries$sessionStart)
+  keep <- rep(TRUE, length(d))
+  if (!is.null(from)) keep <- keep & !is.na(d) & d >= from
+  if (!is.null(to))   keep <- keep & !is.na(d) & d <= to
+  summaries[keep, , drop = FALSE]
+}

@@ -18,7 +18,7 @@ overview_ui <- function(id) {
     bslib::layout_column_wrap(width = 1/2, class = "section-spacer",
       bslib::card(
         full_screen = TRUE,
-        bslib::card_header("Beredskap (14 dagar)"),
+        bslib::card_header("Beredskap"),
         bslib::card_body(
           fillable = FALSE,
           shiny::plotOutput(ns("mini_readiness"), height = "220px")
@@ -26,7 +26,7 @@ overview_ui <- function(id) {
       ),
       bslib::card(
         full_screen = TRUE,
-        bslib::card_header("Veckovolym (12 veckor)"),
+        bslib::card_header("Veckovolym"),
         bslib::card_body(
           fillable = FALSE,
           plotly::plotlyOutput(ns("mini_volume"), height = "220px")
@@ -59,6 +59,13 @@ overview_server <- function(id, summaries, health_daily, myruns,
   force(summaries)
   force(health_daily)
   shiny::moduleServer(id, function(input, output, session) {
+
+    # `dates()` styr de två mini-graferna nedan. Värde-boxarna avviker
+    # medvetet: de visar senaste tillgängliga snapshot (dvs. dagens
+    # läge för beredskap/CTL/TSB/ACWR) oberoende av navbar-presetet.
+    # Se docs/dev/filter-consistency.md.
+    dr_from <- shiny::reactive(dates()$from)
+    dr_to   <- shiny::reactive(dates()$to)
 
     # --- Shared computed data (cached per session) ---
     pmc_data <- shiny::reactive({
@@ -141,12 +148,12 @@ overview_server <- function(id, summaries, health_daily, myruns,
         bsicons::bs_icon("activity"))
     })
 
-    # --- Mini readiness chart (14 days) ---
+    # --- Mini readiness chart (följer globalt datumspann) ---
     output$mini_readiness <- shiny::renderPlot({
       rd <- readiness_data()
       shiny::req(rd)
-      recent <- rd |>
-        dplyr::filter(date >= Sys.Date() - 14, !is.na(readiness_score))
+      recent <- .filter_readiness_range(rd, dr_from(), dr_to()) |>
+        dplyr::filter(!is.na(readiness_score))
       shiny::req(nrow(recent) > 0)
       ggplot2::ggplot(recent, ggplot2::aes(date, readiness_score)) +
         ggplot2::geom_rect(ggplot2::aes(xmin = min(date), xmax = max(date),
@@ -166,13 +173,13 @@ overview_server <- function(id, summaries, health_daily, myruns,
         )
     })
 
-    # --- Mini volume chart (12 weeks) ---
+    # --- Mini volume chart (följer globalt datumspann) ---
     output$mini_volume <- plotly::renderPlotly({
       running <- summaries |>
-        dplyr::filter(
-          stringr::str_detect(sport, "running"),
-          sessionStart >= Sys.Date() - 84
-        ) |>
+        dplyr::filter(stringr::str_detect(sport, "running"))
+      running <- .filter_running_range(running, dr_from(), dr_to())
+      shiny::req(nrow(running) > 0)
+      running <- running |>
         dplyr::mutate(
           week = lubridate::floor_date(as.Date(sessionStart), "week",
             week_start = 1)
