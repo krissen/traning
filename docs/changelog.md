@@ -50,11 +50,6 @@ visade stale data efter import (observerat 2026-05-15 ~21:00) är åtgärdat.
   importerar bara den pushade fil-listan). Texten efter backfill
   påminner nu om kommandot och om att dashboarden visar reload-notis
   när den körningen är klar.
-- **Bot-review-loop:** 5 ronder (Codex + Copilot). Round 1: 7 fynd
-  åtgärdade; round 2: 13 fynd inkl. race-window, notification-stacking,
-  decoupling cache-write-per-session; round 3: 6 fynd inkl. C-P1
-  decoupling sport-validering; round 4: 2 fynd → arkitekturell fix
-  via ny `read_only`-parameter; round 5: 0 nya, break-point.
 
 ## 2026-05-16 — `traning doctor` health-check + ABI-resilience landat
 
