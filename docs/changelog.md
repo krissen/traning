@@ -19,18 +19,23 @@ visade stale data efter import (observerat 2026-05-15 ~21:00) är åtgärdat.
   användaren får då en ny session med färska data. Max latens ~7 s, väl
   under acceptanskriteriets 30 s-budget.
 - **Inga Python-ändringar.** `save_atomic()` (R/utils.R) gör redan atomär
-  rename så watchern är race-fri, och `_flush_pending_workouts()` /
-  `_flush_pending_health()` / `_run_import_garmin()` skriver alla via
-  `cli.R --import` som touchar `summaries.RData` (trailing write i
-  `my_dbs_save()` efter `myruns.RData`).
+  rename så watchern är race-fri. Skrivflöden som triggar watchern:
+  `_flush_pending_workouts()` och `_run_import_garmin()` shellar
+  `cli.R --import` som via `my_dbs_save()` skriver `myruns.RData`
+  följt av `summaries.RData` (trailing write); `_flush_pending_health()`
+  går via `notify_helper.R` som anropar `import_health_export()` →
+  `save_health_data()` och skriver `health_daily.RData`. Watchern
+  täcker bägge filerna.
 - **Tester:** 10 nya assertions i `test-shiny-helpers.R` för
   `load_session_data()` (returstruktur, byte-för-byte-match mot
   `my_dbs_load()`, missing-cache-resilience, reentrans, env-var-validering).
   Full suite: 936/936.
-- **page_import.R-cleanup:** Den manuella uppmaningen efter
-  Withings-backfill ("Kör `traning import health --force`") nedgraderas
-  till en informationsruta som nämner att dashboarden uppdateras
-  automatiskt när importen är klar.
+- **page_import.R-precisering:** Withings-backfill skriver enbart
+  canonical JSON; för att få in dem i `health_daily.RData` krävs
+  fortfarande `traning import health --force` (receiverns flush
+  importerar bara den pushade fil-listan). Texten efter backfill
+  påminner nu om kommandot men nämner att dashboarden uppdateras
+  automatiskt när den körningen är klar.
 
 ## 2026-05-16 — `traning doctor` health-check + ABI-resilience landat
 

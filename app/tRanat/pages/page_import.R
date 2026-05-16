@@ -218,10 +218,12 @@ page_import_server <- function(id) {
           paste0("Klart — ", total, " nya filer skrivna")
         ),
         bslib::card_body(
-          shiny::p("Filerna importeras automatiskt vid nästa ",
-                   "health-flush — eller direkt via ",
+          shiny::p("Kör ",
                    shiny::code("traning import health --force"),
-                   ". Dashboarden uppdateras när importen är klar.")
+                   " för att läsa in dem i R-cachen — receiverns ",
+                   "automatiska health-flush importerar bara filer ",
+                   "som pushas via HAE. Dashboarden uppdateras ",
+                   "automatiskt när importen är klar.")
         )
       )
     })
