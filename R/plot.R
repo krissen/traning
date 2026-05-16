@@ -1340,17 +1340,23 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
                           colour = "#4682B4", fill = "#4682B4",
                           alpha = 0.18) +
+    # Anchor labels at an explicit data y near the band top (= y_lo,
+    # the faster-pace edge — top of the panel under scale_y_reverse).
+    # Using y = Inf here would land them at the bottom of the
+    # reversed panel instead of the top.
     ggplot2::geom_text(data = season_labels, inherit.aes = FALSE,
-      ggplot2::aes(x = x, y = Inf, label = name),
-      vjust = 1.6, colour = "grey40", size = 3.2,
-      fontface = "italic") +
+      ggplot2::aes(x = x, y = y_lo + (y_hi - y_lo) * 0.05, label = name),
+      colour = "grey40", size = 3.2, fontface = "italic") +
     ggplot2::scale_y_reverse() +
     ggplot2::scale_x_continuous(breaks = woy_breaks, labels = woy_labels,
                                   expand = c(0.01, 0.01)) +
-    # ylim locks the panel to the season-band extent so the
-    # geom_smooth() CI ribbon (which can extend past mean_pace) does
-    # not leave unshaded gaps above or below the bands.
-    ggplot2::coord_cartesian(ylim = c(y_lo, y_hi), clip = "off") +
+    # ylim locks the panel to the season-band extent; expand = FALSE
+    # disables the default 5% padding so the bands fully reach the
+    # panel edge (no thin unshaded strips at top/bottom). clip = "off"
+    # is kept for the loess CI ribbon, which is allowed to extend
+    # outside the band in cases where it is wider than mean_pace ± pad.
+    ggplot2::coord_cartesian(ylim = c(y_lo, y_hi),
+                             expand = FALSE, clip = "off") +
     ggplot2::labs(title = "S\u00e4songsm\u00f6nster i tempo",
                    subtitle = "Veckans medeltempo \u00f6ver alla \u00e5r. Bakgrund = \u00e5rstid; kurva = loess.",
                    x = NULL, y = "Tempo (min/km)") +
