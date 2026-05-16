@@ -507,9 +507,12 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
                        linewidth = 0.7, na.rm = TRUE) +
     ggplot2::geom_line(ggplot2::aes(y = ctl, colour = "CTL"),
                        linewidth = 0.7, na.rm = TRUE) +
+    # AVVIKELSE FRÅN TEMA: Allen/Coggan PMC convention — see plot.R
+    # CTL/ATL legend for rationale. Saturated zones$Z1 / traffic_bg$red
+    # give the high contrast that two overlapping series need.
     ggplot2::scale_colour_manual(values = c(
-      "ATL" = traning_palette$status[["red"]],
-      "CTL" = traning_palette$status[["blue"]])) +
+      "ATL" = traning_palette$traffic_bg[["red"]],
+      "CTL" = traning_palette$zones[["Z1"]])) +
     date_scale +
     ggplot2::labs(title = "Tr\u00e4ningsbelastning", y = "TRIMP",
                   colour = NULL) +

@@ -605,10 +605,15 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
       ggplot2::aes(x = date, y = value, colour = metrik),
       linewidth = 0.8, na.rm = TRUE
     ) +
+    # AVVIKELSE FRÅN TEMA: CTL/ATL is the Allen/Coggan PMC convention;
+    # both series overlap so they need high-contrast colours. status$*
+    # (muted earth tones) made the two lines indistinguishable in the
+    # combined panel. Use zones$Z1 (saturated blue) for the fitness
+    # baseline and traffic_bg$red for the fatigue alarm.
     ggplot2::scale_colour_manual(
       name   = NULL,
-      values = c("Fitness (CTL)" = traning_palette$status[["blue"]],
-                 "Trötthet (ATL)" = traning_palette$status[["red"]])
+      values = c("Fitness (CTL)" = traning_palette$zones[["Z1"]],
+                 "Trötthet (ATL)" = traning_palette$traffic_bg[["red"]])
     ) +
     # Panel 2: TSB coloured by zone
     ggplot2::geom_col(
