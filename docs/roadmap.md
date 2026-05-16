@@ -1,42 +1,35 @@
 # tRäning — Roadmap
 
-## Deploy healthcheck & ABI-resilience
+## Shiny-konsistens efter import
 
-Se separat design-dokument när det landar (väntar på samma PR som
-implementationen). Kort sammanfattat:
+Observerat 2026-05-15 ca 21:00: dagens andra löppass importerades och
+aviseringen om importen kom fram, men `tRanat`-dashboarden visade
+fortfarande bara dagens första pass när den öppnades senare på kvällen.
+Dagsformen stod också kvar på morgonens tidigaste värde (~90) trots
+att den hade reviderats lägre under dagen. Båda är samma symptom:
+**Shiny ser inte den senaste cachen**.
 
-- `traning doctor` CLI-subkommando som verifierar paths, library-load,
-  Python-venv-imports.
-- `/etc/pacman.d/hooks/traning-r-postupgrade.hook` som auto-rebuildar
-  user-lib paket efter R-upgrade (förebygger en återupplevelse av
-  2026-05-14-incidenten).
-- `traning-doctor.timer` som kör doctor dagligen 03:30 och notifierar
-  vid icke-noll exit.
+Hypotes: import-pipelinen avslutar sin "klar"-signal vid avisering
+skickad, men Shiny-processen läser RData-cachen vid app-start (eller
+sällan därefter), så fram tills nästa restart visar dashboarden stale
+data. Aviseringen är då ärligt felaktig — den lovar att senaste
+informationen finns på sidan, men gör det inte.
 
-**Krav på doctor-checks som måste finnas innan PR-en landar** (lärt av
-2026-05-14/15-incidenterna):
+**Föreslagna åtgärder:**
 
-- **Stale-build-detection.** Iterera `installed.packages()` (både
-  user-lib och system-lib) och flagga varje paket vars `Built`-tag inte
-  börjar med samma `R X.Y` som `R.version`. När R-major-bumpas och
-  något paket är kvar på gamla R-versionen ger Shiny *Graphics API
-  version mismatch* på första render — buggen som kostade oss två
-  fixeringar i sessionen. Hade fångats direkt vid en doctor-körning.
-- **Service-checks.** Verifiera att `traning-receiver`, `traning-shiny`
-  och `caddy` är aktiva. Shiny ska dessutom svara HTTP 200 på
-  `http://127.0.0.1:8423/`. Caddy är inte traning-ägd men hela
-  Tailscale-ingressen beror på den (failade vid boot 2026-05-14 pga
-  service-ordningen mot tailscaled).
-- **Config-installation-checks.** Att en fil ligger i repot betyder
-  inte att den är installerad på kailash. Verifiera att
-  `/etc/pacman.d/hooks/traning-r-postupgrade.hook` och
-  `/etc/systemd/system/caddy.service.d/override.conf` existerar och
-  har förväntat innehåll.
-
-**Tester:** stale-build-detection enhetstestas mot mockad
-`installed.packages()`-output. Service-/config-checks testas
-integration-style via `bash deploy.sh check` mot kailash; de är
-inherent svåra att unitt-testa.
+- Identifiera om Shiny-servern faktiskt re-läser RData efter import
+  eller om den cachar i minnet. `reactiveFileReader` / `invalidateLater`
+  i `app/tRanat/server.R` finns redan på vissa filer — verifiera
+  täckningen mot ALLA filer importen kan röra (summaries, myruns,
+  health_daily, day_summaries, readiness-cache, …).
+- Lägg in en explicit "post-import flush"-steg som rörselar shinyns
+  reactiveFileReader (t.ex. genom att touch:a cache-fil eller skicka
+  en notify till loopback). Alternativt restart:a `traning-shiny`
+  efter större importer — men det är tungt och stör pågående
+  sessioner.
+- Acceptanskriterium: efter en lyckad `traning import health` eller
+  `traning fetch garmin` ska en omladdad dashboard på samma host visa
+  den nya datan inom 30 sekunder utan service-restart.
 
 ## Dashboard — observerade rendering-buggar
 

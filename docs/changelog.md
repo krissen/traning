@@ -1,5 +1,41 @@
 # tRäning — Changelog
 
+## 2026-05-16 — `traning doctor` health-check + ABI-resilience landat
+
+PR #27 implementerar roadmap-itemet "Deploy healthcheck & ABI-resilience"
+som adresserar grundorsakerna till 2026-05-14-incidenten (R 4.5→4.6
+ABI-bump som silent failade hela pipelinen).
+
+- **`traning doctor` CLI** (Python Click + R) med tre checks: stale
+  R-paket-builds (jämför `Built`-tag mot current `R X.Y`), service
+  liveness (`traning-receiver`, `traning-shiny`, `caddy` + Shiny
+  HTTP 200), och pinnade SHA-256-digests av pacman-hooken +
+  caddy-overriden. Subkommandon: `run`, `rebuild-stale`. Strukturerad
+  JSON-output (`--json`) för systemd-konsumtion; human-läsbar default.
+- **`traning-doctor.timer`** kör 03:30 dagligen, **OnFailure** triggar
+  ny `traning-notify@.service` template-unit som forwarder till Home
+  Assistant via `notify_cli.py` (återanvändbar för andra timers).
+  `warn` räknas som not-ok så digest-drift når Telegram.
+- **Pacman-hook** `traning-r-postupgrade.hook` skapar
+  `/var/lib/traning/needs-rebuild` post-upgrade av `r`-paketet via
+  `/bin/sh -c` (ALPM Exec splittar bara whitespace, ingen shell).
+  Hookens marker triggas av doctor i nästa körning som föreslår
+  `traning doctor rebuild-stale`.
+- **`deploy.sh check`** kör doctor remote med samma env som
+  systemd-unit:en (env-fil, R_LIBS_USER, cwd) så manuella checks ser
+  identisk `.libPaths()`.
+- **Tester:** 40 nya (29 unit + 11 CLI-smoke + warn-semantik); full
+  suite 926/926. Bot review-loop över 6 rundor: 8 nya substantiva
+  fynd adresserade (privatiserade konstanter, r_version-normalisering,
+  HTTP 200 explicit, ssh stderr-capture, hook ownership, hooks-dir
+  install, paste-target rename, helper validation).
+- **End-to-end på kailash:** deploy.sh code + enable timer + check
+  gröna. Första körningen fångade ett stale-built `traning`-paket i
+  user-lib (kvar från devtools::install historiskt) som städades —
+  vilket var precis det fall doctor är till för.
+
+Roadmap-sektionen "Deploy healthcheck & ABI-resilience" borttagen.
+
 ## 2026-05-15 — Health-import-manifest återställd på kailash
 
 Kailash-manifestet hade fallit ner till 19 entries efter rebooten
