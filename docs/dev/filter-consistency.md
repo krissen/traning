@@ -16,6 +16,20 @@ dr_to   <- shiny::reactive(dates()$to)
 …och skickar in dem i plot-/report-funktioner (`from = dr_from(),
 to = dr_to()`). NULL/NULL ("Allt") motsvarar ingen filtrering.
 
+### Halvöppet intervall
+
+`from`/`to` tolkas som ett **halvöppet** intervall `[from, to)` —
+`from` är inklusiv, `to` är exklusiv. Konventionen är genomgående i
+paketet: se `.filter_date_range()` (`R/plot.R:54`) och
+`filter_by_daterange()` (`R/daterange.R:115`). De privata helpers
+som driver Översiktens mini-grafer (`.filter_readiness_range`,
+`.filter_running_range` i `R/shiny_helpers.R`) följer samma regel.
+
+Konsekvens: presets som sätter `to = Sys.Date()` (t.ex. "7 dagar"
+→ `from = today - 7, to = today`) ger exakt 7 kalenderdagar och
+**exkluderar** dagens (pågående) datum. Nya filter måste använda
+`< to`, aldrig `<= to`, för att undvika off-by-one mot etiketten.
+
 ## Tillåtna avvikelser
 
 Varje avvikelse kräver (1) inline-doc-kommentar direkt i koden som

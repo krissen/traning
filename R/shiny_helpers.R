@@ -103,24 +103,27 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
   )
 }
 
-# Filtrera readiness-rader till ett datumspann. NULL-gräns = öppen.
+# Filtrera readiness-rader till ett datumspann. Halvöppet intervall
+# [from, to) i linje med `.filter_date_range()` (R/plot.R) och
+# `filter_by_daterange()` (R/daterange.R) — `to = Sys.Date()` betyder
+# alltså "fram t.o.m. igår". NULL-gräns = öppen åt det hållet.
 # Privat (dot-prefix) — exportPattern("^[^\\.]") i NAMESPACE hoppar
 # över dot-funktioner. Konsumeras av `mod_overview.R` mini_readiness.
 .filter_readiness_range <- function(rd, from = NULL, to = NULL) {
   if (is.null(rd) || nrow(rd) == 0) return(rd)
   out <- rd
   if (!is.null(from)) out <- out[!is.na(out$date) & out$date >= from, , drop = FALSE]
-  if (!is.null(to))   out <- out[!is.na(out$date) & out$date <= to,   , drop = FALSE]
+  if (!is.null(to))   out <- out[!is.na(out$date) & out$date <  to,   , drop = FALSE]
   out
 }
 
 # Filtrera summaries (löppass) till ett datumspann via sessionStart.
-# NULL-gräns = öppen. Privat — se `.filter_readiness_range`.
+# Halvöppet intervall [from, to) — se `.filter_readiness_range`.
 .filter_running_range <- function(summaries, from = NULL, to = NULL) {
   if (is.null(summaries) || nrow(summaries) == 0) return(summaries)
   d <- as.Date(summaries$sessionStart)
   keep <- rep(TRUE, length(d))
   if (!is.null(from)) keep <- keep & !is.na(d) & d >= from
-  if (!is.null(to))   keep <- keep & !is.na(d) & d <= to
+  if (!is.null(to))   keep <- keep & !is.na(d) & d <  to
   summaries[keep, , drop = FALSE]
 }
