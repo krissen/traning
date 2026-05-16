@@ -48,7 +48,7 @@ fetch.plot.resting_hr <- function(health_daily, summaries = NULL,
 
   if (nrow(rhr) >= 5) {
     p <- p + ggplot2::geom_smooth(method = "loess", span = loess_span,
-                                   se = FALSE, colour = "firebrick",
+                                   se = FALSE, colour = traning_palette$status[["red"]],
                                    linewidth = 1)
   }
 
@@ -56,11 +56,11 @@ fetch.plot.resting_hr <- function(health_daily, summaries = NULL,
     p <- p +
       ggplot2::geom_point(data = annual,
                           ggplot2::aes(x = mid_date, y = mean_rhr),
-                          size = 3, colour = "firebrick", shape = 18) +
+                          size = 3, colour = traning_palette$status[["red"]], shape = 18) +
       ggplot2::geom_text(data = annual,
                          ggplot2::aes(x = mid_date, y = mean_rhr,
                                       label = round(mean_rhr, 0)),
-                         vjust = -1, size = 3, colour = "firebrick")
+                         vjust = -1, size = 3, colour = traning_palette$status[["red"]])
   }
 
   p <- p +
@@ -115,11 +115,11 @@ fetch.plot.hrv <- function(health_daily, from = NULL, to = NULL) {
 
   p <- ggplot2::ggplot(hrv, ggplot2::aes(x = date)) +
     ggplot2::geom_ribbon(ggplot2::aes(ymin = lower, ymax = upper),
-                         fill = "steelblue", alpha = 0.2, na.rm = TRUE) +
+                         fill = traning_palette$status[["blue"]], alpha = 0.2, na.rm = TRUE) +
     ggplot2::geom_point(ggplot2::aes(y = ln_rmssd),
                         alpha = pt_alpha, size = pt_size, colour = "grey50") +
     ggplot2::geom_line(ggplot2::aes(y = roll_mean),
-                       colour = "steelblue", linewidth = 0.8, na.rm = TRUE) +
+                       colour = traning_palette$status[["blue"]], linewidth = 0.8, na.rm = TRUE) +
     .adaptive_date_scale(span_days) +
     ggplot2::labs(title = "HRV — Ln(RMSSD) med 7-dagars baseline",
                   x = NULL, y = "Ln(RMSSD)") +
@@ -171,11 +171,12 @@ fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
     "sleep_core"  = "Kärnsömn",
     "sleep_awake" = "Vaken"
   )
+  # Sleep stages: see traning_palette$sleep_stages.
   stage_colours <- c(
-    "Djupsömn"  = "#1a3a5c",
-    "REM"       = "#4a90d9",
-    "Kärnsömn"  = "#7fb3e0",
-    "Vaken"     = "#d9534f"
+    "Djupsömn"  = traning_palette$sleep_stages[["deep"]],
+    "REM"       = traning_palette$sleep_stages[["rem"]],
+    "Kärnsömn"  = traning_palette$sleep_stages[["core"]],
+    "Vaken"     = traning_palette$sleep_stages[["awake"]]
   )
 
   stages$stage <- factor(stage_labels[stages$metric],
@@ -293,9 +294,16 @@ fetch.plot.vo2max <- function(health_daily, summaries = NULL,
 
   p <- ggplot2::ggplot()
 
+  # AVVIKELSE FRÅN TEMA: Wong colorblind-safe palette for the
+  # source-distinction series (Apple Watch vs Garmin). #E69F00 (orange)
+  # and #56B4E9 (sky blue) are deliberately chosen for accessibility,
+  # not aesthetics. Two browns would smear together in overlap regions.
+  aw_smooth_colour <- "#E69F00"
+  garmin_smooth_colour <- "#56B4E9"
+
   # Apple Watch series
   if (nrow(vo2) > 0) {
-    aw_colour <- if (has_both) "#E69F00" else "grey50"
+    aw_colour <- if (has_both) aw_smooth_colour else "grey50"
     p <- p +
       ggplot2::geom_point(data = vo2,
                           ggplot2::aes(x = date, y = value, colour = "Apple Watch"),
@@ -304,7 +312,7 @@ fetch.plot.vo2max <- function(health_daily, summaries = NULL,
       p <- p + ggplot2::geom_smooth(data = vo2,
                                      ggplot2::aes(x = date, y = value),
                                      method = "loess", span = loess_span,
-                                     se = FALSE, colour = "#E69F00",
+                                     se = FALSE, colour = aw_smooth_colour,
                                      linewidth = 1)
     }
   }
@@ -321,7 +329,7 @@ fetch.plot.vo2max <- function(health_daily, summaries = NULL,
       p <- p + ggplot2::geom_smooth(data = garmin_vo2,
                                      ggplot2::aes(x = date, y = value),
                                      method = "loess", span = loess_span,
-                                     se = FALSE, colour = "#56B4E9",
+                                     se = FALSE, colour = garmin_smooth_colour,
                                      linewidth = 1)
     }
   }
@@ -343,7 +351,8 @@ fetch.plot.vo2max <- function(health_daily, summaries = NULL,
   if (has_both) {
     p <- p +
       ggplot2::scale_colour_manual(
-        values = c("Apple Watch" = "#E69F00", "Garmin" = "#56B4E9"),
+        values = c("Apple Watch" = aw_smooth_colour,
+                   "Garmin" = garmin_smooth_colour),
         name = NULL
       ) +
       ggplot2::theme(legend.position = "bottom")
@@ -422,20 +431,27 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
                      angle = if (span_days <= 60) 45 else 0,
                      hjust = if (span_days <= 60) 1 else 0.5))
 
-  # Panel 1: Readiness score
+  # Panel 1: Readiness score (traffic-light bands + matching point colour)
+  readiness_green  <- "#4CAF50"
+  readiness_yellow <- "#FFC107"
+  readiness_red    <- "#F44336"
+  # AVVIKELSE FRÅN TEMA: this dashboard panel uses the brighter
+  # Material readiness palette (matches the on-device Garmin watch UI
+  # that owns the readiness_status categorisation); the muted
+  # traning_palette$traffic_bg would understate the alarm state.
   r_score <- r |> dplyr::filter(!is.na(readiness_score))
   p1 <- ggplot2::ggplot(r_score, ggplot2::aes(x = date, y = readiness_score)) +
     ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
-                      ymin = 70, ymax = 100, fill = "#4CAF50", alpha = 0.1) +
+                      ymin = 70, ymax = 100, fill = readiness_green, alpha = 0.1) +
     ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
-                      ymin = 40, ymax = 70, fill = "#FFC107", alpha = 0.1) +
+                      ymin = 40, ymax = 70, fill = readiness_yellow, alpha = 0.1) +
     ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
-                      ymin = 0, ymax = 40, fill = "#F44336", alpha = 0.1) +
+                      ymin = 0, ymax = 40, fill = readiness_red, alpha = 0.1) +
     ggplot2::geom_line(colour = "grey40", linewidth = 0.4) +
     ggplot2::geom_point(ggplot2::aes(colour = readiness_status), size = pt_size) +
     ggplot2::scale_colour_manual(
-      values = c("Grön" = "#4CAF50", "Gul" = "#FFC107",
-                 "Röd" = "#F44336"),
+      values = c("Grön" = readiness_green, "Gul" = readiness_yellow,
+                 "Röd" = readiness_red),
       guide = "none"
     ) +
     ggplot2::geom_hline(yintercept = c(40, 70), linetype = "dashed",
@@ -451,16 +467,17 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
     ggplot2::geom_ribbon(
       ggplot2::aes(ymin = ln_rmssd_7d_mean - ln_rmssd_7d_sd,
                    ymax = ln_rmssd_7d_mean + ln_rmssd_7d_sd),
-      fill = "steelblue", alpha = 0.2, na.rm = TRUE) +
+      fill = traning_palette$status[["blue"]], alpha = 0.2, na.rm = TRUE) +
     ggplot2::geom_point(ggplot2::aes(y = ln_rmssd),
                         alpha = if (span_days <= 30) 0.5 else 0.3,
                         size = if (span_days <= 30) 2 else 0.8,
                         colour = "grey50") +
     ggplot2::geom_line(ggplot2::aes(y = ln_rmssd_7d_mean),
-                       colour = "steelblue", linewidth = 0.7, na.rm = TRUE) +
+                       colour = traning_palette$status[["blue"]], linewidth = 0.7, na.rm = TRUE) +
     ggplot2::geom_point(
       data = r_hrv |> dplyr::filter(hrv_flag),
-      ggplot2::aes(y = ln_rmssd), colour = "red", shape = 17, size = 2) +
+      ggplot2::aes(y = ln_rmssd), colour = traning_palette$status[["red"]],
+      shape = 17, size = 2) +
     date_scale +
     ggplot2::labs(title = "HRV — Ln(RMSSD)", y = "Ln(RMSSD)") +
     theme_panel
@@ -472,7 +489,8 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
       ggplot2::aes(fill = ifelse(sleep_flag, "Flaggad", "Normal")),
       width = 0.8, alpha = 0.7) +
     ggplot2::scale_fill_manual(
-      values = c("Normal" = "steelblue", "Flaggad" = "#F44336"),
+      values = c("Normal" = traning_palette$status[["blue"]],
+                 "Flaggad" = readiness_red),
       guide = "none") +
     ggplot2::geom_hline(yintercept = 7, linetype = "dashed",
                         colour = "darkgreen", alpha = 0.5) +
@@ -489,7 +507,9 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
                        linewidth = 0.7, na.rm = TRUE) +
     ggplot2::geom_line(ggplot2::aes(y = ctl, colour = "CTL"),
                        linewidth = 0.7, na.rm = TRUE) +
-    ggplot2::scale_colour_manual(values = c("ATL" = "tomato", "CTL" = "steelblue")) +
+    ggplot2::scale_colour_manual(values = c(
+      "ATL" = traning_palette$status[["red"]],
+      "CTL" = traning_palette$status[["blue"]])) +
     date_scale +
     ggplot2::labs(title = "Tr\u00e4ningsbelastning", y = "TRIMP",
                   colour = NULL) +
