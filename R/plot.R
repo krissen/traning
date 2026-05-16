@@ -1382,22 +1382,28 @@ fetch.plot.heatmap_km <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_tile(colour = "white", linewidth = 0.1) +
     ggplot2::geom_vline(xintercept = quarter_gaps + 0.5,
                          colour = "white", linewidth = 1.5) +
-    ggplot2::annotate("text", x = c(7, 19, 32, 45),
-      y = length(unique(heatmap_full$year)) + 0.6,
-      label = quarter_labels,
-      colour = "grey35", fontface = "bold", size = 3.4) +
     ggplot2::scale_fill_viridis_c(option = "viridis", trans = "sqrt",
                                     na.value = "grey88", name = "Km/vecka") +
-    ggplot2::scale_x_continuous(breaks = c(1, 13, 26, 39, 52),
-                                  labels = c("V1", "V13", "V26", "V39", "V52"),
-                                  expand = c(0.005, 0.005)) +
-    ggplot2::coord_cartesian(clip = "off") +
+    ggplot2::scale_x_continuous(
+      breaks = c(1, 13, 26, 39, 52),
+      labels = c("V1", "V13", "V26", "V39", "V52"),
+      expand = c(0.005, 0.005),
+      sec.axis = ggplot2::dup_axis(
+        breaks = c(7, 19, 32, 45),
+        labels = quarter_labels,
+        name   = NULL
+      )
+    ) +
     ggplot2::labs(title = "Veckokilometer per \u00e5r",
                    subtitle = "Cellf\u00e4rg = veckans totala km. Saknad data = gr\u00e5.",
                    x = NULL, y = NULL) +
     .theme_run_profile() +
-    ggplot2::theme(axis.text.y = ggplot2::element_text(size = 8),
-                    plot.margin = ggplot2::margin(28, 12, 12, 12))
+    ggplot2::theme(
+      axis.text.y      = ggplot2::element_text(size = 8),
+      axis.text.x.top  = ggplot2::element_text(face = "bold", colour = "grey35"),
+      axis.ticks.x.top = ggplot2::element_blank(),
+      plot.margin      = ggplot2::margin(12, 12, 12, 12)
+    )
 }
 
 #' Kumulativ km \u2014 innevarande \u00e5r vs historik
