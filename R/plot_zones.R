@@ -135,10 +135,12 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
       )
     )
 
+  # Seiler 3-zone palette uses traffic_bg semantics (green = easy,
+  # yellow = threshold, red = high). See traning_palette$traffic_bg.
   zon_farger <- c(
-    "L\u00e5gintensiv (Z1)" = "#27ae60",
-    "Tr\u00f6skel (Z2)"     = "#f1c40f",
-    "H\u00f6gintensiv (Z3)" = "#e74c3c"
+    "L\u00e5gintensiv (Z1)" = traning_palette$traffic_bg[["green"]],
+    "Tr\u00f6skel (Z2)"     = traning_palette$traffic_bg[["yellow"]],
+    "H\u00f6gintensiv (Z3)" = traning_palette$traffic_bg[["red"]]
   )
 
   long %>%
@@ -226,13 +228,15 @@ fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
     # Background bands: Treff 2019 cutoff at PI = 2.0
     ggplot2::annotate("rect",
       xmin = x_min, xmax = x_max, ymin = -Inf,  ymax = 2.0,
-      fill = "#f1c40f", alpha = 0.06
+      fill = traning_palette$traffic_bg[["yellow"]], alpha = 0.06
     ) +
     ggplot2::annotate("rect",
       xmin = x_min, xmax = x_max, ymin = 2.0,   ymax = Inf,
-      fill = "#27ae60", alpha = 0.06
+      fill = traning_palette$traffic_bg[["green"]], alpha = 0.06
     ) +
-    # Band labels
+    # AVVIKELSE FR\u00c5N TEMA: dark-on-light annotation colours chosen to
+    # read against the 6 %-alpha band fills above (palette greens
+    # would lose contrast on the green band, palette yellow likewise).
     ggplot2::annotate("text",
       x = x_max, y = 1.0,
       label  = "Icke\u2011polariserad",
@@ -252,7 +256,7 @@ fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
     ) +
     # Main PI line
     ggplot2::geom_line(
-      colour    = "steelblue",
+      colour    = traning_palette$status[["blue"]],
       linewidth = 0.9,
       na.rm     = TRUE
     ) +
@@ -352,8 +356,8 @@ fetch.plot.zone_comparison <- function(summaries, myruns,
     ggplot2::geom_point(alpha = 0.7, size = 1.8) +
     ggplot2::scale_colour_gradient(
       name = "Avvikelse\n(%-enheter)",
-      low  = "#27ae60",
-      high = "#e74c3c"
+      low  = traning_palette$traffic_bg[["green"]],
+      high = traning_palette$traffic_bg[["red"]]
     ) +
     ggplot2::facet_wrap(
       ggplot2::vars(zon),

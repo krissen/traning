@@ -155,21 +155,25 @@ overview_server <- function(id, summaries, health_daily, myruns,
       recent <- traning:::.filter_readiness_range(rd, dr_from(), dr_to()) |>
         dplyr::filter(!is.na(readiness_score))
       shiny::req(nrow(recent) > 0)
+      pal <- traning::traning_palette
       ggplot2::ggplot(recent, ggplot2::aes(date, readiness_score)) +
         ggplot2::geom_rect(ggplot2::aes(xmin = min(date), xmax = max(date),
-          ymin = 70, ymax = 100), fill = "#e8f0e8", alpha = 0.5) +
+          ymin = 70, ymax = 100),
+          fill = pal$readiness_bg[["high"]], alpha = 0.5) +
         ggplot2::geom_rect(ggplot2::aes(xmin = min(date), xmax = max(date),
-          ymin = 40, ymax = 70), fill = "#f5f0e0", alpha = 0.5) +
+          ymin = 40, ymax = 70),
+          fill = pal$readiness_bg[["medium"]], alpha = 0.5) +
         ggplot2::geom_rect(ggplot2::aes(xmin = min(date), xmax = max(date),
-          ymin = 0, ymax = 40), fill = "#f0e8e6", alpha = 0.5) +
-        ggplot2::geom_line(linewidth = 1, color = "#3e2723") +
-        ggplot2::geom_point(size = 2, color = "#3e2723") +
+          ymin = 0, ymax = 40),
+          fill = pal$readiness_bg[["low"]], alpha = 0.5) +
+        ggplot2::geom_line(linewidth = 1, color = pal$primary) +
+        ggplot2::geom_point(size = 2, color = pal$primary) +
         ggplot2::scale_y_continuous(limits = c(0, 100)) +
         ggplot2::labs(x = NULL, y = NULL) +
         ggplot2::theme_minimal(base_size = 11) +
         ggplot2::theme(
           panel.grid.minor = ggplot2::element_blank(),
-          plot.background = ggplot2::element_rect(fill = "#faf8f5", color = NA)
+          plot.background = ggplot2::element_rect(fill = pal$bg_card, color = NA)
         )
     })
 
@@ -187,13 +191,14 @@ overview_server <- function(id, summaries, health_daily, myruns,
         dplyr::group_by(week) |>
         dplyr::summarise(km = sum(distance / 1000, na.rm = TRUE), .groups = "drop")
 
+      pal <- traning::traning_palette
       p <- ggplot2::ggplot(running, ggplot2::aes(week, km)) +
-        ggplot2::geom_col(fill = "#8d6e63", width = 5) +
+        ggplot2::geom_col(fill = pal$accent, width = 5) +
         ggplot2::labs(x = NULL, y = "km") +
         ggplot2::theme_minimal(base_size = 11) +
         ggplot2::theme(
           panel.grid.minor = ggplot2::element_blank(),
-          plot.background = ggplot2::element_rect(fill = "#faf8f5", color = NA)
+          plot.background = ggplot2::element_rect(fill = pal$bg_card, color = NA)
         )
       pp <- plotly::ggplotly(p) |>
         plotly::config(displayModeBar = FALSE) |>
@@ -241,7 +246,8 @@ overview_server <- function(id, summaries, health_daily, myruns,
     value = value,
     showcase = icon,
     class = cls,
-    theme = bslib::value_box_theme(bg = "transparent", fg = "#2c2013")
+    theme = bslib::value_box_theme(bg = "transparent",
+                                    fg = traning::traning_palette$text_dark)
   )
 }
 

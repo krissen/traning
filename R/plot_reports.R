@@ -1,15 +1,5 @@
 # Plot variants for table-based reports
 
-# Internal: rotated x-axis label theme for bar/factor x-axes.
-# Date/datetime plots use .adaptive_*_scale() instead — they already
-# rotate based on span. Use this helper for plots where the x-axis is
-# a category, year, or month string that can crowd.
-.theme_rotated_x <- function(angle = 45, size = NULL) {
-  ggplot2::theme(
-    axis.text.x = ggplot2::element_text(angle = angle, hjust = 1, size = size)
-  )
-}
-
 # Internal: thin a discrete x-axis (factor/character) to ~target labels.
 # Works with `scale_x_discrete(breaks = .thin_discrete_breaks(N))`. ggplot
 # passes the full set of levels in plot order; we keep an evenly-spaced
@@ -43,7 +33,7 @@
 # Internal helper: shared year-bar chart
 # x = År (integer), y = Km, tot (numeric)
 .plot_year_bars <- function(data, title, x_col = "År", y_col = "Km, tot",
-                            fill = "steelblue") {
+                            fill = traning_palette$accent) {
   data %>%
     ggplot2::ggplot(
       ggplot2::aes(x = as.integer(.data[[x_col]]), y = .data[[y_col]])
@@ -67,11 +57,22 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL,
                           sport = "running") {
   data <- report_monthtop(summaries, from = from, to = to, sport = sport)
 
-  data %>%
+  data <- data %>%
     dplyr::mutate(
       `År-mån` = factor(`År-mån`, levels = `År-mån`),
       year      = substr(`År-mån`, 1, 4)
-    ) %>%
+    )
+
+  # Interpolate the brown sequence palette to span the actual number
+  # of distinct years in the top-10 (typically 3–7, but flexible).
+  # Named vector — pairs colour to year explicitly so the mapping is
+  # robust even if the `year` column ever becomes a factor with
+  # extra unused levels.
+  year_levels <- sort(unique(data$year))
+  year_colours <- grDevices::colorRampPalette(traning_palette$sequence)(length(year_levels))
+  names(year_colours) <- year_levels
+
+  data %>%
     ggplot2::ggplot(
       ggplot2::aes(
         x    = `År-mån`,
@@ -80,6 +81,7 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL,
       )
     ) +
     ggplot2::geom_col() +
+    ggplot2::scale_fill_manual(values = year_colours) +
     ggplot2::coord_flip() +
     ggplot2::ggtitle("Topp 10 månader per distans") +
     ggplot2::labs(x = "", y = "Kilometer", fill = "År")
@@ -141,8 +143,7 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL,
 plot_monthstatus <- function(summaries, from = NULL, to = NULL,
                              sport = "running") {
   data <- report_monthstatus(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år",
-                  fill = "#4682B4")
+  .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år")
 }
 
 #' Last month compared across years — bar chart
@@ -162,7 +163,7 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
   month_name <- .swedish_months[do_month]
 
   title <- stringr::str_glue("Jämförelse {month_name} över åren")
-  .plot_year_bars(data, title = title, fill = "#7BA7C9")
+  .plot_year_bars(data, title = title)
 }
 
 #' Full-year totals compared across years — bar chart
@@ -176,8 +177,7 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
 plot_yearstop <- function(summaries, from = NULL, to = NULL,
                           sport = "running") {
   data <- report_yearstop(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Årssammanställning (hela år)",
-                  fill = "#8E5A33")
+  .plot_year_bars(data, title = "Årssammanställning (hela år)")
 }
 
 #' Distance per period for a date range — bar chart
@@ -236,7 +236,7 @@ plot_datesum <- function(summaries, do_datesum_from, do_datesum_to,
 
   data %>%
     ggplot2::ggplot(ggplot2::aes(x = period, y = km)) +
-    ggplot2::geom_col(fill = "steelblue") +
+    ggplot2::geom_col(fill = traning_palette$accent) +
     ggplot2::scale_x_discrete(breaks = .thin_discrete_breaks(15)) +
     ggplot2::ggtitle(title) +
     ggplot2::labs(x = x_label, y = "Kilometer") +

@@ -81,10 +81,10 @@ fetch.plot.monthly.dist <- function(month_summaries_til_day) {
     ggplot2::geom_line(
       ggplot2::aes(y = pace_avg, colour = 'Tempo, medel')) +
     ggplot2::scale_colour_manual("",
-      values = c("Tempo, medel" = "red")) +
+      values = c("Tempo, medel" = traning_palette$status[["red"]])) +
     ggplot2::scale_fill_manual(" ",
-      values = c("Dist., medel" = "darkblue",
-                 "Dist. per dag, medel." = "lightblue")) +
+      values = c("Dist., medel" = traning_palette$primary,
+                 "Dist. per dag, medel." = traning_palette$accent_warm)) +
     ggplot2::theme(legend.key = ggplot2::element_blank(),
                    legend.title = ggplot2::element_blank()) +
     ggplot2::ggtitle(my_title) +
@@ -184,7 +184,7 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
       data = dplyr::filter(combined, metrik == "ef"),
       ggplot2::aes(y = value),
       method = "loess", formula = "y ~ x",
-      colour = "steelblue", se = FALSE, linewidth = 0.8
+      colour = traning_palette$primary, se = FALSE, linewidth = 0.8
     )
   }
 
@@ -192,7 +192,7 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
     p <- p + ggplot2::geom_line(
       data = dplyr::filter(combined, metrik == "ef_rolling28"),
       ggplot2::aes(y = value),
-      colour = "firebrick", linewidth = 0.9, na.rm = TRUE
+      colour = traning_palette$status[["red"]], linewidth = 0.9, na.rm = TRUE
     )
   }
 
@@ -203,7 +203,7 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_col(
       data = dplyr::filter(combined, metrik == "weekly_km"),
       ggplot2::aes(y = value),
-      fill = "steelblue", alpha = 0.7, width = 86400
+      fill = traning_palette$accent, alpha = 0.7, width = 86400
     ) +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
@@ -249,18 +249,18 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
 
   p <- hre_data %>%
     ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
-    # Votyakov threshold bands
+    # Votyakov threshold bands (traffic-light, see traning_palette$traffic_bg)
     ggplot2::annotate("rect",
       xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 700,
-      fill = "#27ae60", alpha = 0.06
+      fill = traning_palette$traffic_bg[["green"]], alpha = 0.06
     ) +
     ggplot2::annotate("rect",
       xmin = -Inf, xmax = Inf, ymin = 700, ymax = 750,
-      fill = "#f1c40f", alpha = 0.06
+      fill = traning_palette$traffic_bg[["yellow"]], alpha = 0.06
     ) +
     ggplot2::annotate("rect",
       xmin = -Inf, xmax = Inf, ymin = 800, ymax = Inf,
-      fill = "#e74c3c", alpha = 0.06
+      fill = traning_palette$traffic_bg[["red"]], alpha = 0.06
     ) +
     ggplot2::geom_hline(yintercept = c(700, 750, 800),
       colour = "grey70", linetype = "dotted", linewidth = 0.4
@@ -274,14 +274,14 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
     p <- p + ggplot2::geom_smooth(
       ggplot2::aes(y = hre),
       method = "loess", formula = "y ~ x",
-      colour = "steelblue", se = FALSE, linewidth = 0.8
+      colour = traning_palette$primary, se = FALSE, linewidth = 0.8
     )
   }
 
   if (show_rolling) {
     p <- p + ggplot2::geom_line(
       ggplot2::aes(y = hre_rolling28),
-      colour = "firebrick", linewidth = 0.9, na.rm = TRUE
+      colour = traning_palette$status[["red"]], linewidth = 0.9, na.rm = TRUE
     )
   }
 
@@ -360,11 +360,12 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
   ) %>%
     dplyr::mutate(panel = factor(panel, levels = c("ACWR", "Veckokilometer")))
 
+  # ACWR zone colours map to traning_palette$traffic_bg.
   zon_farger <- c(
-    "Underbelastning" = "#e67e22",
-    "Optimalt"        = "#27ae60",
-    "Varning"         = "#f1c40f",
-    "Överbelastning"  = "#e74c3c"
+    "Underbelastning" = traning_palette$traffic_bg[["orange"]],
+    "Optimalt"        = traning_palette$traffic_bg[["green"]],
+    "Varning"         = traning_palette$traffic_bg[["yellow"]],
+    "Överbelastning"  = traning_palette$traffic_bg[["red"]]
   )
 
   # Reference band and lines — drawn only inside the ACWR panel using
@@ -381,13 +382,13 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_rect(
       data = ref_df,
       ggplot2::aes(xmin = -Inf, xmax = Inf, ymin = 0.8, ymax = 1.3),
-      fill = "#27ae60", alpha = 0.08, inherit.aes = FALSE
+      fill = traning_palette$traffic_bg[["green"]], alpha = 0.08, inherit.aes = FALSE
     ) +
     # Danger threshold line
     ggplot2::geom_hline(
       data = ref_df,
       ggplot2::aes(yintercept = 1.5),
-      colour = "#e74c3c", linetype = "dashed", linewidth = 0.5
+      colour = traning_palette$traffic_bg[["red"]], linetype = "dashed", linewidth = 0.5
     ) +
     # Uncoupled ACWR — dashed grey line for comparison
     # (Impellizzeri 2020: coupled ACWR systematically dampens spikes)
@@ -409,12 +410,12 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_col(
       data = dplyr::filter(combined, panel == "Veckokilometer"),
       ggplot2::aes(y = value),
-      fill = "steelblue", alpha = 0.7, width = 1
+      fill = traning_palette$accent, alpha = 0.7, width = 1
     ) +
     ggplot2::scale_colour_manual(
       name   = "Zon",
       values = zon_farger,
-      na.value = "steelblue"
+      na.value = traning_palette$primary
     ) +
     ggplot2::facet_grid(
       rows   = ggplot2::vars(panel),
@@ -490,10 +491,10 @@ fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_hline(
       data = ref_df,
       ggplot2::aes(yintercept = 2.0),
-      colour = "#e74c3c", linetype = "dashed", linewidth = 0.6
+      colour = traning_palette$traffic_bg[["red"]], linetype = "dashed", linewidth = 0.6
     ) +
     ggplot2::geom_line(
-      colour = "steelblue", linewidth = 0.7, na.rm = TRUE
+      colour = traning_palette$primary, linewidth = 0.7, na.rm = TRUE
     ) +
     ggplot2::facet_grid(
       rows   = ggplot2::vars(metrik),
@@ -511,7 +512,7 @@ fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
 
   # Show individual data points at short spans
   if (span <= 60) {
-    p <- p + ggplot2::geom_point(size = 2, alpha = 0.7, colour = "steelblue")
+    p <- p + ggplot2::geom_point(size = 2, alpha = 0.7, colour = traning_palette$primary)
   }
 
   return(p)
@@ -580,12 +581,18 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
                      levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
     )
 
+  # TSB zone palette maps to traffic_bg + cool/neutral tones. "Utvilad"
+  # uses the blue zone1 colour (rested/cool).
+  # AVVIKELSE FRÅN TEMA: "Produktiv" stays neutral grey (#95a5a6) — it
+  # sits between sweet-spot (green) and overload (red), and a chromatic
+  # palette tone would imply it leans toward one or the other. The
+  # neutral grey communicates "intermediate, no judgement".
   zon_farger <- c(
-    "Utvilad"       = "#3498db",
-    "Tävlingsredo"  = "#27ae60",
+    "Utvilad"       = traning_palette$zones[["Z1"]],
+    "Tävlingsredo"  = traning_palette$traffic_bg[["green"]],
     "Produktiv"     = "#95a5a6",
-    "Trött"         = "#f1c40f",
-    "Överbelastad"  = "#e74c3c"
+    "Trött"         = traning_palette$traffic_bg[["yellow"]],
+    "Överbelastad"  = traning_palette$traffic_bg[["red"]]
   )
 
   # Reference lines for TSB panel
@@ -601,9 +608,15 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
       ggplot2::aes(x = date, y = value, colour = metrik),
       linewidth = 0.8, na.rm = TRUE
     ) +
+    # AVVIKELSE FRÅN TEMA: CTL/ATL is the Allen/Coggan PMC convention;
+    # both series overlap so they need high-contrast colours. status$*
+    # (muted earth tones) made the two lines indistinguishable in the
+    # combined panel. Use zones$Z1 (saturated blue) for the fitness
+    # baseline and traffic_bg$red for the fatigue alarm.
     ggplot2::scale_colour_manual(
       name   = NULL,
-      values = c("Fitness (CTL)" = "steelblue", "Trötthet (ATL)" = "#e74c3c")
+      values = c("Fitness (CTL)" = traning_palette$zones[["Z1"]],
+                 "Trötthet (ATL)" = traning_palette$traffic_bg[["red"]])
     ) +
     # Panel 2: TSB coloured by zone
     ggplot2::geom_col(
@@ -622,7 +635,7 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
     ggplot2::geom_col(
       data = trimp_panel,
       ggplot2::aes(x = date, y = daily_trimp),
-      fill = "steelblue", alpha = 0.7, width = 1
+      fill = traning_palette$accent, alpha = 0.7, width = 1
     ) +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
@@ -682,14 +695,14 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
     p <- p + ggplot2::geom_smooth(
       ggplot2::aes(y = recovery_hr),
       method = "loess", formula = "y ~ x",
-      colour = "steelblue", se = FALSE, linewidth = 0.8
+      colour = traning_palette$primary, se = FALSE, linewidth = 0.8
     )
   }
 
   if (show_rolling) {
     p <- p + ggplot2::geom_line(
       ggplot2::aes(y = recovery_hr_rolling28),
-      colour = "firebrick", linewidth = 0.9, na.rm = TRUE
+      colour = traning_palette$status[["red"]], linewidth = 0.9, na.rm = TRUE
     )
   }
 
@@ -824,22 +837,22 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
 
   p <- combined %>%
     ggplot2::ggplot(ggplot2::aes(x = sessionStart)) +
-    # Threshold bands (only visible in decoupling panel)
+    # Threshold bands (only visible in decoupling panel; traffic-light)
     ggplot2::annotate("rect",
       xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = 3,
-      fill = "#27ae60", alpha = 0.06
+      fill = traning_palette$traffic_bg[["green"]], alpha = 0.06
     ) +
     ggplot2::annotate("rect",
       xmin = -Inf, xmax = Inf, ymin = 3, ymax = 5,
-      fill = "#f1c40f", alpha = 0.06
+      fill = traning_palette$traffic_bg[["yellow"]], alpha = 0.06
     ) +
     ggplot2::annotate("rect",
       xmin = -Inf, xmax = Inf, ymin = 5, ymax = 8,
-      fill = "#e67e22", alpha = 0.06
+      fill = traning_palette$traffic_bg[["orange"]], alpha = 0.06
     ) +
     ggplot2::annotate("rect",
       xmin = -Inf, xmax = Inf, ymin = 8, ymax = Inf,
-      fill = "#e74c3c", alpha = 0.06
+      fill = traning_palette$traffic_bg[["red"]], alpha = 0.06
     ) +
     ggplot2::geom_hline(yintercept = c(3, 5, 8),
       colour = "grey70", linetype = "dotted", linewidth = 0.4
@@ -866,7 +879,8 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     p <- p + ggplot2::geom_point(
       data = capped_layer,
       ggplot2::aes(y = value_clamp),
-      shape = 17, colour = "#e74c3c", size = pt_size + 0.5, alpha = 0.85
+      shape = 17, colour = traning_palette$traffic_bg[["red"]],
+      size = pt_size + 0.5, alpha = 0.85
     )
   }
 
@@ -875,7 +889,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
       data = dplyr::filter(combined, metrik == "decoupling_pct", !capped),
       ggplot2::aes(y = value),
       method = "loess", formula = "y ~ x",
-      colour = "steelblue", se = FALSE, linewidth = 0.8
+      colour = traning_palette$primary, se = FALSE, linewidth = 0.8
     )
   }
 
@@ -883,7 +897,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     p <- p + ggplot2::geom_line(
       data = dplyr::filter(combined, metrik == "decoupling_rolling28"),
       ggplot2::aes(y = value),
-      colour = "firebrick", linewidth = 0.9, na.rm = TRUE
+      colour = traning_palette$status[["red"]], linewidth = 0.9, na.rm = TRUE
     )
   }
 
@@ -892,7 +906,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     ggplot2::geom_col(
       data = dplyr::filter(combined, metrik == "weekly_km"),
       ggplot2::aes(y = value),
-      fill = "steelblue", alpha = 0.7, width = 86400
+      fill = traning_palette$accent, alpha = 0.7, width = 86400
     ) +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
@@ -965,17 +979,6 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
   yrs[seq(1, length(yrs), by = step)]
 }
 
-# Shared theme for run-profile plots.
-.theme_run_profile <- function() {
-  ggplot2::theme_minimal(base_size = 12) +
-    ggplot2::theme(
-      plot.title = ggplot2::element_text(face = "bold"),
-      plot.subtitle = ggplot2::element_text(colour = "grey40"),
-      panel.grid.minor = ggplot2::element_blank(),
-      strip.text = ggplot2::element_text(face = "bold")
-    )
-}
-
 # Empty-state placeholder when filters strip the data to zero rows.
 .run_profile_empty <- function(msg = "Ingen data i intervallet") {
   ggplot2::ggplot() + ggplot2::ggtitle(msg) + .theme_run_profile()
@@ -1039,16 +1042,18 @@ fetch.plot.pace_year <- function(summaries, from = NULL, to = NULL,
 
   ggplot2::ggplot(yearly, ggplot2::aes(x = year, y = median_pace)) +
     ggplot2::geom_ribbon(ggplot2::aes(ymin = p25, ymax = p75),
-                          fill = "#4682B4", alpha = 0.18) +
-    ggplot2::geom_line(colour = "#4682B4", linewidth = 0.7) +
-    ggplot2::geom_point(colour = "#4682B4", size = 1.6) +
+                          fill = traning_palette$run_profile$history, alpha = 0.18) +
+    ggplot2::geom_line(colour = traning_palette$run_profile$history, linewidth = 0.7) +
+    ggplot2::geom_point(colour = traning_palette$run_profile$history, size = 1.6) +
     ggplot2::geom_point(data = milestones,
       ggplot2::aes(x = year, y = y_anchor),
-      shape = 21, fill = "#FFE082", colour = "#7B5C00",
+      shape = 21, fill = traning_palette$run_profile$fill$light,
+      colour = traning_palette$run_profile$fill$dark,
       size = 3.2, stroke = 0.8) +
     ggrepel::geom_label_repel(data = milestones,
       ggplot2::aes(x = year, y = y_anchor, label = label),
-      size = 2.6, colour = "#5C4400", fill = "#FFFBEB",
+      size = 2.6, colour = traning_palette$run_profile$fill$darker,
+      fill = traning_palette$run_profile$fill$bg,
       label.size = 0.4, min.segment.length = 0,
       box.padding = 0.5, force = 5, max.overlaps = Inf) +
     ggplot2::scale_x_continuous(breaks = yb) +
@@ -1118,7 +1123,8 @@ fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_col(width = 6) +
     ggplot2::geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
     ggplot2::scale_fill_manual(
-      values = c(`TRUE` = "#27ae60", `FALSE` = "#e74c3c"),
+      values = c(`TRUE` = traning_palette$traffic_bg[["green"]],
+                 `FALSE` = traning_palette$traffic_bg[["red"]]),
       labels = c(`TRUE` = "Snabbare", `FALSE` = "L\u00e5ngsammare"),
       name   = NULL
     ) +
@@ -1179,9 +1185,10 @@ fetch.plot.pace_tertile_share <- function(summaries, from = NULL, to = NULL,
   if (nrow(runs) == 0) return(.run_profile_empty())
 
   pace_q <- stats::quantile(runs$pace, c(1/3, 2/3))
-  palette_traffic <- c("Lugn" = "#5E9C7A",
-                        "Medel" = "#E0B45A",
-                        "Snabb" = "#C0392B")
+  # Pace traffic-light: see traning_palette$traffic for rationale.
+  palette_traffic <- c("Lugn"  = traning_palette$traffic[["calm"]],
+                       "Medel" = traning_palette$traffic[["medium"]],
+                       "Snabb" = traning_palette$traffic[["fast"]])
 
   runs_int <- runs %>% dplyr::mutate(
     intensity = dplyr::case_when(
@@ -1262,12 +1269,13 @@ fetch.plot.longest_runs_year <- function(summaries, from = NULL, to = NULL,
       ggplot2::aes(x = year, y = total, label = round(total, 0)),
       inherit.aes = FALSE, vjust = -0.4, size = 2.6, colour = "grey25") +
     ggplot2::scale_x_continuous(breaks = yb) +
+    # Duration-rank gradient: see traning_palette$duration_rank.
     ggplot2::scale_fill_manual(
-      values = c("5:e l\u00e4ngsta" = "#1F4D33",
-                  "4:e"           = "#3F7D5C",
-                  "3:e"           = "#6FA887",
-                  "2:a"           = "#9CC1A8",
-                  "1:a l\u00e4ngsta" = "#CFE0D5"),
+      values = c("5:e l\u00e4ngsta" = traning_palette$duration_rank[1],
+                 "4:e"           = traning_palette$duration_rank[2],
+                 "3:e"           = traning_palette$duration_rank[3],
+                 "2:a"           = traning_palette$duration_rank[4],
+                 "1:a l\u00e4ngsta" = traning_palette$duration_rank[5]),
       name = NULL,
       guide = ggplot2::guide_legend(reverse = TRUE)) +
     ggplot2::expand_limits(y = max(top1_labels$total) * 1.12) +
@@ -1300,13 +1308,14 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
                       n = dplyr::n(), .groups = "drop")
   if (nrow(woy_data) == 0) return(.run_profile_empty())
 
+  # Season bands: see traning_palette$seasons.
   seasons <- tibble::tribble(
     ~name,     ~start, ~end, ~fill,
-    "Vinter",  1,      12,   "#D7E5F2",
-    "V\u00e5r", 13,    21,   "#DDEED6",
-    "Sommar",  22,     35,   "#FFF4D6",
-    "H\u00f6st",36,    47,   "#EFD9C2",
-    "Vinter",  48,     52,   "#D7E5F2"
+    "Vinter",  1,      12,   traning_palette$seasons[["winter"]],
+    "V\u00e5r", 13,    21,   traning_palette$seasons[["spring"]],
+    "Sommar",  22,     35,   traning_palette$seasons[["summer"]],
+    "H\u00f6st",36,    47,   traning_palette$seasons[["autumn"]],
+    "Vinter",  48,     52,   traning_palette$seasons[["winter"]]
   )
   season_labels <- tibble::tribble(
     ~name,     ~x,
@@ -1336,9 +1345,9 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
       xmin  = seasons$start - 0.5, xmax = seasons$end + 0.5,
       ymin  = y_lo, ymax = y_hi,
       fill  = seasons$fill, alpha = 0.55) +
-    ggplot2::geom_point(colour = "#C97B4A", size = 2.2, alpha = 0.85) +
+    ggplot2::geom_point(colour = traning_palette$run_profile$current, size = 2.2, alpha = 0.85) +
     ggplot2::geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
-                          colour = "#4682B4", fill = "#4682B4",
+                          colour = traning_palette$run_profile$history, fill = traning_palette$run_profile$history,
                           alpha = 0.18) +
     # Anchor labels at an explicit data y near the band top (= y_lo,
     # the faster-pace edge — top of the panel under scale_y_reverse).
@@ -1481,12 +1490,12 @@ fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_line(data = dplyr::filter(weekly_split, !is_current),
                         colour = "grey75", linewidth = 0.4, alpha = 0.65) +
     ggplot2::geom_line(data = dplyr::filter(weekly_split, is_current),
-                        colour = "#C97B4A", linewidth = 1.4) +
+                        colour = traning_palette$run_profile$current, linewidth = 1.4) +
     ggplot2::geom_point(data = dplyr::filter(weekly_split, is_current),
-                         colour = "#C97B4A", size = 1.8) +
+                         colour = traning_palette$run_profile$current, size = 1.8) +
     ggplot2::geom_text(data = dplyr::filter(end_pts, year == current_year),
       ggplot2::aes(label = sprintf("%d: %.0f km", year, cumkm)),
-      hjust = -0.15, size = 3.2, colour = "#C97B4A", fontface = "bold") +
+      hjust = -0.15, size = 3.2, colour = traning_palette$run_profile$current, fontface = "bold") +
     ggplot2::scale_x_continuous(breaks = c(1, 13, 26, 39, 52),
                                   labels = c("V1", "V13", "V26", "V39", "V52"),
                                   expand = ggplot2::expansion(add = c(0, 6))) +
@@ -1578,7 +1587,7 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
                          colour = "white", linewidth = 0.6,
                          linetype = "dashed") +
     ggplot2::annotate("point", x = all_median_km, y = all_median_pace,
-                       colour = "white", fill = "#C97B4A", shape = 21,
+                       colour = "white", fill = traning_palette$run_profile$current, shape = 21,
                        size = 4, stroke = 0.9) +
     ggplot2::scale_fill_viridis_c(option = "plasma", trans = "log",
                                     name = "Pass",
