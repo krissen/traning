@@ -46,6 +46,34 @@ test_that(".filter_readiness_range hanterar tom/NULL input", {
                0)
 })
 
+test_that("NA-gränser hanteras som NULL (rensad custom dateRangeInput)", {
+  today <- as.Date("2026-05-16")
+  rd <- data.frame(
+    date            = today - (10:0),
+    readiness_score = rep(60, 11)
+  )
+
+  # En tom dateRangeInput ger NA tillbaka från mod_date_preset.
+  # `from = NA` / `to = NA` ska tolkas som "ingen gräns".
+  out <- traning:::.filter_readiness_range(rd, from = NA, to = NA)
+  expect_equal(nrow(out), nrow(rd))
+
+  out <- traning:::.filter_readiness_range(rd, from = NA, to = today - 5)
+  expect_equal(max(out$date), today - 6)
+
+  out <- traning:::.filter_readiness_range(rd, from = today - 3, to = NA)
+  expect_equal(min(out$date), today - 3)
+
+  s <- data.frame(
+    sessionStart = as.POSIXct("2026-05-16 06:00:00", tz = "UTC") -
+                   as.difftime(0:9, units = "days"),
+    sport        = rep("running", 10),
+    distance     = rep(10000, 10)
+  )
+  out <- traning:::.filter_running_range(s, from = NA, to = NA)
+  expect_equal(nrow(out), nrow(s))
+})
+
 test_that(".filter_readiness_range hoppar över NA-datum vid bounded filter", {
   today <- as.Date("2026-05-16")
   rd <- data.frame(

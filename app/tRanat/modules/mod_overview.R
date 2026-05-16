@@ -152,7 +152,7 @@ overview_server <- function(id, summaries, health_daily, myruns,
     output$mini_readiness <- shiny::renderPlot({
       rd <- readiness_data()
       shiny::req(rd)
-      recent <- .filter_readiness_range(rd, dr_from(), dr_to()) |>
+      recent <- traning:::.filter_readiness_range(rd, dr_from(), dr_to()) |>
         dplyr::filter(!is.na(readiness_score))
       shiny::req(nrow(recent) > 0)
       ggplot2::ggplot(recent, ggplot2::aes(date, readiness_score)) +
@@ -177,7 +177,7 @@ overview_server <- function(id, summaries, health_daily, myruns,
     output$mini_volume <- plotly::renderPlotly({
       running <- summaries |>
         dplyr::filter(stringr::str_detect(sport, "running"))
-      running <- .filter_running_range(running, dr_from(), dr_to())
+      running <- traning:::.filter_running_range(running, dr_from(), dr_to())
       shiny::req(nrow(running) > 0)
       running <- running |>
         dplyr::mutate(

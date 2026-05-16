@@ -103,14 +103,26 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
   )
 }
 
+# Normalisera en NA/NULL-gräns till NULL. `mod_date_preset` returnerar
+# NA om en custom `dateRangeInput` har rensats — base-subset med
+# logiska NA ger 1 rad av NA, så NA måste tolkas som "ingen gräns".
+.normalize_range_bound <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (length(x) == 0) return(NULL)
+  if (length(x) == 1 && is.na(x)) return(NULL)
+  x
+}
+
 # Filtrera readiness-rader till ett datumspann. Halvöppet intervall
 # [from, to) i linje med `.filter_date_range()` (R/plot.R) och
 # `filter_by_daterange()` (R/daterange.R) — `to = Sys.Date()` betyder
-# alltså "fram t.o.m. igår". NULL-gräns = öppen åt det hållet.
+# alltså "fram t.o.m. igår". NULL- eller NA-gräns = öppen åt det hållet.
 # Privat (dot-prefix) — exportPattern("^[^\\.]") i NAMESPACE hoppar
 # över dot-funktioner. Konsumeras av `mod_overview.R` mini_readiness.
 .filter_readiness_range <- function(rd, from = NULL, to = NULL) {
   if (is.null(rd) || nrow(rd) == 0) return(rd)
+  from <- .normalize_range_bound(from)
+  to   <- .normalize_range_bound(to)
   out <- rd
   if (!is.null(from)) out <- out[!is.na(out$date) & out$date >= from, , drop = FALSE]
   if (!is.null(to))   out <- out[!is.na(out$date) & out$date <  to,   , drop = FALSE]
@@ -121,6 +133,8 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
 # Halvöppet intervall [from, to) — se `.filter_readiness_range`.
 .filter_running_range <- function(summaries, from = NULL, to = NULL) {
   if (is.null(summaries) || nrow(summaries) == 0) return(summaries)
+  from <- .normalize_range_bound(from)
+  to   <- .normalize_range_bound(to)
   d <- as.Date(summaries$sessionStart)
   keep <- rep(TRUE, length(d))
   if (!is.null(from)) keep <- keep & !is.na(d) & d >= from
