@@ -86,6 +86,32 @@ test_that(".filter_readiness_range hoppar över NA-datum vid bounded filter", {
   expect_false(any(is.na(out$date)))
 })
 
+test_that("NA-datum droppas även när inga bounds är satta", {
+  # "Allt"-preset → dr_from/dr_to = NULL. Tidigare lämnade hjälparna
+  # kvar NA-datum, vilket gav `min(date)/max(date) = NA` i mini-graferna
+  # och tappade band/staplar. Helpers ska alltid drop NA, matchar
+  # `dplyr::filter`-semantiken.
+  today <- as.Date("2026-05-16")
+  rd <- data.frame(
+    date            = c(today - 1, NA, today - 5),
+    readiness_score = c(70, 60, 50)
+  )
+  out <- traning:::.filter_readiness_range(rd, from = NULL, to = NULL)
+  expect_equal(nrow(out), 2)
+  expect_false(any(is.na(out$date)))
+
+  s <- data.frame(
+    sessionStart = c(as.POSIXct("2026-05-15 06:00:00", tz = "UTC"),
+                     NA,
+                     as.POSIXct("2026-05-10 06:00:00", tz = "UTC")),
+    sport        = rep("running", 3),
+    distance     = c(10000, 5000, 8000)
+  )
+  out <- traning:::.filter_running_range(s, from = NULL, to = NULL)
+  expect_equal(nrow(out), 2)
+  expect_false(any(is.na(out$sessionStart)))
+})
+
 test_that(".filter_running_range avgränsar via sessionStart (halvöppet)", {
   base <- as.POSIXct("2026-05-16 06:00:00", tz = "UTC")
   s <- data.frame(
