@@ -13,7 +13,7 @@ Imports:
     dplyr,
     tidyr,
     tibble,
-    ggplot2,
+    ggplot2 (>= 3.5.0),
     ggridges,
     ggrepel,
     scales,

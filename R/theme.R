@@ -219,12 +219,13 @@ scale_colour_traning <- function(...) {
 # stay untouched during migration; the implementation now delegates.
 .theme_run_profile <- function() theme_traning(base_size = 12)
 
-# Back-compat wrapper. .theme_rotated_x() in R/plot_reports.R stays
-# untouched; implementation delegates here. `size` arg preserved for
+# Back-compat helper. .theme_rotated_x() is composed onto an existing
+# theme rather than replacing it (callers do `... + .theme_rotated_x()`),
+# so the implementation stays inline as a partial-theme builder rather
+# than delegating to the full theme_traning(). `size` is preserved for
 # callers that pass it.
 .theme_rotated_x <- function(angle = 45, size = NULL) {
-  th <- ggplot2::theme(
+  ggplot2::theme(
     axis.text.x = ggplot2::element_text(angle = angle, hjust = 1, size = size)
   )
-  th
 }

@@ -34,9 +34,14 @@ Roadmap-itemet "Enhetligt visuellt tema (figurer + tabeller)"
 - **AVVIKELSE FRÅN TEMA-konvention:** sub-paletter som behöver
   saturerad domänfärg (HR-zoner, traffic-light, sleep stages,
   Material readiness, Wong VO2max-source-distinction) dokumenteras
-  per callsite eller i `R/theme.R` med en `AVVIKELSE FRÅN TEMA`-
-  kommentar som motiverar undantaget. Inline-hex utan sådan
-  kommentar är efter migrationen att betrakta som bugg.
+  i `R/theme.R` med en `AVVIKELSE FRÅN TEMA`-kommentar som
+  motiverar undantaget. När en hex-literal måste stå kvar inline i
+  en plotfil (för att den är knuten till just det callsite) ligger
+  AVVIKELSE-kommentaren på raden eller blocket ovanför — block-
+  level för grupper av relaterade hex (t.ex. Wong-paret för Apple
+  Watch/Garmin VO2max, eller Material readiness-trippeln) räknas
+  som dokumenterat. Inline-hex utan dokumentation är efter
+  migrationen att betrakta som bugg.
 - **Tabeller** kontrollerades separat: alla fem `DT::datatable`-
   callsites i `app/tRanat/modules/` och `app/tRanat/pages/` är
   okolorerade på R-nivå och ärver styles.css direkt — ingen ändring
