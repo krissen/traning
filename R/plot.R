@@ -1318,12 +1318,20 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
   woy_breaks <- c(1, 13, 26, 39, 52)
   woy_labels <- c("V1\njan", "V13\napr", "V26\njul", "V39\nokt", "V52\ndec")
 
+  # Compute finite y-range with padding so season bands fill the panel
+  # including the loess CI band. scale_y_reverse() doesn't reliably
+  # propagate -Inf/Inf through the reversed scale, causing rectangles
+  # to fall outside the plot domain.
+  y_rng <- range(woy_data$mean_pace, na.rm = TRUE)
+  pad   <- diff(y_rng) * 0.08
+  y_lo  <- y_rng[1] - pad   # lower numeric value = faster pace (top of reversed axis)
+  y_hi  <- y_rng[2] + pad   # higher numeric value = slower pace (bottom of reversed axis)
+
   ggplot2::ggplot(woy_data, ggplot2::aes(x = woy, y = mean_pace)) +
-    ggplot2::geom_rect(data = seasons, inherit.aes = FALSE,
-      ggplot2::aes(xmin = start - 0.5, xmax = end + 0.5,
-                    ymin = -Inf, ymax = Inf, fill = fill),
-      alpha = 0.55, show.legend = FALSE) +
-    ggplot2::scale_fill_identity() +
+    ggplot2::annotate("rect",
+      xmin  = seasons$start - 0.5, xmax = seasons$end + 0.5,
+      ymin  = y_lo, ymax = y_hi,
+      fill  = seasons$fill, alpha = 0.55) +
     ggplot2::geom_point(colour = "#C97B4A", size = 2.2, alpha = 0.85) +
     ggplot2::geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
                           colour = "#4682B4", fill = "#4682B4",
@@ -1335,6 +1343,7 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
     ggplot2::scale_y_reverse() +
     ggplot2::scale_x_continuous(breaks = woy_breaks, labels = woy_labels,
                                   expand = c(0.01, 0.01)) +
+    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = "S\u00e4songsm\u00f6nster i tempo",
                    subtitle = "Veckans medeltempo \u00f6ver alla \u00e5r. Bakgrund = \u00e5rstid; kurva = loess.",
                    x = NULL, y = "Tempo (min/km)") +
