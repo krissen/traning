@@ -180,11 +180,19 @@ test_that("fetch.plot.distance_pace_era handles degenerate km/pace ranges", {
   df_same_km$distance <- 8000
   p <- fetch.plot.distance_pace_era(df_same_km)
   expect_s3_class(p, "ggplot")
+  # Lock in the specific empty-state title so a regression that
+  # falls through to .run_profile_empty()'s default message gets
+  # caught (the generic "Ingen data i intervallet" would mislead
+  # users who do have runs in the filter).
+  expect_match(p$labels$title %||% "",
+               "variation i distans/tempo", fixed = TRUE)
 
   df_same_pace <- df
   df_same_pace$avgPaceMoving <- 5.5
   p2 <- fetch.plot.distance_pace_era(df_same_pace)
   expect_s3_class(p2, "ggplot")
+  expect_match(p2$labels$title %||% "",
+               "variation i distans/tempo", fixed = TRUE)
 })
 
 # Regression: season_pace season bands previously had zero height
