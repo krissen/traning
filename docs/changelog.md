@@ -1,5 +1,44 @@
 # tRäning — Changelog
 
+## 2026-05-16 — Översikt: mini-graferna följer globalt datumspann
+
+Roadmap-itemet "Filter-konsistens: tabeller och figurer ska följa globala
+datumspannet" (`docs/roadmap.md`) är åtgärdat för Översikt.
+
+- **"Beredskap"- och "Veckovolym"-graferna** i `mod_overview.R` ignorerade
+  tidigare navbar-presetet och visade hardcodade fönster (14 dagar resp.
+  12 veckor). Båda läser nu `dates()$from` och `dates()$to` via två nya
+  privata helpers i `R/shiny_helpers.R`: `.filter_readiness_range()` och
+  `.filter_running_range()`. Kortrubrikerna förlorar parentesen
+  ("Beredskap (14 dagar)" → "Beredskap") eftersom spannet nu styrs av
+  navbar. Anropen är `traning:::`-kvalificerade så modulen funkar både
+  under `devtools::load_all()` och installerat paket.
+- **Halvöppet intervall `[from, to)`** används genomgående — samma
+  konvention som `.filter_date_range()` (`R/plot.R:54`) och
+  `filter_by_daterange()` (`R/daterange.R:115`). En preset som
+  "7 dagar" (`from = today - 7, to = today`) ger då exakt 7
+  kalenderdagar och **exkluderar** dagens pågående datum, i linje med
+  resten av dashboarden.
+- **NULL- och NA-säkerhet**: helpers normaliserar NULL, tomma och
+  scalar-NA-gränser via en ny `.normalize_range_bound()`, så att en
+  rensad `dateRangeInput` (`mod_date_preset` returnerar då NA) inte
+  ger en rad av NA via base-subsetting. NA-datum droppas alltid,
+  även när inga gränser är satta, så `min(date)`/`max(date)` och
+  `floor_date()` aldrig faller på NA i mini-graferna.
+- **Värde-boxarna** (`vb_readiness`, `vb_weekly_km`, `vb_ctl`, `vb_tsb`,
+  `vb_acwr`) behåller sin "senaste snapshot"-semantik oberoende av
+  navbar — en doc-kommentar i `overview_server` motiverar avvikelsen.
+- **Ny konventionsdoc** `docs/dev/filter-consistency.md` dokumenterar
+  regeln (dashboard-komponenter följer `dates()`), halvöppet-intervall-
+  semantiken och de tre tillåtna avvikelse-typerna med fil:rad-
+  referenser: snapshot-vyer (`mod_overview.R:87-148`), multi-år-
+  jämförelser (`page_progress.R:58-64`) och karakterisering över alla
+  år (`page_runprofile.R:43-47`).
+- **Regressionstester** i `test-overview-filter.R`: bounded /
+  halvöppna / öppna intervall, NULL/NA/zero-length-gränser, tomma
+  data, NA-datum droppas både med och utan gränser. 28/28 nya tester
+  gröna; full svit 984/984.
+
 ## 2026-05-16 — Dashboard render-buggar fixade i Löpprofil
 
 Tre roadmap-items i "Dashboard — observerade rendering-buggar"

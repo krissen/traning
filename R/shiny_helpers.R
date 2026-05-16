@@ -102,3 +102,46 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
     health_daily    = health_daily
   )
 }
+
+# Normalisera en NA/NULL-gräns till NULL. `mod_date_preset` returnerar
+# NA om en custom `dateRangeInput` har rensats — base-subset med
+# logiska NA ger 1 rad av NA, så NA måste tolkas som "ingen gräns".
+.normalize_range_bound <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (length(x) == 0) return(NULL)
+  if (length(x) == 1 && is.na(x)) return(NULL)
+  x
+}
+
+# Filtrera readiness-rader till ett datumspann. Halvöppet intervall
+# [from, to) i linje med `.filter_date_range()` (R/plot.R) och
+# `filter_by_daterange()` (R/daterange.R) — `to = Sys.Date()` betyder
+# alltså "fram t.o.m. igår". NULL- eller NA-gräns = öppen åt det hållet.
+# NA-datum droppas *alltid*, oavsett bound-state, så att downstream
+# `min(date)`/`max(date)` aldrig blir NA (annars tappas `geom_rect`-
+# band i mini-graferna). Matchar `dplyr::filter`s NA-drop-semantik.
+# Privat (dot-prefix) — exportPattern("^[^\\.]") i NAMESPACE hoppar
+# över dot-funktioner. Konsumeras av `mod_overview.R` mini_readiness.
+.filter_readiness_range <- function(rd, from = NULL, to = NULL) {
+  if (is.null(rd) || nrow(rd) == 0) return(rd)
+  from <- .normalize_range_bound(from)
+  to   <- .normalize_range_bound(to)
+  out <- rd[!is.na(rd$date), , drop = FALSE]
+  if (!is.null(from)) out <- out[out$date >= from, , drop = FALSE]
+  if (!is.null(to))   out <- out[out$date <  to,   , drop = FALSE]
+  out
+}
+
+# Filtrera summaries (löppass) till ett datumspann via sessionStart.
+# Halvöppet intervall [from, to) — se `.filter_readiness_range`. NA i
+# `sessionStart` droppas alltid, även när inga bounds är satta.
+.filter_running_range <- function(summaries, from = NULL, to = NULL) {
+  if (is.null(summaries) || nrow(summaries) == 0) return(summaries)
+  from <- .normalize_range_bound(from)
+  to   <- .normalize_range_bound(to)
+  d <- as.Date(summaries$sessionStart)
+  keep <- !is.na(d)
+  if (!is.null(from)) keep <- keep & d >= from
+  if (!is.null(to))   keep <- keep & d <  to
+  summaries[keep, , drop = FALSE]
+}
