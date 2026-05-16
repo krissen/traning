@@ -64,20 +64,31 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
     }
   }
 
-  # Härled cache-paths från `traning_data`-arget snarare än
+  # Härled cache-paths från `traning_data`-argumentet snarare än
   # `Sys.getenv()`-defaulten i hjälparna, så hela laddningen håller
   # samma datarot även när anropare overrider env-varen (tester,
   # parallella datakällor).
   decoupling_cache_path <- file.path(cache_dir, "decoupling.RData")
   health_cache_path     <- file.path(cache_dir, "health_daily.RData")
 
-  decoupling_data <- tryCatch(
-    load_decoupling(summaries, myruns, cache_path = decoupling_cache_path),
-    error = function(e) {
-      warning("Kunde inte ladda decoupling-data: ", conditionMessage(e))
-      NULL
+  # Read-only decoupling-load: `load_decoupling()` skriver cachen
+  # ovillkorligt även vid cache-hit (R/advanced_metrics.R:1124), så
+  # en per-session-användning skulle generera onödiga disk-writes och
+  # race mot parallella Shiny-sessioner. Vi läser därför cachen direkt
+  # när den finns. Sessioner som lagts till sedan senaste cache-bygget
+  # syns utan decoupling-värde tills nästa `cli.R --decoupling`.
+  decoupling_data <- tryCatch({
+    if (file.exists(decoupling_cache_path)) {
+      e <- new.env()
+      load(decoupling_cache_path, envir = e)
+      e$decoupling_cache$per_run
+    } else {
+      load_decoupling(summaries, myruns, cache_path = decoupling_cache_path)
     }
-  )
+  }, error = function(e) {
+    warning("Kunde inte ladda decoupling-data: ", conditionMessage(e))
+    NULL
+  })
 
   health_daily <- tryCatch(
     load_health_data(cache_path = health_cache_path),
