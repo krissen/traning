@@ -1,5 +1,55 @@
 # tRäning — Changelog
 
+## 2026-05-16 — Dashboard render-buggar fixade i Löpprofil
+
+Tre roadmap-items i "Dashboard — observerade rendering-buggar"
+(`docs/roadmap.md`) är åtgärdade. PR #29.
+
+- **Säsongsmönster i tempo — bakgrundsband renderas och säsongstexter
+  hamnar rätt.** `fetch.plot.season_pace()` byggde tidigare bakgrunden
+  med `geom_rect(ymin = -Inf, ymax = Inf)` vilket inte fungerade ihop
+  med `scale_y_reverse()` — banden hamnade utanför paneldomänen.
+  Bygger nu rektanglarna med `annotate("rect", ...)` och ändliga
+  y-gränser från data-spannet (med 8 % padding, golv på 0,25 min/km
+  för degenererade spann). Säsongsetiketterna (Vinter/Vår/Sommar/Höst)
+  anchoras nu vid bandets topp i datakoordinater istället för
+  `y = Inf` (som under `scale_y_reverse()` landade vid botten).
+  `coord_cartesian(ylim = ..., expand = FALSE, clip = "off")` ser till
+  att panelen täcker bandet exakt utan osysslade kanter, medan
+  loess-CI:n får sticka utanför.
+- **Veckokilometer per år — kvartalsetiketter klipps inte längre.**
+  `fetch.plot.heatmap_km()` ritade "jan–mar / apr–jun / jul–sep /
+  okt–dec" ovanför heatmap:en via `annotate("text", y = nrow + 0.6)`
+  med smal topp-marginal — texterna klipptes eller överlappade
+  titeln. Etiketterna ligger nu i ett `geom_text`-lager (överlever
+  `plotly::ggplotly()` — sekundära axlar gör det inte, vilket är
+  relevant eftersom `metric_panel_ui` defaultar till `use_plotly =
+  TRUE`). Utrymmet ovanför panelen reserveras via `plot.title` /
+  `plot.subtitle` bottom-marginaler.
+- **Distans × tempo per epok — hover och fixad bredd.**
+  `fetch.plot.distance_pace_era()` använde `geom_hex()` som inte
+  stöds av `plotly::ggplotly()`. För-binnar nu datan med `cut()`
+  (log10 på km, linjärt på tempo) och renderar med
+  `geom_rect(xmin = …, xmax = …, ymin = …, ymax = …)`. `geom_rect`
+  valdes över `geom_tile(width = , height = )` eftersom tile-bredder
+  appliceras *efter* skaltransformation — log-skalade km-bins skulle
+  annars renderas för breda i plotly. `page_runprofile.R` flippad
+  till `use_plotly = TRUE`. Wide-screen-cap (max-width 1200 px) ligger
+  i HTML-containern eftersom `theme(aspect.ratio)` tappas av plotly.
+  En degenerat-data-vakt returnerar specifik empty-state
+  ("För liten variation i distans/tempo") när alla pass i filtret
+  har samma distans eller tempo — `cut()` skulle annars falla på
+  duplicerade breakpoints.
+- **`hexbin` borttagen från `DESCRIPTION` Imports** — enda konsumenten
+  var det nu borttagna `geom_hex`-lagret.
+- **Regressionstester** i `test-run-character.R`: plotly-conversion
+  för `distance_pace_era` (filled-rect-traces > 0 + polygon-vertex-
+  count > 50 låser geom_rect-valet); plotly-conversion för
+  `heatmap_km` (text-trace innehåller alla fyra kvartalsetiketter);
+  degenererat-spann-vakter (specifik empty-state-titel); samt
+  single-week säsongsband (non-zero bandhöjd även när
+  `diff(y_rng) == 0`). Full svit 956/956.
+
 ## 2026-05-16 — Shiny ser senaste cachen efter import (post-import flush)
 
 Roadmap-itemet "Shiny-konsistens efter import" som beskrev hur dashboarden

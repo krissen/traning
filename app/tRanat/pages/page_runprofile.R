@@ -25,12 +25,17 @@ page_runprofile_ui <- function(id) {
       metric_panel_ui(ns("heatmap_km"), "Veckokilometer per år",
         with_table = FALSE)
     ),
-    # Distance × pace eras — geom_hex not supported by plotly, render
-    # static at full width.
+    # Distance × pace eras — plotly interactive bin density per era.
+    # max-width caps the panel on wide screens (theme(aspect.ratio) is
+    # silently dropped by plotly::ggplotly, so the cap has to live in
+    # the container rather than the ggplot theme). Only horizontal
+    # margins are auto here; the vertical margin from .section-spacer
+    # (margin-top: 1rem in www/styles.css) is preserved.
     tags$div(class = "section-spacer",
+      style = "max-width: 1200px; margin-left: auto; margin-right: auto;",
       metric_panel_ui(ns("dist_pace_era"),
         "Distans × tempo per epok",
-        use_plotly = FALSE, plot_height = "800px", with_table = FALSE)
+        use_plotly = TRUE, plot_height = "800px", with_table = FALSE)
     )
   )
 }
@@ -78,7 +83,7 @@ page_runprofile_server <- function(id, summaries, dates, is_mobile, sport) {
     metric_panel_server("dist_pace_era",
       plot_fn = shiny::reactive(fetch.plot.distance_pace_era(summaries,
                                                               sport = sp())),
-      use_plotly = FALSE,
+      use_plotly = TRUE,
       is_mobile = is_mobile
     )
   })

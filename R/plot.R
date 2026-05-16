@@ -1298,6 +1298,7 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
                       p25 = stats::quantile(pace, .25),
                       p75 = stats::quantile(pace, .75),
                       n = dplyr::n(), .groups = "drop")
+  if (nrow(woy_data) == 0) return(.run_profile_empty())
 
   seasons <- tibble::tribble(
     ~name,     ~start, ~end, ~fill,
@@ -1318,23 +1319,44 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
   woy_breaks <- c(1, 13, 26, 39, 52)
   woy_labels <- c("V1\njan", "V13\napr", "V26\njul", "V39\nokt", "V52\ndec")
 
+  # Compute finite y-range with padding so season bands fill the panel
+  # including the loess CI band. scale_y_reverse() doesn't reliably
+  # propagate -Inf/Inf through the reversed scale, causing rectangles
+  # to fall outside the plot domain.
+  y_rng <- range(woy_data$mean_pace, na.rm = TRUE)
+  # Floor pad so degenerate ranges (single week, constant pace across
+  # weeks) still produce non-zero band height. 0.25 min/km is a
+  # sensible fallback when there's no spread to compute against.
+  pad   <- max(diff(y_rng) * 0.08, 0.25)
+  y_lo  <- y_rng[1] - pad   # lower numeric value = faster pace (top of reversed axis)
+  y_hi  <- y_rng[2] + pad   # higher numeric value = slower pace (bottom of reversed axis)
+
   ggplot2::ggplot(woy_data, ggplot2::aes(x = woy, y = mean_pace)) +
-    ggplot2::geom_rect(data = seasons, inherit.aes = FALSE,
-      ggplot2::aes(xmin = start - 0.5, xmax = end + 0.5,
-                    ymin = -Inf, ymax = Inf, fill = fill),
-      alpha = 0.55, show.legend = FALSE) +
-    ggplot2::scale_fill_identity() +
+    ggplot2::annotate("rect",
+      xmin  = seasons$start - 0.5, xmax = seasons$end + 0.5,
+      ymin  = y_lo, ymax = y_hi,
+      fill  = seasons$fill, alpha = 0.55) +
     ggplot2::geom_point(colour = "#C97B4A", size = 2.2, alpha = 0.85) +
     ggplot2::geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
                           colour = "#4682B4", fill = "#4682B4",
                           alpha = 0.18) +
+    # Anchor labels at an explicit data y near the band top (= y_lo,
+    # the faster-pace edge — top of the panel under scale_y_reverse).
+    # Using y = Inf here would land them at the bottom of the
+    # reversed panel instead of the top.
     ggplot2::geom_text(data = season_labels, inherit.aes = FALSE,
-      ggplot2::aes(x = x, y = Inf, label = name),
-      vjust = 1.6, colour = "grey40", size = 3.2,
-      fontface = "italic") +
+      ggplot2::aes(x = x, y = y_lo + (y_hi - y_lo) * 0.05, label = name),
+      colour = "grey40", size = 3.2, fontface = "italic") +
     ggplot2::scale_y_reverse() +
     ggplot2::scale_x_continuous(breaks = woy_breaks, labels = woy_labels,
                                   expand = c(0.01, 0.01)) +
+    # ylim locks the panel to the season-band extent; expand = FALSE
+    # disables the default 5% padding so the bands fully reach the
+    # panel edge (no thin unshaded strips at top/bottom). clip = "off"
+    # is kept for the loess CI ribbon, which is allowed to extend
+    # outside the band in cases where it is wider than mean_pace ± pad.
+    ggplot2::coord_cartesian(ylim = c(y_lo, y_hi),
+                             expand = FALSE, clip = "off") +
     ggplot2::labs(title = "S\u00e4songsm\u00f6nster i tempo",
                    subtitle = "Veckans medeltempo \u00f6ver alla \u00e5r. Bakgrund = \u00e5rstid; kurva = loess.",
                    x = NULL, y = "Tempo (min/km)") +
@@ -1368,27 +1390,47 @@ fetch.plot.heatmap_km <- function(summaries, from = NULL, to = NULL,
   quarter_labels <- c("jan\u2013mar", "apr\u2013jun",
                       "jul\u2013sep", "okt\u2013dec")
 
+  n_years <- length(unique(heatmap_full$year))
+
   ggplot2::ggplot(heatmap_full,
                    ggplot2::aes(x = woy, y = factor(year), fill = total_km)) +
     ggplot2::geom_tile(colour = "white", linewidth = 0.1) +
     ggplot2::geom_vline(xintercept = quarter_gaps + 0.5,
                          colour = "white", linewidth = 1.5) +
-    ggplot2::annotate("text", x = c(7, 19, 32, 45),
-      y = length(unique(heatmap_full$year)) + 0.6,
-      label = quarter_labels,
-      colour = "grey35", fontface = "bold", size = 3.4) +
+    # Quarter labels via geom_text (not scale_x_continuous(sec.axis))
+    # because plotly::ggplotly() does not carry secondary axes; the
+    # dashboard renders this plot through plotly so the labels would
+    # vanish there. geom_text traces survive ggplotly cleanly.
+    ggplot2::geom_text(
+      data = data.frame(
+        x = c(7, 19, 32, 45),
+        y = n_years + 0.6,
+        label = quarter_labels
+      ),
+      ggplot2::aes(x = x, y = y, label = label),
+      inherit.aes = FALSE,
+      colour = "grey35", fontface = "bold", size = 3.4
+    ) +
     ggplot2::scale_fill_viridis_c(option = "viridis", trans = "sqrt",
                                     na.value = "grey88", name = "Km/vecka") +
     ggplot2::scale_x_continuous(breaks = c(1, 13, 26, 39, 52),
                                   labels = c("V1", "V13", "V26", "V39", "V52"),
                                   expand = c(0.005, 0.005)) +
+    # clip = "off" lets the quarter labels render in plot.margin space
+    # above the panel; plot.margin top and plot.title bottom-margin
+    # reserve the room so the labels don't overlap the title.
     ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = "Veckokilometer per \u00e5r",
                    subtitle = "Cellf\u00e4rg = veckans totala km. Saknad data = gr\u00e5.",
                    x = NULL, y = NULL) +
     .theme_run_profile() +
-    ggplot2::theme(axis.text.y = ggplot2::element_text(size = 8),
-                    plot.margin = ggplot2::margin(28, 12, 12, 12))
+    ggplot2::theme(
+      axis.text.y      = ggplot2::element_text(size = 8),
+      plot.title       = ggplot2::element_text(face = "bold",
+                                                 margin = ggplot2::margin(b = 16)),
+      plot.subtitle    = ggplot2::element_text(margin = ggplot2::margin(b = 12)),
+      plot.margin      = ggplot2::margin(12, 12, 12, 12)
+    )
 }
 
 #' Kumulativ km \u2014 innevarande \u00e5r vs historik
@@ -1454,11 +1496,12 @@ fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
     .theme_run_profile()
 }
 
-#' Distans \u00d7 tempo som hex-densitet per epok
+#' Distans \u00d7 tempo som bin-densitet per epok
 #'
-#' Hex-bin av enskilda pass (distans vs tempo), uppdelat i fyra epoker.
-#' Vita streck + prick = hela datasetets median (samma referens i alla
-#' paneler, s\u00e5 epokernas tyngdpunkter g\u00e5r att j\u00e4mf\u00f6ra med varandra).
+#' Rektangul\u00e4r bin-densitet av enskilda pass (distans vs tempo),
+#' uppdelat i fyra epoker. Vita streck + prick = hela datasetets
+#' median (samma referens i alla paneler, s\u00e5 epokernas tyngdpunkter
+#' g\u00e5r att j\u00e4mf\u00f6ra med varandra).
 #'
 #' Epok-gr\u00e4nserna \u00e4r 2005\u20132010, 2011\u20132016, 2017\u20132021, 2022\u20132026.
 #'
@@ -1484,8 +1527,50 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
   all_median_pace <- stats::median(runs$pace)
   all_median_km   <- stats::median(runs$km)
 
+  # Pre-bin with cut() so plotly::ggplotly() can render hover-able tiles.
+  # geom_bin2d() is not supported by ggplotly; geom_tile() is.
+  # Use log10 binning on km (matches scale_x_log10), linear on pace.
+  nbins       <- 30
+  km_range    <- range(runs_era$km,   na.rm = TRUE)
+  pace_range  <- range(runs_era$pace, na.rm = TRUE)
+  # Guard against degenerate ranges: when every run has the same km
+  # or the same pace, seq(..., length.out = nbins + 1) produces
+  # repeated breakpoints and cut() fails with "'breaks' are not
+  # unique". A density heatmap is meaningless in that case anyway.
+  # Use a specific empty-state message — "Ingen data i intervallet"
+  # would mislead users who do have runs in the filter (just not the
+  # variation needed for a 2D density).
+  if (diff(km_range) == 0 || diff(pace_range) == 0) {
+    return(.run_profile_empty("För liten variation i distans/tempo"))
+  }
+  km_breaks   <- 10^seq(log10(km_range[1]),  log10(km_range[2]),  length.out = nbins + 1)
+  pace_breaks <-     seq(pace_range[1],      pace_range[2],       length.out = nbins + 1)
+
+  # Use xmin/xmax/ymin/ymax (geom_rect) instead of x/width (geom_tile)
+  # because scale_x_log10() transforms positional aesthetics but not
+  # `width` — so log-spaced tile widths get applied in log-space and
+  # high-km bins render too wide in plotly. geom_rect's bounds are
+  # transformed by the scale, so the bins land at correct extents.
+  binned <- runs_era %>%
+    dplyr::mutate(
+      km_bin   = cut(km,   breaks = km_breaks,   include.lowest = TRUE, labels = FALSE),
+      pace_bin = cut(pace, breaks = pace_breaks, include.lowest = TRUE, labels = FALSE)
+    ) %>%
+    dplyr::group_by(era, km_bin, pace_bin) %>%
+    dplyr::summarise(count = dplyr::n(), .groups = "drop") %>%
+    dplyr::mutate(
+      km_lo   = km_breaks[km_bin],
+      km_hi   = km_breaks[km_bin + 1],
+      pace_lo = pace_breaks[pace_bin],
+      pace_hi = pace_breaks[pace_bin + 1]
+    )
+
   ggplot2::ggplot(runs_era, ggplot2::aes(x = km, y = pace)) +
-    ggplot2::geom_hex(bins = 30, alpha = 0.92) +
+    ggplot2::geom_rect(data = binned,
+      ggplot2::aes(xmin = km_lo, xmax = km_hi,
+                   ymin = pace_lo, ymax = pace_hi,
+                   fill = count),
+      alpha = 0.92, inherit.aes = FALSE) +
     ggplot2::geom_hline(yintercept = all_median_pace,
                          colour = "white", linewidth = 0.6,
                          linetype = "dashed") +
@@ -1502,7 +1587,10 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
     ggplot2::scale_y_reverse() +
     ggplot2::facet_wrap(~ era, ncol = 1) +
     ggplot2::labs(title = "Distans \u00d7 tempo per epok",
-                   subtitle = "Hex-t\u00e4thet av enskilda pass. Vita streck + prick = hela datasetets median (samma i alla paneler).",
+                   subtitle = "Bin-t\u00e4thet av enskilda pass. Vita streck + prick = hela datasetets median (samma i alla paneler).",
                    x = "Kilometer (log)", y = "Tempo (min/km)") +
     .theme_run_profile()
+  # `theme(aspect.ratio = ...)` is silently dropped by plotly::ggplotly,
+  # so the wide-screen layout cap is applied via a max-width container
+  # in app/tRanat/pages/page_runprofile.R instead.
 }

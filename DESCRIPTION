@@ -16,7 +16,6 @@ Imports:
     ggplot2,
     ggridges,
     ggrepel,
-    hexbin,
     scales,
     viridisLite,
     jsonlite,
