@@ -1384,31 +1384,45 @@ fetch.plot.heatmap_km <- function(summaries, from = NULL, to = NULL,
   quarter_labels <- c("jan\u2013mar", "apr\u2013jun",
                       "jul\u2013sep", "okt\u2013dec")
 
+  n_years <- length(unique(heatmap_full$year))
+
   ggplot2::ggplot(heatmap_full,
                    ggplot2::aes(x = woy, y = factor(year), fill = total_km)) +
     ggplot2::geom_tile(colour = "white", linewidth = 0.1) +
     ggplot2::geom_vline(xintercept = quarter_gaps + 0.5,
                          colour = "white", linewidth = 1.5) +
+    # Quarter labels via geom_text (not scale_x_continuous(sec.axis))
+    # because plotly::ggplotly() does not carry secondary axes; the
+    # dashboard renders this plot through plotly so the labels would
+    # vanish there. geom_text traces survive ggplotly cleanly.
+    ggplot2::geom_text(
+      data = data.frame(
+        x = c(7, 19, 32, 45),
+        y = n_years + 0.6,
+        label = quarter_labels
+      ),
+      ggplot2::aes(x = x, y = y, label = label),
+      inherit.aes = FALSE,
+      colour = "grey35", fontface = "bold", size = 3.4
+    ) +
     ggplot2::scale_fill_viridis_c(option = "viridis", trans = "sqrt",
                                     na.value = "grey88", name = "Km/vecka") +
-    ggplot2::scale_x_continuous(
-      breaks = c(1, 13, 26, 39, 52),
-      labels = c("V1", "V13", "V26", "V39", "V52"),
-      expand = c(0.005, 0.005),
-      sec.axis = ggplot2::dup_axis(
-        breaks = c(7, 19, 32, 45),
-        labels = quarter_labels,
-        name   = NULL
-      )
-    ) +
+    ggplot2::scale_x_continuous(breaks = c(1, 13, 26, 39, 52),
+                                  labels = c("V1", "V13", "V26", "V39", "V52"),
+                                  expand = c(0.005, 0.005)) +
+    # clip = "off" lets the quarter labels render in plot.margin space
+    # above the panel; plot.margin top and plot.title bottom-margin
+    # reserve the room so the labels don't overlap the title.
+    ggplot2::coord_cartesian(clip = "off") +
     ggplot2::labs(title = "Veckokilometer per \u00e5r",
                    subtitle = "Cellf\u00e4rg = veckans totala km. Saknad data = gr\u00e5.",
                    x = NULL, y = NULL) +
     .theme_run_profile() +
     ggplot2::theme(
       axis.text.y      = ggplot2::element_text(size = 8),
-      axis.text.x.top  = ggplot2::element_text(face = "bold", colour = "grey35"),
-      axis.ticks.x.top = ggplot2::element_blank(),
+      plot.title       = ggplot2::element_text(face = "bold",
+                                                 margin = ggplot2::margin(b = 16)),
+      plot.subtitle    = ggplot2::element_text(margin = ggplot2::margin(b = 12)),
       plot.margin      = ggplot2::margin(12, 12, 12, 12)
     )
 }
@@ -1517,8 +1531,11 @@ fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
   # or the same pace, seq(..., length.out = nbins + 1) produces
   # repeated breakpoints and cut() fails with "'breaks' are not
   # unique". A density heatmap is meaningless in that case anyway.
+  # Use a specific empty-state message — "Ingen data i intervallet"
+  # would mislead users who do have runs in the filter (just not the
+  # variation needed for a 2D density).
   if (diff(km_range) == 0 || diff(pace_range) == 0) {
-    return(.run_profile_empty())
+    return(.run_profile_empty("För liten variation i distans/tempo"))
   }
   km_breaks   <- 10^seq(log10(km_range[1]),  log10(km_range[2]),  length.out = nbins + 1)
   pace_breaks <-     seq(pace_range[1],      pace_range[2],       length.out = nbins + 1)
