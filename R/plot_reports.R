@@ -57,11 +57,18 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL,
                           sport = "running") {
   data <- report_monthtop(summaries, from = from, to = to, sport = sport)
 
-  data %>%
+  data <- data %>%
     dplyr::mutate(
       `År-mån` = factor(`År-mån`, levels = `År-mån`),
       year      = substr(`År-mån`, 1, 4)
-    ) %>%
+    )
+
+  # Interpolate the brown sequence palette to span the actual number
+  # of distinct years in the top-10 (typically 3–7, but flexible).
+  years_n <- length(unique(data$year))
+  year_colours <- grDevices::colorRampPalette(traning_palette$sequence)(years_n)
+
+  data %>%
     ggplot2::ggplot(
       ggplot2::aes(
         x    = `År-mån`,
@@ -70,6 +77,7 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL,
       )
     ) +
     ggplot2::geom_col() +
+    ggplot2::scale_fill_manual(values = year_colours) +
     ggplot2::coord_flip() +
     ggplot2::ggtitle("Topp 10 månader per distans") +
     ggplot2::labs(x = "", y = "Kilometer", fill = "År")
