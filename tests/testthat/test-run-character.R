@@ -119,6 +119,27 @@ test_that("fetch.plot.distance_pace_era converts to plotly without dropping the 
   )
   expect_s3_class(pp, "plotly")
   expect_length(unsupported_warnings, 0)
+  # The "geom yet to be implemented" warning is not always emitted —
+  # some unsupported geoms convert to empty traces silently. Lock in
+  # that the density layer survived by inspecting the built plotly
+  # object: geom_rect converts to filled scatter traces, one per
+  # fill-color per facet (plotly groups same-color polygons). The
+  # median geom_hline/geom_vline/annotate("point") traces have no
+  # fillcolor. Without the density layer, zero filled traces remain.
+  build <- suppressWarnings(plotly::plotly_build(pp))
+  filled_traces <- vapply(build$x$data, function(tr) {
+    fc <- tr$fillcolor
+    !is.null(fc) && nzchar(fc)
+  }, logical(1))
+  expect_gt(sum(filled_traces), 0)
+  # Also assert the filled traces carry a non-trivial number of
+  # vertices — each geom_rect tile contributes 5 polygon points,
+  # so a 30×30 bin grid produces hundreds. A bare median-line plot
+  # cannot exceed 0 filled vertices.
+  total_filled_pts <- sum(vapply(build$x$data[filled_traces],
+    function(tr) length(if (is.null(tr$x)) NULL else tr$x),
+    integer(1)))
+  expect_gt(total_filled_pts, 50)
 })
 
 # Regression: cut()-based binning in distance_pace_era previously
