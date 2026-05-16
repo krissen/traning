@@ -179,6 +179,18 @@ test_that("doctor_run rejects unknown check names", {
   expect_error(doctor_run(checks = "packges"), "Unknown doctor check")
 })
 
+test_that("doctor_run treats warn as not-ok (so timer notifies on drift)", {
+  tmp <- withr::local_tempfile()
+  writeLines("hello", tmp)
+  # Wrong digest → check_configs returns warn; doctor_run must report ok=FALSE.
+  res <- doctor_run(
+    checks = "configs",
+    expected_configs = setNames(list("00deadbeef"), tmp)
+  )
+  expect_equal(res$results$configs$status, "warn")
+  expect_false(res$ok)
+})
+
 test_that("doctor_run uses injected r_version end-to-end", {
   pkgs <- make_pkg_matrix(list(
     list(Package = "foo", LibPath = "/usr/lib/R/library",

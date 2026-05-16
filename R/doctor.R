@@ -259,7 +259,10 @@ doctor_run <- function(checks = .VALID_DOCTOR_CHECKS,
   }
 
   statuses <- vapply(results, `[[`, character(1), "status")
-  ok <- !any(statuses == "fail")
+  # Treat warn as not-ok so the systemd unit's OnFailure= path
+  # notifies on config-digest drift (currently the only warn-emitting
+  # path) instead of silently passing the timer green.
+  ok <- !any(statuses %in% c("fail", "warn"))
   list(
     ok = ok,
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S %z"),
