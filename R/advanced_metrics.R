@@ -976,7 +976,8 @@ load_decoupling <- function(summaries, myruns,
                             cap_pct                 = 25,
                             force                   = FALSE,
                             cache_path              = NULL,
-                            sport                   = "running") {
+                            sport                   = "running",
+                            read_only               = FALSE) {
   # Mirror compute_decoupling's sport-aware default so non-running
   # callers (CLI/Vayu/Shiny with sport="cycling"/"endurance"/"all")
   # don't silently filter to an empty cache by inheriting the old
@@ -1108,8 +1109,11 @@ load_decoupling <- function(summaries, myruns,
     }
   }
 
-  # Save cache
-  if (!is.null(cache_path)) {
+  # Save cache. Hoppas över när `read_only = TRUE` (typiskt Shiny
+  # per-session-load) så att läsare inte skriver disken vid varje
+  # session och inte racar mot parallella konsumenter. Validering,
+  # incremental compute och merge sker fortfarande in-memory.
+  if (!is.null(cache_path) && !read_only) {
     decoupling_cache <- list(
       per_run                 = per_run,
       skipped_dates           = all_skipped,

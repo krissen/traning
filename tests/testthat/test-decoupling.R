@@ -376,6 +376,43 @@ test_that("load_decoupling force bypasses cache", {
   expect_s3_class(result, "tbl_df")
 })
 
+test_that("load_decoupling read_only=TRUE skips cache write", {
+  # Shiny per-session-loaden anropar med read_only=TRUE för att
+  # undvika disk-writes vid varje session. Returvärdet ska vara
+  # samma som vanligt anrop, men cache-filen ska inte skrivas
+  # (eller röras) när den redan finns.
+  myruns <- make_dc_myruns(test_summaries_dc)
+  cache_file <- tempfile(fileext = ".RData")
+  on.exit(unlink(cache_file))
+
+  load_decoupling(test_summaries_dc, myruns, cache_path = cache_file)
+  expect_true(file.exists(cache_file))
+  mtime_before <- file.info(cache_file)$mtime
+
+  # Sleep ger mtime-jämförelsen tillräcklig granularitet på
+  # filsystem med sekundupplösning.
+  Sys.sleep(1.1)
+
+  result <- load_decoupling(test_summaries_dc, myruns,
+                            cache_path = cache_file, read_only = TRUE)
+  expect_s3_class(result, "tbl_df")
+  mtime_after <- file.info(cache_file)$mtime
+  expect_equal(mtime_before, mtime_after)
+})
+
+test_that("load_decoupling read_only=TRUE without existing cache still returns data", {
+  # Cold cache + read_only ska beräkna in-memory utan att skriva
+  # cache-filen.
+  myruns <- make_dc_myruns(test_summaries_dc)
+  cache_file <- tempfile(fileext = ".RData")
+  on.exit(unlink(cache_file))
+
+  result <- load_decoupling(test_summaries_dc, myruns,
+                            cache_path = cache_file, read_only = TRUE)
+  expect_s3_class(result, "tbl_df")
+  expect_false(file.exists(cache_file))
+})
+
 test_that("load_decoupling pace default is sport-aware (cycling)", {
   # Regression: load_decoupling used to hard-code max_pace_min_km =
   # 5.0 in its pre-cache filter, which silently dropped every cycling

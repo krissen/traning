@@ -71,32 +71,21 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
   decoupling_cache_path <- file.path(cache_dir, "decoupling.RData")
   health_cache_path     <- file.path(cache_dir, "health_daily.RData")
 
-  # Read-only decoupling-load: `load_decoupling()` skriver cachen
-  # ovillkorligt även vid cache-hit (R/advanced_metrics.R:1124), så
-  # en per-session-användning skulle generera onödiga disk-writes och
-  # race mot parallella Shiny-sessioner. Vi läser därför cachen direkt
-  # när den finns OCH dess metadata matchar Shinys förväntningar
-  # (sport == "running" — samma cache-fil delas mellan sporterna och
-  # en cykling-byggd cache får inte serveras som löpning). Vid
-  # mismatch faller vi tillbaka till load_decoupling() som rebuildar
-  # för rätt sport. Sessioner som lagts till sedan senaste cache-bygget
-  # syns utan decoupling-värde tills nästa `cli.R --decoupling`.
-  decoupling_data <- tryCatch({
-    cache <- NULL
-    if (file.exists(decoupling_cache_path)) {
-      e <- new.env()
-      load(decoupling_cache_path, envir = e)
-      cache <- e$decoupling_cache
+  # Decoupling-load i read-only-läge: bevarar load_decoupling()s
+  # validering av cache-parametrar (sport, min_duration, warmup,
+  # smooth_window, ...) och incremental compute för nya sessioner,
+  # men hoppar över cache-skrivningen så Shiny-sessioner inte
+  # genererar disk-writes per session eller racer mot parallella
+  # konsumenter. Cache-bygget sker fortfarande via `cli.R --decoupling`.
+  decoupling_data <- tryCatch(
+    load_decoupling(summaries, myruns,
+                    cache_path = decoupling_cache_path,
+                    read_only  = TRUE),
+    error = function(e) {
+      warning("Kunde inte ladda decoupling-data: ", conditionMessage(e))
+      NULL
     }
-    if (!is.null(cache) && isTRUE(identical(cache$sport, "running"))) {
-      cache$per_run
-    } else {
-      load_decoupling(summaries, myruns, cache_path = decoupling_cache_path)
-    }
-  }, error = function(e) {
-    warning("Kunde inte ladda decoupling-data: ", conditionMessage(e))
-    NULL
-  })
+  )
 
   health_daily <- tryCatch(
     load_health_data(cache_path = health_cache_path),

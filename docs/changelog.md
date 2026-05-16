@@ -34,8 +34,9 @@ visade stale data efter import (observerat 2026-05-15 ~21:00) är åtgärdat.
 - **Tester:** 11 nya assertions i `test-shiny-helpers.R` för
   `load_session_data()` (returstruktur, objekt-equality mot
   `my_dbs_load()`, missing-cache-resilience, reentrans,
-  env-var-validering, explicit `traning_data`-arg overrider env).
-  Full suite: 937/937.
+  env-var-validering, explicit `traning_data`-arg overrider env)
+  och 5 nya för `load_decoupling(read_only = TRUE)` i
+  `test-decoupling.R`. Full suite: 942/942.
 - **page_import.R-precisering:** Withings-backfill skriver enbart
   canonical JSON; för att få in dem i `health_daily.RData` krävs
   fortfarande `traning import health --force` (receiverns flush
