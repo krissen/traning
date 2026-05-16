@@ -25,8 +25,12 @@ page_runprofile_ui <- function(id) {
       metric_panel_ui(ns("heatmap_km"), "Veckokilometer per år",
         with_table = FALSE)
     ),
-    # Distance × pace eras — plotly interactive bin2d heatmap per era.
+    # Distance × pace eras — plotly interactive bin density per era.
+    # max-width caps the panel on wide screens (theme(aspect.ratio) is
+    # silently dropped by plotly::ggplotly, so the cap has to live in
+    # the container rather than the ggplot theme).
     tags$div(class = "section-spacer",
+      style = "max-width: 1200px; margin: 0 auto;",
       metric_panel_ui(ns("dist_pace_era"),
         "Distans × tempo per epok",
         use_plotly = TRUE, plot_height = "800px", with_table = FALSE)
