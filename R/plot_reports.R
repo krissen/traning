@@ -1,15 +1,5 @@
 # Plot variants for table-based reports
 
-# Internal: rotated x-axis label theme for bar/factor x-axes.
-# Date/datetime plots use .adaptive_*_scale() instead — they already
-# rotate based on span. Use this helper for plots where the x-axis is
-# a category, year, or month string that can crowd.
-.theme_rotated_x <- function(angle = 45, size = NULL) {
-  ggplot2::theme(
-    axis.text.x = ggplot2::element_text(angle = angle, hjust = 1, size = size)
-  )
-}
-
 # Internal: thin a discrete x-axis (factor/character) to ~target labels.
 # Works with `scale_x_discrete(breaks = .thin_discrete_breaks(N))`. ggplot
 # passes the full set of levels in plot order; we keep an evenly-spaced

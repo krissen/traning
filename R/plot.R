@@ -965,17 +965,6 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
   yrs[seq(1, length(yrs), by = step)]
 }
 
-# Shared theme for run-profile plots.
-.theme_run_profile <- function() {
-  ggplot2::theme_minimal(base_size = 12) +
-    ggplot2::theme(
-      plot.title = ggplot2::element_text(face = "bold"),
-      plot.subtitle = ggplot2::element_text(colour = "grey40"),
-      panel.grid.minor = ggplot2::element_blank(),
-      strip.text = ggplot2::element_text(face = "bold")
-    )
-}
-
 # Empty-state placeholder when filters strip the data to zero rows.
 .run_profile_empty <- function(msg = "Ingen data i intervallet") {
   ggplot2::ggplot() + ggplot2::ggtitle(msg) + .theme_run_profile()
