@@ -230,11 +230,7 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
     .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Effektivitetsfaktor (EF) över tid") +
     ggplot2::labs(x = NULL, y = NULL) +
-    ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold"),
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
-    )
+    ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"))
   return(p)
 }
 
@@ -308,10 +304,6 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
     ggplot2::labs(
       x = NULL,
       y = "Hjärtslagskostnad (slag/km)"
-    ) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
     )
   return(p)
 }
@@ -444,10 +436,7 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
       strip.text   = ggplot2::element_text(face = "bold"),
-      legend.position = "bottom",
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0,
-        hjust = if (span <= 60) 1 else 0.5)
+      legend.position = "bottom"
     ) -> p
 
   # Show individual data points at short spans
@@ -521,11 +510,7 @@ fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
     .adaptive_date_scale(span) +
     ggplot2::ggtitle("Träningsmonotoni och belastning") +
     ggplot2::labs(x = NULL, y = NULL) +
-    ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold"),
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
-    )
+    ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"))
 
   # Show individual data points at short spans
   if (span <= 60) {
@@ -667,10 +652,7 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
     ) +
     ggplot2::theme(
       strip.text      = ggplot2::element_text(face = "bold"),
-      legend.position = "bottom",
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0,
-        hjust = if (span <= 60) 1 else 0.5)
+      legend.position = "bottom"
     )
 }
 
@@ -753,11 +735,7 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
   p <- p +
     .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Recovery HR efter löpning") +
-    ggplot2::labs(x = NULL) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
-    )
+    ggplot2::labs(x = NULL)
 
   return(p)
 }
@@ -933,11 +911,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Aerob decoupling \u00f6ver tid") +
     ggplot2::labs(x = NULL, y = NULL) +
-    ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold"),
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
-    )
+    ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"))
 
   return(p)
 }

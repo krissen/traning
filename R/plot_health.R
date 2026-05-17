@@ -67,12 +67,7 @@ fetch.plot.resting_hr <- function(health_daily, summaries = NULL,
     .adaptive_date_scale(span_days) +
     ggplot2::labs(title = "Vilopuls (Apple Watch)",
                   x = NULL, y = "bpm") +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(
-        angle = if (span_days <= 60) 45 else 0,
-        hjust = if (span_days <= 60) 1 else 0.5)
-    )
+    ggplot2::theme_minimal()
 
   p
 }
@@ -123,12 +118,7 @@ fetch.plot.hrv <- function(health_daily, from = NULL, to = NULL) {
     .adaptive_date_scale(span_days) +
     ggplot2::labs(title = "HRV — Ln(RMSSD) med 7-dagars baseline",
                   x = NULL, y = "Ln(RMSSD)") +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(
-        angle = if (span_days <= 60) 45 else 0,
-        hjust = if (span_days <= 60) 1 else 0.5)
-    )
+    ggplot2::theme_minimal()
 
   p
 }
@@ -235,12 +225,7 @@ fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
     ggplot2::annotate("text", x = min(total$date), y = 7.15,
                       label = "7h mål", hjust = 0, size = 3,
                       colour = "darkgreen") +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(
-        angle = if (span_days <= 60) 45 else 0,
-        hjust = if (span_days <= 60) 1 else 0.5)
-    )
+    ggplot2::theme_minimal()
 
   p
 }
@@ -341,12 +326,7 @@ fetch.plot.vo2max <- function(health_daily, summaries = NULL,
     ggplot2::labs(title = title,
                   x = NULL,
                   y = "ml/(kg\u00b7min)") +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(
-        angle = if (span_days <= 60) 45 else 0,
-        hjust = if (span_days <= 60) 1 else 0.5)
-    )
+    ggplot2::theme_minimal()
 
   if (has_both) {
     p <- p +
@@ -426,10 +406,7 @@ fetch.plot.readiness_score <- function(health_daily, summaries,
 
   theme_panel <- ggplot2::theme_minimal() +
     ggplot2::theme(axis.title.x = ggplot2::element_blank(),
-                   plot.title = ggplot2::element_text(size = 10, face = "bold"),
-                   axis.text.x = ggplot2::element_text(
-                     angle = if (span_days <= 60) 45 else 0,
-                     hjust = if (span_days <= 60) 1 else 0.5))
+                   plot.title = ggplot2::element_text(size = 10, face = "bold"))
 
   # Panel 1: Readiness score (traffic-light bands + matching point colour)
   readiness_green  <- "#4CAF50"

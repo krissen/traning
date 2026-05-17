@@ -178,10 +178,7 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
     .adaptive_date_scale(span_days) +
     ggplot2::ggtitle(x_title) +
     ggplot2::labs(x = NULL, y = "Andel (%)") +
-    ggplot2::theme(
-      axis.text.x     = ggplot2::element_text(angle = 45, hjust = 1),
-      legend.position = "bottom"
-    ) -> p
+    ggplot2::theme(legend.position = "bottom") -> p
   return(p)
 }
 
@@ -272,10 +269,7 @@ fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
     ) +
     .adaptive_date_scale(.compute_span_days(from, to)) +
     ggplot2::ggtitle("Polariseringsindex (Treff 2019)") +
-    ggplot2::labs(x = NULL, y = "PI") +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(angle = 45, hjust = 1)
-    ) -> p
+    ggplot2::labs(x = NULL, y = "PI") -> p
   return(p)
 }
 
