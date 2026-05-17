@@ -61,7 +61,13 @@
       # Skip pure comment lines and roxygen docs
       if (grepl("^\\s*#", ln)) next
 
-      if (!grepl("ggplot2::scale_x_date(?:time)?\\s*\\(", ln, perl = TRUE)) next
+      # Match both namespace-qualified (`ggplot2::scale_x_date(`) and
+      # bare (`scale_x_date(`) forms. The project convention is to
+      # namespace-qualify everything, but the guard should catch the
+      # bare form too — that's exactly the regression we want to fail
+      # on if it ever slips in.
+      if (!grepl("(?<![\\w.])(?:ggplot2::)?scale_x_date(?:time)?\\s*\\(",
+                 ln, perl = TRUE)) next
 
       # Allow when inside the canonical helpers
       if (!is.null(current_fn) &&
