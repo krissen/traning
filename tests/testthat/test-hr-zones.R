@@ -287,7 +287,7 @@ test_that("report_hr_zones respects n parameter", {
   expect_lte(nrow(result_3), 3)
 })
 
-test_that("report_hr_zones respects from/to date range", {
+test_that("report_hr_zones respects from/to date range (inklusiv övre gräns)", {
   set.seed(8)
   long_data <- make_zone_summaries(n = 60)
   from <- as.Date("2024-06-01")
@@ -295,7 +295,9 @@ test_that("report_hr_zones respects from/to date range", {
   result <- report_hr_zones(long_data, from = from, to = to)
   if (nrow(result) > 0) {
     expect_true(all(result$Datum >= from))
-    expect_true(all(result$Datum < to))
+    # Datum är month-aggregate Date (year_month-baserad) — daily-snapshot
+    # konventionen i docs/dev/filter-consistency.md: inklusiv övre gräns.
+    expect_true(all(result$Datum <= to))
   }
 })
 
