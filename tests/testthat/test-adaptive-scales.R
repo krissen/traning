@@ -17,9 +17,14 @@
 
 # Scan the project's R/ and app/ directories for offending callsites.
 .scan_for_direct_date_scales <- function(root) {
+  # recursive = TRUE on both trees: R packages don't ship subdirectories
+  # under R/, but the project also has scripts/ and similar non-package
+  # R sources at the top level — covering recursively makes the guard
+  # robust against any future reorganisation that places plot code in a
+  # subdirectory.
   paths <- c(
     list.files(file.path(root, "R"), pattern = "\\.R$",
-               full.names = TRUE, recursive = FALSE),
+               full.names = TRUE, recursive = TRUE),
     list.files(file.path(root, "app"), pattern = "\\.R$",
                full.names = TRUE, recursive = TRUE)
   )
