@@ -104,7 +104,7 @@ fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
     }
     if (!is.null(to)) {
       monthly <- monthly %>%
-        dplyr::filter(as.Date(paste0(year_month, "-01")) < as.Date(to))
+        dplyr::filter(as.Date(paste0(year_month, "-01")) <= as.Date(to))
     }
     agg <- monthly %>%
       dplyr::mutate(period = as.Date(paste0(year_month, "-01")))
@@ -213,7 +213,7 @@ fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
     pi_data <- pi_data %>% dplyr::filter(year_month >= as.Date(from))
   }
   if (!is.null(to)) {
-    pi_data <- pi_data %>% dplyr::filter(year_month < as.Date(to))
+    pi_data <- pi_data %>% dplyr::filter(year_month <= as.Date(to))
   }
 
   # Determine x limits for background rectangles

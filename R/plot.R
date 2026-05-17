@@ -67,13 +67,26 @@
   )
 }
 
-# Filter a data frame by from/to on a date-like column
-.filter_date_range <- function(data, date_col, from, to) {
+# Filter a data frame by from/to on a date-like column.
+# closed_upper = TRUE  → use <= to (inclusive upper bound).
+#   Use for date-columns (daily aggregates: ACWR, PMC, MS, readiness, RHR, HRV …).
+#   A date-row represents a finalised calendar day; the upper bound should be
+#   inclusive so that KPI boxes (slice_max(date)) and mini-charts agree on
+#   today's value. See docs/dev/filter-consistency.md.
+# closed_upper = FALSE → use <  to (half-open, default).
+#   Use for sessionStart / POSIXct columns (session-level data: EF, HRE,
+#   decoupling, run-mix). A datetime represents a momentary event that may
+#   still be in progress; today's in-progress session is excluded until done.
+.filter_date_range <- function(data, date_col, from, to, closed_upper = FALSE) {
   if (!is.null(from)) {
     data <- data[as.Date(data[[date_col]]) >= as.Date(from), , drop = FALSE]
   }
   if (!is.null(to)) {
-    data <- data[as.Date(data[[date_col]]) < as.Date(to), , drop = FALSE]
+    if (closed_upper) {
+      data <- data[as.Date(data[[date_col]]) <= as.Date(to), , drop = FALSE]
+    } else {
+      data <- data[as.Date(data[[date_col]]) < as.Date(to), , drop = FALSE]
+    }
   }
   data
 }
@@ -327,7 +340,7 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
                             sport = "running") {
   acwr_data <- compute_acwr(summaries, sport = sport)
 
-  acwr_window <- .filter_date_range(acwr_data, "date", from, to) %>%
+  acwr_window <- .filter_date_range(acwr_data, "date", from, to, closed_upper = TRUE) %>%
     dplyr::filter(!is.na(acwr))
 
   # Assign each observation to an ACWR zone for colouring
@@ -467,7 +480,7 @@ fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
                                 sport = "running") {
   ms_data <- compute_monotony_strain(summaries, sport = sport)
 
-  ms_window <- .filter_date_range(ms_data, "date", from, to)
+  ms_window <- .filter_date_range(ms_data, "date", from, to, closed_upper = TRUE)
   span <- .compute_span_days(from, to, data_dates = ms_window$date)
 
   # Build long format for facet_grid — one panel per metric
@@ -545,7 +558,7 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
   }
 
-  pmc_window <- .filter_date_range(pmc_data, "date", from, to)
+  pmc_window <- .filter_date_range(pmc_data, "date", from, to, closed_upper = TRUE)
   span <- .compute_span_days(from, to, data_dates = pmc_window$date)
 
   # Panel 1: CTL + ATL lines

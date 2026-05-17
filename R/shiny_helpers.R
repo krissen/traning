@@ -113,22 +113,27 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
   x
 }
 
-# Filtrera readiness-rader till ett datumspann. Halvöppet intervall
-# [from, to) i linje med `.filter_date_range()` (R/plot.R) och
-# `filter_by_daterange()` (R/daterange.R) — `to = Sys.Date()` betyder
-# alltså "fram t.o.m. igår". NULL- eller NA-gräns = öppen åt det hållet.
-# NA-datum droppas *alltid*, oavsett bound-state, så att downstream
-# `min(date)`/`max(date)` aldrig blir NA (annars tappas `geom_rect`-
-# band i mini-graferna). Matchar `dplyr::filter`s NA-drop-semantik.
-# Privat (dot-prefix) — exportPattern("^[^\\.]") i NAMESPACE hoppar
-# över dot-funktioner. Konsumeras av `mod_overview.R` mini_readiness.
+# Filtrera readiness-rader till ett datumspann. Inklusivt intervall
+# [from, to] — till skillnad från session-nivå-filter som är halvöppna.
+# Readiness är ett finaliserat dagligt aggregat (en rad per kalenderdag);
+# den övre gränsen ska vara inklusiv så att KPI-boxens slice_max(date)
+# matchar mini-grafens rightmost-punkt när to = Sys.Date(). Se
+# `.filter_date_range()` (R/plot.R, closed_upper-param) och
+# docs/dev/filter-consistency.md för principen Date → inklusiv,
+# datetime → halvöppet. `.filter_running_range` (nedan) använder
+# sessionStart (POSIXct) och är fortsatt halvöppet [from, to).
+# NULL- eller NA-gräns = öppen åt det hållet. NA-datum droppas
+# *alltid*, oavsett bound-state, så att downstream `min(date)`/
+# `max(date)` aldrig blir NA (annars tappas `geom_rect`-band i
+# mini-graferna). Privat (dot-prefix) — exportPattern("^[^\\.]") i
+# NAMESPACE hoppar över dot-funktioner. Konsumeras av mod_overview.R.
 .filter_readiness_range <- function(rd, from = NULL, to = NULL) {
   if (is.null(rd) || nrow(rd) == 0) return(rd)
   from <- .normalize_range_bound(from)
   to   <- .normalize_range_bound(to)
   out <- rd[!is.na(rd$date), , drop = FALSE]
   if (!is.null(from)) out <- out[out$date >= from, , drop = FALSE]
-  if (!is.null(to))   out <- out[out$date <  to,   , drop = FALSE]
+  if (!is.null(to))   out <- out[out$date <= to,   , drop = FALSE]
   out
 }
 
