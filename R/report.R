@@ -291,11 +291,25 @@ report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
 # Each calls its compute_*() function and returns a formatted tibble.
 # When from/to are given, the output is filtered by date range.
 # Otherwise the last n rows are returned.
-
-.tail_or_daterange <- function(data, n, from, to, date_col) {
+#
+# closed_upper = TRUE  → use <= to (inclusive). Use for Date columns
+#   (daily/monthly aggregates: ACWR, MS, PMC, readiness, HR-zones,
+#   PI-zones, run-mix). Matches the KPI/graf-konventionen i
+#   docs/dev/filter-consistency.md.
+# closed_upper = FALSE → use <  to (half-open, default). Use for
+#   POSIXct/sessionStart columns (session-level: EF, HRE, RHR-session,
+#   decoupling).
+.tail_or_daterange <- function(data, n, from, to, date_col,
+                                closed_upper = FALSE) {
   if (!is.null(from) || !is.null(to)) {
     if (!is.null(from)) data <- dplyr::filter(data, .data[[date_col]] >= from)
-    if (!is.null(to))   data <- dplyr::filter(data, .data[[date_col]] < to)
+    if (!is.null(to)) {
+      if (closed_upper) {
+        data <- dplyr::filter(data, .data[[date_col]] <= to)
+      } else {
+        data <- dplyr::filter(data, .data[[date_col]] < to)
+      }
+    }
   } else {
     data <- utils::tail(data, n = n)
   }
@@ -357,7 +371,7 @@ report_acwr <- function(summaries, n = 28, from = NULL, to = NULL,
       ACWR = round(acwr, 2)
     ) %>%
     dplyr::select(Datum, `Km/dag`, `Km/vecka`, ACWR) %>%
-    .tail_or_daterange(n, from, to, "Datum")
+    .tail_or_daterange(n, from, to, "Datum", closed_upper = TRUE)
 }
 
 #' Training Monotony and Strain report — recent daily values
@@ -375,7 +389,7 @@ report_monotony <- function(summaries, n = 28, from = NULL, to = NULL,
       Belastning = round(strain, 1)
     ) %>%
     dplyr::select(Datum, `Km/dag`, `Km/vecka`, Monotoni, Belastning) %>%
-    .tail_or_daterange(n, from, to, "Datum")
+    .tail_or_daterange(n, from, to, "Datum", closed_upper = TRUE)
 }
 
 #' Performance Management Chart report — recent daily values
@@ -397,7 +411,7 @@ report_pmc <- function(summaries, n = 28, from = NULL, to = NULL,
       TSB = round(tsb, 1)
     ) %>%
     dplyr::select(Datum, TRIMP, CTL, ATL, TSB) %>%
-    .tail_or_daterange(n, from, to, "Datum")
+    .tail_or_daterange(n, from, to, "Datum", closed_upper = TRUE)
 }
 
 #' Recovery Heart Rate report — recent runs with recovery HR
@@ -462,7 +476,7 @@ report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
     ) %>%
     dplyr::mutate(`Tot min` = round(total_min, 0)) %>%
     dplyr::select(Datum, `Z1 %`, `Z2 %`, `Z3 %`, PI, Turer, `Tot min`) %>%
-    .tail_or_daterange(n, from, to, "Datum")
+    .tail_or_daterange(n, from, to, "Datum", closed_upper = TRUE)
 }
 
 #' Aerobic Decoupling report — recent qualifying sessions
@@ -555,7 +569,7 @@ report_readiness <- function(health_daily, summaries, n = 14,
   cols <- c(cols, "Kvalitet")
   out |>
     dplyr::select(dplyr::all_of(cols)) |>
-    .tail_or_daterange(n, from, to, "Datum")
+    .tail_or_daterange(n, from, to, "Datum", closed_upper = TRUE)
 }
 
 #' Generic health metric time series
@@ -583,5 +597,5 @@ report_metric <- function(health_daily, metric, n = 30,
                           "V\u00e4rde" = numeric(0)))
   }
 
-  .tail_or_daterange(df, n, from, to, "Datum")
+  .tail_or_daterange(df, n, from, to, "Datum", closed_upper = TRUE)
 }

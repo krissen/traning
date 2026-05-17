@@ -16,19 +16,56 @@ dr_to   <- shiny::reactive(dates()$to)
 …och skickar in dem i plot-/report-funktioner (`from = dr_from(),
 to = dr_to()`). NULL/NULL ("Allt") motsvarar ingen filtrering.
 
-### Halvöppet intervall
+### Övre gräns beror på kolumn-typ
 
-`from`/`to` tolkas som ett **halvöppet** intervall `[from, to)` —
-`from` är inklusiv, `to` är exklusiv. Konventionen är genomgående i
-paketet: se `.filter_date_range()` (`R/plot.R:54`) och
-`filter_by_daterange()` (`R/daterange.R:115`). De privata helpers
-som driver Översiktens mini-grafer (`.filter_readiness_range`,
-`.filter_running_range` i `R/shiny_helpers.R`) följer samma regel.
+`from` är alltid **inklusiv**. Tolkningen av `to` beror på vilken
+kolumn-typ filtret opererar på:
 
-Konsekvens: presets som sätter `to = Sys.Date()` (t.ex. "7 dagar"
-→ `from = today - 7, to = today`) ger exakt 7 kalenderdagar och
-**exkluderar** dagens (pågående) datum. Nya filter måste använda
-`< to`, aldrig `<= to`, för att undvika off-by-one mot etiketten.
+| Kolumn-typ | Övre gräns | Använder |
+|------------|------------|----------|
+| `Date` (dagligt/månadsvis aggregat) | `<= to` (inklusiv) | readiness, daily RHR/HRV/sleep/VO2max, ACWR, PMC, MS, HR-zoner-månadsvis, PI-zoner |
+| `POSIXct` (sessionStart, momentana händelser) | `< to` (halvöppet) | EF, HRE, decoupling, run-mix, recovery-HR, zone-per-pass, cv-data |
+
+**Date-kolumn (`<= to`):** en datum-rad representerar en avslutad
+kalenderdag. Readiness, daily RHR osv. är finaliserade per-dag-
+snapshots — när en KPI-box visar dagens snapshot via
+`slice_max(date)` ska grafen direkt under matcha rightmost-punkten.
+Halvöppet `[from, to)` med `to = Sys.Date()` skulle gömma dagens
+rad och skapa visuellt missmatch mot KPI:n (incident 2026-05-17).
+
+**POSIXct-kolumn (`< to`):** en datetime-tidsstämpel representerar
+en momentan händelse som kan inträffa när som helst på dygnet.
+Halvöppet `[from, to)` med `to = Sys.Date()` exkluderar dagens
+pågående pass — korrekt, för en löprunda som "händer i dag" är
+ofta inte färdig än när rapporten körs.
+
+### Implementation
+
+Centrala helpers exponerar valet via en `closed_upper`-parameter:
+
+- **`.filter_date_range(data, date_col, from, to, closed_upper = FALSE)`**
+  (`R/plot.R`) — `closed_upper = TRUE` för Date-callers (ACWR, MS,
+  PMC). Default `FALSE` för sessionStart-callers (EF, HRE, RHR,
+  decoupling).
+- **`.tail_or_daterange(data, n, from, to, date_col, closed_upper = FALSE)`**
+  (`R/report.R`) — samma princip för report_*-funktioner. Date-
+  callers (ACWR/MS/PMC/HR-zoner/readiness/metric) skickar
+  `closed_upper = TRUE`; sessionStart-callers (EF/HRE/recovery-HR/
+  decoupling) använder default `FALSE`.
+
+Mini-graferna i Översikten har dedikerade helpers:
+`.filter_readiness_range` (date, inklusiv) och `.filter_running_range`
+(sessionStart, halvöppet) i `R/shiny_helpers.R`.
+
+För datetime-filter på top-nivå: `filter_by_daterange()`
+(`R/daterange.R`) opererar på `sessionStart` och är fortsatt
+halvöppet — inga date-kolumner passerar genom den.
+
+Konsekvens för presets: "7 dagar" (`from = today - 7, to = today`)
+ger **7 datetime-pass-rader (exkluderar dagens)** för session-filter,
+men **8 datum-rader (inkluderar today)** för daily-aggregat-filter.
+Asymmetrin är medveten — daily-aggregatets "8:e rad" är dagens
+finaliserade snapshot, samma värde som KPI-kortet visar.
 
 ## Tillåtna avvikelser
 

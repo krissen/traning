@@ -4,10 +4,14 @@
 # för att matcha konventionen i resten av sviten (test-readiness.R m.fl.)
 # och vara robust mot `R CMD check` mot installerat paket.
 #
-# Båda helpers använder halvöppet intervall [from, to) — samma
-# konvention som `.filter_date_range()` och `filter_by_daterange()`.
+# `.filter_readiness_range` använder inklusivt intervall [from, to] —
+# readiness är dagliga aggregat (en rad per kalenderdag), och inklusiv
+# övre gräns krävs för att KPI-boxens slice_max(date) ska matcha
+# mini-grafens rightmost-punkt när to = Sys.Date().
+# `.filter_running_range` behåller halvöppet [from, to) — sessionStart
+# är POSIXct och en pågående löprunda exkluderas tills dagen är slut.
 
-test_that(".filter_readiness_range avgränsar med from/to (halvöppet)", {
+test_that(".filter_readiness_range avgränsar med from/to (inklusiv övre gräns)", {
   today <- as.Date("2026-05-16")
   rd <- data.frame(
     date             = today - (30:0),
@@ -15,16 +19,16 @@ test_that(".filter_readiness_range avgränsar med from/to (halvöppet)", {
     readiness_status = rep("Gul", 31)
   )
 
-  # Bounded — [today-7, today) ger 7 dagar: today-7 .. today-1
+  # Inklusiv övre gräns — [today-7, today] ger 8 dagar: today-7 .. today
   out <- traning:::.filter_readiness_range(rd, from = today - 7, to = today)
-  expect_equal(nrow(out), 7)
+  expect_equal(nrow(out), 8)
   expect_equal(min(out$date), today - 7)
-  expect_equal(max(out$date), today - 1)
+  expect_equal(max(out$date), today)
 
-  # Halvöppna intervall — `to = today - 10` (exklusiv): t.o.m. today-11
+  # Inklusiva intervall — `to = today - 10` (inklusiv): t.o.m. today-10
   out <- traning:::.filter_readiness_range(rd, from = NULL, to = today - 10)
-  expect_equal(nrow(out), 20)
-  expect_equal(max(out$date), today - 11)
+  expect_equal(nrow(out), 21)
+  expect_equal(max(out$date), today - 10)
 
   # Bara `from` satt, ingen övre gräns
   out <- traning:::.filter_readiness_range(rd, from = today - 5, to = NULL)
@@ -58,8 +62,9 @@ test_that("NA-gränser hanteras som NULL (rensad custom dateRangeInput)", {
   out <- traning:::.filter_readiness_range(rd, from = NA, to = NA)
   expect_equal(nrow(out), nrow(rd))
 
+  # NA `to` behandlas inklusivt: to = today - 5 inkluderar today - 5
   out <- traning:::.filter_readiness_range(rd, from = NA, to = today - 5)
-  expect_equal(max(out$date), today - 6)
+  expect_equal(max(out$date), today - 5)
 
   out <- traning:::.filter_readiness_range(rd, from = today - 3, to = NA)
   expect_equal(min(out$date), today - 3)
@@ -143,4 +148,62 @@ test_that(".filter_running_range hanterar tom/NULL input", {
                                                    from = as.Date("2026-05-01"),
                                                    to   = as.Date("2026-05-16"))),
                0)
+})
+
+# --- Regressionstester: KPI vs mini-graf ska matcha ------------------------
+
+test_that(".filter_readiness_range inkluderar today när to = Sys.Date()", {
+  today <- Sys.Date()
+  rd <- tibble::tibble(
+    date = seq(today - 6, today, by = "day"),
+    readiness_score = c(60, 65, 70, 72, 68, 74, 76)  # today = 76
+  )
+  out <- traning:::.filter_readiness_range(rd, from = today - 7, to = today)
+  expect_equal(max(out$date), today)
+  expect_true(today %in% out$date)
+  # KPI:s slice_max(date) och grafens max(date) ska matcha
+  kpi_today  <- rd |> dplyr::slice_max(date, n = 1) |> dplyr::pull(date)
+  graph_today <- max(out$date)
+  expect_equal(kpi_today, graph_today)
+})
+
+test_that("compute_readiness inkluderar today när before = Sys.Date()", {
+  set.seed(7)
+  today <- Sys.Date()
+  # Bygg hälsodata som explicit inkluderar today (make_test_health genererar
+  # bara till Sys.Date() - 1, så vi konstruerar manuellt)
+  dates <- seq(today - 13, today, by = "day")
+  n <- length(dates)
+  hd <- dplyr::bind_rows(
+    tibble::tibble(date = dates, metric = "heart_rate_variability",
+                   value = rnorm(n, 50, 10), source = "AW"),
+    tibble::tibble(date = dates, metric = "resting_heart_rate",
+                   value = rnorm(n, 52, 3), source = "AW"),
+    tibble::tibble(date = dates, metric = "sleep_totalSleep",
+                   value = rnorm(n, 7.2, 0.8), source = "AW"),
+    tibble::tibble(date = dates, metric = "sleep_deep",
+                   value = pmax(0, rnorm(n, 0.8, 0.2)), source = "AW"),
+    tibble::tibble(date = dates, metric = "sleep_rem",
+                   value = pmax(0, rnorm(n, 1.5, 0.3)), source = "AW")
+  )
+  run_dates <- seq(today - 13, today - 1, by = "day")
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(run_dates),
+    sport = "running",
+    distance = runif(length(run_dates), 5000, 15000),
+    durationMoving = runif(length(run_dates), 1800, 5400),
+    avgPaceMoving = runif(length(run_dates), 5, 7),
+    avgSpeedMoving = runif(length(run_dates), 2.5, 3.5),
+    avgHeartRateMoving = runif(length(run_dates), 130, 160),
+    file = paste0("test_", seq_len(length(run_dates)), ".tcx"),
+    year = format(run_dates, "%Y"),
+    month = format(run_dates, "%m"),
+    total_elevation_gain = runif(length(run_dates), 20, 100)
+  )
+  result <- suppressWarnings(compute_readiness(hd, s, before = today))
+  # compute_readiness ska inkludera today i resultatet när before = today
+  if (nrow(result) > 0) {
+    expect_true(today %in% result$date,
+      info = "compute_readiness ska inkludera today när before = today")
+  }
 })

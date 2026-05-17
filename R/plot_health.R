@@ -21,7 +21,7 @@ fetch.plot.resting_hr <- function(health_daily, summaries = NULL,
     dplyr::filter(metric == "resting_heart_rate")
 
   if (!is.null(from)) rhr <- rhr |> dplyr::filter(date >= as.Date(from))
-  if (!is.null(to))   rhr <- rhr |> dplyr::filter(date < as.Date(to))
+  if (!is.null(to))   rhr <- rhr |> dplyr::filter(date <= as.Date(to))
 
   if (nrow(rhr) == 0) {
     message("Ingen vilopulsdata i intervallet")
@@ -88,7 +88,7 @@ fetch.plot.hrv <- function(health_daily, from = NULL, to = NULL) {
     dplyr::mutate(ln_rmssd = log(value))
 
   if (!is.null(from)) hrv <- hrv |> dplyr::filter(date >= as.Date(from))
-  if (!is.null(to))   hrv <- hrv |> dplyr::filter(date < as.Date(to))
+  if (!is.null(to))   hrv <- hrv |> dplyr::filter(date <= as.Date(to))
 
   if (nrow(hrv) == 0) {
     message("Ingen HRV-data i intervallet")
@@ -138,7 +138,7 @@ fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
     dplyr::filter(metric %in% c(sleep_metrics, "sleep_totalSleep"))
 
   if (!is.null(from)) sleep <- sleep |> dplyr::filter(date >= as.Date(from))
-  if (!is.null(to))   sleep <- sleep |> dplyr::filter(date < as.Date(to))
+  if (!is.null(to))   sleep <- sleep |> dplyr::filter(date <= as.Date(to))
 
   if (nrow(sleep) == 0) {
     message("Ingen sömndata i intervallet")
@@ -250,7 +250,7 @@ fetch.plot.vo2max <- function(health_daily, summaries = NULL,
     dplyr::filter(metric == "vo2_max")
 
   if (!is.null(from)) vo2 <- vo2 |> dplyr::filter(date >= as.Date(from))
-  if (!is.null(to))   vo2 <- vo2 |> dplyr::filter(date < as.Date(to))
+  if (!is.null(to))   vo2 <- vo2 |> dplyr::filter(date <= as.Date(to))
 
   # Extract Garmin VO2max from summaries if available
   garmin_vo2 <- NULL
@@ -262,7 +262,7 @@ fetch.plot.vo2max <- function(health_daily, summaries = NULL,
         value = garmin_vO2MaxValue
       )
     if (!is.null(from)) garmin_vo2 <- garmin_vo2 |> dplyr::filter(date >= as.Date(from))
-    if (!is.null(to))   garmin_vo2 <- garmin_vo2 |> dplyr::filter(date < as.Date(to))
+    if (!is.null(to))   garmin_vo2 <- garmin_vo2 |> dplyr::filter(date <= as.Date(to))
     if (nrow(garmin_vo2) == 0) garmin_vo2 <- NULL
   }
 
