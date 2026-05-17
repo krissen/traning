@@ -1,5 +1,49 @@
 # tRäning — Changelog
 
+## 2026-05-17 — Beredskap KPI och mini-graf är synkade
+
+KPI-kortet "Beredskap" och mini-grafen direkt under visade olika
+värden — KPI dagens snapshot (t.ex. 56), graf gårdagens punkt
+(t.ex. ~75) i rightmost-position. Rotorsak: KPI plockade
+`slice_max(date)` från full historik medan grafen filtrerade med
+halvöppet `[from, to)` där `to = Sys.Date()` exkluderade dagens
+datum. Asymmetrin var dokumenterad ("today är pågående") men fel
+för dagliga aggregat — readiness är en finaliserad daglig snapshot,
+inte ett pågående aggregat.
+
+- **Princip-fix:** date-baserade filter (dagliga/månadsvisa
+  aggregat) använder nu inklusiv övre gräns `<= to`; datetime-
+  baserade filter (sessionStart, POSIXct) behåller halvöppet
+  `< to`. Encodat via `closed_upper`-parameter på två centrala
+  helpers — `.filter_date_range` (`R/plot.R`) och
+  `.tail_or_daterange` (`R/report.R`). Date-callers
+  (ACWR/MS/PMC/readiness/HR-zoner/PI-zoner/metric) flippade till
+  `closed_upper = TRUE`; sessionStart-callers (EF/HRE/recovery-HR/
+  decoupling/run-mix/zone-per-pass) oförändrade.
+- **Översikt-helpers:** `.filter_readiness_range` (`R/shiny_helpers.R`)
+  flippad till `<= to` (date-baserad). `.filter_running_range`
+  oförändrad (sessionStart). Mini-grafen visar nu samma rightmost-
+  värde som KPI-boxen visar.
+- **Data-lager:** `compute_readiness` (`R/readiness.R`) och
+  `get_readiness` (`R/health_export.R`) `before`-filter flippade
+  till `<=`. `get_readiness`-docstring sa redan "before = inclusive"
+  — koden matchar nu doc:n istället för motsatsen.
+- **Plot-callsites:** `R/plot_health.R` (RHR, HRV, sleep, AW VO2max,
+  Garmin VO2max — alla daily) och `R/plot_zones.R` månadsaggregat
+  (rad 107, 216) flippade till `<= to`.
+- **Dokumentation:** `docs/dev/filter-consistency.md` får en
+  princip-tabell "Date → inklusiv, datetime → halvöppet" och
+  beskriver `closed_upper`-mönstret så framtida plotter undviker
+  buggen.
+- **Tester:** `tests/testthat/test-overview-filter.R` uppdaterad
+  till inklusiv övre gräns för `.filter_readiness_range`. Två nya
+  regressionstest assertar att KPI:s `slice_max(date)` matchar
+  grafens `max(date)` för `to = Sys.Date()`, och att
+  `compute_readiness(before = Sys.Date())` inkluderar today.
+  `tests/testthat/test-hr-zones.R` flippad till `<= to`.
+  SessionStart-tester (decoupling, EF/HRE/recovery) oförändrade.
+- **Verifikation:** 1061/1061 tester gröna.
+
 ## 2026-05-17 — Universell auto-thinning av x-axel-etiketter
 
 PMC och ACWR (och flera andra plottar i dashboarden) hade tidigare
