@@ -20,34 +20,51 @@
   fallback_days
 }
 
-# Return a scale_x_date() layer with appropriate breaks/labels for the span
-.adaptive_date_scale <- function(span_days) {
+# Single source of truth for break/label/rotation choice per span. The
+# adaptive helpers below build a scale_x_date() / scale_x_datetime() on
+# top of this spec. Targets ≤ ~8 visible labels per panel at typical
+# widths; check.overlap = TRUE on the guide is a safety net that drops
+# labels which would still collide on narrow panels.
+#
+# Thresholds derived from: "%d %b" labels are narrow (~40 px),
+# "%b %Y" are ~70 px, "%Y" are ~30 px. With a ~700 px panel we can
+# afford ~10 wide / ~17 narrow labels — we aim well below.
+.adaptive_date_spec <- function(span_days) {
   if (span_days <= 14) {
-    ggplot2::scale_x_date(date_labels = "%d %b", date_breaks = "1 day")
+    list(labels = "%d %b", breaks = "1 day",    angle = 45)
   } else if (span_days <= 60) {
-    ggplot2::scale_x_date(date_labels = "%d %b", date_breaks = "1 week")
-  } else if (span_days <= 365) {
-    ggplot2::scale_x_date(date_labels = "%b %Y", date_breaks = "1 month")
-  } else if (span_days <= 365 * 3) {
-    ggplot2::scale_x_date(date_labels = "%b %Y", date_breaks = "3 months")
+    list(labels = "%d %b", breaks = "1 week",   angle = 45)
+  } else if (span_days <= 180) {
+    list(labels = "%b %Y", breaks = "1 month",  angle = 45)
+  } else if (span_days <= 365 * 2) {
+    list(labels = "%b %Y", breaks = "2 months", angle = 45)
+  } else if (span_days <= 365 * 5) {
+    list(labels = "%b %Y", breaks = "6 months", angle = 45)
   } else {
-    ggplot2::scale_x_date(date_labels = "%Y", date_breaks = "1 year")
+    list(labels = "%Y",    breaks = "1 year",   angle = 0)
   }
 }
 
-# Same as above but for POSIXct x-axis (sessionStart columns)
+# Return a scale_x_date() layer with adaptive breaks/labels/rotation for
+# the span. Rotation is baked into the scale via guide_axis() so callers
+# don't need a separate theme(axis.text.x = ...) override.
+.adaptive_date_scale <- function(span_days) {
+  spec <- .adaptive_date_spec(span_days)
+  ggplot2::scale_x_date(
+    date_labels = spec$labels,
+    date_breaks = spec$breaks,
+    guide = ggplot2::guide_axis(check.overlap = TRUE, angle = spec$angle)
+  )
+}
+
+# POSIXct (sessionStart) variant of .adaptive_date_scale().
 .adaptive_datetime_scale <- function(span_days) {
-  if (span_days <= 14) {
-    ggplot2::scale_x_datetime(date_labels = "%d %b", date_breaks = "1 day")
-  } else if (span_days <= 60) {
-    ggplot2::scale_x_datetime(date_labels = "%d %b", date_breaks = "1 week")
-  } else if (span_days <= 365) {
-    ggplot2::scale_x_datetime(date_labels = "%b %Y", date_breaks = "1 month")
-  } else if (span_days <= 365 * 3) {
-    ggplot2::scale_x_datetime(date_labels = "%b %Y", date_breaks = "3 months")
-  } else {
-    ggplot2::scale_x_datetime(date_labels = "%Y", date_breaks = "1 year")
-  }
+  spec <- .adaptive_date_spec(span_days)
+  ggplot2::scale_x_datetime(
+    date_labels = spec$labels,
+    date_breaks = spec$breaks,
+    guide = ggplot2::guide_axis(check.overlap = TRUE, angle = spec$angle)
+  )
 }
 
 # Filter a data frame by from/to on a date-like column
@@ -213,11 +230,7 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
     .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Effektivitetsfaktor (EF) över tid") +
     ggplot2::labs(x = NULL, y = NULL) +
-    ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold"),
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
-    )
+    ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"))
   return(p)
 }
 
@@ -291,10 +304,6 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
     ggplot2::labs(
       x = NULL,
       y = "Hjärtslagskostnad (slag/km)"
-    ) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
     )
   return(p)
 }
@@ -427,10 +436,7 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
       strip.text   = ggplot2::element_text(face = "bold"),
-      legend.position = "bottom",
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0,
-        hjust = if (span <= 60) 1 else 0.5)
+      legend.position = "bottom"
     ) -> p
 
   # Show individual data points at short spans
@@ -504,11 +510,7 @@ fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
     .adaptive_date_scale(span) +
     ggplot2::ggtitle("Träningsmonotoni och belastning") +
     ggplot2::labs(x = NULL, y = NULL) +
-    ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold"),
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
-    )
+    ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"))
 
   # Show individual data points at short spans
   if (span <= 60) {
@@ -650,10 +652,7 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
     ) +
     ggplot2::theme(
       strip.text      = ggplot2::element_text(face = "bold"),
-      legend.position = "bottom",
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0,
-        hjust = if (span <= 60) 1 else 0.5)
+      legend.position = "bottom"
     )
 }
 
@@ -736,11 +735,7 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
   p <- p +
     .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Recovery HR efter löpning") +
-    ggplot2::labs(x = NULL) +
-    ggplot2::theme(
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
-    )
+    ggplot2::labs(x = NULL)
 
   return(p)
 }
@@ -916,11 +911,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
     .adaptive_datetime_scale(span) +
     ggplot2::ggtitle("Aerob decoupling \u00f6ver tid") +
     ggplot2::labs(x = NULL, y = NULL) +
-    ggplot2::theme(
-      strip.text = ggplot2::element_text(face = "bold"),
-      axis.text.x = ggplot2::element_text(
-        angle = if (span <= 60) 45 else 0, hjust = if (span <= 60) 1 else 0.5)
-    )
+    ggplot2::theme(strip.text = ggplot2::element_text(face = "bold"))
 
   return(p)
 }

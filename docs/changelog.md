@@ -1,5 +1,41 @@
 # tRäning — Changelog
 
+## 2026-05-17 — Universell auto-thinning av x-axel-etiketter
+
+PMC och ACWR (och flera andra plottar i dashboarden) hade tidigare
+överlappande månadsetiketter på x-axeln för 6–12-månadersspann.
+Rotation per plot räckte inte — så fort spannet växte fylldes axeln
+med fler etiketter än som fick plats. Lösningen är nu universell och
+självupprätthållande.
+
+- **`.adaptive_date_scale()` / `.adaptive_datetime_scale()`** i
+  `R/plot.R` har byggts om kring ett gemensamt `.adaptive_date_spec()`
+  som väljer break-intervall, label-format och rotation per span.
+  Tröskelvärden tightenats: 180d → "1 month", 2y → "2 months",
+  5y → "6 months", längre → "1 year". Rotationen ligger nu i scalen
+  via `guide_axis(angle = ...)`, och `guide_axis(check.overlap = TRUE)`
+  är ett skyddsnät som droppar etiketter som ändå skulle krocka på
+  smala paneler.
+- **Per-plot `axis.text.x` rotationer borttagna** från ~10 plot-
+  funktioner i `R/plot.R`, `R/plot_health.R` och `R/plot_zones.R`.
+  Dessa overrides krockade mot guiden och tvingade dessutom horisontell
+  rendering över 60 dagars span — exakt när rotation behövs som mest.
+- **Strukturellt enforcement-test** i
+  `tests/testthat/test-adaptive-scales.R` skannar `R/` och `app/` efter
+  direkt-användning av `scale_x_date()` / `scale_x_datetime()`. Test
+  failar om callsite inte ligger inom helper-definitionerna eller har
+  en `# AVVIKELSE FRÅN ADAPTIV X-AXEL: <skäl>`-kommentar på (eller
+  precis ovanför) raden. Framtida plotter tvingas använda helpers
+  utan att review behöver fånga det manuellt.
+- **Konventionsdoc** `docs/dev/adaptive-x-axis.md` dokumenterar
+  helper-API, tröskelvärden, AVVIKELSE-formuläret och hur test-
+  mekanismen upprätthåller regeln.
+- **DESCRIPTION**: `rprojroot` lagts till under Suggests så testet
+  kan hitta projektroten via `has_file("DESCRIPTION")`.
+- **Verifikation**: 1057/1057 tester gröna (1014 + 43 nya). Visuell
+  smoke-sweep på PMC/ACWR/decoupling i 3m/1y/2y/5y/all bekräftar att
+  inga etiketter överlappar på något span.
+
 ## 2026-05-16 — Enhetligt visuellt tema över alla plottar
 
 Roadmap-itemet "Enhetligt visuellt tema (figurer + tabeller)"
