@@ -23,6 +23,7 @@ Imports:
     digest
 Suggests:
     shiny,
+    shinyjs,
     bslib (>= 0.6.0),
     bsicons,
     DT,

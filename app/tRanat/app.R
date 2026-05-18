@@ -4,6 +4,7 @@
 # global.R laddar fortfarande all data vid appstart.
 
 library(shiny)
+library(shinyjs)
 library(bslib)
 library(bsicons)
 library(DT)
@@ -57,10 +58,12 @@ theme <- bs_theme(
 
 # --- UI ---
 ui <- page_navbar(
+  id = "main_nav",
   title = "tR\u00e4ning",
   theme = theme,
   fillable = FALSE,
   header = tagList(
+    shinyjs::useShinyjs(),
     tags$head(tags$link(rel = "stylesheet", href = "styles.css")),
     # Mobile detection
     tags$script("
@@ -141,6 +144,28 @@ server <- function(input, output, session) {
   # Mobile detection reactive
   is_mobile <- reactive({
     isTRUE(input$is_mobile)
+  })
+
+  # KPI-kortklick på Översikt navigerar till motsvarande detaljtab och
+  # scrollar till plottens DOM-id. Mappningen är hårdkodad här (kortet
+  # är primär affordans, plotmodulen är target). Delay:n ger bslib tid
+  # att rendera måltab:en innan scrollIntoView triggar.
+  kpi_targets <- list(
+    readiness  = list(tab = "Hälsa",      dom = "health-readiness-plot"),
+    weekly_km  = list(tab = "Utveckling", dom = "progress-monthstatus-plot"),
+    ctl        = list(tab = "Träning",    dom = "training-pmc-plot"),
+    tsb        = list(tab = "Träning",    dom = "training-pmc-plot"),
+    acwr       = list(tab = "Träning",    dom = "training-acwr-plot")
+  )
+  observeEvent(input$kpi_click, {
+    msg <- input$kpi_click
+    tgt <- kpi_targets[[msg$type]]
+    if (is.null(tgt)) return()
+    bslib::nav_select("main_nav", tgt$tab)
+    shinyjs::delay(150, shinyjs::runjs(sprintf(
+      "var el=document.getElementById('%s'); if(el){el.scrollIntoView({behavior:'smooth', block:'start'});}",
+      tgt$dom
+    )))
   })
 
   # Cache-watcher: poll mtime på de två headline-cacherna och visa
