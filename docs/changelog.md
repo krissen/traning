@@ -1,5 +1,38 @@
 # tRäning — Changelog
 
+## 2026-05-18 — AUR-paketering: infrastruktur, 3 paket publicerade, 103 voteringar
+
+Initierade systematisk AUR-takeover av r-cran-paket vi använder dagligen
+på kailash, för att flytta från install.packages-fallback till user-lib
+mot pacman-managed lifecycle som överlever R-uppgraderingar. Av 14 paket
+i ursprungslistan (`roadmap.md`): 5 hanterade, 2 skippade (aktiva
+maintainers), 9 återstår (pausat tills vidare; se `roadmap.md`).
+
+- **Ny privat repo** `github.com/krissen/aurbuild` samlar tooling, drafts
+  och tracking; synkad till kailash via clone.
+- **`bin/aur-bootstrap`** (Python) genererar PKGBUILD + .SRCINFO från
+  CRAN DESCRIPTION: parsar deps/optdepends, mappar R-paketnamn till
+  `r-*` AUR-konvention, mappar licens till SPDX, beräknar b2sum, kör
+  `makepkg --printsrcinfo`. Flaggan `--preserve-from <PKGBUILD>` bevarar
+  Maintainer/Contributor-rader vid adoption (demotar tidigare Maintainer
+  till Contributor).
+- **`bin/aur-bump`** (Python) uppdaterar befintlig PKGBUILD till ny
+  CRAN-version: bumpar `_cranver`, resettar `pkgrel=1`, hämtar nytt
+  tarball + b2sum, regenererar .SRCINFO, optionellt commit + push.
+- **`bin/aur-vote-installed`** (bash) batch-voterar på alla installerade
+  r-* AUR-paket. Filtrerar bort: `r` självt (i [extra]), våra egna
+  maintainade, auto-genererade `-debug`-paket. Slumpad 3-12s paus mellan
+  votes. Körd 2026-05-18 → 103 votes, alla ok.
+- **3 paket adopterade + publicerade** (orphan i AUR, snabbvinst):
+  `r-viridislite` (0.4.2 → 0.4.3, 3 Contributors preserved),
+  `r-backports` (1.5.0 → 1.5.1, 3 preserved),
+  `r-lazyeval` (0.2.2 → 0.2.3, 5 preserved). Samma 3 ominstallerade på
+  kailash via `makepkg -si` — ersätter tidigare hand-crafted lokala
+  PKGBUILDs (r-lazyeval hade copy-paste-bug-metadata som nu är fixad).
+- **Verifikation:** AUR HTML-pages visar `Maintainer: krissen` för alla
+  5 paket vi äger; pacman -Qi visar korrekt metadata efter ominstall;
+  R-laddning från `/usr/lib/R/library/` (pacman-path) bekräftad.
+
 ## 2026-05-17 — Beredskap KPI och mini-graf är synkade
 
 KPI-kortet "Beredskap" och mini-grafen direkt under visade olika
