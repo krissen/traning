@@ -1,29 +1,5 @@
 # tRäning — Roadmap
 
-## Shiny: klickbara KPI-kort
-
-KPI-korten på framsidan ska bli klickbara. Klick navigerar till sidan
-(tab) som innehåller detaljgrafen för den metriken, och scrollar fram
-till grafens position så användaren landar direkt vid relevant detalj.
-
-Implementerings-noteringar:
-- Behöver mappning KPI → mål-tab + element-id för varje kort
-- Tab-switch via `updateTabsetPanel` / `nav_select` (beror på navset-typ)
-- Scroll via JS hook (t.ex. `shinyjs::runjs("document.getElementById('id').scrollIntoView(...)")`)
-- Vänta tills target-tab är renderad innan scroll (race condition om båda triggas samtidigt)
-
-## Shiny: 6-veckors tidsspann + ny default
-
-Default tidsspann för filter är idag 12 månader. Lägg till 6 veckor som
-nytt alternativ och gör det till default.
-
-- Nytt val "6 v" i tidsspann-väljaren (vad än kontrollen heter)
-- Default ändras från 12 mån → 6 v
-- Verifiera att alla filterade plottar/aggregat funkar med så kort
-  fönster (vissa kanske kräver minimum-data, t.ex. trender behöver
-  >= N punkter)
-- Uppdatera ev. tester som hårdkodar 12-mån-default
-
 ## AUR-paketering (pausad 2026-05-18)
 
 Av 14 r-cran-paket i ursprungliga listan: 5 hanterade (r-tracker, r-bsicons,
