@@ -147,9 +147,9 @@ server <- function(input, output, session) {
   })
 
   # KPI-kortklick på Översikt navigerar till motsvarande detaljtab och
-  # scrollar till plottens DOM-id. Mappningen är hårdkodad här (kortet
-  # är primär affordans, plotmodulen är target). Delay:n ger bslib tid
-  # att rendera måltab:en innan scrollIntoView triggar.
+  # scrollar till plot-kortet (inte själva plotten — vi vill ha rubriken
+  # synlig). Kompenserar för sticky navbar och lägger till 5px luft.
+  # Delay:n ger bslib tid att rendera måltab:en innan scroll triggar.
   kpi_targets <- list(
     readiness  = list(tab = "Hälsa",      dom = "health-readiness-plot"),
     weekly_km  = list(tab = "Utveckling", dom = "progress-monthstatus-plot"),
@@ -163,7 +163,7 @@ server <- function(input, output, session) {
     if (is.null(tgt)) return()
     bslib::nav_select("main_nav", tgt$tab)
     shinyjs::delay(150, shinyjs::runjs(sprintf(
-      "var el=document.getElementById('%s'); if(el){el.scrollIntoView({behavior:'smooth', block:'start'});}",
+      "var el=document.getElementById('%s'); if(el){var card=el.closest('.card')||el; var nav=document.querySelector('.navbar'); var navH=nav?nav.offsetHeight:0; var top=card.getBoundingClientRect().top+window.scrollY-navH-5; window.scrollTo({top:top,behavior:'smooth'});}",
       tgt$dom
     )))
   })
