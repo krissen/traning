@@ -87,11 +87,13 @@ overview_server <- function(id, summaries, health_daily, myruns,
     output$vb_readiness <- shiny::renderUI({
       rd <- readiness_data()
       if (is.null(rd)) {
-        return(.vb_placeholder("Beredskap", "\u2014", "neutral"))
+        return(.vb_placeholder("Beredskap", "\u2014", "neutral", kpi_type = "readiness"))
       }
       latest <- rd |> dplyr::filter(!is.na(readiness_score)) |>
         dplyr::slice_max(date, n = 1)
-      if (nrow(latest) == 0) return(.vb_placeholder("Beredskap", "\u2014", "neutral"))
+      if (nrow(latest) == 0) {
+        return(.vb_placeholder("Beredskap", "\u2014", "neutral", kpi_type = "readiness"))
+      }
 
       score <- round(latest$readiness_score[1])
       rs <- latest$readiness_status[1]
@@ -102,50 +104,55 @@ overview_server <- function(id, summaries, health_daily, myruns,
              else "neutral"
 
       .vb("Beredskap", score, cls,
-        bsicons::bs_icon("heart-pulse-fill"))
+        bsicons::bs_icon("heart-pulse-fill"),
+        kpi_type = "readiness")
     })
 
     # --- Value box: Weekly km ---
     output$vb_weekly_km <- shiny::renderUI({
       ad <- acwr_data()
-      if (is.null(ad)) return(.vb_placeholder("Vecka km", "\u2014", "neutral"))
+      if (is.null(ad)) return(.vb_placeholder("Vecka km", "\u2014", "neutral", kpi_type = "weekly_km"))
       latest <- ad |> dplyr::slice_max(date, n = 1)
       km <- round(latest$weekly_km[1], 1)
       .vb("Vecka km", paste0(km, " km"), "neutral",
-        bsicons::bs_icon("speedometer2"))
+        bsicons::bs_icon("speedometer2"),
+        kpi_type = "weekly_km")
     })
 
     # --- Value box: CTL (fitness) ---
     output$vb_ctl <- shiny::renderUI({
       pd <- pmc_data()
-      if (is.null(pd)) return(.vb_placeholder("Fitness", "\u2014", "neutral"))
+      if (is.null(pd)) return(.vb_placeholder("Fitness", "\u2014", "neutral", kpi_type = "ctl"))
       latest <- pd |> dplyr::filter(!is.na(ctl)) |> dplyr::slice_max(date, n = 1)
       ctl <- round(latest$ctl[1])
       .vb("Fitness (CTL)", ctl, "neutral",
-        bsicons::bs_icon("graph-up"))
+        bsicons::bs_icon("graph-up"),
+        kpi_type = "ctl")
     })
 
     # --- Value box: TSB (form) ---
     output$vb_tsb <- shiny::renderUI({
       pd <- pmc_data()
-      if (is.null(pd)) return(.vb_placeholder("Form", "\u2014", "neutral"))
+      if (is.null(pd)) return(.vb_placeholder("Form", "\u2014", "neutral", kpi_type = "tsb"))
       latest <- pd |> dplyr::filter(!is.na(tsb)) |> dplyr::slice_max(date, n = 1)
       tsb <- round(latest$tsb[1])
       cls <- if (tsb > 5) "green" else if (tsb > -10) "yellow" else "red"
       label <- if (tsb > 5) "Utvilad" else if (tsb > -10) "Neutral" else "Tr\u00f6tt"
       .vb("Form (TSB)", paste0(tsb, " \u2014 ", label), cls,
-        bsicons::bs_icon("battery-half"))
+        bsicons::bs_icon("battery-half"),
+        kpi_type = "tsb")
     })
 
     # --- Value box: ACWR ---
     output$vb_acwr <- shiny::renderUI({
       ad <- acwr_data()
-      if (is.null(ad)) return(.vb_placeholder("ACWR", "\u2014", "neutral"))
+      if (is.null(ad)) return(.vb_placeholder("ACWR", "\u2014", "neutral", kpi_type = "acwr"))
       latest <- ad |> dplyr::filter(!is.na(acwr)) |> dplyr::slice_max(date, n = 1)
       ratio <- round(latest$acwr[1], 2)
       cls <- if (ratio >= 0.8 && ratio <= 1.3) "green" else if (ratio < 0.8) "yellow" else "red"
       .vb("ACWR", ratio, cls,
-        bsicons::bs_icon("activity"))
+        bsicons::bs_icon("activity"),
+        kpi_type = "acwr")
     })
 
     # --- Mini readiness chart (följer globalt datumspann) ---
@@ -239,9 +246,12 @@ overview_server <- function(id, summaries, health_daily, myruns,
 }
 
 # --- Value box helpers ---
-.vb <- function(title, value, status = "neutral", icon = NULL) {
+# kpi_type (optional) g\u00f6r korten klickbara \u2014 onclick s\u00e4tter
+# input$kpi_click i app-server, som navigerar + scrollar till detaljvyn.
+.vb <- function(title, value, status = "neutral", icon = NULL,
+                kpi_type = NULL) {
   cls <- paste0("value-box-", status)
-  bslib::value_box(
+  box <- bslib::value_box(
     title = title,
     value = value,
     showcase = icon,
@@ -249,8 +259,29 @@ overview_server <- function(id, summaries, health_daily, myruns,
     theme = bslib::value_box_theme(bg = "transparent",
                                     fg = traning::traning_palette$text_dark)
   )
+  if (!is.null(kpi_type)) {
+    onclick <- sprintf(
+      "Shiny.setInputValue('kpi_click', {type:'%s', nonce:Math.random()}, {priority:'event'})",
+      kpi_type
+    )
+    box <- htmltools::tagAppendAttributes(
+      box,
+      class = "value-box-clickable",
+      onclick = onclick,
+      tabindex = "0",
+      role = "button",
+      `aria-label` = sprintf("\u00d6ppna detaljvy f\u00f6r %s", title),
+      onkeydown = sprintf(
+        "if(event.key==='Enter'||event.key===' '){event.preventDefault();%s}",
+        onclick
+      )
+    )
+  }
+  box
 }
 
-.vb_placeholder <- function(title, value = "\u2014", status = "neutral") {
-  .vb(title, value, status, bsicons::bs_icon("dash-circle"))
+.vb_placeholder <- function(title, value = "\u2014", status = "neutral",
+                            kpi_type = NULL) {
+  .vb(title, value, status, bsicons::bs_icon("dash-circle"),
+      kpi_type = kpi_type)
 }

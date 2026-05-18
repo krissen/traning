@@ -1,5 +1,18 @@
 # tRäning — Changelog
 
+## 2026-05-18 — Shiny: klickbara KPI-kort + 6-veckors default
+
+Översikt-sidans fem KPI-kort (Beredskap, Vecka km, Fitness/CTL,
+Form/TSB, ACWR) är nu klickbara genvägar till respektive detaljvy:
+klick navigerar till tab:en och scrollar fram till metrikens
+detaljgraf. Tangentbordsaktivering (Enter/Space) och ARIA-attribut
+gör korten användbara med assistiv teknik.
+
+Det globala tidsspann-filtret har fått ett nytt alternativ "6 v"
+(senaste sex veckorna) som dessutom är ny default vid sidladdning
+— tidigare default var "12 månader". "Anpassa…"-väljarens
+startdatum synkar med det nya fönstret.
+
 ## 2026-05-18 — AUR-paketering: infrastruktur, 3 paket publicerade, 103 voteringar
 
 Initierade systematisk AUR-takeover av r-cran-paket vi använder dagligen

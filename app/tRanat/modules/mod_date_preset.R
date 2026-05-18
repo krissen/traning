@@ -10,6 +10,7 @@ date_preset_ui <- function(id) {
           "Allt"              = "all",
           "7 dagar"           = "7d",
           "4 veckor"          = "4w",
+          "6 v"               = "6w",
           "3 m\u00e5nader"    = "3m",
           "6 m\u00e5nader"    = "6m",
           "I \u00e5r"         = "ytd",
@@ -18,14 +19,14 @@ date_preset_ui <- function(id) {
           "5 \u00e5r"         = "5y",
           "Anpassa\u2026"     = "custom"
         ),
-        selected = "12m",
+        selected = "6w",
         width = "100%"
       ),
       shiny::conditionalPanel(
         condition = "input.preset === 'custom'",
         ns = ns,
         shiny::dateRangeInput(ns("custom_range"), NULL,
-          start     = Sys.Date() - 365,
+          start     = Sys.Date() - 42,
           end       = Sys.Date(),
           separator = "\u2014",
           width     = "100%"
@@ -44,6 +45,7 @@ date_preset_server <- function(id) {
         "all"    = list(from = NULL, to = NULL),
         "7d"     = list(from = today - 7,     to = today),
         "4w"     = list(from = today - 28,    to = today),
+        "6w"     = list(from = today - 42,    to = today),
         "3m"     = list(from = today - 90,    to = today),
         "6m"     = list(from = today - 182,   to = today),
         "ytd"    = list(from = as.Date(paste0(format(today, "%Y"), "-01-01")),
