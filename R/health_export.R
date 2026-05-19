@@ -1625,8 +1625,10 @@ health_insight_delta <- function(before, after) {
       diff_km <- total_km - previous$total_km
       if (abs(diff_km) >= 0.5) {
         sign_str <- if (diff_km > 0) "+" else "-"
-        delta_part <- paste0(" ", sign_str,
-                              .fmt_km_in_list(abs(diff_km), total_km),
+        # Use the precision-keeping formatter for deltas: even when the
+        # weekly total is in double digits a small delta (e.g. 0.6 km)
+        # should still read as "0.6", not get rounded up to "1".
+        delta_part <- paste0(" ", sign_str, .fmt_km(abs(diff_km)),
                               " km mot ", prev_label, ".")
       } else {
         delta_part <- paste0(" Som ", prev_label, ".")
