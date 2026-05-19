@@ -578,13 +578,21 @@ if (do_hre) {
 }
 
 if (do_acwr) {
+  # When the user requests whole-system ACWR (--sport all) the auto-
+  # mode resolves to TRIMP, which can fold in background activity if
+  # health_daily is threaded through. Load it unconditionally so
+  # --acwr --sport all matches the Shiny / MCP behaviour; the
+  # running-default path ignores it and stays km-mode.
+  hd_for_acwr <- tryCatch(load_health_data(), error = function(e) NULL)
   if (do_plot) {
     emit_plot(fetch.plot.acwr(summaries, from = date_range$from, to = date_range$to,
-                              sport = do_sport), "acwr")
+                              sport = do_sport,
+                              health_daily = hd_for_acwr), "acwr")
   } else {
     emit_table(report_acwr(summaries, n = do_limit %||% 28L,
                       from = date_range$from, to = date_range$to,
-                      sport = do_sport), "acwr")
+                      sport = do_sport,
+                      health_daily = hd_for_acwr), "acwr")
   }
 }
 

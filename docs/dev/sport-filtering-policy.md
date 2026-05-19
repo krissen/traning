@@ -10,8 +10,9 @@ metrics:
 2. **"How loaded am I right now?"** — system-wide load/form/readiness
    (PMC, monotony, ACWR in non-running contexts). These should include
    **every** activity that produces physiological stress, including
-   strength sessions, cycling, vandring, and vardagsrörelse (steps,
-   active energy) — not just logged workouts.
+   strength sessions, cycling, vandring, and vardagsrörelse (the
+   non-workout walking captured by daily step / distance metrics) —
+   not just logged workouts.
 
 The same function may be used in either context, so the rule lives in
 the **default `sport` argument** and the **caller's explicit override**.

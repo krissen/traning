@@ -45,13 +45,15 @@ löpning-default — de är pace-baserade / sport-anchorerad fysiologi
 och Garmin-zoner är per-sport-konfigurerade.
 
 **Vayu MCP.** `get_training_load` routar per metric: `metric='pmc'`
-och `metric='monotony'` defaultar till `sport='all'`; `metric='acwr'`
-stannar på `sport='running'` (km-mode injury-risk-metric). PMC-pathen
-threadar in `health_daily` via MCP-bridgen så background-TRIMP syns i
-Vayu/Shiny-output, inte bara CLI. `get_recovery_hr` defaultar till
-`sport='all'`. `get_zones` håller running default (sport-specifik
-zon-config). `get_efficiency`, `get_decoupling` och `get_run_character`
-stannar på running.
+defaultar till `sport='all'` (whole-system load, TRIMP komponerar
+över sporter); `metric='acwr'` och `metric='monotony'` defaultar till
+`sport='running'` (km-baserade metriker — multisport-default skulle
+blanda inkompatibla distansskalor). PMC-pathen threadar in
+`health_daily` via MCP-bridgen så background-TRIMP syns i Vayu/Shiny-
+output, inte bara CLI. `get_recovery_hr` defaultar till `sport='all'`.
+`get_zones` håller running default (sport-specifik zon-config).
+`get_efficiency`, `get_decoupling` och `get_run_character` stannar på
+running.
 
 Ny dokumentation: `docs/dev/sport-filtering-policy.md` listar policyn
 funktion för funktion.
