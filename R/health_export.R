@@ -1380,6 +1380,17 @@ health_insight_delta <- function(before, after) {
   # which doesn't necessarily warrant a positive callout.
   if (name == "load" && kind != "neg") kind <- "ok"
 
+  # Sleep: the flag fires on absolute hours < 7 AND HRV trending down,
+  # but the prose label compares vs personal 7d normal. "kort s\u00f6mn"
+  # implies the night deviated downward, so demote to the neutral
+  # label whenever the delta-vs-normal signal isn't actually pointing
+  # down \u2014 i.e. delta >= 0 (positive OR exactly normal). The flag
+  # still keeps the line in "Drar ner".
+  if (name == "sleep" && kind == "neg" &&
+      !is.na(c$delta) && c$delta >= 0) {
+    kind <- "ok"
+  }
+
   label <- spec[[paste0("label_", kind)]]
   unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
   val_str <- sprintf(spec$fmt, c$value)
@@ -1449,10 +1460,23 @@ health_insight_delta <- function(before, after) {
 
 # Same shape as .recent_sport_activity but for an ISO calendar week.
 # `week_offset = 0` is the week containing on_date, `-1` is the previous
-# week, etc. Returns a list with `iso_week`, `total_km`, and a per-sport
-# data frame (zero-rows when no sessions reached the 0.1 km floor).
-.weekly_sport_aggregate <- function(summaries, on_date, week_offset = 0L) {
+# week, etc. Returns a list with `iso_week`, `total_km`, `total_trimp`
+# (multi-sport HR-based weekly load), and a per-sport data frame
+# (zero-rows when no sessions reached the 0.1 km floor).
+#
+# `daily_trimp` is the (date, daily_trimp) tibble from compute_trimp()
+# — passing it in lets the caller compute TRIMP once with its preferred
+# HR anchors and have every weekly aggregation read off the same scale.
+# When NULL, total_trimp falls back to NA (the recap then falls through
+# to km-delta).
+.weekly_sport_aggregate <- function(summaries, on_date, week_offset = 0L,
+                                     daily_trimp = NULL) {
   if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
+    return(NULL)
+  # Required columns for the per-sport aggregation. Mirrors the guard
+  # in .recent_sport_activity() — partial/legacy caches can omit any
+  # of these and would otherwise crash on $-indexing below.
+  if (!all(c("sessionStart", "sport", "distance") %in% names(summaries)))
     return(NULL)
   ref <- as.Date(on_date) + (week_offset * 7L)
   # ISO week: Monday start. as.POSIXlt$wday returns 0 (Sun) .. 6 (Sat).
@@ -1464,6 +1488,30 @@ health_insight_delta <- function(before, after) {
   start_ts <- as.POSIXct(as.character(monday),
                           format = "%Y-%m-%d", tz = "UTC")
 
+  # Sum the precomputed daily TRIMP into a single weekly scalar.
+  # `daily_trimp` carries the caller's HR anchors so the recap stays
+  # on the same scale as readiness/TSB even when hr_max/hr_rest are
+  # passed explicitly.
+  total_trimp <- NA_real_
+  if (!is.null(daily_trimp) && is.data.frame(daily_trimp) &&
+      nrow(daily_trimp) > 0 &&
+      all(c("date", "daily_trimp") %in% names(daily_trimp))) {
+    # Drop NA dates up front — they leak through compute_trimp() when a
+    # session has NA sessionStart, and would otherwise make
+    # `daily_trimp$date >= monday` return NA and crash the if() below
+    # ("missing value where TRUE/FALSE needed").
+    valid <- !is.na(daily_trimp$date)
+    if (any(valid)) {
+      dt <- daily_trimp[valid, , drop = FALSE]
+      in_week <- dt$date >= as.Date(monday) &
+                 dt$date <  as.Date(monday + 7L)
+      if (any(in_week)) {
+        week_vals <- dt$daily_trimp[in_week]
+        if (any(!is.na(week_vals))) total_trimp <- sum(week_vals, na.rm = TRUE)
+      }
+    }
+  }
+
   rows <- summaries[
     !is.na(summaries$sessionStart) &
       summaries$sessionStart >= start_ts &
@@ -1473,10 +1521,11 @@ health_insight_delta <- function(before, after) {
   ]
   if (nrow(rows) == 0) {
     return(list(
-      iso_week = format(monday, "%G-W%V"),
-      total_km = 0,
-      per_sport = data.frame(sport = character(0), sessions = integer(0),
-                              km = numeric(0), stringsAsFactors = FALSE)
+      iso_week    = format(monday, "%G-W%V"),
+      total_km    = 0,
+      total_trimp = total_trimp,
+      per_sport   = data.frame(sport = character(0), sessions = integer(0),
+                                km = numeric(0), stringsAsFactors = FALSE)
     ))
   }
   agg <- by(rows, rows$sport, function(d) {
@@ -1495,9 +1544,10 @@ health_insight_delta <- function(before, after) {
   out <- out[order(-out$km), , drop = FALSE]
 
   list(
-    iso_week  = format(monday, "%G-W%V"),
-    total_km  = sum(out$km),
-    per_sport = out
+    iso_week    = format(monday, "%G-W%V"),
+    total_km    = sum(out$km),
+    total_trimp = total_trimp,
+    per_sport   = out
   )
 }
 
@@ -1519,69 +1569,178 @@ health_insight_delta <- function(before, after) {
   paste0("Senaste dygnet: ", paste(parts, collapse = ", "), ".")
 }
 
-# Build "Vecka: ..." or "Förra veckan: ..." line. `prefix` controls the
-# Swedish header so the same formatter handles both Sunday's "this week"
-# recap and Monday's "förra veckan" make-up post.
+# Extract the ISO week number ("YYYY-WNN" -> "NN", padding stripped)
+# for inline references like "mot v.19". Returns NULL when the slot
+# is missing or malformed so callers can fall back on neutral wording.
+.iso_week_number <- function(iso_week) {
+  if (is.null(iso_week) || is.na(iso_week)) return(NULL)
+  parts <- strsplit(as.character(iso_week), "W", fixed = TRUE)[[1]]
+  if (length(parts) != 2L) return(NULL)
+  num <- suppressWarnings(as.integer(parts[2]))
+  if (is.na(num)) return(NULL)
+  as.character(num)  # drops the leading zero in "05" -> "5"
+}
+
+# Build the displayed numbers for one week's recap: a single rounded
+# value per sport plus the matching total. Per-sport entries use
+# integer rendering above 1 km when the weekly total reaches 10 km
+# (keeps "57, 16, 6" from reading as a mixed-precision list), but any
+# sub-1 km bucket keeps one-decimal precision so a 0.3 km strength
+# session doesn't get rendered as "0" — that would read as no
+# activity even though the sport was included. The total is computed
+# off the same rendered values so the parts always sum to it, and the
+# delta vs the previous week uses these displayed totals for the same
+# reason. Returns a list with three numerics-or-strings of equal
+# length to per_sport plus a scalar total.
+.weekly_recap_display <- function(weekly) {
+  per <- weekly$per_sport
+  total_km <- weekly$total_km
+  if (is.null(per) || nrow(per) == 0) {
+    return(list(per_str = character(0), total_num = total_km,
+                total_str = .fmt_km(total_km)))
+  }
+  if (!is.finite(total_km) || total_km < 10) {
+    # Under 10 km the line renders one-decimal precision throughout
+    # (.fmt_km's rule). Derive the total from the rounded per-sport
+    # values so the parts always add up exactly to the displayed total
+    # — same contract as the integer-mode branch below.
+    per_num <- round(per$km, 1)
+    per_str <- vapply(per_num, .fmt_km, character(1))
+    total_num <- sum(per_num)
+    # Pin the total to one decimal even if the rounded sum lands on
+    # 10.0 — falling through to .fmt_km() would render that as "10"
+    # next to per-sport entries still rendered with one decimal, so
+    # the line would read "10 km (sport 5.0, sport 5.0)" with mixed
+    # precision.
+    return(list(per_str = per_str, total_num = total_num,
+                total_str = sprintf("%.1f", total_num)))
+  }
+  use_decimal <- per$km < 1
+  per_num <- ifelse(use_decimal, round(per$km, 1), round(per$km))
+  # Render each entry individually: vectorised format() picks one
+  # precision for the whole vector, which would force "50.0" alongside
+  # "0.3" rather than "50" alongside "0.3".
+  per_str <- vapply(seq_along(per_num), function(i) {
+    if (use_decimal[i]) sprintf("%.1f", per_num[i])
+    else format(per_num[i], big.mark = "", trim = TRUE)
+  }, character(1))
+  total_num <- sum(per_num)
+  # If any per-sport entry is sub-1 we render it with one decimal, so
+  # the total has to match that precision — otherwise "50.3 km
+  # (löpning 50, styrketräning 0.3)" would print as "50 km (...)"
+  # and lose the .3 from the sum.
+  total_str <- if (any(use_decimal)) sprintf("%.1f", total_num) else
+               format(round(total_num), big.mark = "", trim = TRUE)
+  list(per_str = per_str, total_num = total_num, total_str = total_str)
+}
+
+# Build "Förra veckan: ..." line. `prefix` controls the Swedish header.
+# Delta is preferred against TRIMP (intensity-aware load) so a week of
+# easy cycling km doesn't outrank a hard running week — falls back to
+# km-delta when no HR-anchored TRIMP is available.
 .format_weekly_summary_line <- function(weekly, previous = NULL,
-                                         prefix = "Vecka") {
+                                         prefix = "Förra veckan") {
   if (is.null(weekly) || weekly$total_km < 0.1) return(NULL)
   per <- weekly$per_sport
   n_sports <- nrow(per)
-  total_str <- .fmt_km(weekly$total_km)
+  disp <- .weekly_recap_display(weekly)
 
   body <- if (n_sports == 1) {
     sport <- tolower(.sport_label_sv(per$sport[1]))
-    paste0(total_str, " km ", sport)
+    paste0(disp$total_str, " km ", sport)
   } else if (n_sports == 2) {
     s1 <- tolower(.sport_label_sv(per$sport[1]))
     s2 <- tolower(.sport_label_sv(per$sport[2]))
-    paste0(total_str, " km (", s1, " ", .fmt_km(per$km[1]),
-           ", ", s2, " ", .fmt_km(per$km[2]), ")")
+    paste0(disp$total_str, " km (", s1, " ", disp$per_str[1],
+           ", ", s2, " ", disp$per_str[2], ")")
   } else {
     detail <- vapply(seq_len(n_sports), function(i) {
-      paste0(tolower(.sport_label_sv(per$sport[i])), " ",
-             .fmt_km(per$km[i]))
+      paste0(tolower(.sport_label_sv(per$sport[i])), " ", disp$per_str[i])
     }, character(1))
-    paste0(total_str, " km över ", n_sports, " sporter (",
+    paste0(disp$total_str, " km över ", n_sports, " sporter (",
            paste(detail, collapse = ", "), ")")
   }
 
   delta_part <- ""
-  if (!is.null(previous) && !is.null(previous$total_km) &&
-      is.finite(previous$total_km)) {
-    diff_km <- weekly$total_km - previous$total_km
-    if (abs(diff_km) >= 0.5) {
-      sign_str <- if (diff_km > 0) "+" else "-"
-      delta_part <- paste0(" ", sign_str, .fmt_km(abs(diff_km)),
-                            " km mot förra veckan.")
-    } else {
-      delta_part <- " Som förra veckan."
+  if (!is.null(previous)) {
+    prev_week_num <- .iso_week_number(previous$iso_week)
+    prev_label <- if (is.null(prev_week_num)) "veckan innan" else
+                  paste0("v.", prev_week_num)
+
+    prev_trimp <- previous$total_trimp
+    cur_trimp  <- weekly$total_trimp
+    have_trimp <- !is.null(prev_trimp) && !is.null(cur_trimp) &&
+                  is.finite(prev_trimp) && is.finite(cur_trimp) &&
+                  prev_trimp > 0
+
+    if (have_trimp) {
+      pct <- (cur_trimp - prev_trimp) / prev_trimp * 100
+      if (abs(pct) >= 5) {
+        sign_str <- if (pct > 0) "+" else "-"
+        delta_part <- paste0(" ", sign_str, round(abs(pct)),
+                              " % belastning mot ", prev_label, ".")
+      } else {
+        delta_part <- paste0(" Som ", prev_label,
+                              " belastningsmässigt.")
+      }
+    } else if (!is.null(previous$total_km) &&
+               is.finite(previous$total_km)) {
+      # Compute the delta off the displayed totals so a week that
+      # shows as "20 km" doesn't read as "-1.4 km mot v.X" because
+      # raw totals (19 vs 20.4) say something different from what
+      # the parts add up to. Round to the display precision before
+      # the threshold check — `disp$total_num` comes from sums of
+      # 0.1-rounded values, so naive double arithmetic can land
+      # `0.5` as `0.4999...` and miss the "≥ 0.5" cutoff.
+      prev_disp <- .weekly_recap_display(previous)
+      diff_km <- round(disp$total_num - prev_disp$total_num, 1)
+      if (abs(diff_km) >= 0.5) {
+        sign_str <- if (diff_km > 0) "+" else "-"
+        delta_part <- paste0(" ", sign_str, .fmt_km(abs(diff_km)),
+                              " km mot ", prev_label, ".")
+      } else {
+        delta_part <- paste0(" Som ", prev_label, ".")
+      }
     }
   }
 
   paste0(prefix, ": ", body, ".", delta_part)
 }
 
-# Pick the right weekly headline. Sunday → "Vecka: ..." for the running
-# week. Monday → "Förra veckan: ..." (the makeup post). Other days →
-# NULL so we don't spam.
+# Monday morning gets the weekly recap of the week that just ended.
+# Other days return NULL so we don't spam — Sunday's partial-week recap
+# was dropped because the same number changes again on Monday once the
+# Sunday session lands, which read as confusing rather than useful.
+#
+# `hr_max` / `hr_rest` are threaded into compute_trimp so the recap's
+# load delta stays on the same HR scale as readiness's TSB when the
+# caller passes explicit overrides — otherwise the two lines in the
+# same Monday push could disagree about how the week's load looked.
 .weekly_line_for_date <- function(summaries, on_date,
-                                   notify_sport = TRUE) {
+                                   notify_sport = TRUE,
+                                   hr_max = NULL, hr_rest = NULL) {
   if (!isTRUE(notify_sport)) return(NULL)
   wday <- as.POSIXlt(as.Date(on_date))$wday  # 0=Sun, 1=Mon ... 6=Sat
-  if (wday == 0L) {
-    # Sunday → recap of the current ISO week so far
-    cur  <- .weekly_sport_aggregate(summaries, on_date, week_offset = 0L)
-    prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L)
-    .format_weekly_summary_line(cur, prev, prefix = "Vecka")
-  } else if (wday == 1L) {
-    # Monday → recap of the week that just ended
-    last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L)
-    prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L)
-    .format_weekly_summary_line(last, prev, prefix = "Förra veckan")
-  } else {
+  if (wday != 1L) return(NULL)
+  # compute_trimp() drives the load delta but errors on NULL summaries
+  # or a stub data.frame without the expected columns (which
+  # my_dbs_load() can return on a fresh cache). Treat that as "no
+  # TRIMP available" and fall through to the km-delta branch — but
+  # only for that explicit absence; any *other* compute_trimp failure
+  # surfaces so we don't hide bugs in the notification path.
+  required_cols <- c("sessionStart", "avgHeartRateMoving", "durationMoving")
+  daily_trimp <- if (is.null(summaries) || !is.data.frame(summaries) ||
+                      nrow(summaries) == 0 ||
+                      !all(required_cols %in% names(summaries))) {
     NULL
+  } else {
+    compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest)
   }
+  last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L,
+                                   daily_trimp = daily_trimp)
+  prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L,
+                                   daily_trimp = daily_trimp)
+  .format_weekly_summary_line(last, prev, prefix = "Förra veckan")
 }
 
 # Read the opt-out env var once; defaults to "on" for any value other
@@ -1677,9 +1836,9 @@ health_insight_readiness <- function(health_daily, summaries,
   if (length(ok_parts) > 0)
     parts <- c(parts, paste0("OK: ", paste(ok_parts, collapse = ", "), "."))
 
-  # Sport-aware additions: last-24h activity + Sunday/Monday weekly
-  # recap. Both are silent when there's nothing useful to say, and
-  # opt-out with TRANING_NOTIFY_SPORT=false.
+  # Sport-aware additions: last-24h activity + Monday weekly recap.
+  # Both are silent when there's nothing useful to say, and opt-out
+  # with TRANING_NOTIFY_SPORT=false.
   if (.notify_sport_enabled()) {
     activity_line <- .format_recent_activity_line(
       .recent_sport_activity(summaries, row$date)
@@ -1687,7 +1846,9 @@ health_insight_readiness <- function(health_daily, summaries,
     if (!is.null(activity_line)) parts <- c(parts, activity_line)
 
     weekly_line <- .weekly_line_for_date(summaries, row$date,
-                                          notify_sport = TRUE)
+                                          notify_sport = TRUE,
+                                          hr_max = hr_max,
+                                          hr_rest = hr_rest)
     if (!is.null(weekly_line)) parts <- c(parts, weekly_line)
   }
 

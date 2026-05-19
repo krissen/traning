@@ -1,5 +1,7 @@
 # Tests for sport= parameter on advanced_metrics functions.
-# Existing single-sport tests are unchanged because default is sport="running".
+# compute_efficiency_factor / compute_decoupling etc. default to
+# sport="running"; compute_trimp() / compute_pmc() default to
+# sport="all" so readiness uses multi-sport load.
 
 .metrics_summaries <- function() {
   base <- as.POSIXct("2026-01-01 08:00:00", tz = "UTC")
@@ -142,6 +144,16 @@ test_that("compute_pmc with sport='all' gives larger CTL than running-only", {
     expect_gte(max(pmc_all$ctl, na.rm = TRUE),
                max(pmc_run$ctl, na.rm = TRUE))
   }
+})
+
+test_that("compute_trimp default aggregates across all sports", {
+  df <- .metrics_summaries()
+  expect_equal(compute_trimp(df), compute_trimp(df, sport = "all"))
+})
+
+test_that("compute_pmc default aggregates across all sports", {
+  df <- .metrics_summaries()
+  expect_equal(compute_pmc(df), compute_pmc(df, sport = "all"))
 })
 
 test_that("compute_efficiency_factor with curated bucket sums sports", {

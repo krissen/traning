@@ -1,5 +1,42 @@
 # tRäning — Changelog
 
+## 2026-05-19 — Multi-sport TRIMP + belastningsdriven veckosumma
+
+`compute_trimp()` och `compute_pmc()` aggregerar nu Banister-TRIMP över
+alla sporter med HR som standard (`sport = "all"`) istället för bara
+löpning. ATL/CTL/TSB i morgonens dagsform-push, kvällens day_summary-
+rad och Shiny-översiktens beredskaps-KPI:er läser därmed av samma
+"hela träningsdosen"-skala. HR_max ärver det requestade bucket-scopet
+(speciellt sport = "running" eller "cycling" honoreras), och ACWR
+står kvar som löpspecifik km-baserad injury-risk-metrik.
+
+Måndagens veckosammanfattning jämför veckor på **belastning** istället
+för rena kilometer:
+
+> Förra veckan: 89 km över 3 sporter (cykling 45, löpning 34, gång 10).
+> +9 % belastning mot v.18.
+
+- Faller tillbaka till km-delta när HR-data saknas i någon av veckorna.
+- Refererar tidigare ISO-vecka explicit ("mot v.18") — eliminerar den
+  dubbla användningen av "förra veckan" i samma mening.
+- Per-sport km renderas som heltal när veckosumman når 10 km (sub-1
+  km behåller en decimal så ett 0.3 km styrkepass inte läser som "0").
+- Visade totalen härleds från de avrundade per-sport-värdena så raden
+  alltid summerar — och km-delta beräknas mot samma visade totaler.
+- Söndagsmorgonens delvecks-recap är borta; måndag är enda
+  veckogenomgångspunkten.
+
+Sömnetiketten i dagsformen demotar till neutral "sömn" istället för
+"kort sömn" när delta vs personlig 7d-norm är icke-negativ. Flaggan
+står kvar (linjen finns fortfarande i "Drar ner:"), bara polariteten
+i ordvalet ändras så raden inte motsäger sig själv ("kort sömn (6.7 h,
++1.0 vs normalt)").
+
+HR-anchor:er som passas till `health_insight_readiness()` trådas nu
+genom hela veckorecapen, så `% belastning`-deltat och TSB i samma
+morgon-push står på samma HR-skala även när explicita overrides
+används.
+
 ## 2026-05-18 — Shiny: klickbara KPI-kort + 6-veckors default
 
 Översikt-sidans fem KPI-kort (Beredskap, Vecka km, Fitness/CTL,
