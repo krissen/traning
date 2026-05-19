@@ -873,7 +873,7 @@ _HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
     "vo2_max":                ("Fitness", "VO2max estimate"),
     "six_minute_walking_test_distance": ("Fitness", "6-minute walk test distance"),
     # Activity
-    "active_energy":          ("Activity", "Active energy burned (kJ — Apple Watch native unit; ~4.184 kJ per kcal)"),
+    "active_energy":          ("Activity", "Active energy burned; unit depends on HAE configuration (typically kJ for Apple Watch, kcal possible)"),
     "basal_energy_burned":    ("Activity", "Basal metabolic energy (kcal)"),
     "step_count":             ("Activity", "Daily steps"),
     "walking_running_distance": ("Activity", "Walking + running distance (km)"),

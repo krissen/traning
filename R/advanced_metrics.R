@@ -725,7 +725,7 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
   daily_trimp
 }
 
-#' Compute background-activity TRIMP from daily steps and energy
+#' Compute background-activity TRIMP from daily walking distance
 #'
 #' Converts non-workout daily activity (background walking captured by
 #' the watch when no workout was started) into a synthetic Banister
@@ -828,10 +828,11 @@ compute_background_trimp <- function(health_daily,
     #    would count (HR + duration > 10 min). Their distance is
     #    subtracted from background so we don't double-count.
     #  - other_sport_qual: cycling/etc. workouts. Their existence
-    #    poisons the active_energy fallback (cycling burns active
-    #    energy that the watch also logs as background minutes), so
-    #    on those days we skip the fallback rather than back-derive
-    #    "walking" km from cross-sport calorie burn.
+    #    poisons the step-count fallback (the watch counts steps
+    #    during indoor cycling — pedal strokes, hand motion — so
+    #    crediting those as walking km would inflate background
+    #    load). On those days we skip the fallback rather than
+    #    back-derive walking km from cross-sport step counts.
     has_required <- all(c("avgHeartRateMoving", "durationMoving") %in%
                          names(summaries))
     qmask <- if (has_required) {
@@ -983,10 +984,20 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 )
 .pmc_scope_subtitle <- function(sport = "all", health_daily = NULL) {
   resolved <- .resolve_sport_bucket(sport)
-  # Background fold-in matches compute_trimp's gate: whole-system or
-  # any bucket that contains walking.
-  bg_on <- !is.null(health_daily) &&
-           (is.null(resolved) || "walking" %in% resolved)
+  # Background fold-in matches compute_trimp's gate (whole-system or
+  # any bucket containing walking) AND requires that the supplied
+  # health_daily actually carries one of the metrics
+  # compute_background_trimp() reads. Without that second check the
+  # subtitle would advertise "+ vardagsrörelse" on caches that lack
+  # walking_running_distance / step_count entirely, where the
+  # function silently contributes nothing.
+  bg_gate <- !is.null(health_daily) &&
+             (is.null(resolved) || "walking" %in% resolved)
+  bg_on <- bg_gate &&
+           inherits(health_daily, "data.frame") &&
+           "metric" %in% names(health_daily) &&
+           any(health_daily$metric %in%
+                 c("walking_running_distance", "step_count"))
   scope <- if (is.null(sport) || length(sport) == 0L) {
     "alla sporter"
   } else if (is.null(resolved)) {

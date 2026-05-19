@@ -60,12 +60,21 @@ TRIMP values mis-labelled as km.
 non-workout daily activity into a synthetic Banister TRIMP:
 
 1. Take daily `walking_running_distance` (km) from HAE; fall back to
-   `active_energy / 250` kJ when wrd is missing.
-2. Subtract running and walking workout distance for the same date
-   (avoids double-counting watch-logged activity that's both a workout
-   and background distance).
-3. Convert remainder to walking minutes at 12 min/km (5 km/h default).
-4. Apply Banister exponential at a fixed HR ratio of 0.30 (typical
+   `step_count × meters_per_step_fallback` (0.7 m default) when wrd
+   is missing. Step count is the fallback because its units are
+   unambiguous — HAE can write `active_energy` in kJ or kcal
+   depending on user configuration and the cache doesn't preserve
+   the unit field, so basing the fallback on energy was a footgun.
+2. Subtract running and walking workout distance for workouts that
+   `compute_trimp()` would also count (HR + duration > 10 min);
+   short / HR-less walks are left in the background so they still
+   contribute load somewhere.
+3. Skip the step-count fallback on days with any qualifying
+   non-walking workout — step count drifts up during indoor cycling
+   (pedal strokes, hand motion) and crediting that as walking km
+   would inflate background load.
+4. Convert remainder to walking minutes at 12 min/km (5 km/h default).
+5. Apply Banister exponential at a fixed HR ratio of 0.30 (typical
    vardagsgång: HRrest + 30 % of reserve).
 
 This adds ~4 TRIMP per km of background walking, so a 20 km walking

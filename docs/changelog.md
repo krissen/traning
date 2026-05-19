@@ -7,15 +7,19 @@ inkonsekvenser i defaultsport över PMC/ACWR/system-metriker har städats
 upp. Princip: **löpningsprestation-vyer = löpning. Belastning, form,
 hälsa = alla tillgängliga aktiviteter, inklusive vardagsrörelse.**
 
-**Bakgrundsaktivitet → syntetisk TRIMP.** Daily `walking_running_distance`
-och `active_energy` från Health Auto Export matar en ny
-`compute_background_trimp()`-hjälpare. `compute_trimp()` summerar in
-bakgrunds-TRIMP i den dagliga totalen när sport är `"all"` eller
-`"walking"` — sport-specifika anrop (running, cycling) är opåverkade.
-Workout-km från running/walking-pass dras av från daglig wrd för att
-undvika dubbel-räkning. Resultat: en dag med 30 000 steg utan startat
-workout läses inte längre som noll belastning, så readiness slutar
-visa "tipptopp" på vandringsdagar.
+**Bakgrundsaktivitet → syntetisk TRIMP.** Daily
+`walking_running_distance` från Health Auto Export (eller `step_count`
+× 0.7 m/step som fallback) matar en ny `compute_background_trimp()`-
+hjälpare. `compute_trimp()` summerar in bakgrunds-TRIMP i den dagliga
+totalen när den resolvade sport-bucketen antingen är whole-system
+(NULL/all/any) eller innehåller walking (gång, endurance, …) — rena
+sport-specifika anrop (running, cycling) är opåverkade. Workout-km
+från running/walking-pass dras av från daglig wrd för att undvika
+dubbel-räkning, och step-count-fallbacken hoppas över på dagar med
+non-walking-workouts (steg ackumuleras under inomhuscykling också).
+Resultat: en dag med 30 000 steg utan startat workout läses inte
+längre som noll belastning, så readiness slutar visa "tipptopp" på
+vandringsdagar.
 
 **PMC defaultar till alla sporter.** `fetch.plot.pmc()` och
 `report_pmc()` defaultar nu till `sport = "all"` så plotten matchar
