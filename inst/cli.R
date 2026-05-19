@@ -123,12 +123,14 @@ my_options <- list(
     help = "Reference date (YYYY-MM-DD) for --day-summary (default today)"),
   # --- Sport filter ---
   make_option("--sport",
-    type = "character", default = "running",
+    type = "character", default = NULL,
     help = paste0(
-      "Sport bucket to filter on (default 'running', back-compat). ",
-      "Examples: 'cycling', 'walking', 'strength', 'all' (no filter), ",
-      "'endurance' (running+cycling+walking+swimming). ",
-      "Swedish aliases ('löpning', 'cykling', 'gång') also accepted."
+      "Sport bucket to filter on. Defaults vary by command: running ",
+      "for legacy reports (month-top, year-running, …); 'all' for ",
+      "whole-system load metrics (--pmc, --acwr). Examples: 'cycling', ",
+      "'walking', 'strength', 'all' (no filter), 'endurance' ",
+      "(running+cycling+walking+swimming). Swedish aliases ",
+      "('löpning', 'cykling', 'gång') also accepted."
     )),
   # --- Health checks ---
   make_option("--doctor",
@@ -200,6 +202,9 @@ do_output       <- options$output
 do_format       <- options$format
 do_no_open      <- options$`no-open`
 do_limit        <- options$limit
+# Legacy reports (month-top, year-running, …) keep the historical
+# "running" default. PMC and ACWR pick "all" / mode-aware defaults
+# at their call sites below by reading options$sport directly.
 do_sport        <- options$sport %||% "running"
 do_day_summary  <- options$`day-summary`
 do_date_ref     <- options$date

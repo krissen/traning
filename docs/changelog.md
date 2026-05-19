@@ -1,5 +1,52 @@
 # tRäning — Changelog
 
+## 2026-05-19 — Vardagsrörelse i belastning, TRIMP-ACWR för system-vyer
+
+Belastnings- och dagsforms-bilden inkluderar nu vardagsrörelse, och
+inkonsekvenser i defaultsport över PMC/ACWR/system-metriker har städats
+upp. Princip: **löpningsprestation-vyer = löpning. Belastning, form,
+hälsa = alla tillgängliga aktiviteter, inklusive vardagsrörelse.**
+
+**Bakgrundsaktivitet → syntetisk TRIMP.** Daily `walking_running_distance`
+och `active_energy` från Health Auto Export matar en ny
+`compute_background_trimp()`-hjälpare. `compute_trimp()` summerar in
+bakgrunds-TRIMP i den dagliga totalen när sport är `"all"` eller
+`"walking"` — sport-specifika anrop (running, cycling) är opåverkade.
+Workout-km från running/walking-pass dras av från daglig wrd för att
+undvika dubbel-räkning. Resultat: en dag med 30 000 steg utan startat
+workout läses inte längre som noll belastning, så readiness slutar
+visa "tipptopp" på vandringsdagar.
+
+**PMC defaultar till alla sporter.** `fetch.plot.pmc()` och
+`report_pmc()` defaultar nu till `sport = "all"` så plotten matchar
+readiness / day_summary / overview-KPI. Plot-subtitle skriver ut
+scope: "Träningsbelastning (alla sporter + vardagsrörelse)" resp.
+"Träningsbelastning (löpning)" beroende på filter. `--sport=running`
+ger fortsatt löpning-only PMC i CLI.
+
+**TRIMP-baserad ACWR via mode-parameter.** `compute_acwr()` accepterar
+`mode = c("km", "trimp")`. Default auto-resolverar: `"trimp"` för
+`sport="all"` (km komponerar inte över sporter), `"km"` för
+sport-specifika anrop. Overview-KPI och morgon-pushens ACWR-rad
+använder TRIMP-mode så vandring och cykling räknas in. Löpnings-
+rapporten (`report_acwr()`, `fetch.plot.acwr()`) står kvar som
+km-baserad Hulin/Gabbett-formulering.
+
+**Övriga metriker.** `compute_monotony_strain()` och
+`compute_recovery_hr()` defaultar nu till `sport = "all"` (system-
+metriker). EF, HRE, decoupling och HR-zoner förblir löpning-default
+— de är pace-baserade / sport-anchorerad fysiologi och Garmin-zoner
+är per-sport-konfigurerade.
+
+**Vayu MCP.** `get_training_load` och `get_recovery_hr` defaultar till
+`sport='all'`; docstrings beskriver scope så LLM-konsumenten förstår
+när whole-system vs running-specific är relevant. `get_zones` håller
+running default (sport-specifik zon-config). `get_efficiency`,
+`get_decoupling` och `get_run_character` stannar på running.
+
+Ny dokumentation: `docs/dev/sport-filtering-policy.md` listar policyn
+funktion för funktion.
+
 ## 2026-05-19 — PMC-beräkning ~50 % snabbare
 
 Två lokala kodändringar som halverar kostnaden för readiness-rendering
