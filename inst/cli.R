@@ -125,10 +125,11 @@ my_options <- list(
   make_option("--sport",
     type = "character", default = NULL,
     help = paste0(
-      "Sport bucket to filter on. Defaults vary by command: running ",
-      "for legacy reports (month-top, year-running, …); 'all' for ",
-      "whole-system load metrics (--pmc, --acwr). Examples: 'cycling', ",
-      "'walking', 'strength', 'all' (no filter), 'endurance' ",
+      "Sport bucket to filter on. Defaults vary by command: 'running' ",
+      "for legacy reports (month-top, year-running, --acwr) and for ",
+      "running-specific metrics (--ef, --hre, --decoupling); 'all' for ",
+      "the whole-system PMC (--pmc). Examples: 'cycling', 'walking', ",
+      "'strength', 'all' (no filter), 'endurance' ",
       "(running+cycling+walking+swimming). Swedish aliases ",
       "('löpning', 'cykling', 'gång') also accepted."
     )),

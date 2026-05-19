@@ -276,12 +276,14 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
                           hr_max = NULL, hr_rest = NULL,
                           health_daily = NULL) {
   if (is.null(mode)) {
-    mode <- if (is.character(sport) && length(sport) == 1L &&
-                sport == "all") {
-      "trimp"
-    } else {
-      "km"
-    }
+    # Whole-system requests (NULL / "all" / "any" — same sentinels
+    # .filter_sport() treats as "no filter") get TRIMP mode because
+    # km doesn't compose across sports. Anything else stays in km
+    # mode (the classic Hulin/Gabbett running-injury formulation).
+    is_whole_system <- is.null(sport) ||
+                       (is.character(sport) && length(sport) == 1L &&
+                        sport %in% c("all", "any"))
+    mode <- if (is_whole_system) "trimp" else "km"
   }
   mode <- match.arg(mode, c("km", "trimp"))
 
@@ -610,10 +612,16 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
   # produce a data-driven max instead of falling through to env/age.
   if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
-  add_background <- !is.null(health_daily) &&
-                    is.character(sport) &&
-                    length(sport) == 1L &&
-                    sport %in% c("all", "walking")
+  # Whole-system sport (NULL / "all" / "any" — the .sport_match_mask()
+  # no-filter sentinels) plus the "walking" bucket fold in background
+  # walking distance. Sport-specific buckets (running, cycling, …)
+  # only see their own sport, so daily background steps shouldn't
+  # inflate their load.
+  add_background <- !is.null(health_daily) && (
+    is.null(sport) ||
+    (is.character(sport) && length(sport) == 1L &&
+     sport %in% c("all", "any", "walking"))
+  )
 
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(

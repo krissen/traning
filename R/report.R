@@ -359,19 +359,43 @@ report_hre <- function(summaries, n = 28, from = NULL, to = NULL,
 
 #' ACWR report — recent daily values
 #' @inheritParams report_ef
-#' @return Tibble
+#' @param mode Load mode; forwarded to \code{compute_acwr()}. NULL auto-
+#'   resolves: km when sport-specific, TRIMP when whole-system.
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}; threaded into \code{compute_acwr()}.
+#' @return Tibble with one row per date. In km mode columns are
+#'   \code{Datum}, \code{Km/dag}, \code{Km/vecka}, \code{ACWR}; in
+#'   TRIMP mode the daily/weekly columns are renamed \code{TRIMP/dag} /
+#'   \code{TRIMP/vecka} so callers (LLM via MCP, humans reading the
+#'   table) see the right unit.
 #' @export
 report_acwr <- function(summaries, n = 28, from = NULL, to = NULL,
-                        sport = "running") {
-  compute_acwr(summaries, sport = sport) %>%
-    dplyr::mutate(
-      Datum = date,
-      `Km/dag` = round(daily_km, 1),
-      `Km/vecka` = round(weekly_km, 1),
-      ACWR = round(acwr, 2)
-    ) %>%
-    dplyr::select(Datum, `Km/dag`, `Km/vecka`, ACWR) %>%
-    .tail_or_daterange(n, from, to, "Datum", closed_upper = TRUE)
+                        sport = "running", mode = NULL,
+                        health_daily = NULL) {
+  acwr <- compute_acwr(summaries, sport = sport, mode = mode,
+                       health_daily = health_daily)
+  resolved_mode <- attr(acwr, "mode") %||% "km"
+  if (resolved_mode == "trimp") {
+    acwr %>%
+      dplyr::mutate(
+        Datum         = date,
+        `TRIMP/dag`   = round(daily_load, 1),
+        `TRIMP/vecka` = round(weekly_load, 1),
+        ACWR          = round(acwr, 2)
+      ) %>%
+      dplyr::select(Datum, `TRIMP/dag`, `TRIMP/vecka`, ACWR) %>%
+      .tail_or_daterange(n, from, to, "Datum", closed_upper = TRUE)
+  } else {
+    acwr %>%
+      dplyr::mutate(
+        Datum      = date,
+        `Km/dag`   = round(daily_km, 1),
+        `Km/vecka` = round(weekly_km, 1),
+        ACWR       = round(acwr, 2)
+      ) %>%
+      dplyr::select(Datum, `Km/dag`, `Km/vecka`, ACWR) %>%
+      .tail_or_daterange(n, from, to, "Datum", closed_upper = TRUE)
+  }
 }
 
 #' Training Monotony and Strain report — recent daily values

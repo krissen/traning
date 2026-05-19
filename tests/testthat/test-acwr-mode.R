@@ -62,6 +62,28 @@ test_that("compute_acwr TRIMP mode produces ACWR in plausible range", {
   expect_true(all(valid > 0 & valid < 10))
 })
 
+test_that("compute_acwr auto-mode treats NULL/'any' as whole-system", {
+  df <- .acwr_summaries()
+  for (s in list(NULL, "any")) {
+    r <- compute_acwr(df, sport = s, hr_max = 185, hr_rest = 50)
+    expect_equal(attr(r, "mode"), "trimp",
+                 info = paste("sport =", deparse(s)))
+    expect_true(all(is.na(r$daily_km)),
+                info = paste("sport =", deparse(s)))
+  }
+})
+
+test_that("report_acwr column labels follow the resolved mode", {
+  df <- .acwr_summaries()
+  km_tbl <- report_acwr(df, sport = "running")
+  expect_true(all(c("Km/dag", "Km/vecka", "ACWR") %in% names(km_tbl)))
+  expect_false("TRIMP/dag" %in% names(km_tbl))
+
+  trimp_tbl <- report_acwr(df, sport = "all", n = 5)
+  expect_true(all(c("TRIMP/dag", "TRIMP/vecka", "ACWR") %in% names(trimp_tbl)))
+  expect_false("Km/dag" %in% names(trimp_tbl))
+})
+
 test_that("compute_acwr TRIMP mode threads health_daily background", {
   df <- .acwr_summaries()
   hd <- tibble::tibble(

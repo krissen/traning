@@ -62,9 +62,11 @@ func_registry <- list(
   report_datesum         = "s",
   report_ef              = "s",
   report_hre             = "s",
-  report_acwr            = "s",
+  # ACWR / PMC need health_daily so the multi-sport (TRIMP-mode) paths
+  # can fold in background-activity TRIMP from steps/walking distance.
+  report_acwr            = "sh",
   report_monotony        = "s",
-  report_pmc             = "s",
+  report_pmc             = "sh",
   # Garmin-augmented reports
   report_recovery_hr     = "sg",
   report_hr_zones        = "smgz",
@@ -95,9 +97,11 @@ func_registry <- list(
   # Advanced plots (summaries only)
   fetch.plot.ef          = "s",
   fetch.plot.hre         = "s",
-  fetch.plot.acwr        = "s",
+  # ACWR / PMC plots need health_daily so multi-sport (TRIMP-mode)
+  # paths render background-activity TRIMP in the volume panel.
+  fetch.plot.acwr        = "sh",
   fetch.plot.monotony    = "s",
-  fetch.plot.pmc         = "s",
+  fetch.plot.pmc         = "sh",
   # Garmin-augmented plots
   fetch.plot.recovery_hr = "sg",
   fetch.plot.hr_zones    = "sgz",
@@ -378,6 +382,15 @@ build_call_args <- function(func_name, func_args) {
   }
   if (func_name == "latest_known_metrics") {
     a <- c(list(health_daily = health_daily), a)
+  }
+
+  # PMC / ACWR — pass health_daily so the multi-sport (TRIMP-mode)
+  # paths can fold in background-activity TRIMP. Functions accept
+  # health_daily as a named arg; when sport is sport-specific the
+  # downstream code ignores it, so passing here is safe regardless.
+  if (func_name %in% c("report_pmc", "report_acwr",
+                        "fetch.plot.pmc", "fetch.plot.acwr")) {
+    a$health_daily <- health_daily
   }
 
   a
