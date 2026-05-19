@@ -1594,8 +1594,13 @@ health_insight_delta <- function(before, after) {
     per_num <- round(per$km, 1)
     per_str <- vapply(per_num, .fmt_km, character(1))
     total_num <- sum(per_num)
+    # Pin the total to one decimal even if the rounded sum lands on
+    # 10.0 — falling through to .fmt_km() would render that as "10"
+    # next to per-sport entries still rendered with one decimal, so
+    # the line would read "10 km (sport 5.0, sport 5.0)" with mixed
+    # precision.
     return(list(per_str = per_str, total_num = total_num,
-                total_str = .fmt_km(total_num)))
+                total_str = sprintf("%.1f", total_num)))
   }
   use_decimal <- per$km < 1
   per_num <- ifelse(use_decimal, round(per$km, 1), round(per$km))

@@ -317,6 +317,19 @@ test_that(".format_weekly_summary_line keeps displayed total consistent with per
   expect_match(out, "^Förra veckan: 20 km \\(löpning 10, cykling 10\\)")
 })
 
+test_that(".format_weekly_summary_line keeps decimal mode when rounded sum reaches 10", {
+  # 4.95 + 4.95 = 9.9 km (raw, decimal mode), per-sport rounded to one
+  # decimal sums to 10.0. Total must still render as "10.0" so the
+  # line doesn't mix precision modes within itself.
+  w <- list(iso_week = "2026-W17", total_km = 9.9, total_trimp = NA_real_,
+            per_sport = data.frame(sport = c("running", "cycling"),
+                                    sessions = c(1L, 1L),
+                                    km = c(4.95, 4.95),
+                                    stringsAsFactors = FALSE))
+  out <- traning:::.format_weekly_summary_line(w)
+  expect_match(out, "^Förra veckan: 10\\.0 km \\(löpning 5\\.0, cykling 5\\.0\\)")
+})
+
 test_that(".format_weekly_summary_line keeps sub-1 km readable in integer mode", {
   # 50 km running + 0.3 km strength: total >= 10 so integer mode kicks
   # in, but rendering 0.3 as "0" would read as no activity. Sub-1
