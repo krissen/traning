@@ -513,10 +513,15 @@ compute_recovery_hr <- function(summaries, sport = "running") {
 #' @export
 compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
                           sport = "all") {
-  # HR_max anchor stays running-based even for multi-sport TRIMP:
-  # running typically achieves the highest HR, so it gives the most
-  # stable system-wide denominator for delta_hr.
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = "running")
+  # HR_max anchor: when the caller asks for a specific sport bucket,
+  # honour that — get_hr_max() is sport-sensitive and a cycling-only
+  # call should use a cycling-based max. For the multi-sport default
+  # ("all"), anchor on running because running typically reaches the
+  # highest HR and gives the most stable system-wide denominator.
+  if (is.null(hr_max)) {
+    hr_max_sport <- if (identical(sport, "all")) "running" else sport
+    hr_max <- get_hr_max(summaries, sport = hr_max_sport)
+  }
 
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(
