@@ -317,6 +317,42 @@ test_that(".format_weekly_summary_line keeps displayed total consistent with per
   expect_match(out, "^Förra veckan: 20 km \\(löpning 10, cykling 10\\)")
 })
 
+test_that(".format_weekly_summary_line keeps sub-1 km readable in integer mode", {
+  # 50 km running + 0.3 km strength: total >= 10 so integer mode kicks
+  # in, but rendering 0.3 as "0" would read as no activity. Sub-1
+  # entries keep one-decimal precision and the total follows suit so
+  # the parts still add up.
+  w <- list(iso_week = "2026-W17", total_km = 50.3, total_trimp = NA_real_,
+            per_sport = data.frame(sport = c("running", "strength"),
+                                    sessions = c(3L, 1L),
+                                    km = c(50, 0.3),
+                                    stringsAsFactors = FALSE))
+  out <- traning:::.format_weekly_summary_line(w)
+  expect_match(out, "^Förra veckan: 50\\.3 km \\(löpning 50, styrketräning 0\\.3\\)")
+  # Guard against the regression that motivated the fix: rendering as
+  # plain "0" (no decimal) would read as no activity.
+  expect_false(grepl("styrketräning 0(?![.\\d])", out, perl = TRUE))
+})
+
+test_that(".format_weekly_summary_line km delta tracks displayed totals", {
+  # Current 9.5 + 9.5 displays as 20 km; previous 20.4 displays as 20.
+  # The delta line must read "Som v.16." (no measurable delta in the
+  # rendered view), not "-1.4 km mot v.16" which would contradict the
+  # body totals.
+  cur  <- list(iso_week = "2026-W17", total_km = 19, total_trimp = NA_real_,
+               per_sport = data.frame(sport = c("running", "cycling"),
+                                       sessions = c(2L, 1L),
+                                       km = c(9.5, 9.5),
+                                       stringsAsFactors = FALSE))
+  prev <- list(iso_week = "2026-W16", total_km = 20.4, total_trimp = NA_real_,
+               per_sport = data.frame(sport = "running", sessions = 3L,
+                                       km = 20.4, stringsAsFactors = FALSE))
+  out <- traning:::.format_weekly_summary_line(cur, prev)
+  expect_match(out, "^Förra veckan: 20 km ")
+  expect_match(out, " Som v\\.16\\.")
+  expect_false(grepl("km mot v\\.16", out))
+})
+
 test_that(".format_weekly_summary_line uses TRIMP delta when available", {
   cur  <- list(iso_week = "2026-W17", total_km = 45, total_trimp = 360,
                per_sport = data.frame(sport = "running", sessions = 4L,

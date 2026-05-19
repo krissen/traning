@@ -1557,17 +1557,46 @@ health_insight_delta <- function(before, after) {
   as.character(num)  # drops the leading zero in "05" -> "5"
 }
 
-# Render a per-sport km value. Within a single summary line we want
-# consistent precision: when the total volume is in double-digit km
-# the per-sport entries should be integers too (avoids reading
-# "57, 16, 6.0" as a list with mixed precision).
-.fmt_km_in_list <- function(km, total_km) {
-  if (is.na(km)) return("")
-  if (is.finite(total_km) && total_km >= 10) {
-    format(round(km), big.mark = "")
-  } else {
-    .fmt_km(km)
+# Build the displayed numbers for one week's recap: a single rounded
+# value per sport plus the matching total. Per-sport entries use
+# integer rendering above 1 km when the weekly total reaches 10 km
+# (keeps "57, 16, 6" from reading as a mixed-precision list), but any
+# sub-1 km bucket keeps one-decimal precision so a 0.3 km strength
+# session doesn't get rendered as "0" — that would read as no
+# activity even though the sport was included. The total is computed
+# off the same rendered values so the parts always sum to it, and the
+# delta vs the previous week uses these displayed totals for the same
+# reason. Returns a list with three numerics-or-strings of equal
+# length to per_sport plus a scalar total.
+.weekly_recap_display <- function(weekly) {
+  per <- weekly$per_sport
+  total_km <- weekly$total_km
+  if (is.null(per) || nrow(per) == 0) {
+    return(list(per_str = character(0), total_num = total_km,
+                total_str = .fmt_km(total_km)))
   }
+  if (!is.finite(total_km) || total_km < 10) {
+    per_str <- vapply(per$km, .fmt_km, character(1))
+    return(list(per_str = per_str, total_num = total_km,
+                total_str = .fmt_km(total_km)))
+  }
+  use_decimal <- per$km < 1
+  per_num <- ifelse(use_decimal, round(per$km, 1), round(per$km))
+  # Render each entry individually: vectorised format() picks one
+  # precision for the whole vector, which would force "50.0" alongside
+  # "0.3" rather than "50" alongside "0.3".
+  per_str <- vapply(seq_along(per_num), function(i) {
+    if (use_decimal[i]) sprintf("%.1f", per_num[i])
+    else format(per_num[i], big.mark = "", trim = TRUE)
+  }, character(1))
+  total_num <- sum(per_num)
+  # If any per-sport entry is sub-1 we render it with one decimal, so
+  # the total has to match that precision — otherwise "50.3 km
+  # (löpning 50, styrketräning 0.3)" would print as "50 km (...)"
+  # and lose the .3 from the sum.
+  total_str <- if (any(use_decimal)) sprintf("%.1f", total_num) else
+               format(round(total_num), big.mark = "", trim = TRUE)
+  list(per_str = per_str, total_num = total_num, total_str = total_str)
 }
 
 # Build "Förra veckan: ..." line. `prefix` controls the Swedish header.
@@ -1579,32 +1608,21 @@ health_insight_delta <- function(before, after) {
   if (is.null(weekly) || weekly$total_km < 0.1) return(NULL)
   per <- weekly$per_sport
   n_sports <- nrow(per)
-  total_km <- weekly$total_km
-  # When per-sport entries render as integers (total >= 10), derive the
-  # displayed total from the rounded per-sport sums so the line adds
-  # up — otherwise 9.5 + 9.5 = 19 could render as "19 km (sport1 10,
-  # sport2 10)" with the parts summing to 20.
-  display_total <- if (is.finite(total_km) && total_km >= 10 && n_sports > 0) {
-    sum(round(per$km))
-  } else {
-    total_km
-  }
-  total_str <- .fmt_km(display_total)
+  disp <- .weekly_recap_display(weekly)
 
   body <- if (n_sports == 1) {
     sport <- tolower(.sport_label_sv(per$sport[1]))
-    paste0(total_str, " km ", sport)
+    paste0(disp$total_str, " km ", sport)
   } else if (n_sports == 2) {
     s1 <- tolower(.sport_label_sv(per$sport[1]))
     s2 <- tolower(.sport_label_sv(per$sport[2]))
-    paste0(total_str, " km (", s1, " ", .fmt_km_in_list(per$km[1], total_km),
-           ", ", s2, " ", .fmt_km_in_list(per$km[2], total_km), ")")
+    paste0(disp$total_str, " km (", s1, " ", disp$per_str[1],
+           ", ", s2, " ", disp$per_str[2], ")")
   } else {
     detail <- vapply(seq_len(n_sports), function(i) {
-      paste0(tolower(.sport_label_sv(per$sport[i])), " ",
-             .fmt_km_in_list(per$km[i], total_km))
+      paste0(tolower(.sport_label_sv(per$sport[i])), " ", disp$per_str[i])
     }, character(1))
-    paste0(total_str, " km över ", n_sports, " sporter (",
+    paste0(disp$total_str, " km över ", n_sports, " sporter (",
            paste(detail, collapse = ", "), ")")
   }
 
@@ -1632,12 +1650,14 @@ health_insight_delta <- function(before, after) {
       }
     } else if (!is.null(previous$total_km) &&
                is.finite(previous$total_km)) {
-      diff_km <- total_km - previous$total_km
+      # Compute the delta off the displayed totals so a week that
+      # shows as "20 km" doesn't read as "-1.4 km mot v.X" because
+      # raw totals (19 vs 20.4) say something different from what
+      # the parts add up to.
+      prev_disp <- .weekly_recap_display(previous)
+      diff_km <- disp$total_num - prev_disp$total_num
       if (abs(diff_km) >= 0.5) {
         sign_str <- if (diff_km > 0) "+" else "-"
-        # Use the precision-keeping formatter for deltas: even when the
-        # weekly total is in double digits a small delta (e.g. 0.6 km)
-        # should still read as "0.6", not get rounded up to "1".
         delta_part <- paste0(" ", sign_str, .fmt_km(abs(diff_km)),
                               " km mot ", prev_label, ".")
       } else {
