@@ -414,6 +414,16 @@ test_that(".weekly_line_for_date doesn't crash on unusable summaries", {
   # No TRIMP available, so the line falls through to km wording rather
   # than a "% belastning" delta.
   if (!is.null(out)) expect_false(grepl("belastning", out))
+  # Frame with rows but missing one of the aggregator's required
+  # columns (sessionStart/sport/distance). Must return NULL instead of
+  # crashing on $-indexing.
+  s_no_dist <- data.frame(
+    sessionStart = as.POSIXct("2026-04-25 08:00:00", tz = "UTC"),
+    sport = "running",
+    stringsAsFactors = FALSE
+  )
+  expect_no_error(out2 <- traning:::.weekly_line_for_date(s_no_dist, monday))
+  expect_null(out2)
 })
 
 test_that(".weekly_sport_aggregate tolerates NA dates in daily_trimp", {

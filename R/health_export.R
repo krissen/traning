@@ -1473,6 +1473,11 @@ health_insight_delta <- function(before, after) {
                                      daily_trimp = NULL) {
   if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
     return(NULL)
+  # Required columns for the per-sport aggregation. Mirrors the guard
+  # in .recent_sport_activity() — partial/legacy caches can omit any
+  # of these and would otherwise crash on $-indexing below.
+  if (!all(c("sessionStart", "sport", "distance") %in% names(summaries)))
+    return(NULL)
   ref <- as.Date(on_date) + (week_offset * 7L)
   # ISO week: Monday start. as.POSIXlt$wday returns 0 (Sun) .. 6 (Sat).
   wday <- as.POSIXlt(ref)$wday
