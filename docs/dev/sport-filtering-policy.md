@@ -74,10 +74,14 @@ non-workout daily activity into a synthetic Banister TRIMP:
    `compute_trimp()` would also count (HR + duration > 10 min);
    short / HR-less walks are left in the background so they still
    contribute load somewhere.
-3. Skip the step-count fallback on days with any qualifying
-   non-walking workout — step count drifts up during indoor cycling
-   (pedal strokes, hand motion) and crediting that as walking km
-   would inflate background load.
+3. Skip the step-count fallback on days with any non-walking
+   workout — cycling, strength, ballsport, etc. The step counter
+   drifts up during indoor cycling (pedal strokes), strength reps
+   (rack motion) and similar; crediting that as walking km would
+   inflate background load. The gate uses every non-walking workout
+   that day regardless of HR / duration, since step-drift happens
+   whether or not the session qualifies under compute_trimp()'s
+   filters.
 4. Convert remainder to walking minutes at 12 min/km (5 km/h default).
 5. Apply Banister exponential at a fixed HR ratio of 0.30 (typical
    vardagsgång: HRrest + 30 % of reserve).

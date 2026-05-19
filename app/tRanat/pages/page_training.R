@@ -19,8 +19,10 @@ page_training_ui <- function(id) {
   )
 }
 
-page_training_server <- function(id, summaries, dates, is_mobile, sport) {
+page_training_server <- function(id, summaries, health_daily, dates,
+                                  is_mobile, sport) {
   force(summaries)
+  force(health_daily)
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
@@ -30,11 +32,13 @@ page_training_server <- function(id, summaries, dates, is_mobile, sport) {
       plot_fn   = shiny::reactive(fetch.plot.pmc(summaries,
                                                   from = dr_from(),
                                                   to = dr_to(),
-                                                  sport = sp())),
+                                                  sport = sp(),
+                                                  health_daily = health_daily)),
       report_fn = shiny::reactive(report_pmc(summaries,
                                               from = dr_from(),
                                               to = dr_to(),
-                                              sport = sp())),
+                                              sport = sp(),
+                                              health_daily = health_daily)),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )
@@ -42,11 +46,13 @@ page_training_server <- function(id, summaries, dates, is_mobile, sport) {
       plot_fn   = shiny::reactive(fetch.plot.acwr(summaries,
                                                    from = dr_from(),
                                                    to = dr_to(),
-                                                   sport = sp())),
+                                                   sport = sp(),
+                                                   health_daily = health_daily)),
       report_fn = shiny::reactive(report_acwr(summaries,
                                                from = dr_from(),
                                                to = dr_to(),
-                                               sport = sp())),
+                                               sport = sp(),
+                                               health_daily = health_daily)),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )
