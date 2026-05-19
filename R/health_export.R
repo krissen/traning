@@ -1714,12 +1714,20 @@ health_insight_delta <- function(before, after) {
   if (!isTRUE(notify_sport)) return(NULL)
   wday <- as.POSIXlt(as.Date(on_date))$wday  # 0=Sun, 1=Mon ... 6=Sat
   if (wday != 1L) return(NULL)
-  # compute_trimp() already handles empty / HR-less summaries by
-  # returning an empty tibble of the right shape, so don't blanket-
-  # tryCatch around it — that would hide real regressions (a renamed
-  # column or logic bug) behind a silent km-delta fallback.
-  daily_trimp <- compute_trimp(summaries, hr_max = hr_max,
-                                hr_rest = hr_rest)
+  # compute_trimp() drives the load delta but errors on NULL summaries
+  # or a stub data.frame without the expected columns (which
+  # my_dbs_load() can return on a fresh cache). Treat that as "no
+  # TRIMP available" and fall through to the km-delta branch — but
+  # only for that explicit absence; any *other* compute_trimp failure
+  # surfaces so we don't hide bugs in the notification path.
+  required_cols <- c("sessionStart", "avgHeartRateMoving", "durationMoving")
+  daily_trimp <- if (is.null(summaries) || !is.data.frame(summaries) ||
+                      nrow(summaries) == 0 ||
+                      !all(required_cols %in% names(summaries))) {
+    NULL
+  } else {
+    compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest)
+  }
   last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L,
                                    daily_trimp = daily_trimp)
   prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L,

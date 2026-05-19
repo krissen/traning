@@ -394,6 +394,28 @@ test_that(".format_weekly_summary_line falls back to km delta without TRIMP", {
   expect_false(grepl("mot förra veckan", out))
 })
 
+test_that(".weekly_line_for_date doesn't crash on unusable summaries", {
+  # NULL or empty summaries (e.g. a fresh cache) must not crash the
+  # Monday push. compute_trimp() would error on either, so the path
+  # has to short-circuit before that call.
+  monday <- as.Date("2026-04-27")
+  expect_null(traning:::.weekly_line_for_date(NULL, monday))
+  expect_null(traning:::.weekly_line_for_date(data.frame(), monday))
+  # Has rows but lacks required TRIMP inputs (no HR / duration cols).
+  # The recap can still render a km-based line (.weekly_sport_aggregate
+  # only needs sessionStart/sport/distance), but the delta falls back
+  # to km — never crashes inside compute_trimp.
+  s_stub <- data.frame(
+    sessionStart = as.POSIXct("2026-04-25 08:00:00", tz = "UTC"),
+    sport = "running", distance = 8000,
+    stringsAsFactors = FALSE
+  )
+  expect_no_error(out <- traning:::.weekly_line_for_date(s_stub, monday))
+  # No TRIMP available, so the line falls through to km wording rather
+  # than a "% belastning" delta.
+  if (!is.null(out)) expect_false(grepl("belastning", out))
+})
+
 test_that(".weekly_sport_aggregate tolerates NA dates in daily_trimp", {
   # compute_trimp() can emit a row with NA date when a session has
   # NA sessionStart. .weekly_sport_aggregate must not throw "missing
