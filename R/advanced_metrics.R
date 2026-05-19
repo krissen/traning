@@ -781,6 +781,37 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
     )
 }
 
+# Internal helper: Swedish subtitle describing the scope of a PMC/TRIMP
+# rendering, given the sport bucket and whether background activity was
+# folded in. Used by plot/report to make it obvious whether the chart
+# reflects all-sport load (incl. vardagsrörelse) or a single sport.
+.pmc_scope_label_sv <- c(
+  all      = "alla sporter",
+  running  = "löpning",
+  cycling  = "cykling",
+  walking  = "gång",
+  swimming = "simning",
+  strength = "styrka"
+)
+.pmc_scope_subtitle <- function(sport = "all", health_daily = NULL) {
+  bg_on <- !is.null(health_daily) &&
+           is.character(sport) && length(sport) == 1L &&
+           sport %in% c("all", "walking")
+  scope <- if (is.null(sport)) {
+    "alla sporter"
+  } else if (is.character(sport) && length(sport) == 1L) {
+    if (sport %in% names(.pmc_scope_label_sv)) {
+      unname(.pmc_scope_label_sv[[sport]])
+    } else {
+      sport
+    }
+  } else {
+    paste(sport, collapse = " + ")
+  }
+  bg_suffix <- if (bg_on) " + vardagsrörelse" else ""
+  paste0("Träningsbelastning (", scope, bg_suffix, ")")
+}
+
 #' Compute Aerobic Decoupling per session
 #'
 #' Aerobic decoupling measures the drift in pace:HR efficiency between the

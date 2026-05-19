@@ -594,13 +594,20 @@ if (do_monotony) {
 }
 
 if (do_pmc) {
+  # PMC is a whole-system load metric; default to "all" so the rendered
+  # PMC matches readiness / overview KPIs. Users can still pass
+  # --sport=running for a running-only PMC.
+  sport_for_pmc <- options$sport %||% "all"
+  hd_for_pmc <- tryCatch(load_health_data(), error = function(e) NULL)
   if (do_plot) {
     emit_plot(fetch.plot.pmc(summaries, from = date_range$from, to = date_range$to,
-                             sport = do_sport), "pmc")
+                             sport = sport_for_pmc,
+                             health_daily = hd_for_pmc), "pmc")
   } else {
     emit_table(report_pmc(summaries, n = do_limit %||% 28L,
                      from = date_range$from, to = date_range$to,
-                     sport = do_sport), "pmc")
+                     sport = sport_for_pmc,
+                     health_daily = hd_for_pmc), "pmc")
   }
 }
 

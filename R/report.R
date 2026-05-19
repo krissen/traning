@@ -396,13 +396,19 @@ report_monotony <- function(summaries, n = 28, from = NULL, to = NULL,
 #' @inheritParams report_ef
 #' @param hr_max Numeric or NULL. HRmax override.
 #' @param hr_rest Numeric or NULL. HRrest override.
+#' @param sport Sport bucket (default \code{"all"} — PMC is a
+#'   whole-system load metric). Pass \code{"running"} for a
+#'   running-only PMC.
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}; folds background-activity TRIMP into
+#'   the PMC when \code{sport} is a whole-system bucket.
 #' @return Tibble
 #' @export
 report_pmc <- function(summaries, n = 28, from = NULL, to = NULL,
                        hr_max = NULL, hr_rest = NULL,
-                       sport = "running") {
+                       sport = "all", health_daily = NULL) {
   compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
-              sport = sport) %>%
+              sport = sport, health_daily = health_daily) %>%
     dplyr::mutate(
       Datum = date,
       TRIMP = round(daily_trimp, 1),

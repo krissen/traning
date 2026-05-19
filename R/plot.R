@@ -545,14 +545,21 @@ fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
 #' @param hr_rest Numeric or NULL. HRrest override.
 #' @param from,to Optional date bounds. \code{NULL} means no bound — pass
 #'   both as \code{NULL} to render the full history.
-#' @param sport Sport bucket (default \code{"running"}). Forwarded to
-#'   \code{compute_pmc()}.
+#' @param sport Sport bucket (default \code{"all"} — PMC is a
+#'   whole-system load metric, matching how readiness and the overview
+#'   KPI cards use it). Pass \code{"running"} (or another bucket) to
+#'   restrict to a single sport.
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}; threaded into \code{compute_pmc()} so
+#'   background-activity TRIMP folds into the displayed PMC for
+#'   whole-system buckets.
 #' @return ggplot2 object
 #' @export
 fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
-                           from = NULL, to = NULL, sport = "running") {
+                           from = NULL, to = NULL, sport = "all",
+                           health_daily = NULL) {
   pmc_data <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
-                          sport = sport)
+                          sport = sport, health_daily = health_daily)
 
   if (nrow(pmc_data) == 0) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
@@ -658,7 +665,8 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
       space = "fixed"
     ) +
     .adaptive_date_scale(span) +
-    ggplot2::ggtitle("Performance Management Chart (PMC)") +
+    ggplot2::ggtitle("Performance Management Chart (PMC)",
+                     subtitle = .pmc_scope_subtitle(sport, health_daily)) +
     ggplot2::labs(
       x = NULL, y = NULL,
       caption = "TSB-trösklar är coaching-heuristik, ej validerade för motionslöpning"
