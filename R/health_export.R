@@ -1491,11 +1491,19 @@ health_insight_delta <- function(before, after) {
   if (!is.null(daily_trimp) && is.data.frame(daily_trimp) &&
       nrow(daily_trimp) > 0 &&
       all(c("date", "daily_trimp") %in% names(daily_trimp))) {
-    in_week <- daily_trimp$date >= as.Date(monday) &
-               daily_trimp$date <  as.Date(monday + 7L)
-    if (any(in_week)) {
-      week_vals <- daily_trimp$daily_trimp[in_week]
-      if (any(!is.na(week_vals))) total_trimp <- sum(week_vals, na.rm = TRUE)
+    # Drop NA dates up front — they leak through compute_trimp() when a
+    # session has NA sessionStart, and would otherwise make
+    # `daily_trimp$date >= monday` return NA and crash the if() below
+    # ("missing value where TRUE/FALSE needed").
+    valid <- !is.na(daily_trimp$date)
+    if (any(valid)) {
+      dt <- daily_trimp[valid, , drop = FALSE]
+      in_week <- dt$date >= as.Date(monday) &
+                 dt$date <  as.Date(monday + 7L)
+      if (any(in_week)) {
+        week_vals <- dt$daily_trimp[in_week]
+        if (any(!is.na(week_vals))) total_trimp <- sum(week_vals, na.rm = TRUE)
+      }
     }
   }
 

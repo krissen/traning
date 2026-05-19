@@ -394,6 +394,27 @@ test_that(".format_weekly_summary_line falls back to km delta without TRIMP", {
   expect_false(grepl("mot förra veckan", out))
 })
 
+test_that(".weekly_sport_aggregate tolerates NA dates in daily_trimp", {
+  # compute_trimp() can emit a row with NA date when a session has
+  # NA sessionStart. .weekly_sport_aggregate must not throw "missing
+  # value where TRUE/FALSE needed" when it sees one in the daily TRIMP
+  # tibble.
+  s <- .fixture_multisport(today = as.Date("2026-04-27"))
+  daily <- data.frame(
+    date = as.Date(c("2026-04-20", NA, "2026-04-22")),
+    daily_trimp = c(50, 999, 75),
+    stringsAsFactors = FALSE
+  )
+  expect_no_error(
+    res <- traning:::.weekly_sport_aggregate(
+      s, on_date = as.Date("2026-04-27"),
+      week_offset = -1L, daily_trimp = daily)
+  )
+  # The valid in-week rows (04-20 and 04-22) should be summed; the NA
+  # row must not leak in.
+  expect_equal(res$total_trimp, 125)
+})
+
 test_that(".weekly_line_for_date threads hr_max/hr_rest into the TRIMP comparison", {
   # When the caller passes explicit anchors the recap should read off
   # those — not silently recompute its own HR_max from `summaries` —
