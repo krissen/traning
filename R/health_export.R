@@ -1714,9 +1714,12 @@ health_insight_delta <- function(before, after) {
   if (!isTRUE(notify_sport)) return(NULL)
   wday <- as.POSIXlt(as.Date(on_date))$wday  # 0=Sun, 1=Mon ... 6=Sat
   if (wday != 1L) return(NULL)
-  daily_trimp <- tryCatch(
-    compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest),
-    error = function(e) NULL)
+  # compute_trimp() already handles empty / HR-less summaries by
+  # returning an empty tibble of the right shape, so don't blanket-
+  # tryCatch around it — that would hide real regressions (a renamed
+  # column or logic bug) behind a silent km-delta fallback.
+  daily_trimp <- compute_trimp(summaries, hr_max = hr_max,
+                                hr_rest = hr_rest)
   last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L,
                                    daily_trimp = daily_trimp)
   prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L,
