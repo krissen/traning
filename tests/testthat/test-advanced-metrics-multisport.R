@@ -144,6 +144,16 @@ test_that("compute_pmc with sport='all' gives larger CTL than running-only", {
   }
 })
 
+test_that("compute_trimp default aggregates across all sports", {
+  df <- .metrics_summaries()
+  expect_equal(compute_trimp(df), compute_trimp(df, sport = "all"))
+})
+
+test_that("compute_pmc default aggregates across all sports", {
+  df <- .metrics_summaries()
+  expect_equal(compute_pmc(df), compute_pmc(df, sport = "all"))
+})
+
 test_that("compute_efficiency_factor with curated bucket sums sports", {
   df <- .metrics_summaries()
   result <- compute_efficiency_factor(df, sport = "endurance")

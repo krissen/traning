@@ -156,8 +156,7 @@
                              hr_max = NULL, hr_rest = NULL,
                              readiness = NULL) {
   tsb_text <- tryCatch({
-    pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
-                       sport = "running")
+    pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest)
     if (nrow(pmc) == 0) return(NULL)
     today_idx <- which(pmc$date == on_date)
     prev_idx  <- which(pmc$date == on_date - 1)

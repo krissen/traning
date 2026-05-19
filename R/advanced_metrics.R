@@ -505,13 +505,18 @@ compute_recovery_hr <- function(summaries, sport = "running") {
 #'   the same value is used for all sessions. If a vector, must be the same
 #'   length as the number of qualifying sessions (matched by date order).
 #'   If NULL, \code{get_hr_rest()} is called for each session date.
-#' @param sport Sport bucket (default \code{"running"}). TRIMP is purely
-#'   HR-based and works for any sport with HR data.
+#' @param sport Sport bucket (default \code{"all"}). TRIMP is purely
+#'   HR-based and works for any sport with HR data, so the default
+#'   sums load across every session with an HR reading. Pass
+#'   \code{"running"} (or another bucket) to restrict.
 #' @return Tibble with: date, daily_trimp, trimp_type ("btrimp").
 #' @export
 compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
-                          sport = "running") {
-  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
+                          sport = "all") {
+  # HR_max anchor stays running-based even for multi-sport TRIMP:
+  # running typically achieves the highest HR, so it gives the most
+  # stable system-wide denominator for delta_hr.
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = "running")
 
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(
@@ -575,11 +580,14 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #' @param summaries Summaries data frame.
 #' @param hr_max Numeric. Maximum heart rate. NULL = auto-detect.
 #' @param hr_rest Numeric or NULL. Resting heart rate. NULL = time-varying from AW data.
-#' @param sport Sport bucket (default \code{"running"}).
+#' @param sport Sport bucket (default \code{"all"} — load aggregates
+#'   across every session with HR data, matching the way readiness uses
+#'   PMC as a whole-system load signal). Pass \code{"running"} (or
+#'   another bucket) for sport-specific load.
 #' @return Tibble with daily values: date, daily_trimp, atl, ctl, tsb.
 #' @export
 compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
-                        sport = "running") {
+                        sport = "all") {
   daily_trimp <- compute_trimp(summaries, hr_max = hr_max,
                                hr_rest = hr_rest, sport = sport)
 
