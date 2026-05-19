@@ -1,5 +1,35 @@
 # tRäning — Changelog
 
+## 2026-05-19 — PMC-beräkning ~50 % snabbare
+
+Två lokala kodändringar som halverar kostnaden för readiness-rendering
+över hela linjen, utan ny persistent state:
+
+- `get_hr_rest()` (R/physiology.R) räknar nu rolling-mean per **unikt
+  datum** istället för per sessionsrad. Vid ~15 000 sessioner med
+  ~5 000 unika datum slipper man den redundanta omräkningen för
+  flera sessioner samma dag. Samma fallback-policy och fönster-
+  semantik som tidigare.
+- `compute_readiness()` accepterar en valfri `pmc =`-parameter som
+  låter callers skicka in ett redan beräknat PMC-tibble. Shiny-
+  overview lyfter sin gemensamma `pmc_data()`-reactive och skickar
+  in den i `readiness_data`, så samma TRIMP-scan tjänar både
+  KPI-korten och readiness-panelen.
+
+Mätningar på ~15 000 sessioner:
+
+| Operation | Före | Efter |
+|---|---:|---:|
+| `compute_trimp` | 676 ms | 225 ms |
+| `compute_pmc` | 680 ms | 291 ms |
+| `compute_readiness` (default) | 1290 ms | 723 ms |
+| `compute_readiness` (`pmc =`) | — | 520 ms |
+| Shiny-overview första laddning | ~2000 ms | ~810 ms |
+
+Beteendet är bitidentiskt: `compute_readiness(hd, s)` och
+`compute_readiness(hd, s, pmc = compute_pmc(s))` ger exakt samma
+output, och morgon-pushens prosa är oförändrad på sample-datum.
+
 ## 2026-05-19 — Multi-sport TRIMP + belastningsdriven veckosumma
 
 `compute_trimp()` och `compute_pmc()` aggregerar nu Banister-TRIMP över
