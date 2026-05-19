@@ -361,6 +361,24 @@ test_that("health_insight_readiness includes weekly recap on Monday", {
   expect_match(res$prosa, "Förra veckan: ")
 })
 
+test_that(".render_component sleep: 'kort sömn' only when delta is negative", {
+  # 6.5h sleep (below 7h threshold) with delta -0.8 vs personal normal:
+  # this is the legitimate "kort sömn" case — both absolute and relative
+  # signals point down.
+  comp_short <- list(value = 6.5, delta = -0.8, flag = TRUE, score = 40)
+  out_short <- traning:::.render_component("sleep", comp_short, kind = "neg")
+  expect_match(out_short, "^kort sömn")
+
+  # 6.7h sleep with delta +1.0 vs normal: user slept *more* than their
+  # personal baseline yet still under 7h. Calling that "kort sömn" reads
+  # contradictory; the component should fall back to the neutral label.
+  comp_over <- list(value = 6.7, delta = 1.0, flag = TRUE, score = 50)
+  out_over <- traning:::.render_component("sleep", comp_over, kind = "neg")
+  expect_false(grepl("^kort sömn", out_over))
+  expect_match(out_over, "^sömn ")
+  expect_match(out_over, "\\+1\\.0 vs normalt")
+})
+
 test_that("TRANING_NOTIFY_SPORT=false suppresses the new lines", {
   withr::with_envvar(c("TRANING_NOTIFY_SPORT" = "false"), {
     today <- as.Date("2026-04-22")
