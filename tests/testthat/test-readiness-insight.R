@@ -304,6 +304,19 @@ test_that(".format_weekly_summary_line handles 1/2/3+ sport variants", {
   expect_false(grepl("2\\.0", out_three))
 })
 
+test_that(".format_weekly_summary_line keeps displayed total consistent with per-sport sums", {
+  # 9.5 + 9.5 = 19 km, per-sport rounds to 10 + 10 = 20 — the line
+  # must show "20 km" so the parts add up to the total, even though
+  # the underlying float is 19.
+  w <- list(iso_week = "2026-W17", total_km = 19, total_trimp = NA_real_,
+            per_sport = data.frame(sport = c("running", "cycling"),
+                                    sessions = c(2L, 1L),
+                                    km = c(9.5, 9.5),
+                                    stringsAsFactors = FALSE))
+  out <- traning:::.format_weekly_summary_line(w)
+  expect_match(out, "^Förra veckan: 20 km \\(löpning 10, cykling 10\\)")
+})
+
 test_that(".format_weekly_summary_line uses TRIMP delta when available", {
   cur  <- list(iso_week = "2026-W17", total_km = 45, total_trimp = 360,
                per_sport = data.frame(sport = "running", sessions = 4L,

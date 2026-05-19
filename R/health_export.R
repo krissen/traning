@@ -1580,7 +1580,16 @@ health_insight_delta <- function(before, after) {
   per <- weekly$per_sport
   n_sports <- nrow(per)
   total_km <- weekly$total_km
-  total_str <- .fmt_km(total_km)
+  # When per-sport entries render as integers (total >= 10), derive the
+  # displayed total from the rounded per-sport sums so the line adds
+  # up — otherwise 9.5 + 9.5 = 19 could render as "19 km (sport1 10,
+  # sport2 10)" with the parts summing to 20.
+  display_total <- if (is.finite(total_km) && total_km >= 10 && n_sports > 0) {
+    sum(round(per$km))
+  } else {
+    total_km
+  }
+  total_str <- .fmt_km(display_total)
 
   body <- if (n_sports == 1) {
     sport <- tolower(.sport_label_sv(per$sport[1]))
