@@ -513,15 +513,14 @@ compute_recovery_hr <- function(summaries, sport = "running") {
 #' @export
 compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
                           sport = "all") {
-  # HR_max anchor: when the caller asks for a specific sport bucket,
-  # honour that — get_hr_max() is sport-sensitive and a cycling-only
-  # call should use a cycling-based max. For the multi-sport default
-  # ("all"), anchor on running because running typically reaches the
-  # highest HR and gives the most stable system-wide denominator.
-  if (is.null(hr_max)) {
-    hr_max_sport <- if (identical(sport, "all")) "running" else sport
-    hr_max <- get_hr_max(summaries, sport = hr_max_sport)
-  }
+  # HR_max anchor mirrors the requested sport bucket so a cycling-only
+  # call uses a cycling-based max. The multi-sport default keeps the
+  # same "all" scope so the readiness PMC, the weekly recap and the
+  # sport-mix plot (.sport_mix_data() in plot_multisport.R) share one
+  # denominator — otherwise the same data would render at different
+  # TRIMP scales across views. "all" also lets cycling-only datasets
+  # produce a data-driven max instead of falling through to env/age.
+  if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(

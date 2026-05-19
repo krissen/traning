@@ -1506,12 +1506,12 @@ health_insight_delta <- function(before, after) {
   rownames(out) <- NULL
   out <- out[order(-out$km), , drop = FALSE]
 
-  # Anchor HR_max on running (the multi-sport TRIMP convention from
-  # compute_trimp default), then reuse .session_trimp() — the same
-  # Banister implementation already used by the sport-mix plot. Falls
-  # back to NA when no HR data is available; sum returns 0 in that
-  # case so we explicitly check before summing.
-  hr_max <- tryCatch(get_hr_max(summaries, sport = "running"),
+  # Use the same HR_max scope as compute_trimp's multi-sport default
+  # and .sport_mix_data() — "all" — so the weekly recap, the readiness
+  # PMC and the sport-mix plot all read TRIMP off the same scale.
+  # .session_trimp() is the shared Banister implementation; sum returns
+  # 0 on an all-NA vector so we check before summing.
+  hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
                      error = function(e) NA_real_)
   trimp_vec <- if (is.finite(hr_max) && hr_max > 0)
     .session_trimp(rows, hr_max = hr_max) else NA_real_
