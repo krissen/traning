@@ -1,5 +1,7 @@
 # Tests for sport= parameter on advanced_metrics functions.
-# Existing single-sport tests are unchanged because default is sport="running".
+# compute_efficiency_factor / compute_decoupling etc. default to
+# sport="running"; compute_trimp() / compute_pmc() default to
+# sport="all" so readiness uses multi-sport load.
 
 .metrics_summaries <- function() {
   base <- as.POSIXct("2026-01-01 08:00:00", tz = "UTC")

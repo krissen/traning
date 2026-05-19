@@ -1809,9 +1809,9 @@ health_insight_readiness <- function(health_daily, summaries,
   if (length(ok_parts) > 0)
     parts <- c(parts, paste0("OK: ", paste(ok_parts, collapse = ", "), "."))
 
-  # Sport-aware additions: last-24h activity + Sunday/Monday weekly
-  # recap. Both are silent when there's nothing useful to say, and
-  # opt-out with TRANING_NOTIFY_SPORT=false.
+  # Sport-aware additions: last-24h activity + Monday weekly recap.
+  # Both are silent when there's nothing useful to say, and opt-out
+  # with TRANING_NOTIFY_SPORT=false.
   if (.notify_sport_enabled()) {
     activity_line <- .format_recent_activity_line(
       .recent_sport_activity(summaries, row$date)
