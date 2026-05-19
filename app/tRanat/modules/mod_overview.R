@@ -132,6 +132,9 @@ overview_server <- function(id, summaries, health_daily, myruns,
       ad <- running_volume_data()
       if (is.null(ad)) return(.vb_placeholder("Vecka km", "\u2014", "neutral", kpi_type = "weekly_km"))
       latest <- ad |> dplyr::slice_max(date, n = 1)
+      if (nrow(latest) == 0L) {
+        return(.vb_placeholder("Vecka km", "\u2014", "neutral", kpi_type = "weekly_km"))
+      }
       km <- round(latest$weekly_km[1], 1)
       .vb("Vecka km", paste0(km, " km"), "neutral",
         bsicons::bs_icon("speedometer2"),
@@ -143,6 +146,9 @@ overview_server <- function(id, summaries, health_daily, myruns,
       pd <- pmc_data()
       if (is.null(pd)) return(.vb_placeholder("Fitness", "\u2014", "neutral", kpi_type = "ctl"))
       latest <- pd |> dplyr::filter(!is.na(ctl)) |> dplyr::slice_max(date, n = 1)
+      if (nrow(latest) == 0L) {
+        return(.vb_placeholder("Fitness", "\u2014", "neutral", kpi_type = "ctl"))
+      }
       ctl <- round(latest$ctl[1])
       .vb("Fitness (CTL)", ctl, "neutral",
         bsicons::bs_icon("graph-up"),
@@ -154,6 +160,9 @@ overview_server <- function(id, summaries, health_daily, myruns,
       pd <- pmc_data()
       if (is.null(pd)) return(.vb_placeholder("Form", "\u2014", "neutral", kpi_type = "tsb"))
       latest <- pd |> dplyr::filter(!is.na(tsb)) |> dplyr::slice_max(date, n = 1)
+      if (nrow(latest) == 0L) {
+        return(.vb_placeholder("Form", "\u2014", "neutral", kpi_type = "tsb"))
+      }
       tsb <- round(latest$tsb[1])
       cls <- if (tsb > 5) "green" else if (tsb > -10) "yellow" else "red"
       label <- if (tsb > 5) "Utvilad" else if (tsb > -10) "Neutral" else "Tr\u00f6tt"
@@ -167,6 +176,15 @@ overview_server <- function(id, summaries, health_daily, myruns,
       ad <- acwr_data()
       if (is.null(ad)) return(.vb_placeholder("ACWR", "\u2014", "neutral", kpi_type = "acwr"))
       latest <- ad |> dplyr::filter(!is.na(acwr)) |> dplyr::slice_max(date, n = 1)
+      # compute_acwr() can return zero qualifying rows when summaries
+      # have distance data but no HR-qualifying workouts (e.g. a fresh
+      # account with manual entries only, or the TRIMP-mode path with
+      # all sessions filtered out). slice_max() returns nrow == 0
+      # there, and the `ratio >= 0.8 && ratio <= 1.3` test then sees
+      # numeric(0) and raises "missing value where TRUE/FALSE needed".
+      if (nrow(latest) == 0L) {
+        return(.vb_placeholder("ACWR", "\u2014", "neutral", kpi_type = "acwr"))
+      }
       ratio <- round(latest$acwr[1], 2)
       cls <- if (ratio >= 0.8 && ratio <= 1.3) "green" else if (ratio < 0.8) "yellow" else "red"
       .vb("ACWR", ratio, cls,
