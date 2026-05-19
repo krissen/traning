@@ -131,9 +131,15 @@ def get_training_load(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-    sport: str = "running",
+    sport: str = "all",
 ) -> Image | dict | list:
     """Training load metrics: PMC (fitness/fatigue/form), ACWR, or monotony.
+
+    PMC, ACWR and monotony are whole-system load metrics, so the default
+    sport='all' aggregates across every sport with HR data and folds in
+    daily background activity (steps, walking) when available. Pass
+    sport='running' (or another bucket) for a sport-specific view, e.g.
+    when you want the classic km-based running ACWR.
 
     Args:
         metric: One of 'pmc' (Performance Management Chart with CTL/ATL/TSB),
@@ -143,10 +149,11 @@ def get_training_load(
         after: Start date filter.
         before: End date filter.
         plot: If True, return the corresponding chart (PNG).
-        sport: Sport bucket. Default 'running'. Examples: 'cycling',
-            'walking', 'strength', 'all' (no filter), 'endurance'
-            (running+cycling+walking+swimming). See vayu://sports for
-            the full list of supported names and aliases.
+        sport: Sport bucket. Default 'all' (whole-system load including
+            vardagsrörelse). Examples: 'running', 'cycling', 'walking',
+            'strength', 'endurance' (running+cycling+walking+swimming).
+            See vayu://sports for the full list of supported names and
+            aliases.
     """
     metric = metric.lower()
     report_map = {
@@ -207,6 +214,12 @@ def get_zones(
 
     Z1 (low, <VT1), Z2 (threshold), Z3 (high, >=VT2).
     PI > 2.0 = polarized training (Treff 2019).
+
+    HR zones stay sport='running' by default because Garmin's
+    per-session hrTimeInZone columns are anchored to whatever zone
+    config was active for that sport — mixing cycling zones (different
+    HRmax/VT thresholds) and running zones in one stacked bar can be
+    misleading. Pass sport='all' explicitly to opt into the merged view.
 
     Args:
         n: Number of recent months to show (default 12).
@@ -631,20 +644,21 @@ def get_recovery_hr(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-    sport: str = "running",
+    sport: str = "all",
 ) -> Image | dict | list:
     """Post-workout recovery heart rate trend.
 
-    Lower recovery HR indicates better cardiovascular fitness. Garmin
-    only emits recovery HR for running today, so non-running buckets
-    typically return an empty result.
+    Lower recovery HR indicates better cardiovascular fitness. Recovery
+    HR is a sport-agnostic cardiovascular signal; default sport='all'
+    reflects that. In practice Garmin only emits recovery HR for running
+    today, so non-running buckets typically still return an empty result.
 
     Args:
         n: Number of recent sessions (default 28).
         after: Start date filter.
         before: End date filter.
         plot: If True, return recovery HR trend chart (PNG).
-        sport: Sport bucket (default 'running'). See vayu://sports.
+        sport: Sport bucket (default 'all'). See vayu://sports.
     """
     args = _build_args(after, before, n, sport=sport)
     return _data_or_plot("report_recovery_hr", "fetch.plot.recovery_hr", args, plot)
