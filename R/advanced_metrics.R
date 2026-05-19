@@ -222,8 +222,8 @@ compute_hre <- function(summaries, sport = "running",
 #'
 #' ACWR = acute load / chronic load, where:
 #' \itemize{
-#'   \item Acute load: rolling 7-day total km (current week's load)
-#'   \item Chronic load: rolling 28-day mean of daily km × 7
+#'   \item Acute load: rolling 7-day total of daily load
+#'   \item Chronic load: rolling 28-day mean of daily load × 7
 #'     (average weekly load over the past four weeks)
 #' }
 #'
@@ -236,16 +236,59 @@ compute_hre <- function(summaries, sport = "running",
 #' \emph{uncoupled} variant excludes the acute window (days 8-35) so the
 #' two windows are independent.
 #'
+#' Two load modes are supported:
+#' \describe{
+#'   \item{\code{mode = "km"}}{Daily km from \code{summaries$distance}.
+#'     The classic running-injury formulation (Hulin 2016, Gabbett 2016).
+#'     Only meaningful within one sport — mixing cycling and running km
+#'     blurs spike detection.}
+#'   \item{\code{mode = "trimp"}}{Daily Banister TRIMP from
+#'     \code{compute_trimp()}. HR-based load composes across sports, so
+#'     this is the right mode for whole-system load (\code{sport="all"}).
+#'     Background-activity TRIMP from \code{health_daily} folds in when
+#'     supplied.}
+#' }
+#'
+#' When \code{mode = NULL} (default), the mode auto-resolves: TRIMP for
+#' \code{sport = "all"} (because km doesn't compose across sports), and
+#' km for any specific sport bucket.
+#'
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @param sport Sport bucket (default \code{"running"}).
-#' @return Tibble with one row per calendar day from first to last session,
-#'   with columns: \code{date}, \code{daily_km}, \code{weekly_km},
+#' @param mode One of \code{"km"}, \code{"trimp"}, or \code{NULL} (auto;
+#'   see Description). Explicit choice overrides the auto-resolution.
+#' @param hr_max,hr_rest Optional HR anchors threaded into
+#'   \code{compute_trimp()} when \code{mode = "trimp"}.
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}; folds background-activity TRIMP into the
+#'   load series in TRIMP mode for whole-system buckets.
+#' @return Tibble with one row per calendar day from first to last
+#'   session, with columns: \code{date}, \code{daily_load},
+#'   \code{weekly_load}, \code{daily_km}, \code{weekly_km},
 #'   \code{acute_load}, \code{chronic_load}, \code{acwr},
-#'   \code{acwr_uncoupled}.
+#'   \code{acwr_uncoupled}, \code{weekly_pct_change}, plus a
+#'   \code{"mode"} attribute. In TRIMP mode the \code{daily_km} /
+#'   \code{weekly_km} columns are \code{NA} (the load is in TRIMP, not
+#'   km); use \code{daily_load} / \code{weekly_load} for mode-agnostic
+#'   reads.
 #' @export
-compute_acwr <- function(summaries, sport = "running") {
+compute_acwr <- function(summaries, sport = "running", mode = NULL,
+                          hr_max = NULL, hr_rest = NULL,
+                          health_daily = NULL) {
+  if (is.null(mode)) {
+    mode <- if (is.character(sport) && length(sport) == 1L &&
+                sport == "all") {
+      "trimp"
+    } else {
+      "km"
+    }
+  }
+  mode <- match.arg(mode, c("km", "trimp"))
+
   empty <- tibble::tibble(
     date              = as.Date(character(0)),
+    daily_load        = numeric(0),
+    weekly_load       = numeric(0),
     daily_km          = numeric(0),
     weekly_km         = numeric(0),
     acute_load        = numeric(0),
@@ -254,13 +297,24 @@ compute_acwr <- function(summaries, sport = "running") {
     acwr_uncoupled    = numeric(0),
     weekly_pct_change = numeric(0)
   )
+  attr(empty, "mode") <- mode
 
-  # Aggregate to daily km (all sessions — not filtered to > 5 km)
-  daily <- .filter_sport(summaries, sport) %>%
-    dplyr::mutate(date = as.Date(sessionStart)) %>%
-    dplyr::group_by(date) %>%
-    dplyr::summarise(daily_km = sum(distance, na.rm = TRUE) / 1000,
-                     .groups = "drop")
+  if (mode == "km") {
+    # Aggregate to daily km (all sessions — not filtered to > 5 km)
+    daily <- .filter_sport(summaries, sport) %>%
+      dplyr::mutate(date = as.Date(sessionStart)) %>%
+      dplyr::group_by(date) %>%
+      dplyr::summarise(daily_load = sum(distance, na.rm = TRUE) / 1000,
+                       .groups = "drop")
+  } else {
+    trimp_tbl <- compute_trimp(summaries, hr_max = hr_max,
+                                hr_rest = hr_rest, sport = sport,
+                                health_daily = health_daily)
+    if (nrow(trimp_tbl) == 0) return(empty)
+    daily <- trimp_tbl %>%
+      dplyr::transmute(date = .data$date,
+                       daily_load = .data$daily_trimp)
+  }
 
   if (nrow(daily) == 0) return(empty)
 
@@ -272,15 +326,15 @@ compute_acwr <- function(summaries, sport = "running") {
 
   daily_full <- date_spine %>%
     dplyr::left_join(daily, by = "date") %>%
-    dplyr::mutate(daily_km = dplyr::if_else(is.na(daily_km), 0, daily_km))
+    dplyr::mutate(daily_load = dplyr::if_else(is.na(.data$daily_load),
+                                               0, .data$daily_load))
 
   # Acute load: 7-day rolling sum
-  # Chronic load (coupled): 28-day rolling mean of daily km * 7
-  #   (mean gives the "typical daily km"; * 7 scales to weekly for
+  # Chronic load (coupled): 28-day rolling mean of daily load * 7
+  #   (mean gives the "typical day"; * 7 scales to weekly for
   #    comparability with the 7-day acute sum)
   # Chronic load (uncoupled): rolling mean of the window days 8–35
-  #   implemented as a 28-day rolling sum of the lagged series (lag 7)
-  x <- daily_full$daily_km
+  x <- daily_full$daily_load
   n <- length(x)
 
   acute  <- .rolling_sum(x, window = 7)
@@ -298,24 +352,39 @@ compute_acwr <- function(summaries, sport = "running") {
     }
   }
 
-  daily_full %>%
+  result <- daily_full %>%
     dplyr::mutate(
-      weekly_km        = acute,
-      acute_load       = acute,
-      chronic_load     = chronic_coupled,
-      acwr             = dplyr::if_else(
+      weekly_load       = acute,
+      acute_load        = acute,
+      chronic_load      = chronic_coupled,
+      acwr              = dplyr::if_else(
         chronic_load > 0, acute_load / chronic_load, NA_real_),
-      acwr_uncoupled   = dplyr::if_else(
+      acwr_uncoupled    = dplyr::if_else(
         chronic_uncoupled > 0, acute_load / chronic_uncoupled, NA_real_),
       # Week-over-week percentage change (Nielsen 2014: >30% = injury risk)
       weekly_pct_change = dplyr::if_else(
-        dplyr::lag(weekly_km, 7) > 0,
-        (weekly_km / dplyr::lag(weekly_km, 7) - 1) * 100,
+        dplyr::lag(weekly_load, 7) > 0,
+        (weekly_load / dplyr::lag(weekly_load, 7) - 1) * 100,
         NA_real_
       )
-    ) %>%
+    )
+
+  if (mode == "km") {
+    result$daily_km  <- result$daily_load
+    result$weekly_km <- result$weekly_load
+  } else {
+    # In TRIMP mode the legacy km columns aren't meaningful; emit NA so
+    # callers that grab them get an obvious "not applicable" instead of
+    # a TRIMP value masquerading as km.
+    result$daily_km  <- NA_real_
+    result$weekly_km <- NA_real_
+  }
+
+  result <- result %>%
     dplyr::select(
       date,
+      daily_load,
+      weekly_load,
       daily_km,
       weekly_km,
       acute_load,
@@ -324,6 +393,8 @@ compute_acwr <- function(summaries, sport = "running") {
       acwr_uncoupled,
       weekly_pct_change
     )
+  attr(result, "mode") <- mode
+  result
 }
 
 #' Compute Training Monotony and Strain

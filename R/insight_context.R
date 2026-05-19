@@ -62,11 +62,19 @@
 # --- ACWR commentary --------------------------------------------------------
 
 #' Generate an ACWR commentary line when the ratio sits in a noteworthy band
+#'
+#' Uses whole-system ACWR (\code{sport="all"}, auto-mode "trimp") so the
+#' commentary in the morning push reflects the same scope as the rest of
+#' the daily picture — vandring och cykling räknas också. The km-based
+#' running ACWR is still available via \code{report_acwr()}.
+#'
 #' @keywords internal
-.insight_acwr_line <- function(summaries, on_date) {
+.insight_acwr_line <- function(summaries, on_date, health_daily = NULL) {
   if (is.null(summaries) || nrow(summaries) == 0L) return(NULL)
-  acwr_tbl <- tryCatch(compute_acwr(summaries),
-                        error = function(e) NULL)
+  acwr_tbl <- tryCatch(
+    compute_acwr(summaries, sport = "all", health_daily = health_daily),
+    error = function(e) NULL
+  )
   if (is.null(acwr_tbl) || nrow(acwr_tbl) == 0L) return(NULL)
   row <- acwr_tbl[acwr_tbl$date == as.Date(on_date), , drop = FALSE]
   if (nrow(row) == 0L) return(NULL)
@@ -142,7 +150,8 @@
 .insight_context_line <- function(summaries, health_daily, on_date) {
   candidates <- list(
     function() .insight_streak_line(summaries, on_date),
-    function() .insight_acwr_line(summaries, on_date),
+    function() .insight_acwr_line(summaries, on_date,
+                                    health_daily = health_daily),
     function() .insight_hrv_trend_line(health_daily, on_date)
   )
   for (fn in candidates) {

@@ -73,8 +73,23 @@ overview_server <- function(id, summaries, health_daily, myruns,
                error = function(e) NULL)
     })
 
+    # Overview ACWR card uses whole-system load (sport="all" → TRIMP
+    # mode) so it stays coherent with the PMC card above it; vardags-
+    # gång räknas också. The dedicated PMC page can still render a
+    # running-only ACWR via fetch.plot.acwr() / report_acwr() when the
+    # user asks for sport=running.
     acwr_data <- shiny::reactive({
-      tryCatch(compute_acwr(summaries), error = function(e) NULL)
+      tryCatch(compute_acwr(summaries, sport = "all",
+                            health_daily = health_daily),
+               error = function(e) NULL)
+    })
+
+    # "Vecka km" KPI explicitly tracks running km — km doesn't compose
+    # across sports, so this card stays sport="running" / mode="km"
+    # even when the ACWR card above goes whole-system.
+    running_volume_data <- shiny::reactive({
+      tryCatch(compute_acwr(summaries, sport = "running", mode = "km"),
+               error = function(e) NULL)
     })
 
     readiness_data <- shiny::reactive({
@@ -114,7 +129,7 @@ overview_server <- function(id, summaries, health_daily, myruns,
 
     # --- Value box: Weekly km ---
     output$vb_weekly_km <- shiny::renderUI({
-      ad <- acwr_data()
+      ad <- running_volume_data()
       if (is.null(ad)) return(.vb_placeholder("Vecka km", "\u2014", "neutral", kpi_type = "weekly_km"))
       latest <- ad |> dplyr::slice_max(date, n = 1)
       km <- round(latest$weekly_km[1], 1)

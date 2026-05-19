@@ -114,7 +114,10 @@ test_that("compute_acwr sport='cycling' aggregates cycling km only", {
 
 test_that("compute_acwr sport='all' aggregates everything", {
   df <- .metrics_summaries()
-  result <- compute_acwr(df, sport = "all")
+  # sport='all' auto-resolves to mode='trimp' (km doesn't compose across
+  # sports); force mode='km' here to verify the cross-sport aggregation
+  # path still works on the legacy km columns.
+  result <- compute_acwr(df, sport = "all", mode = "km")
   total_km <- sum(result$daily_km)
   expect_equal(total_km, sum(df$distance) / 1000)
 })
