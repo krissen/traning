@@ -1576,9 +1576,15 @@ health_insight_delta <- function(before, after) {
                 total_str = .fmt_km(total_km)))
   }
   if (!is.finite(total_km) || total_km < 10) {
-    per_str <- vapply(per$km, .fmt_km, character(1))
-    return(list(per_str = per_str, total_num = total_km,
-                total_str = .fmt_km(total_km)))
+    # Under 10 km the line renders one-decimal precision throughout
+    # (.fmt_km's rule). Derive the total from the rounded per-sport
+    # values so the parts always add up exactly to the displayed total
+    # — same contract as the integer-mode branch below.
+    per_num <- round(per$km, 1)
+    per_str <- vapply(per_num, .fmt_km, character(1))
+    total_num <- sum(per_num)
+    return(list(per_str = per_str, total_num = total_num,
+                total_str = .fmt_km(total_num)))
   }
   use_decimal <- per$km < 1
   per_num <- ifelse(use_decimal, round(per$km, 1), round(per$km))
