@@ -189,26 +189,22 @@ get_hr_rest <- function(date, rhr_data = NULL) {
   rhr_min  <- min(rhr_data$date)
   rhr_max  <- max(rhr_data$date)
 
-  # Compute a backward-looking 30-day rolling mean for each target date.
-  # For each element of date: average rhr in [date - 30, date - 1].
-  # If no observations fall in that window, use fallback.
-  result <- vapply(date, function(d) {
-    if (d < rhr_min || d > rhr_max + 1) {
-      # Date is entirely outside the AW data range
-      return(fallback)
-    }
-    window_start <- d - 30
-    window_end   <- d - 1
-    window_vals  <- rhr_data$rhr[
-      rhr_data$date >= window_start & rhr_data$date <= window_end
+  # Compute the backward-looking 30-day rolling mean per *unique* date,
+  # then map back to the requested vector. Callers like compute_trimp
+  # pass one date per session — often multiple sessions per day — so
+  # the previous per-element loop redid the same window-mean for every
+  # session on the same date.
+  uniq <- sort(unique(date))
+  uniq_vals <- vapply(uniq, function(d) {
+    if (d < rhr_min || d > rhr_max + 1) return(fallback)
+    window_vals <- rhr_data$rhr[
+      rhr_data$date >= d - 30 & rhr_data$date <= d - 1
     ]
-    if (length(window_vals) == 0) {
-      return(fallback)
-    }
-    mean(window_vals, na.rm = TRUE)
+    if (length(window_vals) == 0) fallback
+    else mean(window_vals, na.rm = TRUE)
   }, numeric(1))
 
-  result
+  uniq_vals[match(date, uniq)]
 }
 
 #' Get time-varying HRmax for a date vector
