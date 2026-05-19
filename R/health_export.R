@@ -1457,37 +1457,6 @@ health_insight_delta <- function(before, after) {
   out[order(-out$km), , drop = FALSE]
 }
 
-# Total weekly TRIMP across every session with HR data in the rows of
-# the ISO week. Mirrors the Banister formula in compute_trimp() but
-# avoids a full re-run of compute_trimp on the whole summary set —
-# we only need a single scalar per week.  HR_max anchors on running
-# because running typically reaches the highest HR; HR_rest is taken
-# from get_hr_rest() per session date.
-.weekly_trimp_sum <- function(rows, hr_max) {
-  if (is.null(rows) || nrow(rows) == 0 || is.na(hr_max) || hr_max <= 0)
-    return(NA_real_)
-  if (!all(c("avgHeartRateMoving", "durationMoving") %in% names(rows)))
-    return(NA_real_)
-
-  hr <- suppressWarnings(as.numeric(rows$avgHeartRateMoving))
-  dur_min <- suppressWarnings(
-    as.numeric(rows$durationMoving, units = "mins"))
-  keep <- !is.na(hr) & hr > 0 & !is.na(dur_min) & dur_min > 10
-  if (!any(keep)) return(NA_real_)
-
-  hr <- hr[keep]
-  dur_min <- dur_min[keep]
-  dates <- as.Date(rows$sessionStart[keep])
-  hr_rest_vec <- tryCatch(get_hr_rest(dates),
-                          error = function(e) rep(NA_real_, length(dates)))
-  hr_rest_vec[is.na(hr_rest_vec)] <- 50  # conservative fallback
-
-  delta_hr <- (hr - hr_rest_vec) / (hr_max - hr_rest_vec)
-  delta_hr <- pmax(0, pmin(1, delta_hr))
-  trimp <- dur_min * delta_hr * 0.64 * exp(1.92 * delta_hr)
-  sum(trimp, na.rm = TRUE)
-}
-
 # Same shape as .recent_sport_activity but for an ISO calendar week.
 # `week_offset = 0` is the week containing on_date, `-1` is the previous
 # week, etc. Returns a list with `iso_week`, `total_km`, `total_trimp`
@@ -1537,9 +1506,17 @@ health_insight_delta <- function(before, after) {
   rownames(out) <- NULL
   out <- out[order(-out$km), , drop = FALSE]
 
+  # Anchor HR_max on running (the multi-sport TRIMP convention from
+  # compute_trimp default), then reuse .session_trimp() — the same
+  # Banister implementation already used by the sport-mix plot. Falls
+  # back to NA when no HR data is available; sum returns 0 in that
+  # case so we explicitly check before summing.
   hr_max <- tryCatch(get_hr_max(summaries, sport = "running"),
                      error = function(e) NA_real_)
-  total_trimp <- .weekly_trimp_sum(rows, hr_max)
+  trimp_vec <- if (is.finite(hr_max) && hr_max > 0)
+    .session_trimp(rows, hr_max = hr_max) else NA_real_
+  total_trimp <- if (any(!is.na(trimp_vec)))
+    sum(trimp_vec, na.rm = TRUE) else NA_real_
 
   list(
     iso_week    = format(monday, "%G-W%V"),
