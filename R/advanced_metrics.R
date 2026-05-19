@@ -610,6 +610,11 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
   # produce a data-driven max instead of falling through to env/age.
   if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
+  add_background <- !is.null(health_daily) &&
+                    is.character(sport) &&
+                    length(sport) == 1L &&
+                    sport %in% c("all", "walking")
+
   runs <- .filter_sport(summaries, sport) %>%
     dplyr::filter(
       !is.na(avgHeartRateMoving),
@@ -624,10 +629,29 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
     dplyr::filter(duration_min > 10) %>%
     dplyr::arrange(date)
 
+  empty_daily <- tibble::tibble(date = as.Date(character(0)),
+                                 daily_trimp = numeric(0),
+                                 trimp_type = character(0))
+
   if (nrow(runs) == 0) {
-    return(tibble::tibble(date = as.Date(character(0)),
-                          daily_trimp = numeric(0),
-                          trimp_type = character(0)))
+    # No qualifying HR workouts. The high-step / no-workout case is
+    # exactly the user-facing scenario this branch protects: a day with
+    # 30k steps and no logged run still has to land in CTL. Fall through
+    # to the background-fold-in path so the daily total is non-zero.
+    if (!add_background) return(empty_daily)
+    bg <- compute_background_trimp(health_daily, hr_max = hr_max,
+                                    hr_rest = hr_rest,
+                                    summaries = summaries)
+    if (nrow(bg) == 0) return(empty_daily)
+    return(
+      bg %>%
+        dplyr::transmute(
+          date = .data$date,
+          daily_trimp = .data$background_trimp,
+          trimp_type = "btrimp"
+        ) %>%
+        dplyr::arrange(date)
+    )
   }
 
   # Resolve HRrest per session
@@ -657,10 +681,8 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
   # Fold in background-activity TRIMP for whole-system buckets. Sport-
   # specific buckets (running, cycling, …) only see their own sport,
   # so daily steps and walking distance shouldn't inflate their load.
-  add_background <- !is.null(health_daily) &&
-                    is.character(sport) &&
-                    length(sport) == 1L &&
-                    sport %in% c("all", "walking")
+  # `add_background` was already resolved above (we needed it for the
+  # nrow(runs) == 0 path).
   if (add_background) {
     bg <- compute_background_trimp(health_daily, hr_max = hr_max,
                                     hr_rest = hr_rest,

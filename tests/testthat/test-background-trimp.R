@@ -117,6 +117,28 @@ test_that("compute_trimp adds background when sport='all' and health_daily given
             base$daily_trimp[base$date == as.Date("2026-05-01")])
 })
 
+test_that("compute_trimp folds background even when no qualifying workouts", {
+  # User-facing case: 30k-step vandringsdag with no workout shouldn't
+  # read as zero load. Earlier draft hit an early-return in
+  # compute_trimp before background was folded in.
+  empty_summaries <- tibble::tibble(
+    sessionStart       = as.POSIXct(character(0), tz = "UTC"),
+    sport              = character(0),
+    distance           = numeric(0),
+    durationMoving     = as.difftime(numeric(0), units = "mins"),
+    avgHeartRateMoving = numeric(0),
+    avgPaceMoving      = numeric(0),
+    avgSpeedMoving     = numeric(0),
+    duration           = as.difftime(numeric(0), units = "mins")
+  )
+  hd <- .bg_health()  # day 1 wrd = 10 km → ~41 TRIMP
+  result <- compute_trimp(empty_summaries, hr_max = 185, hr_rest = 50,
+                          sport = "all", health_daily = hd)
+  expect_gt(nrow(result), 0)
+  expect_true(all(result$daily_trimp > 0))
+  expect_true(any(result$daily_trimp > 30))
+})
+
 test_that("compute_trimp ignores health_daily for sport-specific buckets", {
   summaries <- tibble::tibble(
     sessionStart       = as.POSIXct("2026-05-01 09:00:00", tz = "UTC"),

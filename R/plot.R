@@ -166,8 +166,10 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
   show_smooth <- nrow(ef_data) >= 8 && span > 60
   show_rolling <- span > 35
 
-  # Weekly km for volume panel
-  acwr_data <- compute_acwr(summaries, sport = sport) %>%
+  # Weekly km for volume panel — force km mode so a sport="all" caller
+  # still gets a populated volume panel (TRIMP-mode would render NA
+  # bars since EF's volume axis is fundamentally km).
+  acwr_data <- compute_acwr(summaries, sport = sport, mode = "km") %>%
     dplyr::filter(
       date >= min(ef_data$sessionStart),
       date <= max(ef_data$sessionStart)
@@ -334,11 +336,19 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
 #'   both as \code{NULL} to render the full history.
 #' @param sport Sport bucket (default \code{"running"}). Forwarded to
 #'   \code{compute_acwr()}.
+#' @param mode One of \code{"km"}, \code{"trimp"} or \code{NULL} (auto;
+#'   forwarded to \code{compute_acwr()}).
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}; threaded into \code{compute_acwr()} so
+#'   the TRIMP-mode rendering can fold in background activity.
 #' @return ggplot2 object
 #' @export
 fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
-                            sport = "running") {
-  acwr_data <- compute_acwr(summaries, sport = sport)
+                            sport = "running", mode = NULL,
+                            health_daily = NULL) {
+  acwr_data <- compute_acwr(summaries, sport = sport, mode = mode,
+                            health_daily = health_daily)
+  resolved_mode <- attr(acwr_data, "mode") %||% "km"
 
   acwr_window <- .filter_date_range(acwr_data, "date", from, to, closed_upper = TRUE) %>%
     dplyr::filter(!is.na(acwr))
@@ -359,16 +369,21 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
 
   # Build a long-format data frame suitable for facet_grid
   # Panel 1: acwr value
-  # Panel 2: weekly_km as bars
+  # Panel 2: weekly_load (km in km-mode, TRIMP in trimp-mode) as bars
+  volume_panel_label <- if (resolved_mode == "trimp") {
+    "Veckobelastning (TRIMP)"
+  } else {
+    "Veckokilometer"
+  }
   acwr_panel <- acwr_window %>%
     dplyr::select(date, acwr, zon) %>%
     dplyr::rename(value = acwr) %>%
     dplyr::mutate(panel = "ACWR")
 
   km_panel <- acwr_window %>%
-    dplyr::select(date, weekly_km) %>%
-    dplyr::rename(value = weekly_km) %>%
-    dplyr::mutate(zon = NA_character_, panel = "Veckokilometer")
+    dplyr::select(date, weekly_load) %>%
+    dplyr::rename(value = weekly_load) %>%
+    dplyr::mutate(zon = NA_character_, panel = volume_panel_label)
 
   # We need two separate layers, so we build the plot programmatically
   # rather than through facet_grid (zone colouring only applies to the
@@ -376,11 +391,12 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
   # convert to a single data frame with a 'panel' grouping variable and
   # draw geoms conditionally.
 
+  panel_levels <- c("ACWR", volume_panel_label)
   combined <- dplyr::bind_rows(
     acwr_panel %>% dplyr::mutate(zon = as.character(zon)),
     km_panel
   ) %>%
-    dplyr::mutate(panel = factor(panel, levels = c("ACWR", "Veckokilometer")))
+    dplyr::mutate(panel = factor(panel, levels = panel_levels))
 
   # ACWR zone colours map to traning_palette$traffic_bg.
   zon_farger <- c(
@@ -393,7 +409,7 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
   # Reference band and lines — drawn only inside the ACWR panel using
   # data arguments that subset to the right panel.
   ref_df <- data.frame(
-    panel = factor("ACWR", levels = c("ACWR", "Veckokilometer"))
+    panel = factor("ACWR", levels = panel_levels)
   )
 
   span <- .compute_span_days(from, to, data_dates = acwr_window$date)
@@ -417,7 +433,7 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
     ggplot2::geom_line(
       data = acwr_window %>%
         dplyr::filter(!is.na(acwr_uncoupled)) %>%
-        dplyr::mutate(panel = factor("ACWR", levels = c("ACWR", "Veckokilometer"))),
+        dplyr::mutate(panel = factor("ACWR", levels = panel_levels)),
       ggplot2::aes(x = date, y = acwr_uncoupled),
       colour = "grey60", linewidth = 0.5, linetype = "dashed",
       na.rm = TRUE, inherit.aes = FALSE
@@ -428,9 +444,9 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
       ggplot2::aes(y = value, colour = zon, group = 1),
       linewidth = 0.7, na.rm = TRUE
     ) +
-    # Weekly km bars (only Veckokilometer panel)
+    # Volume bars (km in km-mode, TRIMP in trimp-mode)
     ggplot2::geom_col(
-      data = dplyr::filter(combined, panel == "Veckokilometer"),
+      data = dplyr::filter(combined, panel == volume_panel_label),
       ggplot2::aes(y = value),
       fill = traning_palette$accent, alpha = 0.7, width = 1
     ) +
@@ -812,8 +828,9 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
 
   # Weekly km for volume panel — must follow the same sport as the
   # decoupling points so a cycling-decoupling chart isn't rendered
-  # against running km totals.
-  acwr_data <- compute_acwr(summaries, sport = sport) %>%
+  # against running km totals. Force km mode so a sport="all" caller
+  # still gets a populated volume panel.
+  acwr_data <- compute_acwr(summaries, sport = sport, mode = "km") %>%
     dplyr::filter(
       date >= min(decoupling_data$sessionStart),
       date <= max(decoupling_data$sessionStart)

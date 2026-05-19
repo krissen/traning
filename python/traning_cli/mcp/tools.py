@@ -131,15 +131,17 @@ def get_training_load(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-    sport: str = "all",
+    sport: Optional[str] = None,
 ) -> Image | dict | list:
     """Training load metrics: PMC (fitness/fatigue/form), ACWR, or monotony.
 
-    PMC, ACWR and monotony are whole-system load metrics, so the default
-    sport='all' aggregates across every sport with HR data and folds in
-    daily background activity (steps, walking) when available. Pass
-    sport='running' (or another bucket) for a sport-specific view, e.g.
-    when you want the classic km-based running ACWR.
+    Default sport varies by metric:
+    - PMC and monotony default to sport='all' (whole-system load,
+      including vardagsrörelse), matching get_form / readiness.
+    - ACWR defaults to sport='running' (the classic km-based
+      Hulin/Gabbett injury-risk metric — km doesn't compose across
+      sports). Pass sport='all' explicitly for the multisport
+      TRIMP-mode ACWR used by the daily push commentary.
 
     Args:
         metric: One of 'pmc' (Performance Management Chart with CTL/ATL/TSB),
@@ -149,11 +151,10 @@ def get_training_load(
         after: Start date filter.
         before: End date filter.
         plot: If True, return the corresponding chart (PNG).
-        sport: Sport bucket. Default 'all' (whole-system load including
-            vardagsrörelse). Examples: 'running', 'cycling', 'walking',
-            'strength', 'endurance' (running+cycling+walking+swimming).
-            See vayu://sports for the full list of supported names and
-            aliases.
+        sport: Sport bucket. Default depends on metric (see above).
+            Examples: 'running', 'cycling', 'walking', 'strength',
+            'all', 'endurance' (running+cycling+walking+swimming).
+            See vayu://sports.
     """
     metric = metric.lower()
     report_map = {
@@ -163,6 +164,11 @@ def get_training_load(
     }
     if metric not in report_map:
         return {"type": "error", "message": f"Unknown metric: {metric}. Use pmc, acwr, or monotony."}
+
+    # Per-metric default: ACWR stays running because its plot/report
+    # still render km panels; PMC and monotony are whole-system.
+    if sport is None:
+        sport = "running" if metric == "acwr" else "all"
 
     report_func, plot_func = report_map[metric]
     args = _build_args(after, before, n, sport=sport)
