@@ -414,12 +414,15 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
 #' contribute zeros to both mean and SD.
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
-#' @param sport Sport bucket (default \code{"running"}).
+#' @param sport Sport bucket (default \code{"all"} — Foster's monotony
+#'   is a system-wide stress metric; mixing all sports gives the truest
+#'   measure of training uniformity). Pass \code{"running"} (or another
+#'   bucket) for sport-specific monotony.
 #' @return Tibble with one row per calendar day from first to last session,
 #'   with columns: \code{date}, \code{daily_km}, \code{weekly_km},
 #'   \code{monotony}, \code{strain}.
 #' @export
-compute_monotony_strain <- function(summaries, sport = "running") {
+compute_monotony_strain <- function(summaries, sport = "all") {
   empty <- tibble::tibble(
     date      = as.Date(character(0)),
     daily_km  = numeric(0),
@@ -476,13 +479,16 @@ compute_monotony_strain <- function(summaries, sport = "running") {
 #' (Cole et al. 1999).
 #'
 #' @param summaries Enriched summaries (must contain garmin_recoveryHeartRate)
-#' @param sport Sport bucket (default \code{"running"}). Garmin recovery HR
-#'   is only emitted for running today, so non-running buckets typically
-#'   return an empty tibble.
+#' @param sport Sport bucket (default \code{"all"} — recovery HR is a
+#'   sport-agnostic cardiovascular signal). In practice Garmin only
+#'   emits recovery HR for running today, so the all-bucket result is
+#'   typically identical to a running-only call; the default change
+#'   matters for HAE/cycling watches that begin reporting recovery HR
+#'   for other sports.
 #' @return Tibble with columns: sessionStart, distance_km,
 #'   recovery_hr, recovery_hr_rolling28
 #' @export
-compute_recovery_hr <- function(summaries, sport = "running") {
+compute_recovery_hr <- function(summaries, sport = "all") {
   if (!"garmin_recoveryHeartRate" %in% names(summaries)) {
     stop("summaries saknar garmin_recoveryHeartRate. Kör augment_summaries() först.")
   }
