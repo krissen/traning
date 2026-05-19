@@ -511,10 +511,19 @@ compute_recovery_hr <- function(summaries, sport = "running") {
 #'   HR-based and works for any sport with HR data, so the default
 #'   sums load across every session with an HR reading. Pass
 #'   \code{"running"} (or another bucket) to restrict.
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}. When supplied and \code{sport} is a
+#'   whole-system bucket (\code{"all"} or \code{"walking"}), background
+#'   activity TRIMP from daily steps/walking distance is added to the
+#'   workout-derived TRIMP via \code{compute_background_trimp()}.
+#'   Ignored for sport-specific buckets (running, cycling, etc.) since
+#'   background walking is not part of those sports' loads.
 #' @return Tibble with: date, daily_trimp, trimp_type ("btrimp").
+#'   When background activity is folded in, the returned rows span the
+#'   union of workout dates and dates with non-zero background activity.
 #' @export
 compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
-                          sport = "all") {
+                          sport = "all", health_daily = NULL) {
   # HR_max anchor mirrors the requested sport bucket so a cycling-only
   # call uses a cycling-based max. The multi-sport default keeps the
   # same "all" scope so the readiness PMC, the weekly recap and the
@@ -568,7 +577,147 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
     dplyr::summarise(daily_trimp = sum(trimp, na.rm = TRUE), .groups = "drop") %>%
     dplyr::mutate(trimp_type = "btrimp")
 
+  # Fold in background-activity TRIMP for whole-system buckets. Sport-
+  # specific buckets (running, cycling, …) only see their own sport,
+  # so daily steps and walking distance shouldn't inflate their load.
+  add_background <- !is.null(health_daily) &&
+                    is.character(sport) &&
+                    length(sport) == 1L &&
+                    sport %in% c("all", "walking")
+  if (add_background) {
+    bg <- compute_background_trimp(health_daily, hr_max = hr_max,
+                                    hr_rest = hr_rest,
+                                    summaries = summaries)
+    if (nrow(bg) > 0) {
+      daily_trimp <- dplyr::full_join(daily_trimp, bg, by = "date") %>%
+        dplyr::mutate(
+          workout_trimp    = dplyr::coalesce(daily_trimp, 0),
+          background_trimp = dplyr::coalesce(background_trimp, 0),
+          daily_trimp      = workout_trimp + background_trimp,
+          trimp_type       = "btrimp"
+        ) %>%
+        dplyr::select(date, daily_trimp, trimp_type) %>%
+        dplyr::arrange(date)
+    }
+  }
+
   daily_trimp
+}
+
+#' Compute background-activity TRIMP from daily steps and energy
+#'
+#' Converts non-workout daily activity (background walking captured by
+#' the watch when no workout was started) into a synthetic Banister
+#' TRIMP so that whole-system load metrics (\code{compute_pmc()},
+#' readiness) include high-step days. Without this a 30k-step day with
+#' no logged workout would contribute zero to CTL/ATL/TSB even though
+#' it represents real physical strain.
+#'
+#' Model: take daily \code{walking_running_distance} (km) from HAE,
+#' subtract distance covered by running and walking workouts the same
+#' day (so workout km aren't double-counted), convert the remainder to
+#' an equivalent walking duration at 12 min/km, and apply the same
+#' Banister exponential as \code{compute_trimp()} at a fixed HR ratio
+#' of 0.30 (typical vardagsgång: hr_rest + 30 \% of reserve). When the
+#' \code{walking_running_distance} metric is missing for a day, falls
+#' back to \code{active_energy / 250} kJ as a coarse km equivalent.
+#'
+#' The HR-ratio is intentionally fixed: per-minute HR for background
+#' activity isn't available, and using a conservative typical value
+#' avoids over-estimating load on commute-heavy days.
+#'
+#' @param health_daily Long-format tibble from \code{load_health_data()}
+#'   (columns date, metric, value, source).
+#' @param hr_max,hr_rest Currently unused (HR ratio is fixed); kept in
+#'   the signature so callers can thread the same anchors used by
+#'   \code{compute_trimp()} without conditional plumbing.
+#' @param summaries Optional Garmin/HAE summaries data frame; when
+#'   supplied, distance from running and walking workouts on the same
+#'   date is subtracted from the daily walking_running_distance to
+#'   avoid double-counting workout km that the watch also recorded as
+#'   background distance.
+#' @param min_per_km Walking pace assumed for the km→minutes
+#'   conversion. Default 12 (5 km/h).
+#' @param hr_ratio Banister delta-HR (0..1) for background activity.
+#'   Default 0.30.
+#' @param kj_per_km_fallback Active-energy fallback factor (kJ/km
+#'   walking). Default 250.
+#' @return Tibble with columns \code{date} and \code{background_trimp}.
+#' @export
+compute_background_trimp <- function(health_daily,
+                                      hr_max = NULL, hr_rest = NULL,
+                                      summaries = NULL,
+                                      min_per_km = 12,
+                                      hr_ratio = 0.30,
+                                      kj_per_km_fallback = 250) {
+  empty <- tibble::tibble(
+    date             = as.Date(character(0)),
+    background_trimp = numeric(0)
+  )
+
+  if (is.null(health_daily) || nrow(health_daily) == 0) return(empty)
+  required_cols <- c("date", "metric", "value")
+  if (!all(required_cols %in% names(health_daily))) return(empty)
+
+  bg_metrics <- c("walking_running_distance", "active_energy")
+  bg <- health_daily %>%
+    dplyr::filter(.data$metric %in% bg_metrics, !is.na(.data$value)) %>%
+    dplyr::mutate(date = as.Date(.data$date)) %>%
+    dplyr::group_by(date, .data$metric) %>%
+    dplyr::summarise(value = sum(.data$value, na.rm = TRUE),
+                     .groups = "drop") %>%
+    tidyr::pivot_wider(names_from = "metric", values_from = "value")
+
+  if (nrow(bg) == 0) return(empty)
+
+  if (!"walking_running_distance" %in% names(bg)) {
+    bg$walking_running_distance <- NA_real_
+  }
+  if (!"active_energy" %in% names(bg)) {
+    bg$active_energy <- NA_real_
+  }
+
+  # Workout distance to subtract: running and walking sessions on the
+  # same date (watch logs background steps in parallel with workouts).
+  workout_km <- tibble::tibble(date = as.Date(character(0)),
+                                workout_km = numeric(0))
+  has_summaries <- !is.null(summaries) && is.data.frame(summaries) &&
+                   nrow(summaries) > 0 &&
+                   all(c("sessionStart", "sport", "distance") %in%
+                       names(summaries))
+  if (has_summaries) {
+    workout_km <- .filter_sport(summaries, c("running", "walking")) %>%
+      dplyr::mutate(
+        date       = as.Date(.data$sessionStart),
+        workout_km = as.numeric(.data$distance) / 1000
+      ) %>%
+      dplyr::group_by(date) %>%
+      dplyr::summarise(workout_km = sum(.data$workout_km, na.rm = TRUE),
+                       .groups = "drop")
+  }
+
+  bg <- bg %>%
+    dplyr::left_join(workout_km, by = "date") %>%
+    dplyr::mutate(
+      workout_km = dplyr::coalesce(.data$workout_km, 0),
+      # Prefer walking_running_distance; fall back to active_energy / 250
+      # when missing (older HAE exports, days with broken WRD samples).
+      wrd_km     = dplyr::if_else(
+        !is.na(.data$walking_running_distance),
+        .data$walking_running_distance,
+        .data$active_energy / kj_per_km_fallback
+      ),
+      bg_km      = pmax(0, .data$wrd_km - .data$workout_km),
+      bg_minutes = .data$bg_km * min_per_km,
+      background_trimp = .data$bg_minutes * hr_ratio * 0.64 *
+                         exp(1.92 * hr_ratio)
+    ) %>%
+    dplyr::filter(is.finite(.data$background_trimp),
+                  .data$background_trimp > 0) %>%
+    dplyr::select(date, background_trimp) %>%
+    dplyr::arrange(date)
+
+  bg
 }
 
 #' Compute Performance Management Chart (ATL, CTL, TSB)
@@ -590,12 +739,18 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #'   across every session with HR data, matching the way readiness uses
 #'   PMC as a whole-system load signal). Pass \code{"running"} (or
 #'   another bucket) for sport-specific load.
+#' @param health_daily Optional long-format tibble from
+#'   \code{load_health_data()}. Threaded into \code{compute_trimp()} so
+#'   background-activity TRIMP from daily steps/distance is folded into
+#'   CTL/ATL/TSB for whole-system buckets. See \code{compute_trimp()}
+#'   and \code{compute_background_trimp()}.
 #' @return Tibble with daily values: date, daily_trimp, atl, ctl, tsb.
 #' @export
 compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
-                        sport = "all") {
+                        sport = "all", health_daily = NULL) {
   daily_trimp <- compute_trimp(summaries, hr_max = hr_max,
-                               hr_rest = hr_rest, sport = sport)
+                               hr_rest = hr_rest, sport = sport,
+                               health_daily = health_daily)
 
   if (nrow(daily_trimp) == 0) {
     return(tibble::tibble(date = as.Date(character(0)),
@@ -1388,7 +1543,8 @@ compute_race_readiness <- function(summaries, health_daily, target_date,
   components <- list()
 
   pmc <- if (!is.null(summaries) && nrow(summaries) > 0L) {
-    tryCatch(compute_pmc(summaries), error = function(e) NULL)
+    tryCatch(compute_pmc(summaries, health_daily = health_daily),
+             error = function(e) NULL)
   } else NULL
 
   if (!is.null(pmc) && nrow(pmc) > 0L) {

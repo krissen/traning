@@ -1718,7 +1718,8 @@ health_insight_delta <- function(before, after) {
 # same Monday push could disagree about how the week's load looked.
 .weekly_line_for_date <- function(summaries, on_date,
                                    notify_sport = TRUE,
-                                   hr_max = NULL, hr_rest = NULL) {
+                                   hr_max = NULL, hr_rest = NULL,
+                                   health_daily = NULL) {
   if (!isTRUE(notify_sport)) return(NULL)
   wday <- as.POSIXlt(as.Date(on_date))$wday  # 0=Sun, 1=Mon ... 6=Sat
   if (wday != 1L) return(NULL)
@@ -1728,13 +1729,17 @@ health_insight_delta <- function(before, after) {
   # TRIMP available" and fall through to the km-delta branch — but
   # only for that explicit absence; any *other* compute_trimp failure
   # surfaces so we don't hide bugs in the notification path.
+  # health_daily is optional; when present, daily steps/distance fold
+  # into TRIMP so the weekly load delta reflects vardagsrörelse, not
+  # just logged workouts.
   required_cols <- c("sessionStart", "avgHeartRateMoving", "durationMoving")
   daily_trimp <- if (is.null(summaries) || !is.data.frame(summaries) ||
                       nrow(summaries) == 0 ||
                       !all(required_cols %in% names(summaries))) {
     NULL
   } else {
-    compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest)
+    compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest,
+                  health_daily = health_daily)
   }
   last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L,
                                    daily_trimp = daily_trimp)
@@ -1848,7 +1853,8 @@ health_insight_readiness <- function(health_daily, summaries,
     weekly_line <- .weekly_line_for_date(summaries, row$date,
                                           notify_sport = TRUE,
                                           hr_max = hr_max,
-                                          hr_rest = hr_rest)
+                                          hr_rest = hr_rest,
+                                          health_daily = health_daily)
     if (!is.null(weekly_line)) parts <- c(parts, weekly_line)
   }
 

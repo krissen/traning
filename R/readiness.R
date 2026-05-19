@@ -172,8 +172,11 @@ compute_readiness <- function(health_daily, summaries,
   # 2. Training side: PMC with full date spine. Reuse caller's PMC when
   # provided so the same summaries aren't TRIMP-scanned twice for one
   # render (the Shiny overview lifts pmc_data once and passes it in).
+  # health_daily threads through so background-activity TRIMP from
+  # daily steps/distance is reflected in CTL/ATL/TSB used for scoring.
   if (is.null(pmc)) {
-    pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest)
+    pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
+                       health_daily = health_daily)
   }
 
   # 3. Unified date spine

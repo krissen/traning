@@ -69,7 +69,8 @@ overview_server <- function(id, summaries, health_daily, myruns,
 
     # --- Shared computed data (cached per session) ---
     pmc_data <- shiny::reactive({
-      tryCatch(compute_pmc(summaries), error = function(e) NULL)
+      tryCatch(compute_pmc(summaries, health_daily = health_daily),
+               error = function(e) NULL)
     })
 
     acwr_data <- shiny::reactive({
