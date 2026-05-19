@@ -1447,10 +1447,42 @@ health_insight_delta <- function(before, after) {
   out[order(-out$km), , drop = FALSE]
 }
 
+# Total weekly TRIMP across every session with HR data in the rows of
+# the ISO week. Mirrors the Banister formula in compute_trimp() but
+# avoids a full re-run of compute_trimp on the whole summary set —
+# we only need a single scalar per week.  HR_max anchors on running
+# because running typically reaches the highest HR; HR_rest is taken
+# from get_hr_rest() per session date.
+.weekly_trimp_sum <- function(rows, hr_max) {
+  if (is.null(rows) || nrow(rows) == 0 || is.na(hr_max) || hr_max <= 0)
+    return(NA_real_)
+  if (!all(c("avgHeartRateMoving", "durationMoving") %in% names(rows)))
+    return(NA_real_)
+
+  hr <- suppressWarnings(as.numeric(rows$avgHeartRateMoving))
+  dur_min <- suppressWarnings(
+    as.numeric(rows$durationMoving, units = "mins"))
+  keep <- !is.na(hr) & hr > 0 & !is.na(dur_min) & dur_min > 10
+  if (!any(keep)) return(NA_real_)
+
+  hr <- hr[keep]
+  dur_min <- dur_min[keep]
+  dates <- as.Date(rows$sessionStart[keep])
+  hr_rest_vec <- tryCatch(get_hr_rest(dates),
+                          error = function(e) rep(NA_real_, length(dates)))
+  hr_rest_vec[is.na(hr_rest_vec)] <- 50  # conservative fallback
+
+  delta_hr <- (hr - hr_rest_vec) / (hr_max - hr_rest_vec)
+  delta_hr <- pmax(0, pmin(1, delta_hr))
+  trimp <- dur_min * delta_hr * 0.64 * exp(1.92 * delta_hr)
+  sum(trimp, na.rm = TRUE)
+}
+
 # Same shape as .recent_sport_activity but for an ISO calendar week.
 # `week_offset = 0` is the week containing on_date, `-1` is the previous
-# week, etc. Returns a list with `iso_week`, `total_km`, and a per-sport
-# data frame (zero-rows when no sessions reached the 0.1 km floor).
+# week, etc. Returns a list with `iso_week`, `total_km`, `total_trimp`
+# (multi-sport HR-based weekly load), and a per-sport data frame
+# (zero-rows when no sessions reached the 0.1 km floor).
 .weekly_sport_aggregate <- function(summaries, on_date, week_offset = 0L) {
   if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
     return(NULL)
@@ -1473,10 +1505,11 @@ health_insight_delta <- function(before, after) {
   ]
   if (nrow(rows) == 0) {
     return(list(
-      iso_week = format(monday, "%G-W%V"),
-      total_km = 0,
-      per_sport = data.frame(sport = character(0), sessions = integer(0),
-                              km = numeric(0), stringsAsFactors = FALSE)
+      iso_week    = format(monday, "%G-W%V"),
+      total_km    = 0,
+      total_trimp = NA_real_,
+      per_sport   = data.frame(sport = character(0), sessions = integer(0),
+                                km = numeric(0), stringsAsFactors = FALSE)
     ))
   }
   agg <- by(rows, rows$sport, function(d) {
@@ -1494,10 +1527,15 @@ health_insight_delta <- function(before, after) {
   rownames(out) <- NULL
   out <- out[order(-out$km), , drop = FALSE]
 
+  hr_max <- tryCatch(get_hr_max(summaries, sport = "running"),
+                     error = function(e) NA_real_)
+  total_trimp <- .weekly_trimp_sum(rows, hr_max)
+
   list(
-    iso_week  = format(monday, "%G-W%V"),
-    total_km  = sum(out$km),
-    per_sport = out
+    iso_week    = format(monday, "%G-W%V"),
+    total_km    = sum(out$km),
+    total_trimp = total_trimp,
+    per_sport   = out
   )
 }
 
@@ -1519,15 +1557,42 @@ health_insight_delta <- function(before, after) {
   paste0("Senaste dygnet: ", paste(parts, collapse = ", "), ".")
 }
 
-# Build "Vecka: ..." or "Förra veckan: ..." line. `prefix` controls the
-# Swedish header so the same formatter handles both Sunday's "this week"
-# recap and Monday's "förra veckan" make-up post.
+# Extract the ISO week number ("YYYY-WNN" -> "NN", padding stripped)
+# for inline references like "mot v.19". Returns NULL when the slot
+# is missing or malformed so callers can fall back on neutral wording.
+.iso_week_number <- function(iso_week) {
+  if (is.null(iso_week) || is.na(iso_week)) return(NULL)
+  parts <- strsplit(as.character(iso_week), "W", fixed = TRUE)[[1]]
+  if (length(parts) != 2L) return(NULL)
+  num <- suppressWarnings(as.integer(parts[2]))
+  if (is.na(num)) return(NULL)
+  as.character(num)  # drops the leading zero in "05" -> "5"
+}
+
+# Render a per-sport km value. Within a single summary line we want
+# consistent precision: when the total volume is in double-digit km
+# the per-sport entries should be integers too (avoids reading
+# "57, 16, 6.0" as a list with mixed precision).
+.fmt_km_in_list <- function(km, total_km) {
+  if (is.na(km)) return("")
+  if (is.finite(total_km) && total_km >= 10) {
+    format(round(km), big.mark = "")
+  } else {
+    .fmt_km(km)
+  }
+}
+
+# Build "Förra veckan: ..." line. `prefix` controls the Swedish header.
+# Delta is preferred against TRIMP (intensity-aware load) so a week of
+# easy cycling km doesn't outrank a hard running week — falls back to
+# km-delta when no HR-anchored TRIMP is available.
 .format_weekly_summary_line <- function(weekly, previous = NULL,
-                                         prefix = "Vecka") {
+                                         prefix = "Förra veckan") {
   if (is.null(weekly) || weekly$total_km < 0.1) return(NULL)
   per <- weekly$per_sport
   n_sports <- nrow(per)
-  total_str <- .fmt_km(weekly$total_km)
+  total_km <- weekly$total_km
+  total_str <- .fmt_km(total_km)
 
   body <- if (n_sports == 1) {
     sport <- tolower(.sport_label_sv(per$sport[1]))
@@ -1535,53 +1600,68 @@ health_insight_delta <- function(before, after) {
   } else if (n_sports == 2) {
     s1 <- tolower(.sport_label_sv(per$sport[1]))
     s2 <- tolower(.sport_label_sv(per$sport[2]))
-    paste0(total_str, " km (", s1, " ", .fmt_km(per$km[1]),
-           ", ", s2, " ", .fmt_km(per$km[2]), ")")
+    paste0(total_str, " km (", s1, " ", .fmt_km_in_list(per$km[1], total_km),
+           ", ", s2, " ", .fmt_km_in_list(per$km[2], total_km), ")")
   } else {
     detail <- vapply(seq_len(n_sports), function(i) {
       paste0(tolower(.sport_label_sv(per$sport[i])), " ",
-             .fmt_km(per$km[i]))
+             .fmt_km_in_list(per$km[i], total_km))
     }, character(1))
     paste0(total_str, " km över ", n_sports, " sporter (",
            paste(detail, collapse = ", "), ")")
   }
 
   delta_part <- ""
-  if (!is.null(previous) && !is.null(previous$total_km) &&
-      is.finite(previous$total_km)) {
-    diff_km <- weekly$total_km - previous$total_km
-    if (abs(diff_km) >= 0.5) {
-      sign_str <- if (diff_km > 0) "+" else "-"
-      delta_part <- paste0(" ", sign_str, .fmt_km(abs(diff_km)),
-                            " km mot förra veckan.")
-    } else {
-      delta_part <- " Som förra veckan."
+  if (!is.null(previous)) {
+    prev_week_num <- .iso_week_number(previous$iso_week)
+    prev_label <- if (is.null(prev_week_num)) "veckan innan" else
+                  paste0("v.", prev_week_num)
+
+    prev_trimp <- previous$total_trimp
+    cur_trimp  <- weekly$total_trimp
+    have_trimp <- !is.null(prev_trimp) && !is.null(cur_trimp) &&
+                  is.finite(prev_trimp) && is.finite(cur_trimp) &&
+                  prev_trimp > 0
+
+    if (have_trimp) {
+      pct <- (cur_trimp - prev_trimp) / prev_trimp * 100
+      if (abs(pct) >= 5) {
+        sign_str <- if (pct > 0) "+" else "-"
+        delta_part <- paste0(" ", sign_str, round(abs(pct)),
+                              " % belastning mot ", prev_label, ".")
+      } else {
+        delta_part <- paste0(" Som ", prev_label,
+                              " belastningsmässigt.")
+      }
+    } else if (!is.null(previous$total_km) &&
+               is.finite(previous$total_km)) {
+      diff_km <- total_km - previous$total_km
+      if (abs(diff_km) >= 0.5) {
+        sign_str <- if (diff_km > 0) "+" else "-"
+        delta_part <- paste0(" ", sign_str,
+                              .fmt_km_in_list(abs(diff_km), total_km),
+                              " km mot ", prev_label, ".")
+      } else {
+        delta_part <- paste0(" Som ", prev_label, ".")
+      }
     }
   }
 
   paste0(prefix, ": ", body, ".", delta_part)
 }
 
-# Pick the right weekly headline. Sunday → "Vecka: ..." for the running
-# week. Monday → "Förra veckan: ..." (the makeup post). Other days →
-# NULL so we don't spam.
+# Monday morning gets the weekly recap of the week that just ended.
+# Other days return NULL so we don't spam — Sunday's partial-week recap
+# was dropped because the same number changes again on Monday once the
+# Sunday session lands, which read as confusing rather than useful.
 .weekly_line_for_date <- function(summaries, on_date,
                                    notify_sport = TRUE) {
   if (!isTRUE(notify_sport)) return(NULL)
   wday <- as.POSIXlt(as.Date(on_date))$wday  # 0=Sun, 1=Mon ... 6=Sat
-  if (wday == 0L) {
-    # Sunday → recap of the current ISO week so far
-    cur  <- .weekly_sport_aggregate(summaries, on_date, week_offset = 0L)
-    prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L)
-    .format_weekly_summary_line(cur, prev, prefix = "Vecka")
-  } else if (wday == 1L) {
-    # Monday → recap of the week that just ended
-    last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L)
-    prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L)
-    .format_weekly_summary_line(last, prev, prefix = "Förra veckan")
-  } else {
-    NULL
-  }
+  if (wday != 1L) return(NULL)
+  last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L)
+  prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L)
+  .format_weekly_summary_line(last, prev, prefix = "Förra veckan")
 }
 
 # Read the opt-out env var once; defaults to "on" for any value other

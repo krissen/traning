@@ -271,14 +271,14 @@ test_that(".format_recent_activity_line returns NULL when no rows", {
 
 test_that(".format_weekly_summary_line handles 1/2/3+ sport variants", {
   # 1 sport
-  one <- list(iso_week = "2026-W17", total_km = 32,
+  one <- list(iso_week = "2026-W17", total_km = 32, total_trimp = NA_real_,
               per_sport = data.frame(sport = "running", sessions = 4L,
                                       km = 32, stringsAsFactors = FALSE))
   expect_match(traning:::.format_weekly_summary_line(one),
-               "^Vecka: 32 km löpning")
+               "^Förra veckan: 32 km löpning")
 
-  # 2 sports
-  two <- list(iso_week = "2026-W17", total_km = 45,
+  # 2 sports — total >= 10 so per-sport km should render as integers
+  two <- list(iso_week = "2026-W17", total_km = 45, total_trimp = NA_real_,
               per_sport = data.frame(
                 sport = c("running", "cycling"),
                 sessions = c(2L, 1L),
@@ -286,39 +286,60 @@ test_that(".format_weekly_summary_line handles 1/2/3+ sport variants", {
                 stringsAsFactors = FALSE
               ))
   expect_match(traning:::.format_weekly_summary_line(two),
-               "^Vecka: 45 km \\(löpning 30, cykling 15\\)")
+               "^Förra veckan: 45 km \\(löpning 30, cykling 15\\)")
 
-  # 3+ sports → bucket count
-  three <- list(iso_week = "2026-W17", total_km = 64,
+  # 3+ sports → bucket count, and integer rendering for the mixed list
+  three <- list(iso_week = "2026-W17", total_km = 64, total_trimp = NA_real_,
                 per_sport = data.frame(
                   sport = c("running", "cycling", "walking", "strength"),
                   sessions = c(2L, 1L, 3L, 1L),
                   km = c(30, 20, 12, 2),
                   stringsAsFactors = FALSE
                 ))
-  expect_match(traning:::.format_weekly_summary_line(three),
-               "över 4 sporter")
+  out_three <- traning:::.format_weekly_summary_line(three)
+  expect_match(out_three, "över 4 sporter")
+  # decimal-consistency: with total_km >= 10, per-sport km are integers
+  # even when one is small (2 km rendered as "2", not "2.0").
+  expect_match(out_three, "styrketräning 2\\b")
+  expect_false(grepl("2\\.0", out_three))
 })
 
-test_that(".format_weekly_summary_line includes delta vs previous week", {
-  cur <- list(iso_week = "2026-W17", total_km = 45,
+test_that(".format_weekly_summary_line uses TRIMP delta when available", {
+  cur  <- list(iso_week = "2026-W17", total_km = 45, total_trimp = 360,
+               per_sport = data.frame(sport = "running", sessions = 4L,
+                                       km = 45, stringsAsFactors = FALSE))
+  prev <- list(iso_week = "2026-W16", total_km = 60, total_trimp = 300,
+               per_sport = data.frame(sport = "running", sessions = 3L,
+                                       km = 60, stringsAsFactors = FALSE))
+  out <- traning:::.format_weekly_summary_line(cur, prev)
+  # 360 vs 300 → +20%
+  expect_match(out, "\\+20 % belastning mot v\\.16\\.")
+  # No km-delta phrasing when TRIMP is the comparator
+  expect_false(grepl("km mot", out))
+})
+
+test_that(".format_weekly_summary_line falls back to km delta without TRIMP", {
+  cur <- list(iso_week = "2026-W17", total_km = 45, total_trimp = NA_real_,
               per_sport = data.frame(sport = "running", sessions = 4L,
                                       km = 45, stringsAsFactors = FALSE))
-  prev <- list(iso_week = "2026-W16", total_km = 32,
+  prev <- list(iso_week = "2026-W16", total_km = 32, total_trimp = NA_real_,
                per_sport = data.frame(sport = "running", sessions = 3L,
                                        km = 32, stringsAsFactors = FALSE))
   out <- traning:::.format_weekly_summary_line(cur, prev)
-  expect_match(out, "\\+13 km mot förra veckan")
+  # Phrasing: "mot v.16" — never "mot förra veckan" (avoids double use
+  # in the morning push).
+  expect_match(out, "\\+13 km mot v\\.16")
+  expect_false(grepl("mot förra veckan", out))
 })
 
-test_that(".weekly_line_for_date only fires on Sun/Mon", {
-  s <- .fixture_multisport(today = as.Date("2026-04-22"))  # Wed
+test_that(".weekly_line_for_date fires only on Monday", {
+  s <- .fixture_multisport(today = as.Date("2026-04-22"))
+  # Mid-week → silent
   expect_null(traning:::.weekly_line_for_date(s, as.Date("2026-04-22")))
-  # Sunday
-  sunday <- as.Date("2026-04-26")
-  out <- traning:::.weekly_line_for_date(s, sunday)
-  expect_match(out, "^Vecka: ")
-  # Monday → make-up post for previous week
+  # Sunday is no longer a trigger (partial week-in-progress recap was
+  # dropped; the same number changes once the Sunday session lands)
+  expect_null(traning:::.weekly_line_for_date(s, as.Date("2026-04-26")))
+  # Monday → make-up post for the completed previous week
   monday <- as.Date("2026-04-27")
   out <- traning:::.weekly_line_for_date(s, monday)
   expect_match(out, "^Förra veckan: ")
@@ -332,12 +353,12 @@ test_that("health_insight_readiness includes recent activity line", {
   expect_match(res$prosa, "Senaste dygnet: ")
 })
 
-test_that("health_insight_readiness includes weekly recap on Sunday", {
-  sunday <- as.Date("2026-04-26")
-  hd <- .fixture_health_daily(sunday)
-  s <- .fixture_multisport(today = sunday)
-  res <- health_insight_readiness(hd, s, hr_max = 185, on_date = sunday)
-  expect_match(res$prosa, "Vecka: ")
+test_that("health_insight_readiness includes weekly recap on Monday", {
+  monday <- as.Date("2026-04-27")
+  hd <- .fixture_health_daily(monday)
+  s <- .fixture_multisport(today = monday)
+  res <- health_insight_readiness(hd, s, hr_max = 185, on_date = monday)
+  expect_match(res$prosa, "Förra veckan: ")
 })
 
 test_that("TRANING_NOTIFY_SPORT=false suppresses the new lines", {
