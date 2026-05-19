@@ -1463,7 +1463,14 @@ health_insight_delta <- function(before, after) {
 # week, etc. Returns a list with `iso_week`, `total_km`, `total_trimp`
 # (multi-sport HR-based weekly load), and a per-sport data frame
 # (zero-rows when no sessions reached the 0.1 km floor).
-.weekly_sport_aggregate <- function(summaries, on_date, week_offset = 0L) {
+#
+# `daily_trimp` is the (date, daily_trimp) tibble from compute_trimp()
+# — passing it in lets the caller compute TRIMP once with its preferred
+# HR anchors and have every weekly aggregation read off the same scale.
+# When NULL, total_trimp falls back to NA (the recap then falls through
+# to km-delta).
+.weekly_sport_aggregate <- function(summaries, on_date, week_offset = 0L,
+                                     daily_trimp = NULL) {
   if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
     return(NULL)
   ref <- as.Date(on_date) + (week_offset * 7L)
@@ -1476,6 +1483,22 @@ health_insight_delta <- function(before, after) {
   start_ts <- as.POSIXct(as.character(monday),
                           format = "%Y-%m-%d", tz = "UTC")
 
+  # Sum the precomputed daily TRIMP into a single weekly scalar.
+  # `daily_trimp` carries the caller's HR anchors so the recap stays
+  # on the same scale as readiness/TSB even when hr_max/hr_rest are
+  # passed explicitly.
+  total_trimp <- NA_real_
+  if (!is.null(daily_trimp) && is.data.frame(daily_trimp) &&
+      nrow(daily_trimp) > 0 &&
+      all(c("date", "daily_trimp") %in% names(daily_trimp))) {
+    in_week <- daily_trimp$date >= as.Date(monday) &
+               daily_trimp$date <  as.Date(monday + 7L)
+    if (any(in_week)) {
+      week_vals <- daily_trimp$daily_trimp[in_week]
+      if (any(!is.na(week_vals))) total_trimp <- sum(week_vals, na.rm = TRUE)
+    }
+  }
+
   rows <- summaries[
     !is.na(summaries$sessionStart) &
       summaries$sessionStart >= start_ts &
@@ -1487,7 +1510,7 @@ health_insight_delta <- function(before, after) {
     return(list(
       iso_week    = format(monday, "%G-W%V"),
       total_km    = 0,
-      total_trimp = NA_real_,
+      total_trimp = total_trimp,
       per_sport   = data.frame(sport = character(0), sessions = integer(0),
                                 km = numeric(0), stringsAsFactors = FALSE)
     ))
@@ -1506,18 +1529,6 @@ health_insight_delta <- function(before, after) {
   out <- out[!is.na(out$km) & out$km >= 0.1, , drop = FALSE]
   rownames(out) <- NULL
   out <- out[order(-out$km), , drop = FALSE]
-
-  # Use the same HR_max scope as compute_trimp's multi-sport default
-  # and .sport_mix_data() — "all" — so the weekly recap, the readiness
-  # PMC and the sport-mix plot all read TRIMP off the same scale.
-  # .session_trimp() is the shared Banister implementation; sum returns
-  # 0 on an all-NA vector so we check before summing.
-  hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
-                     error = function(e) NA_real_)
-  trimp_vec <- if (is.finite(hr_max) && hr_max > 0)
-    .session_trimp(rows, hr_max = hr_max) else NA_real_
-  total_trimp <- if (any(!is.na(trimp_vec)))
-    sum(trimp_vec, na.rm = TRUE) else NA_real_
 
   list(
     iso_week    = format(monday, "%G-W%V"),
@@ -1679,13 +1690,24 @@ health_insight_delta <- function(before, after) {
 # Other days return NULL so we don't spam — Sunday's partial-week recap
 # was dropped because the same number changes again on Monday once the
 # Sunday session lands, which read as confusing rather than useful.
+#
+# `hr_max` / `hr_rest` are threaded into compute_trimp so the recap's
+# load delta stays on the same HR scale as readiness's TSB when the
+# caller passes explicit overrides — otherwise the two lines in the
+# same Monday push could disagree about how the week's load looked.
 .weekly_line_for_date <- function(summaries, on_date,
-                                   notify_sport = TRUE) {
+                                   notify_sport = TRUE,
+                                   hr_max = NULL, hr_rest = NULL) {
   if (!isTRUE(notify_sport)) return(NULL)
   wday <- as.POSIXlt(as.Date(on_date))$wday  # 0=Sun, 1=Mon ... 6=Sat
   if (wday != 1L) return(NULL)
-  last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L)
-  prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L)
+  daily_trimp <- tryCatch(
+    compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest),
+    error = function(e) NULL)
+  last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L,
+                                   daily_trimp = daily_trimp)
+  prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L,
+                                   daily_trimp = daily_trimp)
   .format_weekly_summary_line(last, prev, prefix = "Förra veckan")
 }
 
@@ -1792,7 +1814,9 @@ health_insight_readiness <- function(health_daily, summaries,
     if (!is.null(activity_line)) parts <- c(parts, activity_line)
 
     weekly_line <- .weekly_line_for_date(summaries, row$date,
-                                          notify_sport = TRUE)
+                                          notify_sport = TRUE,
+                                          hr_max = hr_max,
+                                          hr_rest = hr_rest)
     if (!is.null(weekly_line)) parts <- c(parts, weekly_line)
   }
 

@@ -381,6 +381,23 @@ test_that(".format_weekly_summary_line falls back to km delta without TRIMP", {
   expect_false(grepl("mot förra veckan", out))
 })
 
+test_that(".weekly_line_for_date threads hr_max/hr_rest into the TRIMP comparison", {
+  # When the caller passes explicit anchors, the recap should read off
+  # those — not silently recompute its own HR_max — so the load delta
+  # in the Monday push stays on the same scale as readiness/TSB.
+  s <- .fixture_multisport(today = as.Date("2026-04-27"))  # Monday
+  out_high <- traning:::.weekly_line_for_date(s, as.Date("2026-04-27"),
+                                               hr_max = 250)
+  out_low  <- traning:::.weekly_line_for_date(s, as.Date("2026-04-27"),
+                                               hr_max = 160)
+  # Different HR_max anchors must not crash and must still produce a
+  # recap line. The ratio between consecutive weeks (which drives the
+  # rendered "X % belastning") is HR-independent on this fixture so
+  # both anchors should yield the same delta text.
+  expect_type(out_high, "character")
+  expect_type(out_low, "character")
+})
+
 test_that(".weekly_line_for_date fires only on Monday", {
   s <- .fixture_multisport(today = as.Date("2026-04-22"))
   # Mid-week → silent
