@@ -276,13 +276,17 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
                           hr_max = NULL, hr_rest = NULL,
                           health_daily = NULL) {
   if (is.null(mode)) {
-    # Whole-system requests (NULL / "all" / "any" — same sentinels
-    # .filter_sport() treats as "no filter") get TRIMP mode because
-    # km doesn't compose across sports. Anything else stays in km
-    # mode (the classic Hulin/Gabbett running-injury formulation).
-    is_whole_system <- is.null(sport) ||
-                       (is.character(sport) && length(sport) == 1L &&
-                        sport %in% c("all", "any"))
+    # Resolve the sport argument through the same bucket resolver
+    # .filter_sport() uses, so case variants ("All"), Swedish aliases
+    # ("löpning"), curated buckets ("endurance" → 4 sports) and
+    # multi-sport vectors all land in the same scope category here.
+    #
+    # NULL from the resolver = no-filter sentinel (whole-system).
+    # length > 1 = multi-sport composite — km doesn't compose, so
+    # use TRIMP mode for both. Anything that resolves to a single
+    # canonical sport stays in km mode (classic running ACWR).
+    resolved <- .resolve_sport_bucket(sport)
+    is_whole_system <- is.null(resolved) || length(resolved) > 1L
     mode <- if (is_whole_system) "trimp" else "km"
   }
   mode <- match.arg(mode, c("km", "trimp"))
@@ -612,15 +616,15 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
   # produce a data-driven max instead of falling through to env/age.
   if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
-  # Whole-system sport (NULL / "all" / "any" — the .sport_match_mask()
-  # no-filter sentinels) plus the "walking" bucket fold in background
-  # walking distance. Sport-specific buckets (running, cycling, …)
-  # only see their own sport, so daily background steps shouldn't
-  # inflate their load.
+  # Fold in background walking when the resolved bucket either matches
+  # everything (whole-system: NULL/"all"/"any") or explicitly includes
+  # walking — that covers the "walking" bucket, the "endurance" bucket
+  # (which contains walking), Swedish aliases like "gång", and case
+  # variants like "All", all without re-implementing alias/case logic
+  # here.
+  resolved_bucket <- .resolve_sport_bucket(sport)
   add_background <- !is.null(health_daily) && (
-    is.null(sport) ||
-    (is.character(sport) && length(sport) == 1L &&
-     sport %in% c("all", "any", "walking"))
+    is.null(resolved_bucket) || "walking" %in% resolved_bucket
   )
 
   runs <- .filter_sport(summaries, sport) %>%
@@ -727,7 +731,15 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #' Banister exponential as \code{compute_trimp()} at a fixed HR ratio
 #' of 0.30 (typical vardagsgång: hr_rest + 30 \% of reserve). When the
 #' \code{walking_running_distance} metric is missing for a day, falls
-#' back to \code{active_energy / 250} kJ as a coarse km equivalent.
+#' back to \code{active_energy / kj_per_km_fallback} as a coarse km
+#' equivalent.
+#'
+#' The fallback divisor assumes \code{active_energy} is in kJ (Apple
+#' Watch's native HealthKit unit, and what HAE writes by default into
+#' the canonical files this codebase consumes). Users whose HAE
+#' export is configured for kcal should pass
+#' \code{kj_per_km_fallback = 60} (~60 kcal / km walking) or convert
+#' the canonical files to kJ first.
 #'
 #' The HR-ratio is intentionally fixed: per-minute HR for background
 #' activity isn't available, and using a conservative typical value

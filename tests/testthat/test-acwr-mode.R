@@ -73,6 +73,55 @@ test_that("compute_acwr auto-mode treats NULL/'any' as whole-system", {
   }
 })
 
+test_that("compute_acwr auto-mode handles case variants and aliases", {
+  df <- .acwr_summaries()
+  # Case-insensitive sentinels
+  r_All <- compute_acwr(df, sport = "All", hr_max = 185, hr_rest = 50)
+  expect_equal(attr(r_All, "mode"), "trimp")
+  # Swedish alias resolves to single canonical sport → km mode
+  r_lop <- compute_acwr(df, sport = "löpning")
+  expect_equal(attr(r_lop, "mode"), "km")
+})
+
+test_that("compute_acwr auto-mode picks TRIMP for multi-sport composites", {
+  df <- .acwr_summaries()
+  # "endurance" resolves to 4 sports (running+cycling+walking+swimming);
+  # km doesn't compose across these, so auto-mode must pick TRIMP.
+  r_end <- compute_acwr(df, sport = "endurance",
+                         hr_max = 185, hr_rest = 50)
+  expect_equal(attr(r_end, "mode"), "trimp")
+  # Explicit vector also triggers TRIMP mode
+  r_vec <- compute_acwr(df, sport = c("running", "cycling"),
+                         hr_max = 185, hr_rest = 50)
+  expect_equal(attr(r_vec, "mode"), "trimp")
+})
+
+test_that("compute_trimp background-gate uses sport resolver", {
+  empty_summaries <- tibble::tibble(
+    sessionStart       = as.POSIXct(character(0), tz = "UTC"),
+    sport              = character(0),
+    distance           = numeric(0),
+    durationMoving     = as.difftime(numeric(0), units = "mins"),
+    avgHeartRateMoving = numeric(0),
+    avgPaceMoving      = numeric(0),
+    avgSpeedMoving     = numeric(0),
+    duration           = as.difftime(numeric(0), units = "mins")
+  )
+  hd <- tibble::tibble(
+    date = as.Date("2026-05-01"),
+    metric = "walking_running_distance",
+    value = 10,
+    source = "Apple Watch"
+  )
+  for (s in list("gång", "All", "endurance")) {
+    label <- paste("sport =", deparse(s))
+    r <- compute_trimp(empty_summaries, hr_max = 185, hr_rest = 50,
+                       sport = s, health_daily = hd)
+    expect_true(nrow(r) > 0, label = label)
+    expect_true(all(r$daily_trimp > 0), label = label)
+  }
+})
+
 test_that("report_acwr column labels follow the resolved mode", {
   df <- .acwr_summaries()
   km_tbl <- report_acwr(df, sport = "running")
