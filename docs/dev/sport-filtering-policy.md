@@ -112,3 +112,21 @@ MCP tools) should pick the default that matches the context:
 `mod_overview.R` is the current canonical example: PMC card and ACWR
 card both use whole-system load; "Vecka km" card uses an explicit
 running-km computation.
+
+### Shiny selector model
+
+The Shiny dashboard has a single global sport selector (defaults to
+"Löpning"). Per-page panels pass that value as `sport=` to their
+underlying compute / plot / report calls. This means the new
+whole-system API defaults (PMC, recovery HR) surface in **CLI without
+`--sport`** and **MCP without `sport=`**, but not in Shiny by default —
+Shiny users get a whole-system PMC by switching the selector to
+"Alla sporter".
+
+`mod_overview.R` is the deliberate exception: its KPI cards bypass the
+selector so the daily snapshot reflects the same all-sport scope as
+the morning readiness push. Per-page panels follow the selector
+because that's where the user has explicit scope control. Don't bypass
+the selector in per-page panels without a strong reason — silently
+ignoring the user's selection is a worse UX failure than the wrong
+default.
