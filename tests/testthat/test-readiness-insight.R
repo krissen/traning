@@ -395,20 +395,23 @@ test_that(".format_weekly_summary_line falls back to km delta without TRIMP", {
 })
 
 test_that(".weekly_line_for_date threads hr_max/hr_rest into the TRIMP comparison", {
-  # When the caller passes explicit anchors, the recap should read off
-  # those — not silently recompute its own HR_max — so the load delta
-  # in the Monday push stays on the same scale as readiness/TSB.
+  # When the caller passes explicit anchors the recap should read off
+  # those — not silently recompute its own HR_max from `summaries` —
+  # so the load delta in the Monday push stays on the same scale as
+  # readiness/TSB.  Different anchors produce different TRIMP scales
+  # and therefore different "X % belastning" numbers; verify both
+  # render a load-driven delta (Banister's exp(1.92·δHR) is nonlinear,
+  # so it's not a fixed multiplier).
   s <- .fixture_multisport(today = as.Date("2026-04-27"))  # Monday
   out_high <- traning:::.weekly_line_for_date(s, as.Date("2026-04-27"),
                                                hr_max = 250)
   out_low  <- traning:::.weekly_line_for_date(s, as.Date("2026-04-27"),
                                                hr_max = 160)
-  # Different HR_max anchors must not crash and must still produce a
-  # recap line. The ratio between consecutive weeks (which drives the
-  # rendered "X % belastning") is HR-independent on this fixture so
-  # both anchors should yield the same delta text.
-  expect_type(out_high, "character")
-  expect_type(out_low, "character")
+  expect_match(out_high, "^Förra veckan: .* belastning mot v\\.\\d+\\.$")
+  expect_match(out_low,  "^Förra veckan: .* belastning mot v\\.\\d+\\.$")
+  # The anchor must actually influence the output — otherwise it's not
+  # being threaded through.
+  expect_false(identical(out_high, out_low))
 })
 
 test_that(".weekly_line_for_date fires only on Monday", {
