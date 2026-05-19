@@ -94,12 +94,13 @@ test_that("compute_background_trimp leaves short/HR-less workouts in bg", {
 })
 
 test_that("compute_background_trimp skips fallback on non-walking workout days", {
-  # Cycling burns active_energy too; using the active_energy fallback
-  # on cycling days would back-derive walking km from cycling effort.
+  # Step count drifts up during indoor cycling too (watch counts
+  # pedal-strokes / hand motion). Using the step-count fallback on
+  # cycling days would credit those as background walking.
   hd_no_wrd <- tibble::tibble(
     date = as.Date("2026-05-01"),
-    metric = "active_energy",
-    value = 4000,
+    metric = "step_count",
+    value = 14000,
     source = "Apple Watch"
   )
   cycling <- tibble::tibble(
@@ -114,17 +115,18 @@ test_that("compute_background_trimp skips fallback on non-walking workout days",
   expect_equal(nrow(bg), 0)
 })
 
-test_that("compute_background_trimp falls back to active_energy when wrd missing", {
-  # Day with active_energy but no wrd
+test_that("compute_background_trimp falls back to step_count when wrd missing", {
+  # Day with step_count but no wrd — fallback is now step-based (units
+  # are unambiguous, unlike active_energy which HAE can write in kJ
+  # or kcal).
   hd <- tibble::tibble(
     date = as.Date("2026-05-01"),
-    metric = "active_energy",
-    value = 2500,
+    metric = "step_count",
+    value = 14000,  # 14k steps * 0.7 m/step = 9.8 km ≈ same as wrd=10
     source = "Apple Watch"
   )
   result <- compute_background_trimp(hd)
   expect_equal(nrow(result), 1L)
-  # 2500 kJ / 250 = 10 km equivalent → similar TRIMP to direct 10 km wrd
   expect_gt(result$background_trimp[1], 30)
   expect_lt(result$background_trimp[1], 50)
 })

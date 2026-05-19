@@ -23,7 +23,7 @@ the **default `sport` argument** and the **caller's explicit override**.
 | `compute_trimp()` | `"all"` | Whole-system HR-based load. Folds in background TRIMP from `health_daily` when supplied. |
 | `compute_pmc()` | `"all"` | CTL/ATL/TSB is whole-system fitness/fatigue/form. |
 | `compute_acwr()` | `"running"` | Default mode is km — only meaningful within one sport. Caller passes `sport="all"` for the multisport TRIMP-mode variant. |
-| `compute_monotony_strain()` | `"all"` | Foster's monotony measures system-wide stress uniformity. |
+| `compute_monotony_strain()` | `"running"` | The implementation aggregates daily km, so mixing cycling and running km blurs the signal. A future TRIMP-mode (mirroring `compute_acwr()`) would unlock a meaningful `"all"` default. |
 | `compute_recovery_hr()` | `"all"` | Sport-agnostic cardiovascular signal. |
 | `compute_zone_distribution()` | `"running"` | Garmin's per-row zone columns are anchored to per-sport zone configs; mixing configs is misleading. |
 | `compute_efficiency_factor()` | `"running"` | Pace-based, running-specific aerobika. |

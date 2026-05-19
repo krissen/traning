@@ -139,14 +139,16 @@ def get_training_load(
     - PMC defaults to sport='all' and threads through health_daily so
       background activity (steps, walking) folds into CTL/ATL/TSB —
       matching get_form / readiness.
-    - Monotony defaults to sport='all' (Foster's monotony is a system
-      stress metric) but uses workout TRIMP only — background activity
-      is not folded in for monotony today.
     - ACWR defaults to sport='running' (the classic km-based
       Hulin/Gabbett injury-risk metric — km doesn't compose across
       sports). Pass sport='all' explicitly for the multisport
       TRIMP-mode ACWR used by the daily push commentary; the report's
       column labels switch to TRIMP/dag in that mode.
+    - Monotony defaults to sport='running' because compute_monotony_strain
+      currently aggregates daily/weekly *kilometres* (not TRIMP), so a
+      sport='all' monotony would mix incompatible distance scales
+      across cycling/running/walking. Pass sport=<bucket> for
+      per-sport monotony.
 
     Args:
         metric: One of 'pmc' (Performance Management Chart with CTL/ATL/TSB),
@@ -170,10 +172,12 @@ def get_training_load(
     if metric not in report_map:
         return {"type": "error", "message": f"Unknown metric: {metric}. Use pmc, acwr, or monotony."}
 
-    # Per-metric default: ACWR stays running because its plot/report
-    # still render km panels; PMC and monotony are whole-system.
+    # Per-metric default:
+    #  - PMC is whole-system (TRIMP composes).
+    #  - ACWR and monotony are km-based; mixing cycling and running
+    #    km blurs the signal, so they default to running.
     if sport is None:
-        sport = "running" if metric == "acwr" else "all"
+        sport = "all" if metric == "pmc" else "running"
 
     report_func, plot_func = report_map[metric]
     args = _build_args(after, before, n, sport=sport)

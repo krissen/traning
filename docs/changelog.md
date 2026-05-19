@@ -32,11 +32,13 @@ använder TRIMP-mode så vandring och cykling räknas in. Löpnings-
 rapporten (`report_acwr()`, `fetch.plot.acwr()`) står kvar som
 km-baserad Hulin/Gabbett-formulering.
 
-**Övriga metriker.** `compute_monotony_strain()` och
-`compute_recovery_hr()` defaultar nu till `sport = "all"` (system-
-metriker). EF, HRE, decoupling och HR-zoner förblir löpning-default
-— de är pace-baserade / sport-anchorerad fysiologi och Garmin-zoner
-är per-sport-konfigurerade.
+**Övriga metriker.** `compute_recovery_hr()` defaultar nu till
+`sport = "all"` (sport-agnostisk HR-signal). `compute_monotony_strain()`
+stannar på `sport = "running"` — Foster's monotony i nuvarande
+implementation aggregerar km, så multisport-default skulle blanda
+inkompatibla distansskalor. EF, HRE, decoupling och HR-zoner förblir
+löpning-default — de är pace-baserade / sport-anchorerad fysiologi
+och Garmin-zoner är per-sport-konfigurerade.
 
 **Vayu MCP.** `get_training_load` routar per metric: `metric='pmc'`
 och `metric='monotony'` defaultar till `sport='all'`; `metric='acwr'`

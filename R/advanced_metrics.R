@@ -425,15 +425,17 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
 #' contribute zeros to both mean and SD.
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
-#' @param sport Sport bucket (default \code{"all"} — Foster's monotony
-#'   is a system-wide stress metric; mixing all sports gives the truest
-#'   measure of training uniformity). Pass \code{"running"} (or another
-#'   bucket) for sport-specific monotony.
+#' @param sport Sport bucket (default \code{"running"} — Foster's
+#'   monotony as implemented here aggregates daily kilometres, so
+#'   mixing cycling and running km blurs the signal. A future
+#'   TRIMP-based mode (mirroring \code{compute_acwr()}) would allow a
+#'   meaningful all-sport default; until then this metric is best read
+#'   per-sport).
 #' @return Tibble with one row per calendar day from first to last session,
 #'   with columns: \code{date}, \code{daily_km}, \code{weekly_km},
 #'   \code{monotony}, \code{strain}.
 #' @export
-compute_monotony_strain <- function(summaries, sport = "all") {
+compute_monotony_strain <- function(summaries, sport = "running") {
   empty <- tibble::tibble(
     date      = as.Date(character(0)),
     daily_km  = numeric(0),
@@ -600,12 +602,15 @@ compute_recovery_hr <- function(summaries, sport = "all") {
 #'   sums load across every session with an HR reading. Pass
 #'   \code{"running"} (or another bucket) to restrict.
 #' @param health_daily Optional long-format tibble from
-#'   \code{load_health_data()}. When supplied and \code{sport} is a
-#'   whole-system bucket (\code{"all"} or \code{"walking"}), background
-#'   activity TRIMP from daily steps/walking distance is added to the
-#'   workout-derived TRIMP via \code{compute_background_trimp()}.
-#'   Ignored for sport-specific buckets (running, cycling, etc.) since
-#'   background walking is not part of those sports' loads.
+#'   \code{load_health_data()}. When supplied and the resolved sport
+#'   bucket either is whole-system (\code{NULL}, \code{"all"},
+#'   \code{"any"} — case-insensitive) or contains \code{"walking"}
+#'   (\code{"walking"}, \code{"gång"}, \code{"endurance"}, …),
+#'   background activity TRIMP from daily steps/walking distance is
+#'   added to the workout-derived TRIMP via
+#'   \code{compute_background_trimp()}. Ignored for sport-specific
+#'   buckets that don't include walking (running-only, cycling, …)
+#'   since vardagsrörelse is not part of those sports' loads.
 #' @return Tibble with: date, daily_trimp, trimp_type ("btrimp").
 #'   When background activity is folded in, the returned rows span the
 #'   union of workout dates and dates with non-zero background activity.
@@ -736,15 +741,14 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #' Banister exponential as \code{compute_trimp()} at a fixed HR ratio
 #' of 0.30 (typical vardagsgång: hr_rest + 30 \% of reserve). When the
 #' \code{walking_running_distance} metric is missing for a day, falls
-#' back to \code{active_energy / kj_per_km_fallback} as a coarse km
+#' back to \code{step_count * meters_per_step_fallback} as a coarse km
 #' equivalent.
 #'
-#' The fallback divisor assumes \code{active_energy} is in kJ (Apple
-#' Watch's native HealthKit unit, and what HAE writes by default into
-#' the canonical files this codebase consumes). Users whose HAE
-#' export is configured for kcal should pass
-#' \code{kj_per_km_fallback = 60} (~60 kcal / km walking) or convert
-#' the canonical files to kJ first.
+#' The fallback uses step count rather than active_energy because step
+#' count carries unambiguous units (a count is a count), whereas HAE's
+#' active_energy can be written in kJ or kcal depending on user
+#' configuration and \code{read_canonical_file()} doesn't preserve the
+#' unit field. Step count avoids that footgun entirely.
 #'
 #' The HR-ratio is intentionally fixed: per-minute HR for background
 #' activity isn't available, and using a conservative typical value
@@ -764,8 +768,9 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #'   conversion. Default 12 (5 km/h).
 #' @param hr_ratio Banister delta-HR (0..1) for background activity.
 #'   Default 0.30.
-#' @param kj_per_km_fallback Active-energy fallback factor (kJ/km
-#'   walking). Default 250.
+#' @param meters_per_step_fallback Distance per step used when
+#'   \code{walking_running_distance} is missing. Default 0.7 m
+#'   (typical walking stride).
 #' @return Tibble with columns \code{date} and \code{background_trimp}.
 #' @export
 compute_background_trimp <- function(health_daily,
@@ -773,7 +778,7 @@ compute_background_trimp <- function(health_daily,
                                       summaries = NULL,
                                       min_per_km = 12,
                                       hr_ratio = 0.30,
-                                      kj_per_km_fallback = 250) {
+                                      meters_per_step_fallback = 0.7) {
   empty <- tibble::tibble(
     date             = as.Date(character(0)),
     background_trimp = numeric(0)
@@ -783,7 +788,7 @@ compute_background_trimp <- function(health_daily,
   required_cols <- c("date", "metric", "value")
   if (!all(required_cols %in% names(health_daily))) return(empty)
 
-  bg_metrics <- c("walking_running_distance", "active_energy")
+  bg_metrics <- c("walking_running_distance", "step_count")
   bg <- health_daily %>%
     dplyr::filter(.data$metric %in% bg_metrics, !is.na(.data$value)) %>%
     dplyr::mutate(date = as.Date(.data$date)) %>%
@@ -797,8 +802,8 @@ compute_background_trimp <- function(health_daily,
   if (!"walking_running_distance" %in% names(bg)) {
     bg$walking_running_distance <- NA_real_
   }
-  if (!"active_energy" %in% names(bg)) {
-    bg$active_energy <- NA_real_
+  if (!"step_count" %in% names(bg)) {
+    bg$step_count <- NA_real_
   }
 
   # Workout distance to subtract: running and walking sessions on the
@@ -873,17 +878,20 @@ compute_background_trimp <- function(health_daily,
       workout_km             = dplyr::coalesce(.data$workout_km, 0),
       has_non_walking_workout = dplyr::coalesce(
         .data$has_non_walking_workout, FALSE),
-      # Prefer walking_running_distance; only fall back to active_energy
-      # when no workout could explain the burn — a cycling day with
-      # missing wrd should not be back-derived from active_energy as
-      # if the user walked it.
+      # Prefer walking_running_distance; fall back to
+      # step_count × meters_per_step when wrd is missing. Steps are
+      # unit-unambiguous so we don't risk silently mis-scaling on HAE
+      # exports configured for kcal vs kJ. The fallback is suppressed
+      # on cycling days because step count drifts up during indoor
+      # cycling too, and crediting that as "walking" would inflate
+      # background load.
       wrd_km                 = dplyr::if_else(
         !is.na(.data$walking_running_distance),
         .data$walking_running_distance,
         dplyr::if_else(
-          .data$has_non_walking_workout,
+          .data$has_non_walking_workout | is.na(.data$step_count),
           0,
-          .data$active_energy / kj_per_km_fallback
+          .data$step_count * meters_per_step_fallback / 1000
         )
       ),
       bg_km                  = pmax(0, .data$wrd_km - .data$workout_km),
