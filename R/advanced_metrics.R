@@ -249,9 +249,14 @@ compute_hre <- function(summaries, sport = "running",
 #'     supplied.}
 #' }
 #'
-#' When \code{mode = NULL} (default), the mode auto-resolves: TRIMP for
-#' \code{sport = "all"} (because km doesn't compose across sports), and
-#' km for any specific sport bucket.
+#' When \code{mode = NULL} (default), the mode auto-resolves through
+#' \code{.resolve_sport_bucket()}: TRIMP for whole-system sentinels
+#' (\code{NULL}, \code{"all"}, \code{"any"} — case-insensitive),
+#' multi-sport curated buckets (\code{"endurance"}, \code{"ballsport"},
+#' \code{"gym"}, \code{"wintersport"}) and explicit sport vectors
+#' (\code{c("running", "cycling")}). km mode is reserved for inputs
+#' that resolve to a single canonical sport, where km composes
+#' coherently (the classic Hulin/Gabbett formulation).
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}.
 #' @param sport Sport bucket (default \code{"running"}).
@@ -797,39 +802,94 @@ compute_background_trimp <- function(health_daily,
   }
 
   # Workout distance to subtract: running and walking sessions on the
-  # same date (watch logs background steps in parallel with workouts).
-  workout_km <- tibble::tibble(date = as.Date(character(0)),
-                                workout_km = numeric(0))
+  # same date whose HR/duration also qualify under compute_trimp()'s
+  # filters (avgHR present, durationMoving > 10 min). Aligning the
+  # filters means we only subtract km from workouts that actually
+  # contribute their TRIMP back via compute_trimp() — a short walk
+  # with no HR data is neither counted as workout TRIMP nor stripped
+  # from background, so the activity still lands somewhere in CTL.
+  workout_summary <- tibble::tibble(
+    date = as.Date(character(0)),
+    workout_km = numeric(0),
+    has_non_walking_workout = logical(0)
+  )
   has_summaries <- !is.null(summaries) && is.data.frame(summaries) &&
                    nrow(summaries) > 0 &&
                    all(c("sessionStart", "sport", "distance") %in%
                        names(summaries))
   if (has_summaries) {
-    workout_km <- .filter_sport(summaries, c("running", "walking")) %>%
-      dplyr::mutate(
-        date       = as.Date(.data$sessionStart),
-        workout_km = as.numeric(.data$distance) / 1000
-      ) %>%
-      dplyr::group_by(date) %>%
-      dplyr::summarise(workout_km = sum(.data$workout_km, na.rm = TRUE),
-                       .groups = "drop")
+    # Per-day classification:
+    #  - walking_run_qual: running/walking workouts that compute_trimp
+    #    would count (HR + duration > 10 min). Their distance is
+    #    subtracted from background so we don't double-count.
+    #  - other_sport_qual: cycling/etc. workouts. Their existence
+    #    poisons the active_energy fallback (cycling burns active
+    #    energy that the watch also logs as background minutes), so
+    #    on those days we skip the fallback rather than back-derive
+    #    "walking" km from cross-sport calorie burn.
+    has_required <- all(c("avgHeartRateMoving", "durationMoving") %in%
+                         names(summaries))
+    qmask <- if (has_required) {
+      !is.na(summaries$avgHeartRateMoving) &
+        as.numeric(summaries$avgHeartRateMoving) > 0 &
+        !is.na(summaries$durationMoving) &
+        as.numeric(summaries$durationMoving, units = "mins") > 10
+    } else {
+      rep(FALSE, nrow(summaries))
+    }
+    walking_mask <- .sport_match_mask(summaries, c("running", "walking"))
+    walking_run_qual <- summaries[qmask & walking_mask, , drop = FALSE]
+    other_sport_qual <- summaries[qmask & !walking_mask, , drop = FALSE]
+
+    workout_km <- if (nrow(walking_run_qual) > 0) {
+      walking_run_qual %>%
+        dplyr::mutate(
+          date       = as.Date(.data$sessionStart),
+          workout_km = as.numeric(.data$distance) / 1000
+        ) %>%
+        dplyr::group_by(date) %>%
+        dplyr::summarise(workout_km = sum(.data$workout_km, na.rm = TRUE),
+                         .groups = "drop")
+    } else {
+      tibble::tibble(date = as.Date(character(0)),
+                     workout_km = numeric(0))
+    }
+    other_days <- if (nrow(other_sport_qual) > 0) {
+      other_sport_qual %>%
+        dplyr::mutate(date = as.Date(.data$sessionStart)) %>%
+        dplyr::distinct(date) %>%
+        dplyr::mutate(has_non_walking_workout = TRUE)
+    } else {
+      tibble::tibble(date = as.Date(character(0)),
+                     has_non_walking_workout = logical(0))
+    }
+    workout_summary <- dplyr::full_join(workout_km, other_days,
+                                          by = "date")
   }
 
   bg <- bg %>%
-    dplyr::left_join(workout_km, by = "date") %>%
+    dplyr::left_join(workout_summary, by = "date") %>%
     dplyr::mutate(
-      workout_km = dplyr::coalesce(.data$workout_km, 0),
-      # Prefer walking_running_distance; fall back to active_energy / 250
-      # when missing (older HAE exports, days with broken WRD samples).
-      wrd_km     = dplyr::if_else(
+      workout_km             = dplyr::coalesce(.data$workout_km, 0),
+      has_non_walking_workout = dplyr::coalesce(
+        .data$has_non_walking_workout, FALSE),
+      # Prefer walking_running_distance; only fall back to active_energy
+      # when no workout could explain the burn — a cycling day with
+      # missing wrd should not be back-derived from active_energy as
+      # if the user walked it.
+      wrd_km                 = dplyr::if_else(
         !is.na(.data$walking_running_distance),
         .data$walking_running_distance,
-        .data$active_energy / kj_per_km_fallback
+        dplyr::if_else(
+          .data$has_non_walking_workout,
+          0,
+          .data$active_energy / kj_per_km_fallback
+        )
       ),
-      bg_km      = pmax(0, .data$wrd_km - .data$workout_km),
-      bg_minutes = .data$bg_km * min_per_km,
-      background_trimp = .data$bg_minutes * hr_ratio * 0.64 *
-                         exp(1.92 * hr_ratio)
+      bg_km                  = pmax(0, .data$wrd_km - .data$workout_km),
+      bg_minutes             = .data$bg_km * min_per_km,
+      background_trimp       = .data$bg_minutes * hr_ratio * 0.64 *
+                                 exp(1.92 * hr_ratio)
     ) %>%
     dplyr::filter(is.finite(.data$background_trimp),
                   .data$background_trimp > 0) %>%
@@ -902,8 +962,9 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 
 # Internal helper: Swedish subtitle describing the scope of a PMC/TRIMP
 # rendering, given the sport bucket and whether background activity was
-# folded in. Used by plot/report to make it obvious whether the chart
-# reflects all-sport load (incl. vardagsrörelse) or a single sport.
+# folded in. Uses .resolve_sport_bucket() so case variants, Swedish
+# aliases and curated buckets get the same scope+suffix as
+# compute_trimp()'s background gate.
 .pmc_scope_label_sv <- c(
   all      = "alla sporter",
   running  = "löpning",
@@ -913,19 +974,30 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
   strength = "styrka"
 )
 .pmc_scope_subtitle <- function(sport = "all", health_daily = NULL) {
+  resolved <- .resolve_sport_bucket(sport)
+  # Background fold-in matches compute_trimp's gate: whole-system or
+  # any bucket that contains walking.
   bg_on <- !is.null(health_daily) &&
-           is.character(sport) && length(sport) == 1L &&
-           sport %in% c("all", "walking")
-  scope <- if (is.null(sport)) {
+           (is.null(resolved) || "walking" %in% resolved)
+  scope <- if (is.null(sport) || length(sport) == 0L) {
     "alla sporter"
-  } else if (is.character(sport) && length(sport) == 1L) {
-    if (sport %in% names(.pmc_scope_label_sv)) {
-      unname(.pmc_scope_label_sv[[sport]])
+  } else if (is.null(resolved)) {
+    # NULL resolver result = "all"/"any" sentinel
+    "alla sporter"
+  } else if (length(resolved) == 1L) {
+    if (resolved %in% names(.pmc_scope_label_sv)) {
+      unname(.pmc_scope_label_sv[[resolved]])
     } else {
-      sport
+      resolved
     }
   } else {
-    paste(sport, collapse = " + ")
+    # Multi-sport composite (e.g. "endurance") — show the bucket name
+    # as the user typed it when possible, otherwise join members.
+    if (is.character(sport) && length(sport) == 1L && nzchar(sport)) {
+      tolower(sport)
+    } else {
+      paste(resolved, collapse = " + ")
+    }
   }
   bg_suffix <- if (bg_on) " + vardagsrörelse" else ""
   paste0("Träningsbelastning (", scope, bg_suffix, ")")

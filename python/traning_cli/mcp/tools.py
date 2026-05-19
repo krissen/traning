@@ -136,12 +136,17 @@ def get_training_load(
     """Training load metrics: PMC (fitness/fatigue/form), ACWR, or monotony.
 
     Default sport varies by metric:
-    - PMC and monotony default to sport='all' (whole-system load,
-      including vardagsrörelse), matching get_form / readiness.
+    - PMC defaults to sport='all' and threads through health_daily so
+      background activity (steps, walking) folds into CTL/ATL/TSB —
+      matching get_form / readiness.
+    - Monotony defaults to sport='all' (Foster's monotony is a system
+      stress metric) but uses workout TRIMP only — background activity
+      is not folded in for monotony today.
     - ACWR defaults to sport='running' (the classic km-based
       Hulin/Gabbett injury-risk metric — km doesn't compose across
       sports). Pass sport='all' explicitly for the multisport
-      TRIMP-mode ACWR used by the daily push commentary.
+      TRIMP-mode ACWR used by the daily push commentary; the report's
+      column labels switch to TRIMP/dag in that mode.
 
     Args:
         metric: One of 'pmc' (Performance Management Chart with CTL/ATL/TSB),

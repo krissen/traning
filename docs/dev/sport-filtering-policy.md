@@ -33,13 +33,26 @@ the **default `sport` argument** and the **caller's explicit override**.
 ## ACWR mode logic
 
 `compute_acwr(summaries, sport, mode = NULL, …)` auto-resolves the load
-mode when `mode = NULL`:
+mode by passing `sport` through `.resolve_sport_bucket()` — the same
+resolver `.filter_sport()` uses for case variants, Swedish aliases and
+curated buckets. The resolver returns either `NULL` (whole-system
+sentinel: `NULL`/`"all"`/`"any"`, case-insensitive) or a vector of
+canonical English sport names:
 
-- `sport = "all"` → `mode = "trimp"` (km doesn't compose across sports).
-- Any other sport → `mode = "km"` (classic Hulin/Gabbett running ACWR).
+- Resolver returns `NULL` → `mode = "trimp"`.
+- Resolver returns a vector of length > 1 (curated bucket like
+  `"endurance"`, or an explicit vector `c("running", "cycling")`) →
+  `mode = "trimp"` — km doesn't compose across sports.
+- Resolver returns a single canonical sport → `mode = "km"` (classic
+  Hulin/Gabbett running formulation; cycling/walking/etc. ACWR are
+  km-meaningful per-sport but typically only reported for running).
 
 An explicit `mode = "km"` or `mode = "trimp"` always wins. The result
-tibble carries an `attr(., "mode")` so plot/report code can branch on it.
+tibble carries an `attr(., "mode")` so plot/report code can branch on
+it. `report_acwr()` renames the daily/weekly columns to
+`TRIMP/dag` / `TRIMP/vecka` in TRIMP mode so consumers see the right
+unit; the km columns are explicitly `NA` in that mode rather than
+TRIMP values mis-labelled as km.
 
 ## Background-activity TRIMP
 

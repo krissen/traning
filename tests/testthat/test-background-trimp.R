@@ -53,11 +53,16 @@ test_that("compute_background_trimp produces positive values from wrd", {
 
 test_that("compute_background_trimp subtracts workout walking/running km", {
   hd <- .bg_health()
-  # A 5 km run on day 1 should knock 5 km off the 10 km wrd → halve TRIMP
+  # A 5 km run on day 1 (with HR + duration > 10min, so compute_trimp
+  # would count it) should knock 5 km off the 10 km wrd → halve TRIMP.
+  # The filter alignment is intentional: only workouts that contribute
+  # workout TRIMP get their distance stripped from background.
   summaries <- tibble::tibble(
-    sessionStart = as.POSIXct("2026-05-01 09:00:00", tz = "UTC"),
-    sport        = "running",
-    distance     = 5000
+    sessionStart       = as.POSIXct("2026-05-01 09:00:00", tz = "UTC"),
+    sport              = "running",
+    distance           = 5000,
+    avgHeartRateMoving = 150,
+    durationMoving     = as.difftime(25, units = "mins")
   )
   with_workout <- compute_background_trimp(hd, summaries = summaries)
   without_workout <- compute_background_trimp(hd)
@@ -67,6 +72,46 @@ test_that("compute_background_trimp subtracts workout walking/running km", {
   expect_equal(with_workout$background_trimp[1] /
                  without_workout$background_trimp[1],
                0.5, tolerance = 0.01)
+})
+
+test_that("compute_background_trimp leaves short/HR-less workouts in bg", {
+  # The filter alignment with compute_trimp: a sub-10min walk with no
+  # HR data shouldn't get subtracted, because compute_trimp won't add
+  # workout TRIMP for it either — without this the activity would
+  # contribute zero load on both sides.
+  hd <- .bg_health()
+  short_walk <- tibble::tibble(
+    sessionStart       = as.POSIXct("2026-05-01 09:00:00", tz = "UTC"),
+    sport              = "walking",
+    distance           = 3000,
+    avgHeartRateMoving = NA_real_,
+    durationMoving     = as.difftime(5, units = "mins")
+  )
+  with_short <- compute_background_trimp(hd, summaries = short_walk)
+  no_summary <- compute_background_trimp(hd)
+  expect_equal(with_short$background_trimp[1],
+               no_summary$background_trimp[1])
+})
+
+test_that("compute_background_trimp skips fallback on non-walking workout days", {
+  # Cycling burns active_energy too; using the active_energy fallback
+  # on cycling days would back-derive walking km from cycling effort.
+  hd_no_wrd <- tibble::tibble(
+    date = as.Date("2026-05-01"),
+    metric = "active_energy",
+    value = 4000,
+    source = "Apple Watch"
+  )
+  cycling <- tibble::tibble(
+    sessionStart       = as.POSIXct("2026-05-01 09:00:00", tz = "UTC"),
+    sport              = "cycling",
+    distance           = 30000,
+    avgHeartRateMoving = 140,
+    durationMoving     = as.difftime(60, units = "mins")
+  )
+  bg <- compute_background_trimp(hd_no_wrd, summaries = cycling)
+  # Cycling workout poisons fallback → no background TRIMP that day
+  expect_equal(nrow(bg), 0)
 })
 
 test_that("compute_background_trimp falls back to active_energy when wrd missing", {
