@@ -1381,10 +1381,11 @@ health_insight_delta <- function(before, after) {
   if (name == "load" && kind != "neg") kind <- "ok"
 
   # Sleep: the flag fires on absolute hours < 7 AND HRV trending down,
-  # but the prose label compares vs personal 7d normal. If the user
-  # slept more than their normal yet still below 7h, "kort s\u00f6mn" reads
-  # contradictory next to "+1.0 vs normalt". Demote to neutral label
-  # in that case \u2014 the flag still keeps the line in "Drar ner".
+  # but the prose label compares vs personal 7d normal. "kort s\u00f6mn"
+  # implies the night deviated downward, so demote to the neutral
+  # label whenever the delta-vs-normal signal isn't actually pointing
+  # down \u2014 i.e. delta >= 0 (positive OR exactly normal). The flag
+  # still keeps the line in "Drar ner".
   if (name == "sleep" && kind == "neg" &&
       !is.na(c$delta) && c$delta >= 0) {
     kind <- "ok"
