@@ -219,3 +219,17 @@ test_that("compute_readiness respects after/before filtering", {
   )
   expect_true(all(result$date >= cutoff))
 })
+
+test_that("compute_readiness(pmc=) returns identical results to the default path", {
+  # The pmc= injection lets Shiny modules reuse a single compute_pmc
+  # reactive for both the overview KPIs and the readiness panel. The
+  # contract is bit-identical output — anything else means the
+  # internal compute_pmc was doing extra work beyond what's exposed.
+  set.seed(42)
+  hd <- make_test_health(30)
+  s  <- make_test_summaries(15)
+  pmc <- suppressWarnings(compute_pmc(s))
+  r_default  <- suppressWarnings(compute_readiness(hd, s))
+  r_injected <- suppressWarnings(compute_readiness(hd, s, pmc = pmc))
+  expect_identical(r_default, r_injected)
+})
