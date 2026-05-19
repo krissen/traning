@@ -490,9 +490,11 @@ compute_recovery_hr <- function(summaries, sport = "running") {
   result
 }
 
-#' Compute TRIMP per session (Banister model)
+#' Compute daily TRIMP (Banister model)
 #'
-#' Calculates training impulse using the Morton (1990) exponential formula:
+#' Calculates per-session training impulse using the Morton (1990)
+#' exponential formula and aggregates to daily totals (sum across all
+#' qualifying sessions in the same date):
 #' \deqn{TRIMP = duration\_min \times \Delta HR \times 0.64 e^{1.92 \times \Delta HR}}
 #' where \eqn{\Delta HR = (avgHR - HRrest) / (HRmax - HRrest)}.
 #'
