@@ -152,17 +152,29 @@
 #' @param hr_rest Optional HRrest override.
 #' @param after Start date for output filtering (inclusive). NULL = no filter.
 #' @param before End date for output filtering (inclusive). NULL = no filter.
+#' @param pmc Optional precomputed PMC tibble from \code{compute_pmc()}.
+#'   When supplied, skips the internal compute_pmc call — useful when
+#'   the caller already has PMC available (e.g. Shiny modules that
+#'   share one reactive between the overview KPIs and the readiness
+#'   panel). Must contain at least \code{date}, \code{daily_trimp},
+#'   \code{atl}, \code{ctl}, \code{tsb}; \code{hr_max}/\code{hr_rest}
+#'   are ignored when this is non-NULL.
 #' @return Tibble with one row per day containing readiness score, component
 #'   scores, flags, and data quality.
 #' @export
 compute_readiness <- function(health_daily, summaries,
                                hr_max = NULL, hr_rest = NULL,
-                               after = NULL, before = NULL) {
+                               after = NULL, before = NULL,
+                               pmc = NULL) {
   # 1. Health side: wide tibble with AW metrics
   health <- get_readiness(health_daily)
 
-  # 2. Training side: PMC with full date spine
-  pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest)
+  # 2. Training side: PMC with full date spine. Reuse caller's PMC when
+  # provided so the same summaries aren't TRIMP-scanned twice for one
+  # render (the Shiny overview lifts pmc_data once and passes it in).
+  if (is.null(pmc)) {
+    pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest)
+  }
 
   # 3. Unified date spine
   all_dates <- sort(unique(c(health$date, pmc$date)))

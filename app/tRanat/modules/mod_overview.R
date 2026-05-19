@@ -79,7 +79,10 @@ overview_server <- function(id, summaries, health_daily, myruns,
     readiness_data <- shiny::reactive({
       tryCatch({
         shiny::req(health_daily)
-        compute_readiness(health_daily, summaries)
+        # Pass the shared pmc_data() in so compute_readiness skips its
+        # internal compute_pmc — halves the overview-page's first-load
+        # TRIMP scan from two passes to one.
+        compute_readiness(health_daily, summaries, pmc = pmc_data())
       }, error = function(e) NULL)
     })
 
