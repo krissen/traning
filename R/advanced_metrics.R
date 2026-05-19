@@ -570,6 +570,15 @@ compute_recovery_hr <- function(summaries, sport = "all") {
   # Seed with first non-NA value
   seed_idx <- which(!is.na(x))[1]
   if (is.na(seed_idx)) return(result)
+  # No room to iterate forward (e.g. background-only PMC seeded by a
+  # single day of step data): seed sits at the end, the EWMA reduces
+  # to that one value. Without this guard the (seed_idx+1):n loop
+  # below evaluates as (n+1):n in R — c(n+1, n) — and writes past the
+  # end of `result`, returning a longer vector than `x`.
+  if (seed_idx >= n) {
+    result[seed_idx] <- x[seed_idx]
+    return(result)
+  }
   result[seed_idx] <- x[seed_idx]
   for (i in (seed_idx + 1):n) {
     prev <- result[i - 1]
@@ -845,7 +854,13 @@ compute_background_trimp <- function(health_daily,
     }
     walking_mask <- .sport_match_mask(summaries, c("running", "walking"))
     walking_run_qual <- summaries[qmask & walking_mask, , drop = FALSE]
-    other_sport_qual <- summaries[qmask & !walking_mask, , drop = FALSE]
+    # Fallback-poisoning is broader than workout subtraction: ANY
+    # non-walking workout (cycling, strength, ball sports) that day
+    # makes the step counter unreliable as a walking proxy, regardless
+    # of whether the workout has the HR / duration data that would
+    # qualify it for compute_trimp(). Use the full set of non-walking
+    # workouts to gate the fallback, not just the qualifying ones.
+    other_sport_any  <- summaries[!walking_mask, , drop = FALSE]
 
     workout_km <- if (nrow(walking_run_qual) > 0) {
       walking_run_qual %>%
@@ -860,8 +875,8 @@ compute_background_trimp <- function(health_daily,
       tibble::tibble(date = as.Date(character(0)),
                      workout_km = numeric(0))
     }
-    other_days <- if (nrow(other_sport_qual) > 0) {
-      other_sport_qual %>%
+    other_days <- if (nrow(other_sport_any) > 0) {
+      other_sport_any %>%
         dplyr::mutate(date = as.Date(.data$sessionStart)) %>%
         dplyr::distinct(date) %>%
         dplyr::mutate(has_non_walking_workout = TRUE)

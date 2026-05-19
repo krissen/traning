@@ -115,6 +115,57 @@ test_that("compute_background_trimp skips fallback on non-walking workout days",
   expect_equal(nrow(bg), 0)
 })
 
+test_that("non-walking workouts poison fallback even without HR data", {
+  # A cycling workout with missing HR / sub-10-min duration would not
+  # qualify under compute_trimp()'s filters, but its step drift is
+  # equally real and should still suppress the step-count fallback.
+  hd_no_wrd <- tibble::tibble(
+    date = as.Date("2026-05-01"),
+    metric = "step_count",
+    value = 14000,
+    source = "Apple Watch"
+  )
+  short_cycling <- tibble::tibble(
+    sessionStart       = as.POSIXct("2026-05-01 09:00:00", tz = "UTC"),
+    sport              = "cycling",
+    distance           = 5000,
+    avgHeartRateMoving = NA_real_,
+    durationMoving     = as.difftime(8, units = "mins")
+  )
+  bg <- compute_background_trimp(hd_no_wrd, summaries = short_cycling)
+  expect_equal(nrow(bg), 0)
+})
+
+test_that("compute_pmc handles single-day background-only input", {
+  # Fresh cache: one day with step_count, no workouts at all. Should
+  # not crash inside .ewma() (previously the seed-at-end fallthrough
+  # wrote past the result vector).
+  empty_summaries <- tibble::tibble(
+    sessionStart       = as.POSIXct(character(0), tz = "UTC"),
+    sport              = character(0),
+    distance           = numeric(0),
+    durationMoving     = as.difftime(numeric(0), units = "mins"),
+    avgHeartRateMoving = numeric(0),
+    avgPaceMoving      = numeric(0),
+    avgSpeedMoving     = numeric(0),
+    duration           = as.difftime(numeric(0), units = "mins")
+  )
+  hd <- tibble::tibble(
+    date = Sys.Date(),
+    metric = "step_count",
+    value = 12000,
+    source = "Apple Watch"
+  )
+  expect_no_error(
+    pmc <- compute_pmc(empty_summaries, hr_max = 185, hr_rest = 50,
+                       sport = "all", health_daily = hd)
+  )
+  expect_true(nrow(pmc) >= 1)
+  # Length consistency: every output column matches the row count
+  expect_equal(length(pmc$atl), nrow(pmc))
+  expect_equal(length(pmc$ctl), nrow(pmc))
+})
+
 test_that("compute_background_trimp falls back to step_count when wrd missing", {
   # Day with step_count but no wrd — fallback is now step-based (units
   # are unambiguous, unlike active_energy which HAE can write in kJ

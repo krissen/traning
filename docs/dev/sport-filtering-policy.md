@@ -8,11 +8,15 @@ metrics:
    to running only; mixing other sports muddles the answer.
 
 2. **"How loaded am I right now?"** — system-wide load/form/readiness
-   (PMC, monotony, ACWR in non-running contexts). These should include
-   **every** activity that produces physiological stress, including
-   strength sessions, cycling, vandring, and vardagsrörelse (the
-   non-workout walking captured by daily step / distance metrics) —
-   not just logged workouts.
+   (PMC, ACWR in non-running contexts). These should include **every**
+   activity that produces physiological stress, including strength
+   sessions, cycling, vandring, and vardagsrörelse (the non-workout
+   walking captured by daily step / distance metrics) — not just
+   logged workouts.
+
+   Monotony is the current exception: `compute_monotony_strain()`
+   still aggregates kilometres, not TRIMP, so it stays running-only
+   until a future TRIMP-mode change. See the table below.
 
 The same function may be used in either context, so the rule lives in
 the **default `sport` argument** and the **caller's explicit override**.
