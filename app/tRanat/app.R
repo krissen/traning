@@ -207,7 +207,8 @@ server <- function(input, output, session) {
   # genuinely sport-blind (overview, health, race) can ignore it.
   page_overview_server("overview", data$summaries, data$health_daily,
                         data$myruns, data$decoupling_data, dates, is_mobile)
-  page_training_server("training", data$summaries, dates, is_mobile, sport)
+  page_training_server("training", data$summaries, data$health_daily,
+                        dates, is_mobile, sport)
   page_progress_server("progress", data$summaries, dates, is_mobile, sport)
   page_sport_mix_server("sport_mix", data$summaries, dates, is_mobile, sport)
   page_health_server("health", data$summaries, data$health_daily, dates, is_mobile)

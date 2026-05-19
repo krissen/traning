@@ -131,9 +131,24 @@ def get_training_load(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-    sport: str = "running",
+    sport: Optional[str] = None,
 ) -> Image | dict | list:
     """Training load metrics: PMC (fitness/fatigue/form), ACWR, or monotony.
+
+    Default sport varies by metric:
+    - PMC defaults to sport='all' and threads through health_daily so
+      background activity (steps, walking) folds into CTL/ATL/TSB —
+      matching get_form / readiness.
+    - ACWR defaults to sport='running' (the classic km-based
+      Hulin/Gabbett injury-risk metric — km doesn't compose across
+      sports). Pass sport='all' explicitly for the multisport
+      TRIMP-mode ACWR used by the daily push commentary; the report's
+      column labels switch to TRIMP/dag in that mode.
+    - Monotony defaults to sport='running' because compute_monotony_strain
+      currently aggregates daily/weekly *kilometres* (not TRIMP), so a
+      sport='all' monotony would mix incompatible distance scales
+      across cycling/running/walking. Pass sport=<bucket> for
+      per-sport monotony.
 
     Args:
         metric: One of 'pmc' (Performance Management Chart with CTL/ATL/TSB),
@@ -143,10 +158,10 @@ def get_training_load(
         after: Start date filter.
         before: End date filter.
         plot: If True, return the corresponding chart (PNG).
-        sport: Sport bucket. Default 'running'. Examples: 'cycling',
-            'walking', 'strength', 'all' (no filter), 'endurance'
-            (running+cycling+walking+swimming). See vayu://sports for
-            the full list of supported names and aliases.
+        sport: Sport bucket. Default depends on metric (see above).
+            Examples: 'running', 'cycling', 'walking', 'strength',
+            'all', 'endurance' (running+cycling+walking+swimming).
+            See vayu://sports.
     """
     metric = metric.lower()
     report_map = {
@@ -156,6 +171,13 @@ def get_training_load(
     }
     if metric not in report_map:
         return {"type": "error", "message": f"Unknown metric: {metric}. Use pmc, acwr, or monotony."}
+
+    # Per-metric default:
+    #  - PMC is whole-system (TRIMP composes).
+    #  - ACWR and monotony are km-based; mixing cycling and running
+    #    km blurs the signal, so they default to running.
+    if sport is None:
+        sport = "all" if metric == "pmc" else "running"
 
     report_func, plot_func = report_map[metric]
     args = _build_args(after, before, n, sport=sport)
@@ -207,6 +229,12 @@ def get_zones(
 
     Z1 (low, <VT1), Z2 (threshold), Z3 (high, >=VT2).
     PI > 2.0 = polarized training (Treff 2019).
+
+    HR zones stay sport='running' by default because Garmin's
+    per-session hrTimeInZone columns are anchored to whatever zone
+    config was active for that sport — mixing cycling zones (different
+    HRmax/VT thresholds) and running zones in one stacked bar can be
+    misleading. Pass sport='all' explicitly to opt into the merged view.
 
     Args:
         n: Number of recent months to show (default 12).
@@ -631,20 +659,21 @@ def get_recovery_hr(
     after: Optional[str] = None,
     before: Optional[str] = None,
     plot: bool = False,
-    sport: str = "running",
+    sport: str = "all",
 ) -> Image | dict | list:
     """Post-workout recovery heart rate trend.
 
-    Lower recovery HR indicates better cardiovascular fitness. Garmin
-    only emits recovery HR for running today, so non-running buckets
-    typically return an empty result.
+    Lower recovery HR indicates better cardiovascular fitness. Recovery
+    HR is a sport-agnostic cardiovascular signal; default sport='all'
+    reflects that. In practice Garmin only emits recovery HR for running
+    today, so non-running buckets typically still return an empty result.
 
     Args:
         n: Number of recent sessions (default 28).
         after: Start date filter.
         before: End date filter.
         plot: If True, return recovery HR trend chart (PNG).
-        sport: Sport bucket (default 'running'). See vayu://sports.
+        sport: Sport bucket (default 'all'). See vayu://sports.
     """
     args = _build_args(after, before, n, sport=sport)
     return _data_or_plot("report_recovery_hr", "fetch.plot.recovery_hr", args, plot)
@@ -844,7 +873,7 @@ _HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
     "vo2_max":                ("Fitness", "VO2max estimate"),
     "six_minute_walking_test_distance": ("Fitness", "6-minute walk test distance"),
     # Activity
-    "active_energy":          ("Activity", "Active calories burned (kcal)"),
+    "active_energy":          ("Activity", "Active energy burned; unit depends on HAE configuration (typically kJ for Apple Watch, kcal possible)"),
     "basal_energy_burned":    ("Activity", "Basal metabolic energy (kcal)"),
     "step_count":             ("Activity", "Daily steps"),
     "walking_running_distance": ("Activity", "Walking + running distance (km)"),

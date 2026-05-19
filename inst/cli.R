@@ -123,12 +123,15 @@ my_options <- list(
     help = "Reference date (YYYY-MM-DD) for --day-summary (default today)"),
   # --- Sport filter ---
   make_option("--sport",
-    type = "character", default = "running",
+    type = "character", default = NULL,
     help = paste0(
-      "Sport bucket to filter on (default 'running', back-compat). ",
-      "Examples: 'cycling', 'walking', 'strength', 'all' (no filter), ",
-      "'endurance' (running+cycling+walking+swimming). ",
-      "Swedish aliases ('löpning', 'cykling', 'gång') also accepted."
+      "Sport bucket to filter on. Defaults vary by command: 'running' ",
+      "for legacy reports (month-top, year-running, --acwr) and for ",
+      "running-specific metrics (--ef, --hre, --decoupling); 'all' for ",
+      "the whole-system PMC (--pmc). Examples: 'cycling', 'walking', ",
+      "'strength', 'all' (no filter), 'endurance' ",
+      "(running+cycling+walking+swimming). Swedish aliases ",
+      "('löpning', 'cykling', 'gång') also accepted."
     )),
   # --- Health checks ---
   make_option("--doctor",
@@ -200,6 +203,9 @@ do_output       <- options$output
 do_format       <- options$format
 do_no_open      <- options$`no-open`
 do_limit        <- options$limit
+# Legacy reports (month-top, year-running, …) keep the historical
+# "running" default. PMC and ACWR pick "all" / mode-aware defaults
+# at their call sites below by reading options$sport directly.
 do_sport        <- options$sport %||% "running"
 do_day_summary  <- options$`day-summary`
 do_date_ref     <- options$date
@@ -572,13 +578,21 @@ if (do_hre) {
 }
 
 if (do_acwr) {
+  # When the user requests whole-system ACWR (--sport all) the auto-
+  # mode resolves to TRIMP, which can fold in background activity if
+  # health_daily is threaded through. Load it unconditionally so
+  # --acwr --sport all matches the Shiny / MCP behaviour; the
+  # running-default path ignores it and stays km-mode.
+  hd_for_acwr <- tryCatch(load_health_data(), error = function(e) NULL)
   if (do_plot) {
     emit_plot(fetch.plot.acwr(summaries, from = date_range$from, to = date_range$to,
-                              sport = do_sport), "acwr")
+                              sport = do_sport,
+                              health_daily = hd_for_acwr), "acwr")
   } else {
     emit_table(report_acwr(summaries, n = do_limit %||% 28L,
                       from = date_range$from, to = date_range$to,
-                      sport = do_sport), "acwr")
+                      sport = do_sport,
+                      health_daily = hd_for_acwr), "acwr")
   }
 }
 
@@ -594,13 +608,20 @@ if (do_monotony) {
 }
 
 if (do_pmc) {
+  # PMC is a whole-system load metric; default to "all" so the rendered
+  # PMC matches readiness / overview KPIs. Users can still pass
+  # --sport=running for a running-only PMC.
+  sport_for_pmc <- options$sport %||% "all"
+  hd_for_pmc <- tryCatch(load_health_data(), error = function(e) NULL)
   if (do_plot) {
     emit_plot(fetch.plot.pmc(summaries, from = date_range$from, to = date_range$to,
-                             sport = do_sport), "pmc")
+                             sport = sport_for_pmc,
+                             health_daily = hd_for_pmc), "pmc")
   } else {
     emit_table(report_pmc(summaries, n = do_limit %||% 28L,
                      from = date_range$from, to = date_range$to,
-                     sport = do_sport), "pmc")
+                     sport = sport_for_pmc,
+                     health_daily = hd_for_pmc), "pmc")
   }
 }
 
