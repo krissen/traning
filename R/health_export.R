@@ -1688,9 +1688,12 @@ health_insight_delta <- function(before, after) {
       # Compute the delta off the displayed totals so a week that
       # shows as "20 km" doesn't read as "-1.4 km mot v.X" because
       # raw totals (19 vs 20.4) say something different from what
-      # the parts add up to.
+      # the parts add up to. Round to the display precision before
+      # the threshold check — `disp$total_num` comes from sums of
+      # 0.1-rounded values, so naive double arithmetic can land
+      # `0.5` as `0.4999...` and miss the "≥ 0.5" cutoff.
       prev_disp <- .weekly_recap_display(previous)
-      diff_km <- disp$total_num - prev_disp$total_num
+      diff_km <- round(disp$total_num - prev_disp$total_num, 1)
       if (abs(diff_km) >= 0.5) {
         sign_str <- if (diff_km > 0) "+" else "-"
         delta_part <- paste0(" ", sign_str, .fmt_km(abs(diff_km)),
