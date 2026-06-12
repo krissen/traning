@@ -21,7 +21,7 @@
   "/etc/pacman.d/hooks/traning-r-postupgrade.hook" =
     "80eb31f98204fbf20d651e8e5bbe392ad113d276487687691b42298c0e195ee6",
   "/etc/systemd/system/caddy.service.d/override.conf" =
-    "f247bfc5ea105114cc9a1a6d99de5ce7f10779cb9819fefb317a7d734a04cbd1"
+    "e01f5fa7cfdbbed5ef6be22068d4805095f04caa78078d98290d68227b0348db"
 )
 
 .VALID_DOCTOR_CHECKS <- c("packages", "services", "configs")
