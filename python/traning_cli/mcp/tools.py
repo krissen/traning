@@ -338,14 +338,28 @@ def get_sessions(
 ) -> Image | dict | list:
     """List individual training sessions with distance, pace, HR.
 
+    The data listing returns the most recent sessions regardless of
+    calendar month, so it is never empty just because the current month
+    has no runs yet, and pace is reported as an mm:ss `Tempo` string
+    (min/km) rather than the raw decimal a client could misread as a
+    clock time. plot=True renders a per-month lollipop chart (x-axis is
+    day-of-month) for the current calendar month, or the span given by
+    after/before.
+
     Args:
         n: Number of recent sessions to show (default 20).
         after: Start date filter.
         before: End date filter.
-        plot: If True, return lollipop chart of sessions (PNG).
+        plot: If True, return a month lollipop chart (PNG).
         sport: Sport bucket (default 'running'). See vayu://sports.
     """
+    # Data path: recent = latest N across months, pace as mm:ss Tempo
+    # (rendered by R's dec_to_mmss). The plot (plot_runs_month) is
+    # month-scoped by design — x-axis is day-of-month and its colour
+    # scale needs numeric pace — so recent applies only to the listing.
     args = _build_args(after, before, n, sport=sport)
+    if not plot:
+        args["recent"] = True
     return _data_or_plot("report_runs_year_month", "plot_runs_month", args, plot)
 
 

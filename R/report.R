@@ -102,21 +102,32 @@ report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL,
 
 #' List individual sessions within a date range
 #'
-#' Defaults to the current calendar month when neither \code{from} nor
-#' \code{to} is given.
+#' In the default (month-scoped) mode, defaults to the current calendar
+#' month when neither \code{from} nor \code{to} is given, and returns a
+#' numeric \code{Pace} column (decimal min/km) for the plot colour scale
+#' and CLI aggregation. With \code{recent = TRUE} it skips that default
+#' (returning the latest sessions across months) and reports pace as an
+#' mm:ss \code{Tempo} string instead, so MCP clients cannot misread the
+#' decimal 4.26 as the clock time 4:26.
 #'
 #' @param summaries Data frame of all workout summaries
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @param sport Sport bucket. See \code{\link{.filter_sport}}.
+#' @param recent If TRUE, skip the current-month default and report pace
+#'   as an mm:ss \code{Tempo} column instead of the numeric \code{Pace}.
 #' @return Tibble with individual sessions
 #' @export
 report_runs_year_month <- function(summaries, n = NULL,
                                    from = NULL, to = NULL,
-                                   sport = "running") {
-  # Default to current month if no range specified
-  if (is.null(from) && is.null(to)) {
+                                   sport = "running",
+                                   recent = FALSE) {
+  # Month-scoped callers (e.g. CLI --month-this) with no explicit range
+  # default to the current month. recent = TRUE (the get_sessions
+  # "latest N sessions" path) opts out, so an empty current month does
+  # not hide older sessions.
+  if (!recent && is.null(from) && is.null(to)) {
     from <- as.Date(format(Sys.Date(), "%Y-%m-01"))
     to <- from + lubridate::period(1, "month")
   }
@@ -132,10 +143,23 @@ report_runs_year_month <- function(summaries, n = NULL,
       'Pace' = round(avgPaceMoving, digits = 2),
       'HR' = round(avgHeartRateMoving, digits = 0)
     ) %>%
-    dplyr::select(`År`, `Mån`, `Dag`, Km, Pace, HR) %>%
-    dplyr::arrange(dplyr::desc(`Dag`))
+    # Sort on the full timestamp, not the day-of-month: desc(Dag) alone
+    # interleaves months when the range spans a boundary, so head(n)
+    # could drop the newest session (e.g. Jul 4 sorting below Jun 28-30).
+    dplyr::arrange(dplyr::desc(sessionStart)) %>%
+    dplyr::select(`År`, `Mån`, `Dag`, Km, Pace, HR)
 
   if (!is.null(n)) result <- utils::head(result, n)
+
+  if (recent) {
+    # Present pace as mm:ss so MCP clients don't misread the decimal
+    # (4.26 min/km) as a clock time. Applied after head(n) so only the
+    # returned rows are formatted, via dec_to_mmss() — the single source
+    # of pace formatting shared with the other reports.
+    result <- result %>%
+      dplyr::mutate('Tempo' = vapply(Pace, dec_to_mmss, character(1))) %>%
+      dplyr::select(`År`, `Mån`, `Dag`, Km, Tempo, HR)
+  }
   result
 }
 
