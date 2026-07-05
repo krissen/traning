@@ -1180,14 +1180,27 @@ def get_pipeline_status() -> dict:
     pending debounce window) plus filesystem cross-check (cache mtimes
     for the health and Garmin caches).
 
-    The receiver runs on the same host (kailash) and is queried via
-    localhost using the API key from the environment. If the receiver
-    is unreachable, the function still returns the cache mtimes plus
-    an `error` field.
+    The receiver runs on the same host (kailash) and is queried at the
+    interface it actually binds — `TRANING_RECEIVER_HOST:PORT` (a
+    Tailscale IP, not localhost) — using the API key from the
+    environment. If the receiver is unreachable, the function still
+    returns the cache mtimes plus an `error` field.
     """
-    receiver_url = os.environ.get(
-        "TRANING_RECEIVER_URL", "http://localhost:8421"
-    )
+    receiver_url = os.environ.get("TRANING_RECEIVER_URL")
+    if not receiver_url:
+        # The receiver binds TRANING_RECEIVER_HOST (a Tailscale IP on
+        # kailash), so probing localhost yields a false "unreachable".
+        # A wildcard bind (0.0.0.0) is reachable via loopback. `or`
+        # covers both an unset var and a present-but-empty one (e.g.
+        # TRANING_RECEIVER_PORT=), which .get(key, default) would miss.
+        host = os.environ.get("TRANING_RECEIVER_HOST") or "127.0.0.1"
+        port = os.environ.get("TRANING_RECEIVER_PORT") or "8421"
+        if host == "0.0.0.0":
+            host = "127.0.0.1"
+        receiver_url = f"http://{host}:{port}"
+    # Trim a trailing slash so the f"{receiver_url}/v1/status" join below
+    # can't produce a "//v1/status" that some proxies route differently.
+    receiver_url = receiver_url.rstrip("/")
     api_key = os.environ.get("TRANING_API_KEY")
 
     receiver: dict = {}

@@ -77,20 +77,23 @@ test_that("check_stale_builds mentions marker file when it exists", {
 
 # --- check_services ------------------------------------------------------
 
-test_that("check_services is OK when all services active and Shiny responds", {
+test_that("check_services is OK when all services active and HTTP probes respond", {
   res <- check_services(
     services = c("svc-a", "svc-b"),
-    shiny_url = "http://invalid",
+    shiny_url = "http://shiny",
+    receiver_url = "http://receiver/health",
     systemctl_check = function(unit) TRUE,
     http_check = function(url) TRUE
   )
   expect_equal(res$status, "ok")
+  expect_true(res$details$receiver_ok)
 })
 
 test_that("check_services fails when a service is down", {
   res <- check_services(
     services = c("svc-a", "svc-b"),
-    shiny_url = "http://invalid",
+    shiny_url = "http://shiny",
+    receiver_url = "http://receiver/health",
     systemctl_check = function(unit) unit != "svc-b",
     http_check = function(url) TRUE
   )
@@ -99,14 +102,52 @@ test_that("check_services fails when a service is down", {
 })
 
 test_that("check_services fails when Shiny does not respond", {
+  # Discriminate by URL so only the Shiny probe fails.
   res <- check_services(
     services = "svc-a",
-    shiny_url = "http://invalid:8423/",
+    shiny_url = "http://shiny:8423/",
+    receiver_url = "http://receiver:8421/health",
     systemctl_check = function(unit) TRUE,
-    http_check = function(url) FALSE
+    http_check = function(url) grepl("receiver", url)
   )
   expect_equal(res$status, "fail")
   expect_match(res$message, "Shiny")
+  expect_no_match(res$message, "receiver did not respond")
+})
+
+test_that("check_services fails when receiver is active but not serving", {
+  # systemctl reports the unit up, but the /health probe does not
+  # answer — the active-but-wedged failure mode.
+  res <- check_services(
+    services = "traning-receiver",
+    shiny_url = "http://shiny",
+    receiver_url = "http://receiver:8421/health",
+    systemctl_check = function(unit) TRUE,
+    http_check = function(url) !grepl("receiver", url)
+  )
+  expect_equal(res$status, "fail")
+  expect_match(res$message, "receiver did not respond")
+  expect_false(res$details$receiver_ok)
+})
+
+test_that(".receiver_health_url honours env and normalises wildcard bind", {
+  withr::with_envvar(
+    c(TRANING_RECEIVER_HOST = "100.93.126.68", TRANING_RECEIVER_PORT = "8421"),
+    expect_equal(.receiver_health_url(),
+                 "http://100.93.126.68:8421/health")
+  )
+  withr::with_envvar(
+    c(TRANING_RECEIVER_HOST = "0.0.0.0", TRANING_RECEIVER_PORT = "8421"),
+    expect_equal(.receiver_health_url(),
+                 "http://127.0.0.1:8421/health")
+  )
+  # Present-but-empty port must fall back to the default, not yield
+  # an invalid "http://host:/health".
+  withr::with_envvar(
+    c(TRANING_RECEIVER_HOST = "100.93.126.68", TRANING_RECEIVER_PORT = ""),
+    expect_equal(.receiver_health_url(),
+                 "http://100.93.126.68:8421/health")
+  )
 })
 
 # --- check_configs -------------------------------------------------------
