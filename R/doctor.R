@@ -124,6 +124,17 @@ check_stale_builds <- function(installed_pkgs = NULL,
   identical(as.integer(status), 0L)
 }
 
+.receiver_health_url <- function() {
+  # The receiver binds TRANING_RECEIVER_HOST:PORT (a Tailscale IP on
+  # kailash), so probe that interface — not localhost, which the
+  # receiver does not listen on. A wildcard bind is reachable via
+  # loopback.
+  host <- Sys.getenv("TRANING_RECEIVER_HOST", "127.0.0.1")
+  port <- Sys.getenv("TRANING_RECEIVER_PORT", "8421")
+  if (host %in% c("", "0.0.0.0")) host <- "127.0.0.1"
+  sprintf("http://%s:%s/health", host, port)
+}
+
 .http_ok <- function(url, timeout = 5L, expected_status = "200") {
   # `curl -f` accepts any status < 400 (including 302 redirects), but
   # we want to assert that Shiny is genuinely serving — capture the
@@ -138,17 +149,27 @@ check_stale_builds <- function(installed_pkgs = NULL,
 
 check_services <- function(services = c("traning-receiver",
                                           "traning-shiny",
+                                          "traning-vayu",
                                           "caddy"),
                             shiny_url = "http://127.0.0.1:8423/",
+                            receiver_url = .receiver_health_url(),
                             systemctl_check = .systemctl_active,
                             http_check = .http_ok) {
   active <- vapply(services, systemctl_check, logical(1))
   shiny_ok <- http_check(shiny_url)
+  # systemd is-active only proves the unit didn't exit — a receiver
+  # that is up but wedged (or bound to the wrong interface) still
+  # answers is-active TRUE. Probe /health so an active-but-not-serving
+  # receiver — the failure mode that reads as "the pipeline is down" —
+  # actually fails the check.
+  receiver_ok <- http_check(receiver_url)
 
   details <- list(
     services = setNames(as.list(active), services),
     shiny_url = shiny_url,
-    shiny_ok = shiny_ok
+    shiny_ok = shiny_ok,
+    receiver_url = receiver_url,
+    receiver_ok = receiver_ok
   )
 
   down <- services[!active]
@@ -161,13 +182,17 @@ check_services <- function(services = c("traning-receiver",
     problems <- c(problems,
       sprintf("Shiny did not respond at %s", shiny_url))
   }
+  if (!receiver_ok) {
+    problems <- c(problems,
+      sprintf("receiver did not respond at %s", receiver_url))
+  }
 
   if (length(problems) > 0L) {
     return(.check_result("services", "fail",
       paste(problems, collapse = "; "), details))
   }
   .check_result("services", "ok",
-    sprintf("All %d service(s) active and Shiny responding.",
+    sprintf("All %d service(s) active; Shiny and receiver responding.",
             length(services)), details)
 }
 
@@ -230,6 +255,7 @@ doctor_run <- function(checks = .VALID_DOCTOR_CHECKS,
                         installed_pkgs = NULL,
                         services = NULL,
                         shiny_url = "http://127.0.0.1:8423/",
+                        receiver_url = NULL,
                         expected_configs = .EXPECTED_CONFIG_DIGESTS,
                         marker_file = .REBUILD_MARKER,
                         r_version = NULL,
@@ -250,6 +276,7 @@ doctor_run <- function(checks = .VALID_DOCTOR_CHECKS,
   if ("services" %in% checks) {
     args <- list(shiny_url = shiny_url)
     if (!is.null(services))         args$services <- services
+    if (!is.null(receiver_url))     args$receiver_url <- receiver_url
     if (!is.null(systemctl_check))  args$systemctl_check <- systemctl_check
     if (!is.null(http_check))       args$http_check <- http_check
     results$services <- do.call(check_services, args)
