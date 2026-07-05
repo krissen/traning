@@ -1196,6 +1196,9 @@ def get_pipeline_status() -> dict:
         if host in ("", "0.0.0.0"):
             host = "127.0.0.1"
         receiver_url = f"http://{host}:{port}"
+    # Trim a trailing slash so the f"{receiver_url}/v1/status" join below
+    # can't produce a "//v1/status" that some proxies route differently.
+    receiver_url = receiver_url.rstrip("/")
     api_key = os.environ.get("TRANING_API_KEY")
 
     receiver: dict = {}
