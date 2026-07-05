@@ -235,3 +235,40 @@ test_that("report_runs_year_month default (no args) returns current month only",
   expect_true(all(result[["Mån"]] == current_month))
   expect_true(all(result[["År"]] == current_year))
 })
+
+test_that("report_runs_year_month recent=TRUE ignores the current-month default", {
+  # Two runs in different months, neither necessarily the current one.
+  # recent = TRUE must return both (newest first), not an empty
+  # current calendar month.
+  rows <- tibble::tibble(
+    sessionStart       = as.POSIXct(c("2026-06-30 18:00", "2026-07-04 13:00")),
+    sport              = "running",
+    distance           = c(8000, 5200),
+    avgSpeedMoving     = c(3.0, 3.9),
+    avgPaceMoving      = c(4.4, 4.26),
+    avgHeartRateMoving = c(142, 158),
+    durationMoving     = c(44, 22)
+  )
+  result <- report_runs_year_month(rows, recent = TRUE)
+  expect_equal(nrow(result), 2L)
+  expect_equal(result[["Mån"]], c(7, 6))
+  expect_equal(result[["Dag"]], c(4, 30))
+})
+
+test_that("report_runs_year_month sorts by full date across a month boundary", {
+  # Regression: desc(Dag) alone sorts Jul 4 (day 4) below Jun 28-30, so
+  # head(n) would drop the newest session. Full-date sort keeps it.
+  rows <- tibble::tibble(
+    sessionStart       = as.POSIXct(c("2026-06-28 19:00", "2026-06-29 13:00",
+                                       "2026-06-30 18:00", "2026-07-04 13:00")),
+    sport              = "running",
+    distance           = c(7000, 8000, 8400, 5200),
+    avgSpeedMoving     = 3.0,
+    avgPaceMoving      = c(5.1, 6.2, 4.4, 4.26),
+    avgHeartRateMoving = c(138, 132, 142, 158),
+    durationMoving     = 30
+  )
+  result <- report_runs_year_month(rows, from = as.Date("2026-06-28"), n = 1)
+  expect_equal(result[["Mån"]], 7)
+  expect_equal(result[["Dag"]], 4)
+})

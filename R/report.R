@@ -114,9 +114,13 @@ report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL,
 #' @export
 report_runs_year_month <- function(summaries, n = NULL,
                                    from = NULL, to = NULL,
-                                   sport = "running") {
-  # Default to current month if no range specified
-  if (is.null(from) && is.null(to)) {
+                                   sport = "running",
+                                   recent = FALSE) {
+  # Month-scoped callers (e.g. CLI --month-this) with no explicit range
+  # default to the current month. recent = TRUE (the get_sessions
+  # "latest N sessions" path) opts out, so an empty current month does
+  # not hide older sessions.
+  if (!recent && is.null(from) && is.null(to)) {
     from <- as.Date(format(Sys.Date(), "%Y-%m-01"))
     to <- from + lubridate::period(1, "month")
   }
@@ -132,8 +136,11 @@ report_runs_year_month <- function(summaries, n = NULL,
       'Pace' = round(avgPaceMoving, digits = 2),
       'HR' = round(avgHeartRateMoving, digits = 0)
     ) %>%
-    dplyr::select(`År`, `Mån`, `Dag`, Km, Pace, HR) %>%
-    dplyr::arrange(dplyr::desc(`Dag`))
+    # Sort on the full timestamp, not the day-of-month: desc(Dag) alone
+    # interleaves months when the range spans a boundary, so head(n)
+    # could drop the newest session (e.g. Jul 4 sorting below Jun 28-30).
+    dplyr::arrange(dplyr::desc(sessionStart)) %>%
+    dplyr::select(`År`, `Mån`, `Dag`, Km, Pace, HR)
 
   if (!is.null(n)) result <- utils::head(result, n)
   result
