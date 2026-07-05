@@ -131,7 +131,10 @@ check_stale_builds <- function(installed_pkgs = NULL,
   # loopback.
   host <- Sys.getenv("TRANING_RECEIVER_HOST", "127.0.0.1")
   port <- Sys.getenv("TRANING_RECEIVER_PORT", "8421")
+  # Sys.getenv's default only applies when the var is unset; a
+  # present-but-empty var (e.g. TRANING_RECEIVER_PORT=) yields "".
   if (host %in% c("", "0.0.0.0")) host <- "127.0.0.1"
+  if (!nzchar(port)) port <- "8421"
   sprintf("http://%s:%s/health", host, port)
 }
 

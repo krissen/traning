@@ -141,6 +141,13 @@ test_that(".receiver_health_url honours env and normalises wildcard bind", {
     expect_equal(.receiver_health_url(),
                  "http://127.0.0.1:8421/health")
   )
+  # Present-but-empty port must fall back to the default, not yield
+  # an invalid "http://host:/health".
+  withr::with_envvar(
+    c(TRANING_RECEIVER_HOST = "100.93.126.68", TRANING_RECEIVER_PORT = ""),
+    expect_equal(.receiver_health_url(),
+                 "http://100.93.126.68:8421/health")
+  )
 })
 
 # --- check_configs -------------------------------------------------------

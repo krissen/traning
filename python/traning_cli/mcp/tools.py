@@ -1190,10 +1190,12 @@ def get_pipeline_status() -> dict:
     if not receiver_url:
         # The receiver binds TRANING_RECEIVER_HOST (a Tailscale IP on
         # kailash), so probing localhost yields a false "unreachable".
-        # A wildcard bind (0.0.0.0) is reachable via loopback.
-        host = os.environ.get("TRANING_RECEIVER_HOST", "127.0.0.1")
-        port = os.environ.get("TRANING_RECEIVER_PORT", "8421")
-        if host in ("", "0.0.0.0"):
+        # A wildcard bind (0.0.0.0) is reachable via loopback. `or`
+        # covers both an unset var and a present-but-empty one (e.g.
+        # TRANING_RECEIVER_PORT=), which .get(key, default) would miss.
+        host = os.environ.get("TRANING_RECEIVER_HOST") or "127.0.0.1"
+        port = os.environ.get("TRANING_RECEIVER_PORT") or "8421"
+        if host == "0.0.0.0":
             host = "127.0.0.1"
         receiver_url = f"http://{host}:{port}"
     # Trim a trailing slash so the f"{receiver_url}/v1/status" join below
