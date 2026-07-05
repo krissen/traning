@@ -243,6 +243,8 @@ build_call_args <- function(func_name, func_args) {
   if (!is.null(func_args$metric))  a$metric <- func_args$metric
   if (!is.null(func_args$sport) && func_name %in% sport_funcs)
     a$sport <- as.character(func_args$sport)
+  if (!is.null(func_args$recent) && func_name == "report_runs_year_month")
+    a$recent <- isTRUE(func_args$recent)
 
   # Inject required data objects
   d <- func_registry[[func_name]]
