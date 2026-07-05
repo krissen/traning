@@ -73,17 +73,11 @@ Same flow via `POST /v1/workouts`. Files saved as
 ### Garmin activities (watch → kailash)
 
 ```
-Garmin watch → Garmin Connect → Strava (auto-sync)
+Garmin watch → Garmin Connect (sync when phone in BT range / WiFi)
   │
   ▼
-ha_strava HACS integration (sensor update)
-  │
-  ▼
-HA automation (state trigger on sensor.strava_kristian_niemi_recent_activity)
-  │ REST command POST
-  ▼
-FastAPI /v1/trigger/garmin (kailash Tailscale IP:8421)
-  │ BackgroundTasks → subprocess: traning fetch garmin
+traning-garmin.timer (every 15 min, 06–23)
+  │ scripts/garmin_fetch_import.sh
   ▼
 traning fetch garmin
   │ Garmin Connect API → summary JSON + details JSON + TCX
@@ -93,12 +87,18 @@ traning fetch garmin
 traning-data repo
 ```
 
-**Fallback:** `traning-garmin.timer` polls every 2h during 06–22.
-Catches activities if HA/Strava webhook misses them.
+The 15-minute cadence bounds trigger latency without depending on an
+external push: a run typically lands in Garmin Connect within minutes of
+the watch syncing, and the next timer tick picks it up.
 
-**HA automation filter:** The automation triggers on Strava sensor state
-changes, but filters out `unavailable` and `unknown` states to avoid
-spurious fetches on sensor reconnect.
+**Retired Strava webhook trigger:** Until 2026 the primary trigger was a
+Strava push webhook (Garmin → Strava auto-sync → `ha_strava` sensor → HA
+state-trigger automation → `POST /v1/trigger/garmin`). Strava moved its
+API behind a paid subscription (the app went `Inactive`, `athlete/activities`
+returns 403), so the webhook path was removed and the timer — previously a
+2-hour fallback — became the sole trigger at a tighter cadence. The
+`/v1/trigger/garmin` endpoint (which also runs fetch + import) remains for
+manual/future use.
 
 ### Notification chain
 
@@ -323,29 +323,19 @@ in order:
    Look for lines matching `Avisering skickad:` (success) or
    `Avisering misslyckades:` (failure).
 
-2. **HA log file** on kailash — useful for verifying the Strava
-   trigger automation fired, but does NOT log individual notify
-   service calls at default log level:
+2. **Garmin timer journal** on kailash — confirms whether a fetch ran
+   and picked up new activities:
    ```bash
-   ssh kailash 'grep -i "garmin_fetch\|rest_command" /var/local/docker/ha-stack/homeassistant/home-assistant.log'
-   ```
-   Rotated logs: `.log.1`, `.log.crash`, `.log.fault` in the same dir.
-
-3. **HA logbook** via hass-cli from kedar — shows automation
-   triggers and entity state changes:
-   ```bash
-   hass-cli --server https://niemi.cc:8123 --output json \
-     raw get '/api/logbook/2026-04-07T19:00:00' \
-     | python3 -c "import json,sys; [print(f'{e[\"when\"]}  {e[\"name\"]}: {e.get(\"message\",\"\")}') for e in json.load(sys.stdin) if any(k in (e.get('name','')+e.get('entity_id','')).lower() for k in ['strava','garmin','traning'])]"
+   ssh kailash 'sudo journalctl -u traning-garmin --since "24h ago" --no-pager | grep -iE "new activit|Done"'
    ```
 
-4. **data repo git log** — confirms what data was actually saved
+3. **data repo git log** — confirms what data was actually saved
    (complements notification log):
    ```bash
    ssh kailash 'cd ~/dokument/traning-data && git log --since="24h ago" --format="%ai %s"'
    ```
 
-5. **iPhone notification history** — last resort if journal is
+4. **iPhone notification history** — last resort if journal is
    unavailable or logging was not yet configured.
 
 ## Deploy workflow

@@ -1,8 +1,8 @@
 [Unit]
-Description=Garmin fetch fallback (every 2h, 06-22)
+Description=Garmin fetch (every 15 min, 06-23)
 
 [Timer]
-OnCalendar=*-*-* 06..22/2:00:00
+OnCalendar=*-*-* 06..23:00/15
 Persistent=true
 
 [Install]
