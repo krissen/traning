@@ -153,9 +153,9 @@ report_runs_year_month <- function(summaries, n = NULL,
 
   if (recent) {
     # Present pace as mm:ss so MCP clients don't misread the decimal
-    # (4.26 min/km) as a clock time. Format the already-truncated result
-    # set via dec_to_mmss() — the single source of pace formatting shared
-    # with the other reports — rather than a parallel implementation.
+    # (4.26 min/km) as a clock time. Applied after head(n) so only the
+    # returned rows are formatted, via dec_to_mmss() — the single source
+    # of pace formatting shared with the other reports.
     result <- result %>%
       dplyr::mutate('Tempo' = vapply(Pace, dec_to_mmss, character(1))) %>%
       dplyr::select(`År`, `Mån`, `Dag`, Km, Tempo, HR)
