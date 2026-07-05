@@ -1,6 +1,30 @@
 # tRäning — Changelog
 
-## 2026-05-19 — Vardagsrörelse i belastning, TRIMP-ACWR för system-vyer
+## 2026-07-05 — Strava-trigger pensionerad, robustare pipeline-larm, get_sessions-fix
+
+**Garmin-triggern är nu en 15-minuterstimer.** Strava flyttade sitt API
+bakom ett betalabonnemang (appen står som `Inactive`, `athlete/activities`
+ger 403), så Strava-webhook-kedjan (Garmin → Strava → ha_strava → HA →
+`POST /v1/trigger/garmin`) är borttagen. `traning-garmin.timer` går nu var
+15:e minut 06–23 och är enda triggern (tidigare 2-timmars-fallback). Ny tur
+syns därmed inom ~15 min utan beroende av extern push; ingen data går
+förlorad. `/v1/trigger/garmin`-endpointen finns kvar för manuellt bruk.
+
+**Pipeline-status slår inte längre falsklarm.** `get_pipeline_status`
+pingade hårdkodad `localhost:8421`, men receivern binder Tailscale-IP:t
+(`TRANING_RECEIVER_HOST`) — vilket gav "receiver unreachable" trots frisk
+pipeline. Den resolvar nu rätt host. Den dagliga `traning doctor`-kollen
+gör dessutom en riktig HTTP `/health`-probe mot receivern (inte bara
+`systemctl is-active`) och övervakar `traning-vayu`, så en uppe-men-hängd
+tjänst faktiskt fångas och larmas via `OnFailure`.
+
+**get_sessions returnerar senaste turerna igen.** Verktyget defaultade till
+innevarande kalendermånad och kunde ge en tom lista tidigt i månaden; det
+sorterade dessutom på dag-i-månad, så nyaste turen kunde trunkeras bort
+över ett månadsskifte. Ett nytt `recent`-läge hämtar de senaste N turerna
+oavsett månad, sorterat på full tidsstämpel. Tempo rapporteras nu som
+mm:ss (`4:15`) i stället för decimalminuter (`4.26`, som lätt lästes som
+klockslaget 4:26).
 
 Belastnings- och dagsforms-bilden inkluderar nu vardagsrörelse, och
 inkonsekvenser i defaultsport över PMC/ACWR/system-metriker har städats

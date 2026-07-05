@@ -5,7 +5,8 @@
 The pipeline runs on **kailash** (Arch Linux server) and automatically collects:
 
 1. **Health data** from iPhone via Health Auto Export (HAE) app → FastAPI receiver
-2. **Garmin activities** via Strava webhook → Home Assistant → FastAPI trigger
+2. **Garmin activities** via a systemd timer that fetches from Garmin Connect
+   every 15 minutes (06–23)
 
 Data is committed to `traning-data` git repo on kailash, pushed to GitHub daily,
 and pulled to kedar for R analysis.
@@ -17,12 +18,18 @@ anandavani (iPhone)          kailash (Arch Linux)           kedar (Mac)
 │             │      │  /v1/health → metrics/    │     │             │
 │             │      │  /v1/workouts → workouts/ │     │             │
 │ Garmin watch│      │                           │     │             │
-│ → Connect   │      │ Strava webhook → HA →     │     │             │
-│ → Strava    │      │  /v1/trigger/garmin       │     │             │
+│ → Connect   │      │ systemd timer (15 min) →  │     │             │
+│             │      │  traning fetch garmin     │     │             │
 └─────────────┘      │                           │     │             │
                      │ git push daily → GitHub ──│─────│→ git pull   │
                      └──────────────────────────┘     └─────────────┘
 ```
+
+> **Note:** The Garmin trigger was previously a Strava webhook (Garmin →
+> Strava → Home Assistant → `POST /v1/trigger/garmin`). Strava moved its
+> API behind a paid subscription in 2026, so that path was retired; the
+> systemd timer is now the sole trigger. The `/v1/trigger/garmin`
+> endpoint still exists and can be called manually.
 
 ## Daily operations
 
@@ -126,12 +133,8 @@ ssh kailash 'tail -5 ~/dokument/traning-data/logs/notifications.jsonl'
 # Notifications — systemd journal (fallback)
 ssh kailash 'sudo journalctl -u traning-receiver --since "24h ago" | grep "Avisering"'
 
-# HA log (automations, errors — not individual notify calls)
-ssh kailash 'grep -i "garmin_fetch\|rest_command" /var/local/docker/ha-stack/homeassistant/home-assistant.log'
-
-# HA logbook (Strava sensor changes, automation triggers)
-hass-cli --server https://niemi.cc:8123 --output json \
-  raw get '/api/logbook/2026-04-07T19:00:00'
+# Garmin timer — recent fetch runs (new activities picked up?)
+ssh kailash 'sudo journalctl -u traning-garmin --since "24h ago" | grep -iE "new activit|Done"'
 
 # Data repo — what was actually saved?
 ssh kailash 'cd ~/dokument/traning-data && git log --since="24h ago" --format="%ai %s"'
@@ -166,11 +169,12 @@ improves reliability).
 | Service | Type | Schedule |
 |---------|------|----------|
 | `traning-receiver` | long-running | Always on, auto-start at boot |
-| `traning-garmin.timer` | timer (fallback) | Every 2h, 06–22 |
+| `traning-garmin.timer` | timer (primary) | Every 15 min, 06–23 |
 | `traning-push.timer` | timer | Daily 03:00 |
 
-Primary Garmin trigger is the Strava webhook via Home Assistant
-(`automation.garmin_fetch_on_new_strava_activity`).
+The `traning-garmin.timer` is the sole Garmin trigger. (The former
+Strava-webhook trigger was retired when Strava paywalled its API — see
+the Overview note.)
 
 ## Sensitive files
 
