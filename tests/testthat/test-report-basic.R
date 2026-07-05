@@ -253,6 +253,11 @@ test_that("report_runs_year_month recent=TRUE ignores the current-month default"
   expect_equal(nrow(result), 2L)
   expect_equal(result[["Mån"]], c(7, 6))
   expect_equal(result[["Dag"]], c(4, 30))
+  # recent mode reports pace as an mm:ss Tempo string (not numeric Pace),
+  # formatted by the shared dec_to_mmss() helper.
+  expect_true("Tempo" %in% names(result))
+  expect_false("Pace" %in% names(result))
+  expect_equal(result[["Tempo"]][1], dec_to_mmss(4.26))
 })
 
 test_that("report_runs_year_month sorts by full date across a month boundary", {

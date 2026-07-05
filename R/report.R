@@ -102,14 +102,21 @@ report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL,
 
 #' List individual sessions within a date range
 #'
-#' Defaults to the current calendar month when neither \code{from} nor
-#' \code{to} is given.
+#' In the default (month-scoped) mode, defaults to the current calendar
+#' month when neither \code{from} nor \code{to} is given, and returns a
+#' numeric \code{Pace} column (decimal min/km) for the plot colour scale
+#' and CLI aggregation. With \code{recent = TRUE} it skips that default
+#' (returning the latest sessions across months) and reports pace as an
+#' mm:ss \code{Tempo} string instead, so MCP clients cannot misread the
+#' decimal 4.26 as the clock time 4:26.
 #'
 #' @param summaries Data frame of all workout summaries
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @param sport Sport bucket. See \code{\link{.filter_sport}}.
+#' @param recent If TRUE, skip the current-month default and report pace
+#'   as an mm:ss \code{Tempo} column instead of the numeric \code{Pace}.
 #' @return Tibble with individual sessions
 #' @export
 report_runs_year_month <- function(summaries, n = NULL,
@@ -143,6 +150,16 @@ report_runs_year_month <- function(summaries, n = NULL,
     dplyr::select(`År`, `Mån`, `Dag`, Km, Pace, HR)
 
   if (!is.null(n)) result <- utils::head(result, n)
+
+  if (recent) {
+    # Present pace as mm:ss so MCP clients don't misread the decimal
+    # (4.26 min/km) as a clock time. Format the already-truncated result
+    # set via dec_to_mmss() — the single source of pace formatting shared
+    # with the other reports — rather than a parallel implementation.
+    result <- result %>%
+      dplyr::mutate('Tempo' = vapply(Pace, dec_to_mmss, character(1))) %>%
+      dplyr::select(`År`, `Mån`, `Dag`, Km, Tempo, HR)
+  }
   result
 }
 
