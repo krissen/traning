@@ -257,7 +257,8 @@ test_that("report_runs_year_month recent=TRUE ignores the current-month default"
   # formatted by the shared dec_to_mmss() helper.
   expect_true("Tempo" %in% names(result))
   expect_false("Pace" %in% names(result))
-  expect_equal(result[["Tempo"]][1], dec_to_mmss(4.26))
+  # dec_to_mmss truncates: 4.26 min/km -> 255s -> "4:15" (not rounded 4:16).
+  expect_equal(result[["Tempo"]][1], "4:15")
 })
 
 test_that("report_runs_year_month sorts by full date across a month boundary", {
