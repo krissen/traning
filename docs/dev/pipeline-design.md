@@ -383,14 +383,15 @@ System dependencies required (pacman/paru): `gdal`, `udunits` (AUR).
 
 ## Home Assistant configuration
 
-Files on kailash in `/var/local/docker/ha-stack/homeassistant/`:
+HA (Docker at `/var/local/docker/ha-stack/homeassistant/`) is used for
+**notifications** — the health/readiness push and Telegram fan-out via
+`script.traning_notify` — not for the Garmin trigger.
 
-- `conf.d/shell_commands/traning.yaml` — (legacy, replaced by rest_command)
-- `automations/traning_garmin_fetch.yaml` — Strava trigger automation
-- `configuration.yaml` — `rest_command.traning_fetch_garmin` definition
-
-The rest_command uses `http://localhost:8421/v1/trigger/garmin` which works
-because the HA container uses host networking mode.
+The former Garmin-trigger files — `automations/traning_garmin_fetch.yaml`
+and `rest_command.traning_fetch_garmin` in `configuration.yaml` — were
+removed (2026-07-05) when the Strava trigger was retired. The
+`/v1/trigger/garmin` endpoint remains and can still be called manually
+(e.g. from HA host networking at `http://localhost:8421/v1/trigger/garmin`).
 
 ## Failure modes
 
@@ -398,8 +399,8 @@ because the HA container uses host networking mode.
 |---------|--------|----------|
 | HAE push fails (iOS kills app) | Health data delayed | Next push catches up; manual TCP fallback |
 | Garmin token expires (~1yr) | Garmin fetch fails | `deploy.sh tokens` from kedar after re-auth |
-| Strava webhook misses | Garmin fetch delayed | 2h timer fallback catches it |
-| HA down | Strava trigger lost, notifications lost | Timer fallback; FastAPI is independent |
+| Garmin timer stalls / disabled | New activities not imported | `traning doctor` flags it; run `traning fetch garmin` manually |
+| HA down | Notifications not delivered (data unaffected) | Garmin timer + FastAPI are independent of HA |
 | Tailscale down | HAE can't reach kailash | Data accumulates in HealthKit |
 | FastAPI crash | All receiving stopped | systemd `Restart=on-failure` (10s delay) |
 | Git conflict kedar↔kailash | Push/pull fails | Append-only files; conflict unlikely in practice |
