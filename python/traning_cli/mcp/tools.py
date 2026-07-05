@@ -1,5 +1,6 @@
 """Vayu MCP tools — curated training analysis functions."""
 
+import math
 import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -338,6 +339,11 @@ def get_sessions(
 ) -> Image | dict | list:
     """List individual training sessions with distance, pace, HR.
 
+    Returns the most recent sessions regardless of calendar month, so
+    the list is never empty just because the current month has no runs
+    yet. Pace is reported as an mm:ss `Tempo` string (min/km) — e.g.
+    "4:16", not the decimal 4.26 which is easily misread as 4:26.
+
     Args:
         n: Number of recent sessions to show (default 20).
         after: Start date filter.
@@ -345,8 +351,40 @@ def get_sessions(
         plot: If True, return lollipop chart of sessions (PNG).
         sport: Sport bucket (default 'running'). See vayu://sports.
     """
-    args = _build_args(after, before, n, sport=sport)
-    return _data_or_plot("report_runs_year_month", "plot_runs_month", args, plot)
+    args = _build_args(after, before, n, sport=sport, recent=True)
+    result = _data_or_plot("report_runs_year_month", "plot_runs_month", args, plot)
+    if not plot and isinstance(result, dict):
+        _sessions_pace_to_tempo(result)
+    return result
+
+
+def _dec_to_mmss(dec_min) -> str:
+    """Format decimal minutes as 'M:SS' (4.26 -> '4:16').
+
+    Mirrors R's dec_to_mmss() so MCP clients never receive a raw decimal
+    pace they might render as a clock time. Non-finite / unparseable
+    input returns an em dash, matching the R helper.
+    """
+    try:
+        val = float(dec_min)
+    except (TypeError, ValueError):
+        return "—"
+    if not math.isfinite(val):
+        return "—"
+    minutes = int(val)
+    seconds = round((val - minutes) * 60)
+    if seconds == 60:
+        minutes += 1
+        seconds = 0
+    return f"{minutes}:{seconds:02d}"
+
+
+def _sessions_pace_to_tempo(result: dict) -> None:
+    """Replace the numeric decimal `Pace` column in a get_sessions
+    result with an unambiguous mm:ss `Tempo` string, in place."""
+    for row in result.get("details", []):
+        if isinstance(row, dict) and "Pace" in row:
+            row["Tempo"] = _dec_to_mmss(row.pop("Pace"))
 
 
 def get_monthly_summary(
