@@ -95,3 +95,13 @@ test_that("plot_sport_calendar with NULL from/to spans the full history", {
   # (2022-01-01 in the fixture) — not Sys.Date()-366.
   expect_match(p$labels$title %||% "", "2022-01-01")
 })
+
+test_that("fetch.plot.ef gives identical rendered data for bundle and bare-summaries calls", {
+  sm <- .fixture_long_history()
+  bundle <- traning_data(summaries = sm)
+  p_bundle <- fetch.plot.ef(bundle, sport = "running")
+  p_bare   <- fetch.plot.ef(sm, sport = "running")
+  b_bundle <- suppressWarnings(ggplot2::ggplot_build(p_bundle))
+  b_bare   <- suppressWarnings(ggplot2::ggplot_build(p_bare))
+  expect_identical(b_bundle$data, b_bare$data)
+})

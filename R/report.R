@@ -49,14 +49,17 @@ report_insight <- function(summaries, sport = "running") {
 }
 
 #' Summarise sessions within a date range
-#' @param summaries Data frame of all workout summaries
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param do_datesum_from Start date (Date object)
 #' @param do_datesum_to End date (Date object)
 #' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with summary statistics
 #' @export
-report_datesum <- function(summaries, do_datesum_from, do_datesum_to,
+report_datesum <- function(data, do_datesum_from, do_datesum_to,
                            sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   summaries <- .filter_sport(summaries, sport)
   filtered_summaries <- summaries %>%
     dplyr::filter(sessionStart >= do_datesum_from & sessionStart < do_datesum_to)
@@ -75,15 +78,18 @@ report_datesum <- function(summaries, do_datesum_from, do_datesum_to,
 }
 
 #' Top months by total distance
-#' @param summaries Data frame of all workout summaries
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param n Number of top months to return (default 10).
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with top months
 #' @export
-report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL,
+report_monthtop <- function(data, n = 10, from = NULL, to = NULL,
                             sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   summaries <- filter_by_daterange(summaries, list(from = from, to = to))
 
   .filter_sport(summaries, sport) %>%
@@ -110,7 +116,8 @@ report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL,
 #' mm:ss \code{Tempo} string instead, so MCP clients cannot misread the
 #' decimal 4.26 as the clock time 4:26.
 #'
-#' @param summaries Data frame of all workout summaries
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
@@ -119,10 +126,12 @@ report_monthtop <- function(summaries, n = 10, from = NULL, to = NULL,
 #'   as an mm:ss \code{Tempo} column instead of the numeric \code{Pace}.
 #' @return Tibble with individual sessions
 #' @export
-report_runs_year_month <- function(summaries, n = NULL,
+report_runs_year_month <- function(data, n = NULL,
                                    from = NULL, to = NULL,
                                    sport = "running",
                                    recent = FALSE) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   # Month-scoped callers (e.g. CLI --month-this) with no explicit range
   # default to the current month. recent = TRUE (the get_sessions
   # "latest N sessions" path) opts out, so an empty current month does
@@ -164,15 +173,18 @@ report_runs_year_month <- function(summaries, n = NULL,
 }
 
 #' Compare last month across all years
-#' @param summaries Data frame of all workout summaries
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with per-year statistics for last month
 #' @export
-report_monthlast <- function(summaries, n = NULL, from = NULL, to = NULL,
+report_monthlast <- function(data, n = NULL, from = NULL, to = NULL,
                              sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   summaries <- filter_by_daterange(summaries, list(from = from, to = to))
   summaries <- .filter_sport(summaries, sport)
 
@@ -200,15 +212,18 @@ report_monthlast <- function(summaries, n = NULL, from = NULL, to = NULL,
 }
 
 #' Year statistics — all time (full years, not truncated at current date)
-#' @param summaries Data frame of all workout summaries
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with per-year statistics
 #' @export
-report_yearstop <- function(summaries, n = NULL, from = NULL, to = NULL,
+report_yearstop <- function(data, n = NULL, from = NULL, to = NULL,
                             sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   summaries <- filter_by_daterange(summaries, list(from = from, to = to))
   summaries <- .filter_sport(summaries, sport)
   my_dayyear <- as.numeric(format(Sys.time(), "%j"))
@@ -231,15 +246,18 @@ report_yearstop <- function(summaries, n = NULL, from = NULL, to = NULL,
 }
 
 #' Year statistics — truncated at current day-of-year for fair comparison
-#' @param summaries Data frame of all workout summaries
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with per-year statistics up to current day-of-year
 #' @export
-report_yearstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
+report_yearstatus <- function(data, n = NULL, from = NULL, to = NULL,
                               sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   summaries <- filter_by_daterange(summaries, list(from = from, to = to))
   summaries <- .filter_sport(summaries, sport)
   my_dayyear <- as.numeric(format(Sys.time(), "%j"))
@@ -266,15 +284,18 @@ report_yearstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
 }
 
 #' Current month compared across years (truncated at current day-of-month)
-#' @param summaries Data frame of all workout summaries
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param n Max rows to return, or NULL for all.
 #' @param from Date or NULL. Include only activities from this date (inclusive).
 #' @param to Date or NULL. Include only activities before this date (exclusive).
 #' @param sport Sport bucket. See \code{\link{.filter_sport}}.
 #' @return Tibble with per-year statistics for current month
 #' @export
-report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
+report_monthstatus <- function(data, n = NULL, from = NULL, to = NULL,
                                sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   summaries <- filter_by_daterange(summaries, list(from = from, to = to))
   summaries <- .filter_sport(summaries, sport)
   my_month <- as.numeric(format(Sys.time(), "%m"))
@@ -326,7 +347,8 @@ report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
 #   decoupling).
 
 #' Efficiency Factor report — recent runs with EF values
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param n Number of rows to show (default 28). Ignored when from/to given.
 #' @param from Date or NULL. Start of display window (inclusive).
 #' @param to Date or NULL. End of display window (exclusive).
@@ -334,8 +356,10 @@ report_monthstatus <- function(summaries, n = NULL, from = NULL, to = NULL,
 #'   underlying \code{compute_*} call. See \code{\link{.filter_sport}}.
 #' @return Tibble
 #' @export
-report_ef <- function(summaries, n = 28, from = NULL, to = NULL,
+report_ef <- function(data, n = 28, from = NULL, to = NULL,
                       sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   compute_efficiency_factor(summaries, sport = sport) %>%
     dplyr::mutate(
       Datum = sessionStart,
@@ -351,8 +375,10 @@ report_ef <- function(summaries, n = 28, from = NULL, to = NULL,
 #' @inheritParams report_ef
 #' @return Tibble
 #' @export
-report_hre <- function(summaries, n = 28, from = NULL, to = NULL,
+report_hre <- function(data, n = 28, from = NULL, to = NULL,
                        sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   compute_hre(summaries, sport = sport) %>%
     dplyr::mutate(
       Datum = sessionStart,
@@ -409,8 +435,10 @@ report_acwr <- function(summaries, n = 28, from = NULL, to = NULL,
 #' @inheritParams report_ef
 #' @return Tibble
 #' @export
-report_monotony <- function(summaries, n = 28, from = NULL, to = NULL,
+report_monotony <- function(data, n = 28, from = NULL, to = NULL,
                             sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   compute_monotony_strain(summaries, sport = sport) %>%
     dplyr::mutate(
       Datum = date,
