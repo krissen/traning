@@ -94,3 +94,34 @@ test_that("filter_by_daterange filters by both from and to", {
   result <- filter_by_daterange(df, list(from = as.Date("2023-06-01"), to = as.Date("2024-06-01")))
   expect_equal(nrow(result), 1)
 })
+
+test_that("filter_by_daterange closed_upper=TRUE makes 'to' inclusive", {
+  df <- tibble::tibble(sessionStart = as.POSIXct(c("2023-01-01", "2024-01-01", "2025-01-01")))
+  # Default (exclusive) drops the row exactly at 'to'; closed_upper keeps it.
+  excl <- filter_by_daterange(df, list(from = NULL, to = as.Date("2025-01-01")))
+  incl <- filter_by_daterange(df, list(from = NULL, to = as.Date("2025-01-01")),
+                              closed_upper = TRUE)
+  expect_equal(nrow(excl), 2)
+  expect_equal(nrow(incl), 3)
+})
+
+test_that("filter_by_daterange filters on a non-default date_col", {
+  df <- tibble::tibble(
+    sessionStart = as.POSIXct(c("2020-01-01", "2020-01-01", "2020-01-01")),
+    date = as.Date(c("2023-01-01", "2024-01-01", "2025-01-01"))
+  )
+  result <- filter_by_daterange(df, list(from = as.Date("2024-01-01"), to = NULL),
+                                date_col = "date")
+  expect_equal(nrow(result), 2)
+})
+
+test_that("filter_by_daterange compares POSIXct in its own tzone, not UTC", {
+  # A session at local midnight in a positive-offset zone. Under the old
+  # as.Date(POSIXct) path this truncated to UTC (the previous day) and was
+  # wrongly dropped at the 'from' boundary; the direct comparison keeps it.
+  df <- tibble::tibble(
+    sessionStart = as.POSIXct("2024-02-01 00:00:00", tz = "Europe/Stockholm")
+  )
+  result <- filter_by_daterange(df, list(from = as.Date("2024-02-01"), to = NULL))
+  expect_equal(nrow(result), 1)
+})

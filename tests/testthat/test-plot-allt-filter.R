@@ -5,7 +5,7 @@
 # plot_sport_calendar each had an `if (is.null(from)) ... else days`
 # fallback that coerced Shiny's `NULL` (the value emitted when the user
 # picks the "Allt" preset) to a 90/365/366-day window. Refactored to
-# .filter_date_range() which treats NULL as "no bound".
+# filter_by_daterange() (R/daterange.R) which treats NULL as "no bound".
 
 # Multi-year fixture spanning 3 years so a 365-day truncation would be
 # obvious in the rendered data.
