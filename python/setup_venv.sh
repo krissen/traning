@@ -16,12 +16,9 @@ fi
 echo "Creating virtual environment at $VENV_DIR ..."
 python3 -m venv "$VENV_DIR"
 
-echo "Installing dependencies ..."
+echo "Installing traning CLI and dependencies (from pyproject.toml) ..."
 "$VENV_DIR/bin/pip" install --quiet --upgrade pip
-"$VENV_DIR/bin/pip" install --quiet -r "$SCRIPT_DIR/requirements.txt"
-
-echo "Installing traning CLI ..."
-"$VENV_DIR/bin/pip" install --quiet -e "$SCRIPT_DIR/.."
+"$VENV_DIR/bin/pip" install --quiet -e "$SCRIPT_DIR/..[dev]"
 
 echo ""
 echo "Done. Activate with:"

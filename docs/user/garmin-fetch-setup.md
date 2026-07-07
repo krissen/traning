@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Python 3.10 or later
+- Python 3.11 or later
 - A Garmin Connect account
 - `TRANING_DATA` environment variable pointing to your data directory
 
@@ -19,11 +19,13 @@ This creates `python/.venv/` and installs all dependencies.
 Alternatively, do it manually:
 
 ```bash
-cd python
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+python3 -m venv python/.venv
+source python/.venv/bin/activate
+pip install -e ".[dev]"
 ```
+
+Dependencies are declared in `pyproject.toml`; the editable install
+resolves them (drop `[dev]` if you don't need the test/lint tools).
 
 ## 2. Ensure TRANING_DATA is set
 
@@ -62,9 +64,10 @@ If the script falls back to browser login, you need Playwright installed:
 pip install playwright && playwright install chromium
 ```
 
-This is a one-time setup. The `requirements.txt` includes playwright, so
-`setup_venv.sh` installs the Python package — but the Chromium browser
-binary must be installed separately with `playwright install chromium`.
+This is a one-time setup. The Python playwright package comes in via the
+`pirate-garmin` dependency, so `setup_venv.sh` installs it — but the
+Chromium browser binary must be installed separately with
+`playwright install chromium`.
 
 ## 4. Verify
 

@@ -2,9 +2,8 @@
 """Backfill all health metrics from HAE TCP server to local JSON files."""
 
 import json
-import socket
-import sys
 import os
+import socket
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -51,7 +50,7 @@ def query_tcp(start: str, end: str, aggregate: bool = True,
                 if not chunk:
                     break
                 chunks.append(chunk)
-            except socket.timeout:
+            except TimeoutError:
                 break
         sock.close()
 

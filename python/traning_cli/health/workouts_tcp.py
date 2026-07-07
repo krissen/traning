@@ -68,10 +68,10 @@ def _query_workouts(start: str, end: str, include_metadata: bool = True,
                 if not chunk:
                     break
                 chunks.append(chunk)
-            except socket.timeout:
+            except TimeoutError:
                 break
         sock.close()
-    except (socket.timeout, ConnectionError, OSError) as e:
+    except (TimeoutError, ConnectionError, OSError) as e:
         raise HAEWorkoutsError(f"connection error: {e}") from e
 
     raw = b"".join(chunks)

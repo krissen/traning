@@ -10,6 +10,6 @@ logging.basicConfig(
     format="%(levelname)s %(name)s: %(message)s",
 )
 
-from .app import create_app
+from .app import create_app  # noqa: E402 -- must follow logging.basicConfig() above
 
 app = create_app()

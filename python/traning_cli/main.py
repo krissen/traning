@@ -4,6 +4,7 @@ import functools
 import logging
 import subprocess
 import sys
+from importlib import metadata
 from pathlib import Path
 
 import click
@@ -53,7 +54,16 @@ def _maybe_pull(data_dir: Path) -> None:
 
 
 def _get_version():
-    """Read version from R DESCRIPTION file."""
+    """Read the installed package version (single source of truth: pyproject.toml).
+
+    Falls back to scraping the R DESCRIPTION file only if the package isn't
+    installed (e.g. running from source without `pip install -e .`), so the
+    CLI still works during first-time setup.
+    """
+    try:
+        return metadata.version("traning-cli")
+    except metadata.PackageNotFoundError:
+        pass
     desc = TRANING_ROOT / "DESCRIPTION"
     if not desc.is_file():
         return "unknown"
@@ -64,7 +74,8 @@ def _get_version():
 
 
 def report_options(f):
-    """Shared options for all report commands: --plot, --after, --before, --span, --output, --limit."""
+    """Shared options for all report commands: --plot, --after, --before, --span,
+    --output, --limit."""
     @click.option("--plot", "show_plot", is_flag=True, help="Show plot instead of table")
     @click.option("--after", default=None,
                   help="Start of date range (YYYY, YYYY-MM, YYYY-MM-DD, -Nw/-Nm/-Ny/-Nd)")
@@ -151,13 +162,13 @@ def fetch():
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
 def fetch_garmin(limit, fetch_all, dry_run, reauth, login_method, verbose):
     """Fetch new activities from Garmin Connect."""
-    from .garmin import authenticate, fetch_new_activities, get_data_dir, token_dir, setup_logging
+    from .garmin import authenticate, fetch_new_activities, get_data_dir, setup_logging, token_dir
 
     setup_logging(verbose=verbose)
 
     try:
         data_dir = get_data_dir()
-    except (EnvironmentError, FileNotFoundError) as e:
+    except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
     try:
@@ -191,13 +202,13 @@ def fetch_garmin(limit, fetch_all, dry_run, reauth, login_method, verbose):
 def fetch_health(server, inbox, days_back, fetch_all, dry_run, verbose):
     """Fetch health data from Health Auto Export."""
     from .garmin.utils import get_data_dir, setup_logging
-    from .health import fetch_tcp, fetch_inbox, check_server
+    from .health import check_server, fetch_inbox, fetch_tcp
 
     setup_logging(verbose=verbose)
 
     try:
         data_dir = get_data_dir()
-    except (EnvironmentError, FileNotFoundError) as e:
+    except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
     # Default: try both strategies
@@ -250,7 +261,7 @@ def fetch_workouts(since, until, no_metadata, aggregation, dry_run, verbose):
 
     try:
         data_dir = get_data_dir()
-    except (EnvironmentError, FileNotFoundError) as e:
+    except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
     if not check_server():
@@ -409,13 +420,13 @@ def sync():
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
     """Fetch from Garmin Connect, then import into R cache."""
-    from .garmin import authenticate, fetch_new_activities, get_data_dir, token_dir, setup_logging
+    from .garmin import authenticate, fetch_new_activities, get_data_dir, setup_logging, token_dir
 
     setup_logging(verbose=verbose)
 
     try:
         data_dir = get_data_dir()
-    except (EnvironmentError, FileNotFoundError) as e:
+    except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
     _maybe_pull(data_dir)
@@ -468,13 +479,13 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
 def sync_health(server, inbox, days_back, fetch_all, force, dry_run, verbose):
     """Fetch health data, then import into R cache."""
     from .garmin.utils import get_data_dir, setup_logging
-    from .health import fetch_tcp, fetch_inbox, check_server
+    from .health import check_server, fetch_inbox, fetch_tcp
 
     setup_logging(verbose=verbose)
 
     try:
         data_dir = get_data_dir()
-    except (EnvironmentError, FileNotFoundError) as e:
+    except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
     _maybe_pull(data_dir)
@@ -525,14 +536,14 @@ def sync_health(server, inbox, days_back, fetch_all, force, dry_run, verbose):
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def sync_all(dry_run, reauth, verbose):
     """Fetch and import everything (Garmin + Health)."""
-    from .garmin import authenticate, fetch_new_activities, get_data_dir, token_dir, setup_logging
-    from .health import fetch_tcp, fetch_inbox, check_server
+    from .garmin import authenticate, fetch_new_activities, get_data_dir, setup_logging, token_dir
+    from .health import check_server, fetch_inbox, fetch_tcp
 
     setup_logging(verbose=verbose)
 
     try:
         data_dir = get_data_dir()
-    except (EnvironmentError, FileNotFoundError) as e:
+    except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
     _maybe_pull(data_dir)
@@ -818,7 +829,7 @@ def pull(verbose):
 
     try:
         data_dir = get_data_dir()
-    except (EnvironmentError, FileNotFoundError) as e:
+    except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e))
 
     if not _has_remote(data_dir):
@@ -869,7 +880,9 @@ def insight_day(ref_date, push, force):
     # day_summary_sent state to avoid duplicate posts on timer retries.
     from .server.notify import log_notification, notify
     from .server.state import (
-        load_notify_state, mark_day_summary_sent, save_notify_state,
+        load_notify_state,
+        mark_day_summary_sent,
+        save_notify_state,
     )
 
     state = load_notify_state()

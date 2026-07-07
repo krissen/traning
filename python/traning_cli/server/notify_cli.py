@@ -11,7 +11,7 @@ Usage:
 import subprocess
 import sys
 
-from .notify import notify, log_notification
+from .notify import log_notification, notify
 
 
 def _journal_tail(unit: str, since: str = "5min ago", lines: int = 20) -> str:

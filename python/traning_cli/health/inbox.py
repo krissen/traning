@@ -5,7 +5,7 @@ import logging
 import shutil
 from pathlib import Path
 
-from .utils import health_metrics_dir, health_inbox_dir
+from .utils import health_inbox_dir, health_metrics_dir
 
 log = logging.getLogger(__name__)
 
