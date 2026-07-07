@@ -118,7 +118,7 @@ load_session_data <- function(traning_data = Sys.getenv("TRANING_DATA")) {
 # Readiness är ett finaliserat dagligt aggregat (en rad per kalenderdag);
 # den övre gränsen ska vara inklusiv så att KPI-boxens slice_max(date)
 # matchar mini-grafens rightmost-punkt när to = Sys.Date(). Se
-# `.filter_date_range()` (R/plot.R, closed_upper-param) och
+# `filter_by_daterange()` (R/daterange.R, closed_upper-param) och
 # docs/dev/filter-consistency.md för principen Date → inklusiv,
 # datetime → halvöppet. `.filter_running_range` (nedan) använder
 # sessionStart (POSIXct) och är fortsatt halvöppet [from, to).

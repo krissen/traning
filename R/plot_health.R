@@ -1,6 +1,7 @@
 # Health data visualizations — each returns a ggplot2 object
 # Uses adaptive helpers from R/plot.R: .compute_span_days(),
-# .adaptive_date_scale(), .filter_date_range()
+# .adaptive_date_scale(); date-window filtering via
+# filter_by_daterange() (R/daterange.R)
 
 # --- Resting Heart Rate trend ------------------------------------------------
 

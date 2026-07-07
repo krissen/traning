@@ -105,14 +105,42 @@ build_date_range <- function(after = NULL, before = NULL, span = NULL) {
   list(from = from, to = to)
 }
 
-#' Filter a summaries tibble by a date range
+#' Filter a data frame by a date range on a given column
 #'
-#' @param summaries A tibble with a \code{sessionStart} column (POSIXct).
+#' Single source of truth for date-window filtering, used by both the
+#' basic report functions (on \code{sessionStart}) and the advanced
+#' metric reports/plots (on \code{sessionStart} or a daily \code{date}
+#' column). Comparisons are done directly on \code{from}/\code{to}
+#' (\code{Date} objects) against \code{date_col}, which may itself be
+#' \code{Date} or \code{POSIXct} — \code{lubridate} (an Import of this
+#' package, always loaded alongside it) registers the group generics that
+#' make \code{Date}/\code{POSIXct} comparisons well-defined and
+#' timezone-aware (comparison happens in \code{date_col}'s own tzone, so a
+#' local-midnight session sorts into the correct calendar day). Do
+#' \strong{not} pre-convert with \code{as.Date()} here: \code{as.Date()} on
+#' a \code{POSIXct} defaults to \strong{UTC} truncation unless \code{tz} is
+#' passed explicitly, which silently shifts sessions near local midnight
+#' into the wrong calendar day for any zone with a non-zero UTC offset
+#' (e.g. Europe/Stockholm) — this was a latent bug in the pre-consolidation
+#' \code{.filter_date_range()} (former \code{R/plot.R}) for its four
+#' \code{sessionStart} call sites (EF, HRE, RHR, decoupling).
+#'
+#' @param summaries A tibble with a date-like column named \code{date_col}.
 #' @param date_range A list with \code{from} and \code{to} elements, as returned by
 #'   \code{build_date_range()}. Either element may be \code{NULL}.
+#' @param date_col Character, name of the date-like column to filter on.
+#'   Defaults to \code{"sessionStart"}.
+#' @param closed_upper Logical. \code{FALSE} (default) treats \code{to} as an
+#'   exclusive upper bound (\code{<}) — use for \code{POSIXct}/session-level
+#'   columns, where a datetime is a momentary event that may still be in
+#'   progress. \code{TRUE} treats \code{to} as inclusive (\code{<=}) — use for
+#'   \code{Date} columns representing a finalised calendar day (daily
+#'   aggregates: ACWR, monotony/strain, PMC, HR-zones, PI-zones, run-mix). See
+#'   \code{docs/dev/filter-consistency.md}.
 #' @return The filtered tibble.
 #' @export
-filter_by_daterange <- function(summaries, date_range) {
+filter_by_daterange <- function(summaries, date_range, date_col = "sessionStart",
+                                 closed_upper = FALSE) {
   from <- date_range$from
   to   <- date_range$to
 
@@ -120,13 +148,32 @@ filter_by_daterange <- function(summaries, date_range) {
     return(summaries)
   }
 
-  if (!is.null(from) && !is.null(to)) {
-    return(dplyr::filter(summaries, sessionStart >= from & sessionStart < to))
-  }
-
   if (!is.null(from)) {
-    return(dplyr::filter(summaries, sessionStart >= from))
+    summaries <- dplyr::filter(summaries, .data[[date_col]] >= from)
   }
 
-  dplyr::filter(summaries, sessionStart < to)
+  if (!is.null(to)) {
+    summaries <- if (closed_upper) {
+      dplyr::filter(summaries, .data[[date_col]] <= to)
+    } else {
+      dplyr::filter(summaries, .data[[date_col]] < to)
+    }
+  }
+
+  summaries
+}
+
+# Filter a data frame by date range on date_col, or fall back to the last
+# n rows (by date_col) when no from/to bound was given. Always returns
+# rows ordered newest first — callers display top-to-bottom. Built on
+# filter_by_daterange() so the from/to semantics (including closed_upper)
+# stay identical to the plain-filter case.
+.filter_or_tail <- function(data, n, from, to, date_col, closed_upper = FALSE) {
+  if (!is.null(from) || !is.null(to)) {
+    data <- filter_by_daterange(data, list(from = from, to = to),
+                                 date_col = date_col, closed_upper = closed_upper)
+  } else {
+    data <- utils::tail(data, n = n)
+  }
+  dplyr::arrange(data, dplyr::desc(.data[[date_col]]))
 }

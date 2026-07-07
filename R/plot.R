@@ -67,29 +67,18 @@
   )
 }
 
-# Filter a data frame by from/to on a date-like column.
-# closed_upper = TRUE  → use <= to (inclusive upper bound).
-#   Use for date-columns (daily aggregates: ACWR, PMC, MS, readiness, RHR, HRV …).
-#   A date-row represents a finalised calendar day; the upper bound should be
-#   inclusive so that KPI boxes (slice_max(date)) and mini-charts agree on
-#   today's value. See docs/dev/filter-consistency.md.
-# closed_upper = FALSE → use <  to (half-open, default).
-#   Use for sessionStart / POSIXct columns (session-level data: EF, HRE,
-#   decoupling, run-mix). A datetime represents a momentary event that may
-#   still be in progress; today's in-progress session is excluded until done.
-.filter_date_range <- function(data, date_col, from, to, closed_upper = FALSE) {
-  if (!is.null(from)) {
-    data <- data[as.Date(data[[date_col]]) >= as.Date(from), , drop = FALSE]
-  }
-  if (!is.null(to)) {
-    if (closed_upper) {
-      data <- data[as.Date(data[[date_col]]) <= as.Date(to), , drop = FALSE]
-    } else {
-      data <- data[as.Date(data[[date_col]]) < as.Date(to), , drop = FALSE]
-    }
-  }
-  data
-}
+# Date-window filtering is centralised in filter_by_daterange()
+# (R/daterange.R). closed_upper = TRUE  → use <= to (inclusive upper
+# bound). Use for date-columns (daily aggregates: ACWR, PMC, MS,
+# readiness, RHR, HRV …). A date-row represents a finalised calendar
+# day; the upper bound should be inclusive so that KPI boxes
+# (slice_max(date)) and mini-charts agree on today's value. See
+# docs/dev/filter-consistency.md.
+# closed_upper = FALSE → use <  to (half-open, default). Use for
+# sessionStart / POSIXct columns (session-level data: EF, HRE,
+# decoupling, run-mix). A datetime represents a momentary event that
+# may still be in progress; today's in-progress session is excluded
+# until done.
 
 # -------------------------------------------------------------------------
 
@@ -157,7 +146,7 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
   ef_data <- compute_efficiency_factor(summaries, sport = sport)
 
   # Filter to date range
-  ef_data <- .filter_date_range(ef_data, "sessionStart", from, to)
+  ef_data <- filter_by_daterange(ef_data, list(from = from, to = to), date_col = "sessionStart")
   if (nrow(ef_data) == 0) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen EF-data i intervallet"))
   }
@@ -264,7 +253,7 @@ fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
   hre_data <- compute_hre(summaries, sport = sport)
 
   # Filter to date range
-  hre_data <- .filter_date_range(hre_data, "sessionStart", from, to)
+  hre_data <- filter_by_daterange(hre_data, list(from = from, to = to), date_col = "sessionStart")
   if (nrow(hre_data) == 0) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen HRE-data i intervallet"))
   }
@@ -350,7 +339,7 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
                             health_daily = health_daily)
   resolved_mode <- attr(acwr_data, "mode") %||% "km"
 
-  acwr_window <- .filter_date_range(acwr_data, "date", from, to, closed_upper = TRUE) %>%
+  acwr_window <- filter_by_daterange(acwr_data, list(from = from, to = to), date_col = "date", closed_upper = TRUE) %>%
     dplyr::filter(!is.na(acwr))
 
   # Assign each observation to an ACWR zone for colouring
@@ -496,7 +485,7 @@ fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
                                 sport = "running") {
   ms_data <- compute_monotony_strain(summaries, sport = sport)
 
-  ms_window <- .filter_date_range(ms_data, "date", from, to, closed_upper = TRUE)
+  ms_window <- filter_by_daterange(ms_data, list(from = from, to = to), date_col = "date", closed_upper = TRUE)
   span <- .compute_span_days(from, to, data_dates = ms_window$date)
 
   # Build long format for facet_grid — one panel per metric
@@ -581,7 +570,7 @@ fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
   }
 
-  pmc_window <- .filter_date_range(pmc_data, "date", from, to, closed_upper = TRUE)
+  pmc_window <- filter_by_daterange(pmc_data, list(from = from, to = to), date_col = "date", closed_upper = TRUE)
   span <- .compute_span_days(from, to, data_dates = pmc_window$date)
 
   # Panel 1: CTL + ATL lines
@@ -706,7 +695,7 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
   }
 
   # Filter to date range
-  rhr_data <- .filter_date_range(rhr_data, "sessionStart", from, to)
+  rhr_data <- filter_by_daterange(rhr_data, list(from = from, to = to), date_col = "sessionStart")
   if (nrow(rhr_data) == 0) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen recovery HR-data i intervallet"))
   }
@@ -815,7 +804,7 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
   }
 
   # Filter to date range
-  decoupling_data <- .filter_date_range(decoupling_data, "sessionStart", from, to)
+  decoupling_data <- filter_by_daterange(decoupling_data, list(from = from, to = to), date_col = "sessionStart")
   if (nrow(decoupling_data) == 0) {
     return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen decoupling-data i intervallet"))
   }

@@ -41,25 +41,26 @@ ofta inte färdig än när rapporten körs.
 
 ### Implementation
 
-Centrala helpers exponerar valet via en `closed_upper`-parameter:
+Alla tre tidigare parallella helpers (`.filter_input` i `R/report.R`,
+`.tail_or_daterange` i `R/report.R`, `.filter_date_range` i `R/plot.R`)
+är konsoliderade till en enda källa i `R/daterange.R`:
 
-- **`.filter_date_range(data, date_col, from, to, closed_upper = FALSE)`**
-  (`R/plot.R`) — `closed_upper = TRUE` för Date-callers (ACWR, MS,
-  PMC). Default `FALSE` för sessionStart-callers (EF, HRE, RHR,
-  decoupling).
-- **`.tail_or_daterange(data, n, from, to, date_col, closed_upper = FALSE)`**
-  (`R/report.R`) — samma princip för report_*-funktioner. Date-
-  callers (ACWR/MS/PMC/HR-zoner/readiness/metric) skickar
-  `closed_upper = TRUE`; sessionStart-callers (EF/HRE/recovery-HR/
-  decoupling) använder default `FALSE`.
+- **`filter_by_daterange(summaries, date_range, date_col = "sessionStart", closed_upper = FALSE)`**
+  (`R/daterange.R`, exporterad) — grundfunktionen. `date_range` är en
+  `list(from =, to =)`, t.ex. från `build_date_range()`.
+  `closed_upper = TRUE` för Date-callers (ACWR, MS, PMC, readiness,
+  HR-zoner, PI-zoner). Default `FALSE` för sessionStart-callers (EF,
+  HRE, RHR, decoupling, run-mix, basic report_*-funktioner).
+- **`.filter_or_tail(data, n, from, to, date_col, closed_upper = FALSE)`**
+  (`R/daterange.R`, intern) — samma princip men med fallback till
+  `utils::tail(data, n)` när varken `from` eller `to` är satt, plus
+  `dplyr::arrange(desc(date_col))` så resultatet alltid är nyast-först.
+  Används av report_*-funktionerna för avancerade mätvärden
+  (EF/HRE/ACWR/MS/PMC/recovery-HR/zoner/decoupling).
 
 Mini-graferna i Översikten har dedikerade helpers:
 `.filter_readiness_range` (date, inklusiv) och `.filter_running_range`
 (sessionStart, halvöppet) i `R/shiny_helpers.R`.
-
-För datetime-filter på top-nivå: `filter_by_daterange()`
-(`R/daterange.R`) opererar på `sessionStart` och är fortsatt
-halvöppet — inga date-kolumner passerar genom den.
 
 Konsekvens för presets: "7 dagar" (`from = today - 7, to = today`)
 ger **7 datetime-pass-rader (exkluderar dagens)** för session-filter,
