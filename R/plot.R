@@ -138,11 +138,14 @@ fetch.plot.sum.dist <- function(summaries, sport = "running") {
 #' Upper panel: EF scatter + loess smoother + 28-day rolling mean.
 #' Lower panel: weekly km bars providing volume context (Votyakov 2025).
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @return ggplot2 object
 #' @export
-fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
+fetch.plot.ef <- function(data, from = NULL, to = NULL,
                           sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   ef_data <- compute_efficiency_factor(summaries, sport = sport)
 
   # Filter to date range
@@ -245,11 +248,14 @@ fetch.plot.ef <- function(summaries, from = NULL, to = NULL,
 #' thresholds are shown as horizontal bands: <700 bpkm well-fitted,
 #' 700-750 fitted, >800 poorly-fitted.  Lower HRE = better fitness.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @return ggplot2 object
 #' @export
-fetch.plot.hre <- function(summaries, from = NULL, to = NULL,
+fetch.plot.hre <- function(data, from = NULL, to = NULL,
                            sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   hre_data <- compute_hre(summaries, sport = sport)
 
   # Filter to date range
@@ -475,14 +481,17 @@ fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
 #' panel shows training strain.  When \code{from} and \code{to} are both
 #' \code{NULL} the full history is shown.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param from,to Optional date bounds. \code{NULL} means no bound — pass
 #'   both as \code{NULL} to render the full history.
 #' @param sport Sport bucket (default \code{"running"}).
 #' @return ggplot2 object
 #' @export
-fetch.plot.monotony <- function(summaries, from = NULL, to = NULL,
+fetch.plot.monotony <- function(data, from = NULL, to = NULL,
                                 sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   ms_data <- compute_monotony_strain(summaries, sport = sport)
 
   ms_window <- filter_by_daterange(ms_data, list(from = from, to = to), date_col = "date", closed_upper = TRUE)
@@ -1008,13 +1017,16 @@ fetch.plot.decoupling <- function(summaries, myruns = NULL,
 #' etiketter pekar ut sex objektiva milstolpar (snabbaste/l\u00e5ngsammaste
 #' pass, l\u00e4ngsta pass, snabbast/l\u00e5ngsammast median\u00e5r, h\u00f6gsta volym-\u00e5r).
 #'
-#' @param summaries Data frame fr\u00e5n \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param from,to Valfri datumavgr\u00e4nsning p\u00e5 pass-datum.
 #' @param sport Sport-bucket (default \code{"running"}).
 #' @return ggplot2-objekt.
 #' @export
-fetch.plot.pace_year <- function(summaries, from = NULL, to = NULL,
+fetch.plot.pace_year <- function(data, from = NULL, to = NULL,
                                   sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
@@ -1165,8 +1177,10 @@ fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
 #' @inheritParams fetch.plot.pace_year
 #' @return ggplot2-objekt.
 #' @export
-fetch.plot.pace_year_ridges <- function(summaries, from = NULL, to = NULL,
+fetch.plot.pace_year_ridges <- function(data, from = NULL, to = NULL,
                                           sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
@@ -1196,8 +1210,10 @@ fetch.plot.pace_year_ridges <- function(summaries, from = NULL, to = NULL,
 #' @inheritParams fetch.plot.pace_year
 #' @return ggplot2-objekt.
 #' @export
-fetch.plot.pace_tertile_share <- function(summaries, from = NULL, to = NULL,
+fetch.plot.pace_tertile_share <- function(data, from = NULL, to = NULL,
                                             sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
@@ -1244,8 +1260,10 @@ fetch.plot.pace_tertile_share <- function(summaries, from = NULL, to = NULL,
 #' @inheritParams fetch.plot.pace_year
 #' @return ggplot2-objekt.
 #' @export
-fetch.plot.longest_runs_year <- function(summaries, from = NULL, to = NULL,
+fetch.plot.longest_runs_year <- function(data, from = NULL, to = NULL,
                                            sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   # Volume-centric — pace isn't shown, so don't drop non-running
   # sessions on running's pace band.
   runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
@@ -1312,8 +1330,10 @@ fetch.plot.longest_runs_year <- function(summaries, from = NULL, to = NULL,
 #' @inheritParams fetch.plot.pace_year
 #' @return ggplot2-objekt.
 #' @export
-fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
+fetch.plot.season_pace <- function(data, from = NULL, to = NULL,
                                      sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
@@ -1398,8 +1418,10 @@ fetch.plot.season_pace <- function(summaries, from = NULL, to = NULL,
 #' @inheritParams fetch.plot.pace_year
 #' @return ggplot2-objekt.
 #' @export
-fetch.plot.heatmap_km <- function(summaries, from = NULL, to = NULL,
+fetch.plot.heatmap_km <- function(data, from = NULL, to = NULL,
                                     sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
@@ -1468,8 +1490,10 @@ fetch.plot.heatmap_km <- function(summaries, from = NULL, to = NULL,
 #' @inheritParams fetch.plot.pace_year
 #' @return ggplot2-objekt.
 #' @export
-fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
+fetch.plot.cumulative_km <- function(data, from = NULL, to = NULL,
                                        sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())
@@ -1535,8 +1559,10 @@ fetch.plot.cumulative_km <- function(summaries, from = NULL, to = NULL,
 #' @inheritParams fetch.plot.pace_year
 #' @return ggplot2-objekt.
 #' @export
-fetch.plot.distance_pace_era <- function(summaries, from = NULL, to = NULL,
+fetch.plot.distance_pace_era <- function(data, from = NULL, to = NULL,
                                             sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
   if (nrow(runs) == 0) return(.run_profile_empty())

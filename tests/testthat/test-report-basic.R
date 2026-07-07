@@ -55,6 +55,11 @@ test_that("report_monthtop rows are sorted descending by total km", {
   expect_true(all(diff(result[["Km, tot"]]) <= 0))
 })
 
+test_that("report_monthtop gives identical output for bundle and bare-summaries calls", {
+  bundle <- traning_data(summaries = summaries)
+  expect_identical(report_monthtop(bundle), report_monthtop(summaries))
+})
+
 # --- report_monthstatus ---
 
 test_that("report_monthstatus returns tibble with expected columns", {

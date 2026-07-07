@@ -41,6 +41,11 @@ test_that("report_ef respects from/to date range", {
   }
 })
 
+test_that("report_ef gives identical output for bundle and bare-summaries calls", {
+  bundle <- traning_data(summaries = test_summaries)
+  expect_identical(report_ef(bundle), report_ef(test_summaries))
+})
+
 # --- report_hre ---
 test_that("report_hre returns tibble with expected columns", {
   result <- report_hre(test_summaries)

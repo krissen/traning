@@ -50,14 +50,16 @@
 #' Calls \code{report_monthtop()} internally. Each month is shown as a
 #' horizontal bar; bars are ordered by total distance and coloured by year.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @return ggplot2 object
 #' @export
-plot_monthtop <- function(summaries, from = NULL, to = NULL,
+plot_monthtop <- function(data, from = NULL, to = NULL,
                           sport = "running") {
-  data <- report_monthtop(summaries, from = from, to = to, sport = sport)
+  td <- .as_traning_data(data)
+  plot_data <- report_monthtop(td, from = from, to = to, sport = sport)
 
-  data <- data %>%
+  plot_data <- plot_data %>%
     dplyr::mutate(
       `År-mån` = factor(`År-mån`, levels = `År-mån`),
       year      = substr(`År-mån`, 1, 4)
@@ -68,11 +70,11 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL,
   # Named vector — pairs colour to year explicitly so the mapping is
   # robust even if the `year` column ever becomes a factor with
   # extra unused levels.
-  year_levels <- sort(unique(data$year))
+  year_levels <- sort(unique(plot_data$year))
   year_colours <- grDevices::colorRampPalette(traning_palette$sequence)(length(year_levels))
   names(year_colours) <- year_levels
 
-  data %>%
+  plot_data %>%
     ggplot2::ggplot(
       ggplot2::aes(
         x    = `År-mån`,
@@ -92,7 +94,8 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL,
 #' Calls \code{report_runs_year_month()} internally. Each run is shown as a
 #' lollipop; point colour encodes pace (green = fast, red = slow).
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param from Start date passed to \code{report_runs_year_month()}. Used to
 #'   derive the month/year for the chart title. Default: \code{NULL} (current
 #'   month).
@@ -100,9 +103,10 @@ plot_monthtop <- function(summaries, from = NULL, to = NULL,
 #'   \code{NULL}.
 #' @return ggplot2 object
 #' @export
-plot_runs_month <- function(summaries, from = NULL, to = NULL,
+plot_runs_month <- function(data, from = NULL, to = NULL,
                             sport = "running") {
-  data <- report_runs_year_month(summaries, from = from, to = to,
+  td <- .as_traning_data(data)
+  plot_data <- report_runs_year_month(td, from = from, to = to,
                                  sport = sport)
 
   ref_date  <- if (!is.null(from)) as.Date(from) else Sys.Date()
@@ -112,7 +116,7 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL,
     "Löpturer {.swedish_months[do_month]} {do_year}"
   )
 
-  data %>%
+  plot_data %>%
     ggplot2::ggplot() +
     ggplot2::geom_segment(
       ggplot2::aes(x = Dag, xend = Dag, y = 0, yend = Km),
@@ -137,13 +141,15 @@ plot_runs_month <- function(summaries, from = NULL, to = NULL,
 #' Calls \code{report_monthstatus()} internally. Each bar represents one
 #' calendar year; height shows total km up to the current day-of-month.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @return ggplot2 object
 #' @export
-plot_monthstatus <- function(summaries, from = NULL, to = NULL,
+plot_monthstatus <- function(data, from = NULL, to = NULL,
                              sport = "running") {
-  data <- report_monthstatus(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Löpande månad jämfört med tidigare år")
+  td <- .as_traning_data(data)
+  plot_data <- report_monthstatus(td, from = from, to = to, sport = sport)
+  .plot_year_bars(plot_data, title = "Löpande månad jämfört med tidigare år")
 }
 
 #' Last month compared across years — bar chart
@@ -151,19 +157,21 @@ plot_monthstatus <- function(summaries, from = NULL, to = NULL,
 #' Calls \code{report_monthlast()} internally. Each bar represents one
 #' calendar year; height shows total km for last month.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @return ggplot2 object
 #' @export
-plot_monthlast <- function(summaries, from = NULL, to = NULL,
+plot_monthlast <- function(data, from = NULL, to = NULL,
                            sport = "running") {
-  data <- report_monthlast(summaries, from = from, to = to, sport = sport)
+  td <- .as_traning_data(data)
+  plot_data <- report_monthlast(td, from = from, to = to, sport = sport)
 
   my_month <- as.numeric(format(Sys.time(), "%m"))
   do_month <- if (my_month == 1) 12L else my_month - 1L
   month_name <- .swedish_months[do_month]
 
   title <- stringr::str_glue("Jämförelse {month_name} över åren")
-  .plot_year_bars(data, title = title)
+  .plot_year_bars(plot_data, title = title)
 }
 
 #' Full-year totals compared across years — bar chart
@@ -171,13 +179,15 @@ plot_monthlast <- function(summaries, from = NULL, to = NULL,
 #' Calls \code{report_yearstop()} internally. Each bar represents one
 #' calendar year; height shows total km for the full year.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @return ggplot2 object
 #' @export
-plot_yearstop <- function(summaries, from = NULL, to = NULL,
+plot_yearstop <- function(data, from = NULL, to = NULL,
                           sport = "running") {
-  data <- report_yearstop(summaries, from = from, to = to, sport = sport)
-  .plot_year_bars(data, title = "Årssammanställning (hela år)")
+  td <- .as_traning_data(data)
+  plot_data <- report_yearstop(td, from = from, to = to, sport = sport)
+  .plot_year_bars(plot_data, title = "Årssammanställning (hela år)")
 }
 
 #' Distance per period for a date range — bar chart
@@ -190,14 +200,17 @@ plot_yearstop <- function(summaries, from = NULL, to = NULL,
 #'   \item otherwise  → monthly bars (\code{"\%Y-\%m"})
 #' }
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param do_datesum_from Start date (Date or character \code{"YYYY-MM-DD"}).
 #' @param do_datesum_to End date (Date or character \code{"YYYY-MM-DD"}).
 #' @param sport Sport bucket (default \code{"running"}).
 #' @return ggplot2 object
 #' @export
-plot_datesum <- function(summaries, do_datesum_from, do_datesum_to,
+plot_datesum <- function(data, do_datesum_from, do_datesum_to,
                          sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   from <- as.Date(do_datesum_from)
   to   <- as.Date(do_datesum_to)
 
@@ -220,7 +233,7 @@ plot_datesum <- function(summaries, do_datesum_from, do_datesum_to,
     "Månad"
   }
 
-  data <- .filter_sport(summaries, sport) %>%
+  plot_data <- .filter_sport(summaries, sport) %>%
     dplyr::filter(
       sessionStart >= from,
       sessionStart <  to
@@ -234,7 +247,7 @@ plot_datesum <- function(summaries, do_datesum_from, do_datesum_to,
 
   title <- stringr::str_glue("Distans {do_datesum_from} \u2014 {do_datesum_to}")
 
-  data %>%
+  plot_data %>%
     ggplot2::ggplot(ggplot2::aes(x = period, y = km)) +
     ggplot2::geom_col(fill = traning_palette$accent) +
     ggplot2::scale_x_discrete(breaks = .thin_discrete_breaks(15)) +

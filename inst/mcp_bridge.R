@@ -125,6 +125,34 @@ if (is.null(func_name) || !func_name %in% names(func_registry)) {
   emit_error(paste0("Unknown or missing function: ", func_name))
 }
 
+# S7 data-model migration (see R/traning_data.R, docs/dev migration plan):
+# functions in this list have had their first formal renamed from
+# `summaries` to `data` (still accepting a bare summaries data.frame via
+# the `.as_traning_data()` shim — only the argument NAME changed, not
+# what's accepted). do.call() dispatches by exact/partial name match, not
+# position, so any such function must be called here with `data = ...`
+# instead of `summaries = ...` or dispatch fails with "unused argument".
+# cli.R is unaffected — it calls positionally, which the shim already
+# handles.
+#
+# This vector grows by one migration PR's worth of names at a time (PR 3
+# added the "s"-bucket names below) and is deleted entirely in PR 7,
+# where the whole bridge's arg-marshalling is unified around `data`.
+.migrated_to_data <- c(
+  # PR 3 — "s" bucket (summaries-only reports/plots)
+  "report_monthtop", "report_runs_year_month", "report_monthlast",
+  "report_yearstop", "report_yearstatus", "report_monthstatus",
+  "report_datesum", "report_ef", "report_hre", "report_monotony",
+  "plot_monthtop", "plot_runs_month", "plot_monthstatus",
+  "plot_monthlast", "plot_yearstop", "plot_datesum",
+  "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
+  "fetch.plot.pace_year", "fetch.plot.pace_year_ridges",
+  "fetch.plot.pace_tertile_share", "fetch.plot.longest_runs_year",
+  "fetch.plot.season_pace", "fetch.plot.heatmap_km",
+  "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era",
+  "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.monotony"
+)
+
 # --- Data paths ---
 traning_data <- Sys.getenv("TRANING_DATA")
 if (traning_data == "") {
@@ -268,7 +296,12 @@ build_call_args <- function(func_name, func_args) {
     "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era"
   )
   if (func_name %in% summaries_funcs) {
-    a <- c(list(summaries = summaries), a)
+    # Migrated functions' first formal is `data`, not `summaries` — see
+    # .migrated_to_data above. do.call() matches by name, so the key
+    # must track the target formal even though the value (the bare
+    # summaries data.frame) is unchanged.
+    summaries_arg <- if (func_name %in% .migrated_to_data) "data" else "summaries"
+    a <- c(stats::setNames(list(summaries), summaries_arg), a)
   }
 
   # Phase 5d: race tools
@@ -319,9 +352,10 @@ build_call_args <- function(func_name, func_args) {
                else as.Date("1970-01-01")
     dr_to   <- if (!is.null(func_args$to))   parse_date_expr(func_args$to)
                else Sys.Date() + 1
-    a <- list(summaries = summaries,
-              do_datesum_from = dr_from,
-              do_datesum_to = dr_to)
+    # Both are in .migrated_to_data (PR 3); see comment above.
+    summaries_arg <- if (func_name %in% .migrated_to_data) "data" else "summaries"
+    a <- c(stats::setNames(list(summaries), summaries_arg),
+           list(do_datesum_from = dr_from, do_datesum_to = dr_to))
     if (!is.null(func_args$sport)) {
       a$sport <- as.character(func_args$sport)
     }

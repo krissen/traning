@@ -143,7 +143,8 @@
 #' Useful for spotting sport-rotation patterns, training-camp blocks,
 #' and seasonal shifts (e.g. summer cycling weeks vs winter running).
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param period One of \code{"month"} (default), \code{"week"}, or
 #'   \code{"year"}. Controls the bar resolution.
 #' @param metric Aggregation axis: \code{"distance"} (km, default),
@@ -166,11 +167,13 @@
 #'   Ignored for non-TRIMP metrics.
 #' @return ggplot2 object.
 #' @export
-plot_sport_mix <- function(summaries, period = "month",
+plot_sport_mix <- function(data, period = "month",
                            metric = c("distance", "duration", "trimp"),
                            from = NULL, to = NULL,
                            sport = NULL, min_value = 0.1,
                            hr_max = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   metric <- match.arg(metric)
   # ISO week number (%V) must be paired with ISO week-year (%G), not the
   # calendar year (%Y), or weeks straddling Jan 1 get bucketed under the
@@ -229,17 +232,20 @@ plot_sport_mix <- function(summaries, period = "month",
 #' tanks during a cycling-heavy training block while overall load
 #' (sport=all) stays steady.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param sports Character vector of sport buckets to overlay.
 #'   Default = \code{c("running", "cycling", "walking", "all")}.
 #' @param from Date or NULL.
 #' @param to Date or NULL.
 #' @return ggplot2 object.
 #' @export
-plot_sport_ctl_overlay <- function(summaries,
+plot_sport_ctl_overlay <- function(data,
                                     sports = c("running", "cycling",
                                                "walking", "all"),
                                     from = NULL, to = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   if (length(sports) == 0)
     stop("sports must contain at least one bucket")
 
@@ -288,7 +294,8 @@ plot_sport_ctl_overlay <- function(summaries,
 #' the sport that contributed the most distance that day. Useful for a
 #' quick visual of training frequency, sport-rotation, and rest patterns.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle or, via the legacy shim, a
+#'   bare summaries data.frame.
 #' @param from Date or NULL. Default = 1 year before \code{to}.
 #' @param to Date or NULL. Default = today.
 #' @param sport NULL (default) for all sports, or a bucket string to
@@ -296,8 +303,10 @@ plot_sport_ctl_overlay <- function(summaries,
 #'   strength/gym days).
 #' @return ggplot2 object.
 #' @export
-plot_sport_calendar <- function(summaries, from = NULL, to = NULL,
+plot_sport_calendar <- function(data, from = NULL, to = NULL,
                                  sport = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   # `to` follows the same exclusive-upper-bound convention used by the
   # rest of the bridged R functions (see report_datesum, the MCP
   # `_build_args` already adds +1 day for absolute ISO dates so it
