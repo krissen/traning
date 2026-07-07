@@ -1,5 +1,10 @@
 # tRäning — Roadmap
 
+> **Omfattning:** Detta dokument spårar enbart AUR-paketeringsarbetet
+> (separat repo `github.com/krissen/aurbuild`) — inte tRäning-appens eller
+> pipelinens produktroadmap. Levererade produktändringar dokumenteras i
+> `docs/changelog.md`.
+
 ## AUR-paketering (pausad 2026-05-18)
 
 Av 14 r-cran-paket i ursprungliga listan: 5 hanterade (r-tracker, r-bsicons,

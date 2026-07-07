@@ -1,5 +1,26 @@
 # tRäning — Changelog
 
+## 2026-07-07 — Döda scripts borttagna, designdoc-status städad
+
+Hygienstädning utan beteendeförändring.
+
+- **Två döda standalone-scripts borttagna.** `scripts/gor_sa_har.r`
+  (ursprunglig r-bloggers-anpassning som läste en manuell CSV-export
+  vilken inte längre flödar genom systemet) och `scripts/aw_heartrate.r`
+  (en engångs-Apple-Watch-HR-figur för en enda dag, 2020-12-16, aldrig
+  parametriserad eller återanvänd). Bägges förmågor täcks sedan länge av
+  paketets plot/report-lager, CLI:t och Shiny-appen. Ingen kod under
+  `R/`, `inst/`, `app/`, `python/` eller `docs/` refererade dem. Övriga
+  scripts (`garmin_fetch_import.sh`, `install_r_deps.sh`,
+  `compute_config_digests.R`, `audit_r_libs.sh`, `migrate_to_canonical.py`)
+  är fortsatt live driftsverktyg och orörda.
+- **`docs/dev/visual-theme-design.md` markerad som levererad.** Docet var
+  skrivet i framtida tempus ("There is no `theme_traning()`") trots att
+  arbetet var klart sedan 2026-05-16. En statusbanner överst klargör nu
+  att designen är genomförd; designresonemanget bevaras som historisk
+  post. `docs/roadmap.md` fick en omfattningsnot överst som klargör att
+  det bara spårar AUR-paketering, inte produktroadmapen.
+
 ## 2026-07-05 — Strava-trigger pensionerad, robustare pipeline-larm, get_sessions-fix
 
 **Garmin-triggern är nu en 15-minuterstimer.** Strava flyttade sitt API

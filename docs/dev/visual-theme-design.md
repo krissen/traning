@@ -1,5 +1,15 @@
 # Unified visual theme — figures and tables
 
+> **Status: delivered (2026-05-16).** This design has been implemented.
+> `R/theme.R` now provides `traning_palette`, `theme_traning()`, and
+> `scale_fill_traning()` / `scale_colour_traning()`; the hardcoded blues
+> (`steelblue`, `firebrick`, `#7BA7C9`, `#4682B4`) are gone from `R/plot.R`,
+> `R/plot_reports.R`, and `R/plot_health.R`. See the changelog entry
+> "Enhetligt visuellt tema över alla plottar" (2026-05-16) for the shipped
+> scope. The text below is retained as the original design rationale and
+> describes the pre-migration state; line and callsite references point at
+> the code as it looked before the migration.
+
 ## Problem
 
 Plot output across the project mixes a deliberate brown/warm palette with
@@ -150,8 +160,8 @@ initial migration.
 
 ## Scope notes
 
-- Implementation lives in a separate session/PR. This document only describes
-  the target state.
+- Implementation was delivered in a separate PR (2026-05-16). This document
+  originally described the target state; it is now the historical design record.
 - `R/theme.R` is the only new file required. Everything else is editing.
 - No data layer, model, or pipeline changes. Pure presentation.
 - Backwards compatibility is not a concern (single user, no API surface).
