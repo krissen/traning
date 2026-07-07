@@ -75,3 +75,99 @@ test_that("save_atomic cleans up tmp file on rename failure", {
   save_atomic(payload, file = target)
   expect_true(file.exists(target))
 })
+
+# --- save_table() format dispatch --------------------------------------------
+
+save_table_fixture <- function() {
+  tibble::tibble(sport = c("running", "cycling"), km = c(10.5, 25.2))
+}
+
+test_that("save_table writes CSV and round-trips the data", {
+  tbl <- save_table_fixture()
+  out <- tempfile(fileext = ".csv")
+  on.exit(unlink(out), add = TRUE)
+
+  path <- suppressMessages(save_table(tbl, output = out, open = FALSE))
+  expect_equal(path, out)
+  expect_true(file.exists(out))
+
+  back <- utils::read.csv(out, stringsAsFactors = FALSE)
+  expect_equal(back$sport, tbl$sport)
+  expect_equal(back$km, tbl$km)
+})
+
+test_that("save_table writes JSON and round-trips the data", {
+  tbl <- save_table_fixture()
+  out <- tempfile(fileext = ".json")
+  on.exit(unlink(out), add = TRUE)
+
+  save_table(tbl, output = out, open = FALSE)
+  expect_true(file.exists(out))
+
+  back <- jsonlite::fromJSON(out)
+  expect_equal(back$sport, tbl$sport)
+  expect_equal(back$km, tbl$km)
+})
+
+test_that("save_table writes JSONL (one JSON object per line)", {
+  tbl <- save_table_fixture()
+  out <- tempfile(fileext = ".jsonl")
+  on.exit(unlink(out), add = TRUE)
+
+  save_table(tbl, output = out, open = FALSE)
+  expect_true(file.exists(out))
+
+  lines <- readLines(out)
+  expect_length(lines, nrow(tbl))
+  parsed <- lapply(lines, jsonlite::fromJSON)
+  expect_equal(parsed[[1]]$sport, tbl$sport[1])
+  expect_equal(as.numeric(parsed[[2]]$km), tbl$km[2])
+})
+
+test_that("save_table writes XLSX when writexl is available", {
+  testthat::skip_if_not_installed("writexl")
+  tbl <- save_table_fixture()
+  out <- tempfile(fileext = ".xlsx")
+  on.exit(unlink(out), add = TRUE)
+
+  save_table(tbl, output = out, open = FALSE)
+  expect_true(file.exists(out))
+  expect_gt(file.info(out)$size, 0)
+})
+
+test_that("save_table errors on an unknown format with the Swedish message", {
+  tbl <- save_table_fixture()
+  expect_error(
+    save_table(tbl, output = tempfile(), format = "parquet", open = FALSE),
+    "Okänt format"
+  )
+})
+
+test_that("save_table infers format from the output file extension", {
+  tbl <- save_table_fixture()
+  out <- tempfile(fileext = ".json") # extension implies json, not the csv default
+  on.exit(unlink(out), add = TRUE)
+
+  save_table(tbl, output = out, open = FALSE)
+  # A CSV writer would have produced a comma-header first line; JSON
+  # instead starts with '[' (jsonlite::toJSON pretty array).
+  first_line <- readLines(out, n = 1)
+  expect_true(startsWith(trimws(first_line), "["))
+})
+
+test_that("save_table falls back to TRANING_TABLE_FORMAT env default when format and extension are both absent", {
+  tbl <- save_table_fixture()
+  out_dir <- tempfile()
+  dir.create(out_dir)
+  on.exit(unlink(out_dir, recursive = TRUE), add = TRUE)
+
+  withr::local_envvar(c(
+    TRANING_OUTPUT_DIR = out_dir,
+    TRANING_TABLE_FORMAT = "json",
+    TRANING_OPEN = "false"
+  ))
+
+  path <- save_table(tbl, default_name = "envdefault")
+  expect_true(file.exists(path))
+  expect_true(endsWith(path, ".json"))
+})
