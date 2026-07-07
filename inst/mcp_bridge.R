@@ -126,56 +126,13 @@ if (is.null(func_name) || !func_name %in% names(func_registry)) {
 }
 
 # S7 data-model migration (see R/traning_data.R, docs/dev migration plan):
-# functions in this list have had their first formal renamed from
-# `summaries` to `data` (still accepting a bare summaries data.frame via
-# the `.as_traning_data()` shim — only the argument NAME changed, not
-# what's accepted). do.call() dispatches by exact/partial name match, not
-# position, so any such function must be called here with `data = ...`
-# instead of `summaries = ...` or dispatch fails with "unused argument".
-# cli.R is unaffected — it calls positionally, which the shim already
-# handles.
-#
-# This vector grows by one migration PR's worth of names at a time (PR 3
-# added the "s"-bucket names below) and is deleted entirely in PR 7,
-# where the whole bridge's arg-marshalling is unified around `data`.
-.migrated_to_data <- c(
-  # PR 3 — "s" bucket (summaries-only reports/plots)
-  "report_monthtop", "report_runs_year_month", "report_monthlast",
-  "report_yearstop", "report_yearstatus", "report_monthstatus",
-  "report_datesum", "report_ef", "report_hre", "report_monotony",
-  "plot_monthtop", "plot_runs_month", "plot_monthstatus",
-  "plot_monthlast", "plot_yearstop", "plot_datesum",
-  "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
-  "fetch.plot.pace_year", "fetch.plot.pace_year_ridges",
-  "fetch.plot.pace_tertile_share", "fetch.plot.longest_runs_year",
-  "fetch.plot.season_pace", "fetch.plot.heatmap_km",
-  "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era",
-  "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.monotony",
-  # PR 4 — health group ("h"-dep functions: report_acwr/pmc/readiness/
-  # metric, the health-insight + data-inspection helpers, and the
-  # health plot wrappers). These take a `traning_data` bundle, not
-  # separate summaries/health_daily args — see the "Health functions"
-  # block in build_call_args() below.
-  "report_acwr", "report_pmc", "report_readiness", "report_metric",
-  "health_insight_readiness", "health_insight_update", "recent_data_dump",
-  "latest_known_metrics",
-  "fetch.plot.acwr", "fetch.plot.pmc", "fetch.plot.resting_hr",
-  "fetch.plot.hrv", "fetch.plot.sleep", "fetch.plot.vo2max",
-  "fetch.plot.readiness_score",
-  # PR 5 — derived-cache / garmin group ("sg"/"smgz"/"sgz"/"smgd" buckets).
-  # These take a `traning_data` bundle carrying Garmin-augmented
-  # summaries and, for the zone/decoupling pair, the sport-keyed
-  # zone_data/decoupling_data caches — see the "Derived-cache / garmin
-  # functions" block in build_call_args() below.
-  "report_recovery_hr", "report_hr_zones", "report_decoupling",
-  "fetch.plot.recovery_hr", "fetch.plot.hr_zones", "fetch.plot.decoupling",
-  # PR 6 — race group ("s"/"sh" buckets, the last legacy-signature
-  # functions). compute_taper_plan stays summaries-only and is routed
-  # through summaries_funcs below (its shim accepts a bare summaries
-  # data.frame); compute_race_readiness now needs a bundle — see the
-  # "PMC / ACWR" block's sibling for it below.
-  "compute_taper_plan", "compute_race_readiness"
-)
+# every func_registry entry now takes a single `data = <traning_data>`
+# argument (the last legacy-signature holdouts were migrated in PR 6).
+# PR 7 collapses the bridge's arg-marshalling accordingly: a single
+# bundle is built per request (see the "Build the traning_data bundle"
+# block below) and passed as `data =` to every dispatched function.
+# cli.R is unaffected — it calls positionally, which `.as_traning_data()`
+# already handles for any remaining legacy call sites there.
 
 # --- Data paths ---
 traning_data <- Sys.getenv("TRANING_DATA")
@@ -230,6 +187,42 @@ if (needs("z")) {
 if (needs("d")) {
   decoupling_data <- load_decoupling(summaries, myruns, sport = sport_arg)
 }
+
+# --- Build the traning_data bundle ---
+# Every func_registry entry now takes a single `data =` traning_data
+# bundle (PR 6 migrated the last legacy-signature holdouts). Build ONE
+# bundle per request from whatever the dep-driven loading above
+# populated; unloaded slots stay NULL/empty and are harmless for
+# functions that don't use them (e.g. report_ef's "s"-only bundle
+# carries myruns = list(), never touched by its body).
+#
+# When `summaries` wasn't loaded (pure "h"-dep functions like
+# report_metric), traning_data()'s validator still requires a
+# `sessionStart` column — not any rows — so an empty stub satisfies it
+# without lying about there being session data.
+#
+# `traning_data(...)` is a direct call, not `do.call(traning_data, ...)`
+# — this script also binds a top-level variable `traning_data` to the
+# TRANING_DATA path string (see below). A direct call in function
+# position resolves via R's function-position lookup, which skips the
+# non-function `traning_data` string binding and finds the S7 class
+# constructor. `do.call()` with the bare symbol would NOT skip it (it
+# resolves the symbol to the string first) — do.call("traning_data", ...)
+# with the string form would still work, but the direct call is simpler
+# and is what's used here.
+bundle <- traning_data(
+  summaries = if (!is.null(summaries)) {
+    summaries
+  } else {
+    tibble::tibble(sessionStart = as.POSIXct(character()))
+  },
+  myruns = if (!is.null(myruns)) myruns else list(),
+  health_daily = health_daily,
+  zone_data = zone_data,
+  decoupling_data = decoupling_data,
+  sport = if (!is.null(sport_arg) && nzchar(sport_arg)) sport_arg else "running",
+  augmented = !is.null(summaries) && "garmin_matched" %in% names(summaries)
+)
 
 # --- Build function arguments ---
 # Map JSON args to R function arguments.  Common patterns:
@@ -298,46 +291,13 @@ build_call_args <- function(func_name, func_args) {
   if (!is.null(func_args$recent) && func_name == "report_runs_year_month")
     a$recent <- isTRUE(func_args$recent)
 
-  # Inject required data objects
-  d <- func_registry[[func_name]]
+  # Every func_registry function takes a single `data =` traning_data
+  # bundle (see the "Build the traning_data bundle" block above). `a` is
+  # built here from JSON args only; `bundle` is injected once,
+  # generically, at the end of this function (see below) — everything
+  # from here down is purely per-function SCALAR argument extraction.
 
-  # Functions that take summaries as first arg. report_acwr, report_pmc,
-  # fetch.plot.acwr and fetch.plot.pmc are deliberately excluded here
-  # even though they were previously summaries-first: they're
-  # S7-migrated (PR 4) and need a full traning_data bundle (summaries +
-  # health_daily), not a bare summaries data.frame — see the "PMC /
-  # ACWR" block below, which injects their `data =` arg instead.
-  summaries_funcs <- c(
-    "report_monthtop", "report_runs_year_month", "report_monthlast",
-    "report_yearstop", "report_yearstatus", "report_monthstatus",
-    "report_ef", "report_hre", "report_monotony",
-    "plot_monthtop", "plot_runs_month", "plot_monthstatus",
-    "plot_monthlast", "plot_yearstop",
-    "fetch.plot.ef", "fetch.plot.hre",
-    "fetch.plot.monotony",
-    "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
-    "compute_taper_plan",
-    # Löpprofil
-    "fetch.plot.pace_year", "fetch.plot.pace_year_ridges",
-    "fetch.plot.pace_tertile_share", "fetch.plot.longest_runs_year",
-    "fetch.plot.season_pace", "fetch.plot.heatmap_km",
-    "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era"
-  )
-  if (func_name %in% summaries_funcs) {
-    # Migrated functions' first formal is `data`, not `summaries` — see
-    # .migrated_to_data above. do.call() matches by name, so the key
-    # must track the target formal even though the value (the bare
-    # summaries data.frame) is unchanged.
-    summaries_arg <- if (func_name %in% .migrated_to_data) "data" else "summaries"
-    a <- c(stats::setNames(list(summaries), summaries_arg), a)
-  }
-
-  # Phase 5d: race tools. compute_taper_plan's `data =` arg is already
-  # injected above via summaries_funcs (it's summaries-only); this block
-  # only adds its extra scalar args. compute_race_readiness's `data =`
-  # bundle is injected further down, alongside the other .health_bundle()
-  # consumers — .health_bundle() isn't defined until later in this
-  # function body, so that injection can't happen here.
+  # Phase 5d: race tools.
   if (func_name == "compute_taper_plan") {
     if (!is.null(func_args$race_date))
       a$race_date <- as.Date(func_args$race_date)
@@ -384,93 +344,24 @@ build_call_args <- function(func_name, func_args) {
                else as.Date("1970-01-01")
     dr_to   <- if (!is.null(func_args$to))   parse_date_expr(func_args$to)
                else Sys.Date() + 1
-    # Both are in .migrated_to_data (PR 3); see comment above.
-    summaries_arg <- if (func_name %in% .migrated_to_data) "data" else "summaries"
-    a <- c(stats::setNames(list(summaries), summaries_arg),
-           list(do_datesum_from = dr_from, do_datesum_to = dr_to))
+    # report_datesum/plot_datesum take do_datesum_from/do_datesum_to, not
+    # the generic from/to that the date handler above stashed into `a` —
+    # drop those so they don't reach the (from/to-less) function formals.
+    a$from <- NULL
+    a$to   <- NULL
+    a <- c(list(do_datesum_from = dr_from, do_datesum_to = dr_to), a)
     if (!is.null(func_args$sport)) {
       a$sport <- as.character(func_args$sport)
     }
   }
 
-  # Generic bundle builder — S7-migrated functions (PR 4 health group, PR 5
-  # derived-cache/garmin group) each take a single `data =` traning_data
-  # bundle instead of separate summaries/myruns/health_daily/zone_data/
-  # decoupling_data args (see .migrated_to_data above). .bundle() folds
-  # whatever this request already loaded (per func_registry's dep string)
-  # into one bundle; when `summaries` wasn't loaded (pure "h"-dep
-  # functions), it substitutes a minimal but valid empty summaries stub —
-  # traning_data's validator only requires a `sessionStart` column, not
-  # any rows.
-  #
-  # `sport_in` threads `sport_arg` (resolved above, before the zone_data/
-  # decoupling_data cache loads) into the bundle's @sport so the
-  # validator's sport-keying guard is satisfied whenever a zone_data/
-  # decoupling_data cache is attached — those caches are only valid for
-  # the sport they were computed for.
-  .augmented_flag <- !is.null(summaries) && "garmin_matched" %in% names(summaries)
-  .bundle <- function(myruns_in = NULL, zone_data_in = NULL,
-                       decoupling_data_in = NULL, sport_in = NULL) {
-    s <- if (!is.null(summaries)) {
-      summaries
-    } else {
-      tibble::tibble(sessionStart = as.POSIXct(character()))
-    }
-    bundle_args <- list(summaries = s, health_daily = health_daily,
-                        augmented = .augmented_flag)
-    if (!is.null(myruns_in)) bundle_args$myruns <- myruns_in
-    if (!is.null(zone_data_in)) bundle_args$zone_data <- zone_data_in
-    if (!is.null(decoupling_data_in)) bundle_args$decoupling_data <- decoupling_data_in
-    if (!is.null(sport_in)) bundle_args$sport <- sport_in
-    # `do.call()`'s first argument must be the *function name string*
-    # here, not the bare symbol `traning_data` — this script also binds
-    # a top-level variable `traning_data` to the TRANING_DATA path
-    # (see below), which would shadow the S7 class constructor if
-    # evaluated as a symbol. `do.call("traning_data", ...)` resolves via
-    # match.fun(mode = "function"), which skips the non-function
-    # variable and finds the constructor.
-    do.call("traning_data", bundle_args)
+  if (func_name == "recent_data_dump" && !is.null(func_args$hours)) {
+    a$hours <- as.numeric(func_args$hours)
   }
-  .health_bundle <- function() .bundle()
-
-  # Derived-cache / garmin functions (PR 5). report_recovery_hr /
-  # fetch.plot.recovery_hr only need Garmin-augmented summaries ("sg"),
-  # but are bundled here too (rather than left as bare-summaries via
-  # summaries_funcs) so @augmented and @sport are carried consistently
-  # with the zone/decoupling pair.
-  if (func_name %in% c("report_recovery_hr", "fetch.plot.recovery_hr")) {
-    a <- c(list(data = .bundle(sport_in = sport_arg)), a)
-  }
-  if (func_name %in% c("report_hr_zones", "fetch.plot.hr_zones")) {
-    a <- c(list(data = .bundle(myruns_in = myruns, zone_data_in = zone_data,
-                               sport_in = sport_arg)), a)
-  }
-  if (func_name %in% c("report_decoupling", "fetch.plot.decoupling")) {
-    a <- c(list(data = .bundle(myruns_in = myruns,
-                               decoupling_data_in = decoupling_data,
-                               sport_in = sport_arg)), a)
-  }
-
-  if (func_name %in% c("report_readiness", "fetch.plot.readiness_score",
-                        "fetch.plot.resting_hr", "fetch.plot.vo2max",
-                        "fetch.plot.hrv", "fetch.plot.sleep",
-                        "report_metric")) {
-    a <- c(list(data = .health_bundle()), a)
-  }
-
-  # New health-insight + data-dump functions
-  if (func_name %in% c("health_insight_readiness", "recent_data_dump")) {
-    a <- c(list(data = .health_bundle()), a)
-    if (func_name == "recent_data_dump" && !is.null(func_args$hours)) {
-      a$hours <- as.numeric(func_args$hours)
-    }
-    if (func_name == "health_insight_readiness" &&
-        !is.null(func_args$on_date)) {
-      a$on_date <- as.Date(func_args$on_date)
-    }
+  if (func_name == "health_insight_readiness" && !is.null(func_args$on_date)) {
+    a$on_date <- as.Date(func_args$on_date)
   }
   if (func_name == "health_insight_update") {
-    a <- c(list(data = .health_bundle()), a)
     if (!is.null(func_args$prev_state)) {
       a$prev_state <- func_args$prev_state
     }
@@ -478,28 +369,11 @@ build_call_args <- function(func_name, func_args) {
       a$on_date <- as.Date(func_args$on_date)
     }
   }
-  if (func_name == "latest_known_metrics") {
-    a <- c(list(data = .health_bundle()), a)
-  }
 
-  # PMC / ACWR — S7-migrated (PR 4): pass a bundle carrying
-  # health_daily so the multi-sport (TRIMP-mode) paths can fold in
-  # background-activity TRIMP; when sport is sport-specific the
-  # downstream code ignores it, so passing here is safe regardless.
-  # These two are deliberately excluded from summaries_funcs above, so
-  # this is the only place their `data =` arg gets set.
-  if (func_name %in% c("report_pmc", "report_acwr",
-                        "fetch.plot.pmc", "fetch.plot.acwr")) {
-    a <- c(list(data = .health_bundle()), a)
-  }
-
-  # compute_race_readiness — S7-migrated (PR 6): pass a bundle carrying
-  # health_daily so the HRV/resting-HR stability components can compute.
-  if (func_name == "compute_race_readiness") {
-    a <- c(list(data = .health_bundle()), a)
-  }
-
-  a
+  # Every func_registry function takes `data` as its first formal —
+  # inject the single bundle built above (per the dep-driven loading at
+  # the top of this script) generically, for every call.
+  c(list(data = bundle), a)
 }
 
 call_args <- build_call_args(func_name, func_args)
