@@ -128,11 +128,6 @@
   }
 }
 
-#' Compare files against manifest and return only new/changed ones
-#' @param files Character vector of file paths
-#' @param manifest Named list from .load_manifest()
-#' @return Character vector of files that need importing
-#' @keywords internal
 #' Generate a manifest key for a file path.
 #'
 #' For canonical files (path contains /canonical/), uses "metric/date.json".

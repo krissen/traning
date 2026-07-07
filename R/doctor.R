@@ -7,9 +7,11 @@
 # HAE pipeline silently, and missing pacman/caddy config files that
 # explain why a fresh boot didn't recover automatically.
 #
-# Functions here are exported via NAMESPACE's exportPattern("^[^\\.]")
-# alongside the rest of the package; constants and small helpers are
-# dot-prefixed to stay internal.
+# These are internal deployment-ops helpers, not part of the public
+# `library(traning)` API — none carry an @export tag, so roxygen2
+# leaves them out of NAMESPACE. Only inst/cli.R (loaded via
+# devtools::load_all()) calls them; constants and small helpers are
+# additionally dot-prefixed to stay internal within this file.
 
 .REBUILD_MARKER <- "/var/lib/traning/needs-rebuild"
 
