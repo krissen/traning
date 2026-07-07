@@ -216,7 +216,7 @@
       date   = as.Date(substr(s$date, 1, 10)),
       metric = name,
       value  = as.numeric(s$qty),
-      source = s$source %||% NA_character_
+      source = .coalesce_scalar(s$source, NA_character_)
     )
   })
   dplyr::bind_rows(rows)
@@ -229,7 +229,7 @@
 .parse_heart_rate <- function(samples) {
   rows <- lapply(samples, function(s) {
     d <- as.Date(substr(s$date, 1, 10))
-    src <- s$source %||% NA_character_
+    src <- .coalesce_scalar(s$source, NA_character_)
     tibble::tibble(
       date   = rep(d, 3),
       metric = c("heart_rate_min", "heart_rate_avg", "heart_rate_max"),
@@ -277,7 +277,7 @@
 
   rows <- lapply(samples, function(s) {
     d <- as.Date(substr(s$date, 1, 10))
-    src <- s$source %||% NA_character_
+    src <- .coalesce_scalar(s$source, NA_character_)
 
     numeric_rows <- lapply(sleep_fields, function(f) {
       val <- s[[f]]
@@ -352,11 +352,11 @@
 
   for (i in seq_len(n)) {
     s <- samples[[i]]
-    end_dates[i]   <- s$endDate %||% s$end %||% s$date %||% ""
-    start_dates[i] <- s$startDate %||% s$start %||% s$date %||% ""
-    stages[i]      <- s$value %||% ""
-    hours[i]       <- as.numeric(s$qty %||% 0)
-    sources[i]     <- s$source %||% NA_character_
+    end_dates[i]   <- .coalesce_scalar(s$endDate, s$end, s$date, "")
+    start_dates[i] <- .coalesce_scalar(s$startDate, s$start, s$date, "")
+    stages[i]      <- .coalesce_scalar(s$value, "")
+    hours[i]       <- as.numeric(.coalesce_scalar(s$qty, 0))
+    sources[i]     <- .coalesce_scalar(s$source, NA_character_)
   }
 
   # Assign sleep date: segments starting >= 18:00 belong to the NEXT calendar
@@ -2021,8 +2021,31 @@ health_insight_update <- function(health_daily, summaries, prev_state,
   empty
 }
 
-# Null-coalescing helper
-`%||%` <- function(a, b) if (is.null(a) || length(a) == 0) b else a
+#' Coalesce a parsed-JSON scalar field, falling through on length 0
+#'
+#' \code{\%||\%} (rlang) only falls through on \code{NULL}. Fields parsed
+#' from HAE/log JSON can also come back as a length-0 vector — e.g. a
+#' malformed \code{"source": []} — rather than being absent entirely. A
+#' length-0 value silently breaks downstream \code{tibble::tibble()}
+#' construction (size-mismatch error) and vector-index assignment
+#' (\code{vec[i] <- character(0)} errors with "replacement has length
+#' zero"), so those call sites need this stricter fallback instead of
+#' the plain NULL-coalescing operator. Accepts multiple candidates,
+#' tried in order, with the last argument as the unconditional default.
+#'
+#' @param ... Candidate values, last one is the default (used
+#'   unconditionally if none of the preceding candidates are usable).
+#' @return The first candidate that is non-NULL and has length > 0, or
+#'   the final (default) argument.
+#' @keywords internal
+.coalesce_scalar <- function(...) {
+  args <- list(...)
+  n <- length(args)
+  for (x in args[-n]) {
+    if (!is.null(x) && length(x) > 0) return(x)
+  }
+  args[[n]]
+}
 
 
 # --- Vayu data-inspection helpers --------------------------------------------
@@ -2149,9 +2172,9 @@ latest_known_metrics <- function(health_daily) {
   if (length(parsed) == 0) return(empty)
   df <- do.call(rbind, lapply(parsed, function(x) {
     data.frame(
-      ts      = x$ts %||% NA_character_,
-      trigger = x$trigger %||% NA_character_,
-      title   = x$title %||% NA_character_,
+      ts      = .coalesce_scalar(x$ts, NA_character_),
+      trigger = .coalesce_scalar(x$trigger, NA_character_),
+      title   = .coalesce_scalar(x$title, NA_character_),
       sent    = isTRUE(x$sent),
       stringsAsFactors = FALSE
     )

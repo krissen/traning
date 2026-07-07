@@ -360,7 +360,3 @@ session_z2_fraction <- function(summaries, on_date = Sys.Date(), days = 90) {
   z3_garmin <- sum(as.numeric(runs$garmin_hrTimeInZone_3), na.rm = TRUE)
   z3_garmin / total
 }
-
-# %||% used for NULL coalescing — same as the rlang operator. Defined
-# locally so we don't pull in rlang for one symbol.
-`%||%` <- function(a, b) if (is.null(a)) b else a

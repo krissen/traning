@@ -20,7 +20,8 @@ Imports:
     viridisLite,
     jsonlite,
     optparse,
-    digest
+    digest,
+    rlang
 Suggests:
     shiny,
     shinyjs,

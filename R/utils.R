@@ -1,5 +1,8 @@
 # Shared utility functions
 
+#' @importFrom rlang %||%
+NULL
+
 # --- Output defaults from environment ----------------------------------------
 
 #' Read output defaults from environment variables
