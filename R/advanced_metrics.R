@@ -63,7 +63,7 @@
 #' (e.g. cycling, walking).
 #'
 #' @param summaries Data frame from \code{my_dbs_load()}, enriched by
-#'   \code{add_my_columns()} and \code{fix_zero_moving()}.
+#'   \code{add_my_columns()}.
 #' @param sport Sport bucket (default \code{"running"}).
 #' @param min_distance Numeric. Minimum distance in metres to include
 #'   (default 5000).

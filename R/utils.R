@@ -222,8 +222,6 @@ dec_to_mmss <- function(myint) {
   }
   if (myint_sec <= 9) {
     myint_sec <- stringr::str_glue("0{myint_sec}")
-  } else if (nchar(as.character(myint_sec)) == 1) {
-    myint_sec <- stringr::str_glue("{myint_sec}0")
   }
   myint_manual <- stringr::str_glue("{myint_min}:{myint_sec}")
   return(myint_manual)
