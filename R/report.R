@@ -392,19 +392,22 @@ report_hre <- function(data, n = 28, from = NULL, to = NULL,
 
 #' ACWR report — recent daily values
 #' @inheritParams report_ef
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). \code{@health_daily}, when present, is
+#'   threaded into \code{compute_acwr()}.
 #' @param mode Load mode; forwarded to \code{compute_acwr()}. NULL auto-
 #'   resolves: km when sport-specific, TRIMP when whole-system.
-#' @param health_daily Optional long-format tibble from
-#'   \code{load_health_data()}; threaded into \code{compute_acwr()}.
 #' @return Tibble with one row per date. In km mode columns are
 #'   \code{Datum}, \code{Km/dag}, \code{Km/vecka}, \code{ACWR}; in
 #'   TRIMP mode the daily/weekly columns are renamed \code{TRIMP/dag} /
 #'   \code{TRIMP/vecka} so callers (LLM via MCP, humans reading the
 #'   table) see the right unit.
 #' @export
-report_acwr <- function(summaries, n = 28, from = NULL, to = NULL,
-                        sport = "running", mode = NULL,
-                        health_daily = NULL) {
+report_acwr <- function(data, n = 28, from = NULL, to = NULL,
+                        sport = "running", mode = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   acwr <- compute_acwr(summaries, sport = sport, mode = mode,
                        health_daily = health_daily)
   resolved_mode <- attr(acwr, "mode") %||% "km"
@@ -458,14 +461,18 @@ report_monotony <- function(data, n = 28, from = NULL, to = NULL,
 #' @param sport Sport bucket (default \code{"all"} — PMC is a
 #'   whole-system load metric). Pass \code{"running"} for a
 #'   running-only PMC.
-#' @param health_daily Optional long-format tibble from
-#'   \code{load_health_data()}; folds background-activity TRIMP into
-#'   the PMC when \code{sport} is a whole-system bucket.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). \code{@health_daily}, when present, folds
+#'   background-activity TRIMP into the PMC when \code{sport} is a
+#'   whole-system bucket.
 #' @return Tibble
 #' @export
-report_pmc <- function(summaries, n = 28, from = NULL, to = NULL,
+report_pmc <- function(data, n = 28, from = NULL, to = NULL,
                        hr_max = NULL, hr_rest = NULL,
-                       sport = "all", health_daily = NULL) {
+                       sport = "all") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
               sport = sport, health_daily = health_daily) %>%
     dplyr::mutate(
@@ -590,8 +597,9 @@ report_decoupling <- function(summaries = NULL, myruns = NULL,
 
 #' Readiness report — daily composite score with components
 #'
-#' @param health_daily Long-format tibble from \code{load_health_data()}.
-#' @param summaries Garmin summaries tibble.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). Must carry \code{@health_daily} — the
+#'   composite score cannot be computed without it.
 #' @param n Number of most recent days to show (default 14).
 #' @param from Start date (inclusive). Overrides n.
 #' @param to End date (exclusive). Overrides n.
@@ -599,9 +607,12 @@ report_decoupling <- function(summaries = NULL, myruns = NULL,
 #' @param hr_rest Optional HRrest override.
 #' @return Tibble with Swedish column names.
 #' @export
-report_readiness <- function(health_daily, summaries, n = 14,
+report_readiness <- function(data, n = 14,
                               from = NULL, to = NULL,
                               hr_max = NULL, hr_rest = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   r <- compute_readiness(health_daily, summaries,
                           hr_max = hr_max, hr_rest = hr_rest)
   if (nrow(r) == 0) {
@@ -641,15 +652,19 @@ report_readiness <- function(health_daily, summaries, n = 14,
 #'
 #' Returns a simple date/value series for any metric in health_daily.
 #'
-#' @param health_daily Long-format tibble from \code{load_health_data()}.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
+#'   Must carry \code{@health_daily}.
 #' @param metric Character metric name (e.g. "resting_heart_rate").
 #' @param n Number of rows (default 30). Ignored when from/to given.
 #' @param from Date or NULL. Start of display window (inclusive).
 #' @param to Date or NULL. End of display window (exclusive).
 #' @return Tibble with Datum, Värde columns, newest first.
 #' @export
-report_metric <- function(health_daily, metric, n = 30,
+report_metric <- function(data, metric, n = 30,
                            from = NULL, to = NULL) {
+  td <- .as_traning_data(data)
+  health_daily <- td@health_daily
   df <- health_daily |>
     dplyr::filter(.data$metric == .env$metric) |>
     dplyr::transmute(

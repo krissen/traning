@@ -70,6 +70,28 @@ test_that("report_acwr respects n parameter", {
   expect_equal(nrow(result), 7)
 })
 
+test_that("report_acwr gives identical output for bundle and bare-summaries calls", {
+  bundle <- traning_data(summaries = test_summaries)
+  expect_identical(report_acwr(bundle), report_acwr(test_summaries))
+})
+
+test_that("report_acwr threads health_daily from the bundle into TRIMP mode", {
+  hd <- tibble::tibble(
+    date = seq(min(as.Date(test_summaries$sessionStart)),
+               max(as.Date(test_summaries$sessionStart)), by = "day"),
+    metric = "step_count",
+    value = 5000,
+    source = "test"
+  )
+  bundle <- traning_data(summaries = test_summaries, health_daily = hd)
+  bare <- report_acwr(test_summaries, sport = "all")
+  via_bundle <- report_acwr(bundle, sport = "all")
+  # With background-activity data present, the TRIMP-mode output should
+  # differ from the health_daily-less bare call — proving the bundle's
+  # @health_daily reaches compute_acwr().
+  expect_false(identical(bare, via_bundle))
+})
+
 # --- report_monotony ---
 test_that("report_monotony returns tibble with expected columns", {
   result <- report_monotony(test_summaries)
@@ -84,6 +106,32 @@ test_that("report_pmc returns tibble with expected columns", {
   result <- report_pmc(test_summaries)
   expect_s3_class(result, "tbl_df")
   expect_true(all(c("Datum", "TRIMP", "CTL", "ATL", "TSB") %in% names(result)))
+})
+
+test_that("report_pmc gives identical output for bundle and bare-summaries calls", {
+  withr::local_envvar(HR_MAX = "185")
+  bundle <- traning_data(summaries = test_summaries)
+  expect_identical(report_pmc(bundle), report_pmc(test_summaries))
+})
+
+# --- report_readiness ---
+test_that("report_readiness gives identical output via a traning_data bundle", {
+  withr::local_envvar(HR_MAX = "185")
+  dates <- seq(min(as.Date(test_summaries$sessionStart)),
+               max(as.Date(test_summaries$sessionStart)), by = "day")
+  metric_base <- c(
+    heart_rate_variability = 70, sleep_totalSleep = 7,
+    sleep_deep = 1.0, sleep_rem = 1.5, resting_heart_rate = 55
+  )
+  hd <- do.call(rbind, lapply(names(metric_base), function(m) {
+    tibble::tibble(date = dates, metric = m, value = metric_base[[m]],
+                   source = "test")
+  })) |> tibble::as_tibble()
+  bundle <- traning_data(summaries = test_summaries, health_daily = hd)
+  result <- report_readiness(bundle)
+  expect_s3_class(result, "tbl_df")
+  expect_true(all(c("Datum", "Beredskap", "Status") %in% names(result)))
+  expect_gt(nrow(result), 0)
 })
 
 # --- report_recovery_hr ---

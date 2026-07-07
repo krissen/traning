@@ -51,12 +51,16 @@
   )
 }
 
+.fixture_bundle <- function(hd, s) {
+  traning_data(summaries = s, health_daily = hd)
+}
+
 # --- health_insight_readiness ----------------------------------------------
 
 test_that("health_insight_readiness returns prosa with status and score", {
   hd <- .fixture_health_daily()
   s  <- .fixture_summaries()
-  res <- health_insight_readiness(hd, s, hr_max = 185)
+  res <- health_insight_readiness(.fixture_bundle(hd, s), hr_max = 185)
   expect_type(res, "list")
   expect_true("prosa" %in% names(res))
   expect_true("components_present" %in% names(res))
@@ -71,7 +75,7 @@ test_that("health_insight_readiness reports missing components on partial", {
   today <- max(hd$date)
   hd_partial <- hd[!(hd$metric == "heart_rate_variability" & hd$date == today), ]
   s <- .fixture_summaries(today)
-  res <- health_insight_readiness(hd_partial, s, hr_max = 185, on_date = today)
+  res <- health_insight_readiness(.fixture_bundle(hd_partial, s), hr_max = 185, on_date = today)
   expect_false(isTRUE(res$components_present$hrv))
   # HRV should be in components but with NA value
   expect_true(is.na(res$components$hrv$value))
@@ -83,7 +87,7 @@ test_that("health_insight_readiness returns empty list with no data", {
                              value = numeric(),
                              source = character())
   s <- .fixture_summaries()
-  res <- health_insight_readiness(empty_hd, s)
+  res <- health_insight_readiness(.fixture_bundle(empty_hd, s))
   expect_equal(res$prosa, "")
 })
 
@@ -105,7 +109,7 @@ test_that("health_insight_update re-renders when partial component arrives", {
     morning_score = 55,
     afternoon_updates_sent = list()
   )
-  res <- health_insight_update(hd, s, prev, hr_max = 185, on_date = today)
+  res <- health_insight_update(.fixture_bundle(hd, s), prev, hr_max = 185, on_date = today)
   expect_equal(res$trigger, "rerender")
   expect_true(grepl("uppdaterad", res$prosa))
   expect_true(grepl("HRV", res$prosa))
@@ -128,7 +132,7 @@ test_that("health_insight_update is silent when nothing changed", {
     afternoon_updates_sent = list("vo2_max", "apple_sleeping_wrist_temperature",
                                    "respiratory_rate", "blood_oxygen_saturation")
   )
-  res <- health_insight_update(hd, s, prev, hr_max = 185, on_date = today)
+  res <- health_insight_update(.fixture_bundle(hd, s), prev, hr_max = 185, on_date = today)
   expect_equal(res$prosa, "")
   expect_equal(res$trigger, "")
 })
@@ -136,7 +140,7 @@ test_that("health_insight_update is silent when nothing changed", {
 test_that("health_insight_update returns empty when prev_state is NULL", {
   hd <- .fixture_health_daily()
   s  <- .fixture_summaries()
-  res <- health_insight_update(hd, s, NULL, hr_max = 185)
+  res <- health_insight_update(.fixture_bundle(hd, s), NULL, hr_max = 185)
   expect_equal(res$prosa, "")
 })
 
@@ -145,7 +149,7 @@ test_that("health_insight_update returns empty when prev_state is NULL", {
 test_that("recent_data_dump filters to the requested window", {
   hd <- .fixture_health_daily()
   s  <- .fixture_summaries()
-  res <- recent_data_dump(hd, s, hours = 48)
+  res <- recent_data_dump(.fixture_bundle(hd, s), hours = 48)
   expect_true(is.list(res))
   expect_true("metrics" %in% names(res))
   expect_true("sessions" %in% names(res))
@@ -161,7 +165,7 @@ test_that("recent_data_dump filters to the requested window", {
 
 test_that("latest_known_metrics returns one row per unique metric", {
   hd <- .fixture_health_daily()
-  res <- latest_known_metrics(hd)
+  res <- latest_known_metrics(.fixture_bundle(hd, .fixture_summaries()))
   expect_equal(nrow(res), length(unique(hd$metric)))
   expect_true(all(c("metric", "date", "value", "age_hours") %in% names(res)))
   # Should be sorted by date ascending
@@ -172,7 +176,7 @@ test_that("latest_known_metrics handles empty input", {
   empty <- tibble::tibble(date = as.Date(character()),
                           metric = character(),
                           value = numeric())
-  res <- latest_known_metrics(empty)
+  res <- latest_known_metrics(.fixture_bundle(empty, .fixture_summaries()))
   expect_equal(nrow(res), 0)
 })
 
@@ -484,7 +488,7 @@ test_that("health_insight_readiness includes recent activity line", {
   today <- as.Date("2026-04-22")
   hd <- .fixture_health_daily(today)
   s <- .fixture_multisport(today)
-  res <- health_insight_readiness(hd, s, hr_max = 185, on_date = today)
+  res <- health_insight_readiness(.fixture_bundle(hd, s), hr_max = 185, on_date = today)
   expect_match(res$prosa, "Senaste dygnet: ")
 })
 
@@ -492,7 +496,7 @@ test_that("health_insight_readiness includes weekly recap on Monday", {
   monday <- as.Date("2026-04-27")
   hd <- .fixture_health_daily(monday)
   s <- .fixture_multisport(today = monday)
-  res <- health_insight_readiness(hd, s, hr_max = 185, on_date = monday)
+  res <- health_insight_readiness(.fixture_bundle(hd, s), hr_max = 185, on_date = monday)
   expect_match(res$prosa, "Förra veckan: ")
 })
 
@@ -519,7 +523,7 @@ test_that("TRANING_NOTIFY_SPORT=false suppresses the new lines", {
     today <- as.Date("2026-04-22")
     hd <- .fixture_health_daily(today)
     s <- .fixture_multisport(today)
-    res <- health_insight_readiness(hd, s, hr_max = 185, on_date = today)
+    res <- health_insight_readiness(.fixture_bundle(hd, s), hr_max = 185, on_date = today)
     expect_false(grepl("Senaste dygnet:", res$prosa))
   })
 })
@@ -553,7 +557,7 @@ test_that("health_insight_readiness appends the context line when streak fires",
   today <- as.Date("2026-04-22")
   hd <- .fixture_health_daily(today)
   s  <- .fixture_streak_comeback(today)
-  res <- health_insight_readiness(hd, s, hr_max = 185, on_date = today)
+  res <- health_insight_readiness(.fixture_bundle(hd, s), hr_max = 185, on_date = today)
   expect_match(res$prosa, "Första löpningen på 5 dagar")
 })
 
@@ -563,7 +567,7 @@ test_that("TRANING_NOTIFY_CONTEXT=false suppresses the context line", {
     today <- as.Date("2026-04-22")
     hd <- .fixture_health_daily(today)
     s  <- .fixture_streak_comeback(today)
-    res <- health_insight_readiness(hd, s, hr_max = 185, on_date = today)
+    res <- health_insight_readiness(.fixture_bundle(hd, s), hr_max = 185, on_date = today)
     expect_false(grepl("Första löpningen", res$prosa))
   })
 })

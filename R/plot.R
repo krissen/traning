@@ -326,21 +326,23 @@ fetch.plot.hre <- function(data, from = NULL, to = NULL,
 #' boundaries.  A bar panel below shows weekly km.  When \code{from} and
 #' \code{to} are both \code{NULL} the full history is shown.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). \code{@health_daily}, when present, is
+#'   threaded into \code{compute_acwr()} so the TRIMP-mode rendering
+#'   can fold in background activity.
 #' @param from,to Optional date bounds. \code{NULL} means no bound — pass
 #'   both as \code{NULL} to render the full history.
 #' @param sport Sport bucket (default \code{"running"}). Forwarded to
 #'   \code{compute_acwr()}.
 #' @param mode One of \code{"km"}, \code{"trimp"} or \code{NULL} (auto;
 #'   forwarded to \code{compute_acwr()}).
-#' @param health_daily Optional long-format tibble from
-#'   \code{load_health_data()}; threaded into \code{compute_acwr()} so
-#'   the TRIMP-mode rendering can fold in background activity.
 #' @return ggplot2 object
 #' @export
-fetch.plot.acwr <- function(summaries, from = NULL, to = NULL,
-                            sport = "running", mode = NULL,
-                            health_daily = NULL) {
+fetch.plot.acwr <- function(data, from = NULL, to = NULL,
+                            sport = "running", mode = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   acwr_data <- compute_acwr(summaries, sport = sport, mode = mode,
                             health_daily = health_daily)
   resolved_mode <- attr(acwr_data, "mode") %||% "km"
@@ -554,7 +556,10 @@ fetch.plot.monotony <- function(data, from = NULL, to = NULL,
 #' TSB zones use coaching heuristics — not validated for recreational running.
 #' When \code{from} and \code{to} are both \code{NULL} the full history is shown.
 #'
-#' @param summaries Summaries data frame.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). \code{@health_daily}, when present, is
+#'   threaded into \code{compute_pmc()} so background-activity TRIMP
+#'   folds into the displayed PMC for whole-system buckets.
 #' @param hr_max Numeric or NULL. HRmax override.
 #' @param hr_rest Numeric or NULL. HRrest override.
 #' @param from,to Optional date bounds. \code{NULL} means no bound — pass
@@ -563,15 +568,13 @@ fetch.plot.monotony <- function(data, from = NULL, to = NULL,
 #'   whole-system load metric, matching how readiness and the overview
 #'   KPI cards use it). Pass \code{"running"} (or another bucket) to
 #'   restrict to a single sport.
-#' @param health_daily Optional long-format tibble from
-#'   \code{load_health_data()}; threaded into \code{compute_pmc()} so
-#'   background-activity TRIMP folds into the displayed PMC for
-#'   whole-system buckets.
 #' @return ggplot2 object
 #' @export
-fetch.plot.pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
-                           from = NULL, to = NULL, sport = "all",
-                           health_daily = NULL) {
+fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
+                           from = NULL, to = NULL, sport = "all") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   pmc_data <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
                           sport = sport, health_daily = health_daily)
 

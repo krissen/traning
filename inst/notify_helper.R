@@ -64,13 +64,14 @@ result <- tryCatch({
   h <- load_health_data()
 
   is_morning <- is.null(prev_state) || !isTRUE(prev_state$morning_sent)
+  bundle <- traning_data(summaries = tl[["summaries"]], health_daily = h)
 
   if (is_morning) {
-    res <- health_insight_readiness(h, tl[["summaries"]])
+    res <- health_insight_readiness(bundle)
     res$kind <- "readiness"
     res
   } else {
-    res <- health_insight_update(h, tl[["summaries"]], prev_state)
+    res <- health_insight_update(bundle, prev_state)
     res$kind <- "update"
     res
   }

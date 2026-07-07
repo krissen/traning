@@ -10,14 +10,16 @@
 #' Plots daily resting HR from Apple Watch with a 30-day LOESS smoother
 #' and annual means. Optionally overlays weekly running distance.
 #'
-#' @param health_daily Long-format tibble from \code{import_health_export()}.
-#' @param summaries Optional Garmin summaries tibble for volume overlay.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
+#'   Must carry \code{@health_daily}.
 #' @param from Start date (character or Date). NULL = all data.
 #' @param to End date (character or Date). NULL = all data.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.resting_hr <- function(health_daily, summaries = NULL,
-                                   from = NULL, to = NULL) {
+fetch.plot.resting_hr <- function(data, from = NULL, to = NULL) {
+  td <- .as_traning_data(data)
+  health_daily <- td@health_daily
   rhr <- health_daily |>
     dplyr::filter(metric == "resting_heart_rate")
 
@@ -77,12 +79,16 @@ fetch.plot.resting_hr <- function(health_daily, summaries = NULL,
 
 #' HRV (Ln RMSSD) trend with 7-day rolling baseline
 #'
-#' @param health_daily Long-format tibble from \code{import_health_export()}.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
+#'   Must carry \code{@health_daily}.
 #' @param from Start date. NULL = all data.
 #' @param to End date. NULL = all data.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.hrv <- function(health_daily, from = NULL, to = NULL) {
+fetch.plot.hrv <- function(data, from = NULL, to = NULL) {
+  td <- .as_traning_data(data)
+  health_daily <- td@health_daily
   hrv <- health_daily |>
     dplyr::filter(metric == "heart_rate_variability") |>
     dplyr::arrange(date) |>
@@ -128,12 +134,16 @@ fetch.plot.hrv <- function(health_daily, from = NULL, to = NULL) {
 
 #' Sleep duration trend with stage breakdown
 #'
-#' @param health_daily Long-format tibble from \code{import_health_export()}.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
+#'   Must carry \code{@health_daily}.
 #' @param from Start date. NULL = all data.
 #' @param to End date. NULL = all data.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
+fetch.plot.sleep <- function(data, from = NULL, to = NULL) {
+  td <- .as_traning_data(data)
+  health_daily <- td@health_daily
   sleep_metrics <- c("sleep_core", "sleep_deep", "sleep_rem", "sleep_awake")
   sleep <- health_daily |>
     dplyr::filter(metric %in% c(sleep_metrics, "sleep_totalSleep"))
@@ -239,14 +249,18 @@ fetch.plot.sleep <- function(health_daily, from = NULL, to = NULL) {
 #' contain \code{garmin_vO2MaxValue}, overlays Garmin per-activity estimates
 #' for a dual-source comparison.
 #'
-#' @param health_daily Long-format tibble from \code{import_health_export()}.
-#' @param summaries Optional Garmin summaries tibble (with garmin_vO2MaxValue).
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
+#'   \code{@summaries}, when it contains \code{garmin_vO2MaxValue}, adds
+#'   the Garmin overlay series.
 #' @param from Start date. NULL = all data.
 #' @param to End date. NULL = all data.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.vo2max <- function(health_daily, summaries = NULL,
-                               from = NULL, to = NULL) {
+fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   vo2 <- health_daily |>
     dplyr::filter(metric == "vo2_max")
 
@@ -355,9 +369,17 @@ fetch.plot.vo2max <- function(health_daily, summaries = NULL,
 fetch.plot.readiness <- function(health_daily, days = 90) {
   from <- Sys.Date() - days
 
-  p_rhr   <- fetch.plot.resting_hr(health_daily, from = from)
-  p_hrv   <- fetch.plot.hrv(health_daily, from = from)
-  p_sleep <- fetch.plot.sleep(health_daily, from = from)
+  # fetch.plot.resting_hr/hrv/sleep are S7-migrated (PR 4): their first
+  # formal is `data`, and a bare health_daily data.frame passed
+  # positionally would be misread by .as_traning_data()'s "bare
+  # data.frame = summaries" rule. Wrap it in a bundle explicitly.
+  td <- traning_data(
+    summaries = tibble::tibble(sessionStart = as.POSIXct(character())),
+    health_daily = health_daily
+  )
+  p_rhr   <- fetch.plot.resting_hr(td, from = from)
+  p_hrv   <- fetch.plot.hrv(td, from = from)
+  p_sleep <- fetch.plot.sleep(td, from = from)
 
   if (requireNamespace("patchwork", quietly = TRUE)) {
     p_rhr / p_hrv / p_sleep +
@@ -376,17 +398,20 @@ fetch.plot.readiness <- function(health_daily, days = 90) {
 
 #' Readiness score dashboard with composite score, HRV, sleep, and training load
 #'
-#' @param health_daily Long-format tibble from \code{load_health_data()}.
-#' @param summaries Garmin summaries tibble.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). Must carry \code{@health_daily} — the
+#'   composite score cannot be computed without it.
 #' @param hr_max Optional HRmax override.
 #' @param hr_rest Optional HRrest override.
 #' @param from,to Optional date bounds. \code{NULL} means no bound — pass
 #'   both as \code{NULL} to render the full history.
 #' @return ggplot2 object (patchwork composite).
 #' @export
-fetch.plot.readiness_score <- function(health_daily, summaries,
-                                        hr_max = NULL, hr_rest = NULL,
+fetch.plot.readiness_score <- function(data, hr_max = NULL, hr_rest = NULL,
                                         from = NULL, to = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   r <- compute_readiness(health_daily, summaries,
                           hr_max = hr_max, hr_rest = hr_rest,
                           after = from, before = to)

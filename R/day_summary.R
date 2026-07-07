@@ -172,9 +172,10 @@
       inherits(health_daily, "data.frame") &&
       nrow(health_daily) > 0) {
     readiness <- tryCatch(
-      health_insight_readiness(health_daily, summaries,
-                               hr_max = hr_max, hr_rest = hr_rest,
-                               on_date = on_date),
+      health_insight_readiness(
+        traning_data(summaries = summaries, health_daily = health_daily),
+        hr_max = hr_max, hr_rest = hr_rest,
+        on_date = on_date),
       error = function(e) NULL
     )
   }
