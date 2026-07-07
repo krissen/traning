@@ -13,6 +13,11 @@
       assign(fn_name, obj, envir = pkg_env)
     }
   }
+
+  # S7 packages must call methods_register() on load so that methods for
+  # external generics (e.g. base::print, base::format for the S7 classes
+  # in R/traning_data.R) are registered correctly. See ?S7::methods_register.
+  S7::methods_register()
 }
 
 #' Save summaries and myruns to RData files
