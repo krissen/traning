@@ -10,15 +10,19 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from contextlib import asynccontextmanager
+
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 
 from .auth import require_api_key
 from .notify import log_notification, notify
 from .state import (
     load_notify_state,
+    load_pending_state,
     mark_morning_sent,
     mark_update_sent,
     save_notify_state,
+    save_pending_state,
 )
 from .storage import commit_health_data, save_health_push, save_workout_push
 
@@ -244,11 +248,33 @@ def _import_and_notify(files: list, kind: str = "health"):
 # (and notifying) on every push is noisy. We accumulate changed files in a
 # pending set and (re)start a debounce timer; the import runs once after the
 # pushes go quiet for a while.
+#
+# The pending set/counter below are in-memory only, so on their own they
+# are lost if the receiver restarts while work is queued (uvicorn reload,
+# deploy, crash). To survive that, every mutation is mirrored to
+# ``$TRANING_DATA/.pending_state.json`` (see state.py, same atomic
+# tmp+rename pattern as .notify_state.json), and ``_resume_pending_state``
+# reloads it and re-arms the debounce timers on startup.
 
 _DEBOUNCE_SECS = int(os.environ.get("TRANING_HEALTH_DEBOUNCE", "600"))
 _pending_files: set[str] = set()
 _pending_timer: threading.Timer | None = None
 _pending_lock = threading.Lock()
+
+
+def _persist_pending_state() -> None:
+    """Mirror the current in-memory pending state to disk.
+
+    Called after every mutation of ``_pending_files`` or
+    ``_pending_workouts_count`` (outside the lock that guarded the
+    mutation, to keep lock hold times short) so a receiver restart can
+    resume queued work via ``_resume_pending_state``.
+    """
+    with _pending_lock:
+        files = sorted(_pending_files)
+    with _workouts_lock:
+        count = _pending_workouts_count
+    save_pending_state({"pending_files": files, "pending_workouts_count": count})
 
 
 def _flush_pending_health() -> None:
@@ -258,6 +284,7 @@ def _flush_pending_health() -> None:
         files = list(_pending_files)
         _pending_files.clear()
         _pending_timer = None
+    _persist_pending_state()
     if files:
         _import_and_notify(files, "health")
         _last_import_ts = datetime.now()
@@ -276,6 +303,7 @@ def _schedule_health_import(files: list[str]) -> None:
         _pending_timer = threading.Timer(_DEBOUNCE_SECS, _flush_pending_health)
         _pending_timer.daemon = True
         _pending_timer.start()
+    _persist_pending_state()
 
 
 # --- Debounced HAE workout import -------------------------------------------
@@ -297,10 +325,31 @@ _DEBOUNCE_WORKOUTS_SECS = int(os.environ.get(
 _pending_workouts_count: int = 0
 _workouts_timer: threading.Timer | None = None
 _workouts_lock = threading.Lock()
+# Guards against two overlapping flushes (e.g. the debounce timer firing
+# again a hair before a prior, slow — up to 300s — import finishes): without
+# it, a second flush could snapshot the same not-yet-decremented count and
+# double-process/double-decrement it.
+_workouts_flushing: bool = False
 
 
 _last_workouts_import_ts: datetime | None = None
 _last_workouts_import_count: int = 0
+
+
+def _decrement_after_flush(current: int, n: int, ok: bool) -> int:
+    """Compute the pending-workouts count after a flush attempt.
+
+    Only ever subtracts ``n`` — the snapshot taken atomically at the start
+    of the flush — never the live counter value. Pushes that arrive while
+    the (up to 300s) import is running increment ``current`` concurrently;
+    subtracting the snapshot instead of re-reading "what's pending now"
+    means those new pushes survive the flush intact rather than being
+    silently absorbed or lost. On failure the count is left untouched so
+    the whole batch (old + any new arrivals) retries on the next flush.
+    """
+    if not ok:
+        return current
+    return max(0, current - n)
 
 
 def _flush_pending_workouts() -> None:
@@ -315,60 +364,81 @@ def _flush_pending_workouts() -> None:
     ``pending_workouts`` field so the next workout push reschedules the
     timer and the import is retried then.
     """
-    global _workouts_timer, _pending_workouts_count
+    global _workouts_timer, _pending_workouts_count, _workouts_flushing
+    global _last_workouts_import_ts, _last_workouts_import_count
     with _workouts_lock:
+        if _workouts_flushing:
+            log.debug("HAE auto-import: flush already in progress, skipping")
+            return
         n = _pending_workouts_count
         _workouts_timer = None
-    if n <= 0:
-        return
+        if n <= 0:
+            return
+        _workouts_flushing = True
 
+    # Everything from here on must run inside try/finally: any unhandled
+    # exception (including from _persist_pending_state()/disk errors, not
+    # just the subprocess call) must still clear _workouts_flushing —
+    # otherwise the guard sticks forever and every future flush silently
+    # early-returns, so workouts stop importing until the receiver restarts.
     ok = False
-    t0 = time.time()
-    with _import_lock:
-        try:
-            result = subprocess.run(
-                ["Rscript", str(_CLI_R), "--import"],
-                capture_output=True, text=True, timeout=300,
-                cwd=str(_CLI_R.parent.parent),
-            )
-            elapsed = int(time.time() - t0)
-            if result.returncode != 0:
-                log.warning(
-                    "HAE auto-import failed (%ds, %d pending): %s",
-                    elapsed, n, result.stderr.strip()[-300:],
-                )
-            else:
-                ok = True
-                # Surface the trailing import-summary line for journal logs.
-                lines = [l.strip() for l in result.stdout.strip().splitlines()
-                         if l.strip()]
-                summary = next(
-                    (l for l in reversed(lines)
-                     if any(w in l.lower() for w in ["import", "inget att"])),
-                    "klart",
-                )
-                log.info("HAE auto-import OK (%ds, %d pending): %s",
-                         elapsed, n, summary)
-        except subprocess.TimeoutExpired:
-            elapsed = int(time.time() - t0)
-            log.warning("HAE auto-import timed out after %ds (%d pending)",
-                        elapsed, n)
-        except Exception:
-            log.exception("HAE auto-import: unexpected error")
+    try:
+        _persist_pending_state()
 
-    # /v1/status bookkeeping. Track workout imports in dedicated fields
-    # so we don't conflate health "files imported" with workout
-    # "pending count" semantics on the shared _last_import_* fields.
-    # Timestamp updates on every attempt (matches _flush_pending_health
-    # behaviour) so an attempted-but-failed import is still visible.
-    # The pending counter is only drained on success; a failed run keeps
-    # it surfaced for the next push to retry.
-    global _last_workouts_import_ts, _last_workouts_import_count
-    _last_workouts_import_ts = datetime.now()
-    _last_workouts_import_count = n
-    if ok:
+        t0 = time.time()
+        with _import_lock:
+            try:
+                result = subprocess.run(
+                    ["Rscript", str(_CLI_R), "--import"],
+                    capture_output=True, text=True, timeout=300,
+                    cwd=str(_CLI_R.parent.parent),
+                )
+                elapsed = int(time.time() - t0)
+                if result.returncode != 0:
+                    log.warning(
+                        "HAE auto-import failed (%ds, %d pending): %s",
+                        elapsed, n, result.stderr.strip()[-300:],
+                    )
+                else:
+                    ok = True
+                    # Surface the trailing import-summary line for journal logs.
+                    lines = [l.strip() for l in result.stdout.strip().splitlines()
+                             if l.strip()]
+                    summary = next(
+                        (l for l in reversed(lines)
+                         if any(w in l.lower() for w in ["import", "inget att"])),
+                        "klart",
+                    )
+                    log.info("HAE auto-import OK (%ds, %d pending): %s",
+                             elapsed, n, summary)
+            except subprocess.TimeoutExpired:
+                elapsed = int(time.time() - t0)
+                log.warning("HAE auto-import timed out after %ds (%d pending)",
+                            elapsed, n)
+            except Exception:
+                log.exception("HAE auto-import: unexpected error")
+
+        # /v1/status bookkeeping. Track workout imports in dedicated fields
+        # so we don't conflate health "files imported" with workout
+        # "pending count" semantics on the shared _last_import_* fields.
+        # Timestamp updates on every attempt (matches _flush_pending_health
+        # behaviour) so an attempted-but-failed import is still visible.
+        # The pending counter is only drained on success; a failed run keeps
+        # it surfaced for the next push to retry.
+        _last_workouts_import_ts = datetime.now()
+        _last_workouts_import_count = n
+    finally:
+        # Always reset the guard and persist the resulting state, even if
+        # something above raised. On the normal path ok reflects whether
+        # the import actually succeeded; on an early exception ok is still
+        # False, so the snapshot n is left un-decremented and the batch
+        # retries on the next push (same contract as an R-side failure).
         with _workouts_lock:
-            _pending_workouts_count = max(0, _pending_workouts_count - n)
+            _pending_workouts_count = _decrement_after_flush(
+                _pending_workouts_count, n, ok
+            )
+            _workouts_flushing = False
+        _persist_pending_state()
 
 
 def _schedule_workouts_import(n_new: int) -> None:
@@ -385,6 +455,43 @@ def _schedule_workouts_import(n_new: int) -> None:
         )
         _workouts_timer.daemon = True
         _workouts_timer.start()
+    _persist_pending_state()
+
+
+def _resume_pending_state() -> None:
+    """Reload persisted pending state and re-arm debounce timers.
+
+    Called once at startup so work queued before a receiver restart
+    (health files awaiting import, workouts awaiting the debounced
+    ``cli.R --import``) is not silently dropped — it resumes with a
+    fresh full debounce window rather than being lost.
+    """
+    global _pending_timer, _workouts_timer, _pending_workouts_count
+    persisted = load_pending_state()
+    files = persisted.get("pending_files") or []
+    count = persisted.get("pending_workouts_count") or 0
+
+    if files:
+        with _pending_lock:
+            _pending_files.update(files)
+            if _pending_timer is not None:
+                _pending_timer.cancel()
+            _pending_timer = threading.Timer(_DEBOUNCE_SECS, _flush_pending_health)
+            _pending_timer.daemon = True
+            _pending_timer.start()
+        log.info("Resumed %d pending health file(s) after restart", len(files))
+
+    if count > 0:
+        with _workouts_lock:
+            _pending_workouts_count += count
+            if _workouts_timer is not None:
+                _workouts_timer.cancel()
+            _workouts_timer = threading.Timer(
+                _DEBOUNCE_WORKOUTS_SECS, _flush_pending_workouts
+            )
+            _workouts_timer.daemon = True
+            _workouts_timer.start()
+        log.info("Resumed %d pending workout(s) after restart", count)
 
 
 # Track state for /v1/status endpoint
@@ -395,6 +502,12 @@ _last_import_ts: datetime | None = None
 _last_import_files: int = 0
 
 
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    _resume_pending_state()
+    yield
+
+
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     application = FastAPI(
@@ -402,6 +515,7 @@ def create_app() -> FastAPI:
         version="0.1.0",
         docs_url=None,
         redoc_url=None,
+        lifespan=_lifespan,
     )
 
     @application.get("/health")
