@@ -98,13 +98,24 @@ def fetch_new_activities(
                 continue
 
             try:
-                _download_activity(client, activity, gc_dir, tc_dir)
+                complete = _download_activity(client, activity, gc_dir, tc_dir)
+            except Exception:
+                log.exception("Failed to download activity %s, skipping", activity_id)
+                continue
+
+            if complete:
                 new_count += 1
                 existing_ids.add(activity_id)
                 if new_count % 10 == 0:
                     log.info("Fetched %d new activities so far ...", new_count)
-            except Exception:
-                log.exception("Failed to download activity %s, skipping", activity_id)
+            else:
+                # Not counted and not added to existing_ids — the next run's
+                # dedup scan (get_existing_activity_ids) won't find a summary
+                # file for this activity, so it will be retried in full.
+                log.warning(
+                    "Activity %s incomplete this run, will retry next run",
+                    activity_id,
+                )
 
         offset += PAGE_SIZE
 
@@ -133,8 +144,17 @@ def _download_activity(
     activity: dict,
     gc_dir: Path,
     tc_dir: Path,
-) -> None:
-    """Download summary JSON, details JSON, and TCX for one activity."""
+) -> bool:
+    """Download summary JSON, details JSON, and TCX for one activity.
+
+    Returns True only if all three artifacts (summary, details, TCX) were
+    saved successfully. ``get_existing_activity_ids`` keys the dedup scan
+    off ``*_summary.json`` alone, so a partial download (summary written,
+    details or TCX failing) must NOT leave the summary file behind — that
+    would make the activity look "already fetched" forever and it would
+    never be retried. On partial failure we remove the summary again so
+    the next run re-fetches the activity in full.
+    """
     activity_id = activity["activityId"]
     start_gmt = activity.get("startTimeGMT", "")
 
@@ -150,6 +170,8 @@ def _download_activity(
 
     time.sleep(REQUEST_DELAY)
 
+    complete = True
+
     # 2. Save details JSON
     try:
         details = client.get_activity(activity_id)
@@ -158,6 +180,7 @@ def _download_activity(
         log.debug("Saved %s", details_path.name)
     except Exception:
         log.warning("Could not fetch details for %s", activity_id)
+        complete = False
 
     time.sleep(REQUEST_DELAY)
 
@@ -177,6 +200,12 @@ def _download_activity(
             log.debug("Symlink %s -> %s", symlink_name, target)
     except Exception:
         log.warning("Could not download TCX for %s", activity_id)
+        complete = False
+
+    if not complete:
+        summary_path.unlink(missing_ok=True)
+        return False
 
     name = activity.get("activityName", "?")
     log.info("Downloaded: %s — %s", iso_timestamp[:10], name)
+    return True
