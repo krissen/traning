@@ -145,7 +145,6 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
         next
       }
 
-      myruns[[i]] <- parsed
       if (verbose) cat("OK\n")
       # Strip trackeRdataSummary class before dplyr operations —
       # its [ method conflicts with dplyr::mutate() and causes
@@ -158,6 +157,15 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       } else {
         summaries <- .rbind_align(summaries, run_summary)
       }
+      # Assign myruns by the row position this session actually landed
+      # on in `summaries` (nrow(summaries) after the append above), not
+      # by the loop index over `files`. `files` enumerates every file on
+      # disk while duplicates/parse failures are skipped via `next`
+      # without touching summaries, so the loop index drifts away from
+      # the summaries row count — indexing by it here silently paired
+      # myruns[[i]] with the wrong summaries row (or clobbered an
+      # unrelated existing entry) once any file in the batch was skipped.
+      myruns[[nrow(summaries)]] <- parsed
       existing_basenames <- c(existing_basenames, basename(thefile))
       existing_starts <- c(existing_starts, ss)
       n_imported <- n_imported + 1
