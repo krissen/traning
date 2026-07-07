@@ -584,15 +584,15 @@ if (do_acwr) {
   # --acwr --sport all matches the Shiny / MCP behaviour; the
   # running-default path ignores it and stays km-mode.
   hd_for_acwr <- tryCatch(load_health_data(), error = function(e) NULL)
+  td_for_acwr <- traning_data(summaries = summaries, health_daily = hd_for_acwr,
+                               augmented = "garmin_matched" %in% names(summaries))
   if (do_plot) {
-    emit_plot(fetch.plot.acwr(summaries, from = date_range$from, to = date_range$to,
-                              sport = do_sport,
-                              health_daily = hd_for_acwr), "acwr")
+    emit_plot(fetch.plot.acwr(td_for_acwr, from = date_range$from, to = date_range$to,
+                              sport = do_sport), "acwr")
   } else {
-    emit_table(report_acwr(summaries, n = do_limit %||% 28L,
+    emit_table(report_acwr(td_for_acwr, n = do_limit %||% 28L,
                       from = date_range$from, to = date_range$to,
-                      sport = do_sport,
-                      health_daily = hd_for_acwr), "acwr")
+                      sport = do_sport), "acwr")
   }
 }
 
@@ -613,15 +613,15 @@ if (do_pmc) {
   # --sport=running for a running-only PMC.
   sport_for_pmc <- options$sport %||% "all"
   hd_for_pmc <- tryCatch(load_health_data(), error = function(e) NULL)
+  td_for_pmc <- traning_data(summaries = summaries, health_daily = hd_for_pmc,
+                              augmented = "garmin_matched" %in% names(summaries))
   if (do_plot) {
-    emit_plot(fetch.plot.pmc(summaries, from = date_range$from, to = date_range$to,
-                             sport = sport_for_pmc,
-                             health_daily = hd_for_pmc), "pmc")
+    emit_plot(fetch.plot.pmc(td_for_pmc, from = date_range$from, to = date_range$to,
+                             sport = sport_for_pmc), "pmc")
   } else {
-    emit_table(report_pmc(summaries, n = do_limit %||% 28L,
+    emit_table(report_pmc(td_for_pmc, n = do_limit %||% 28L,
                      from = date_range$from, to = date_range$to,
-                     sport = sport_for_pmc,
-                     health_daily = hd_for_pmc), "pmc")
+                     sport = sport_for_pmc), "pmc")
   }
 }
 
@@ -645,11 +645,13 @@ if (do_readiness) {
   if (nrow(health_daily) == 0) {
     cat("Ingen hälsodata hittades. Kör --import-health först.\n")
   } else {
+    td_for_readiness <- traning_data(summaries = summaries, health_daily = health_daily,
+                                      augmented = "garmin_matched" %in% names(summaries))
     if (do_plot) {
-      emit_plot(fetch.plot.readiness_score(health_daily, summaries,
+      emit_plot(fetch.plot.readiness_score(td_for_readiness,
                   from = date_range$from, to = date_range$to), "readiness")
     } else {
-      emit_table(report_readiness(health_daily, summaries,
+      emit_table(report_readiness(td_for_readiness,
                     n = do_limit %||% 14L,
                     from = date_range$from, to = date_range$to), "readiness")
     }

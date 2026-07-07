@@ -27,32 +27,33 @@ page_training_server <- function(id, summaries, health_daily, dates,
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
     sp      <- shiny::reactive(sport())
+    # fetch.plot.pmc/acwr and report_pmc/acwr are S7-migrated (PR 4):
+    # they take a single traning_data bundle instead of separate
+    # summaries/health_daily args. Build it once and reuse.
+    td_bundle <- traning_data(summaries = summaries, health_daily = health_daily,
+                               augmented = "garmin_matched" %in% names(summaries))
 
     metric_panel_server("pmc",
-      plot_fn   = shiny::reactive(fetch.plot.pmc(summaries,
+      plot_fn   = shiny::reactive(fetch.plot.pmc(td_bundle,
                                                   from = dr_from(),
                                                   to = dr_to(),
-                                                  sport = sp(),
-                                                  health_daily = health_daily)),
-      report_fn = shiny::reactive(report_pmc(summaries,
+                                                  sport = sp())),
+      report_fn = shiny::reactive(report_pmc(td_bundle,
                                               from = dr_from(),
                                               to = dr_to(),
-                                              sport = sp(),
-                                              health_daily = health_daily)),
+                                              sport = sp())),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )
     metric_panel_server("acwr",
-      plot_fn   = shiny::reactive(fetch.plot.acwr(summaries,
+      plot_fn   = shiny::reactive(fetch.plot.acwr(td_bundle,
                                                    from = dr_from(),
                                                    to = dr_to(),
-                                                   sport = sp(),
-                                                   health_daily = health_daily)),
-      report_fn = shiny::reactive(report_acwr(summaries,
+                                                   sport = sp())),
+      report_fn = shiny::reactive(report_acwr(td_bundle,
                                                from = dr_from(),
                                                to = dr_to(),
-                                               sport = sp(),
-                                               health_daily = health_daily)),
+                                               sport = sp())),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )

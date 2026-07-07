@@ -1755,8 +1755,8 @@ health_insight_delta <- function(before, after) {
 #' Produces Swedish prose describing today's readiness state and the components
 #' driving it (good or bad). Output is suitable for a morning notification.
 #'
-#' @param health_daily Long-format tibble from \code{load_health_data()}.
-#' @param summaries Garmin summaries.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
 #' @param hr_max,hr_rest Optional overrides for HRmax / HRrest.
 #' @param on_date Date to render (default = latest in health_daily).
 #' @return A list with elements: \code{prosa} (character, possibly ""),
@@ -1765,9 +1765,11 @@ health_insight_delta <- function(before, after) {
 #'   value/delta/flag/score), \code{components_present} (named logical for
 #'   notify-state tracking).
 #' @export
-health_insight_readiness <- function(health_daily, summaries,
-                                      hr_max = NULL, hr_rest = NULL,
+health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
                                       on_date = NULL) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   ctx <- .readiness_for_insight(health_daily, summaries, on_date,
                                  hr_max, hr_rest)
   if (is.null(ctx)) {
@@ -1907,8 +1909,8 @@ health_insight_readiness <- function(health_daily, summaries,
 #'
 #' Empty string = no notification.
 #'
-#' @param health_daily Long-format tibble.
-#' @param summaries Garmin summaries.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
 #' @param prev_state List parsed from \code{.notify_state.json} (or NULL).
 #' @param hr_max,hr_rest Optional overrides.
 #' @param on_date Date to evaluate (default = latest).
@@ -1916,17 +1918,18 @@ health_insight_readiness <- function(health_daily, summaries,
 #'   \code{trigger} (character: "rerender" / "tier1" / ""),
 #'   plus the same fields as \code{health_insight_readiness} when re-rendering.
 #' @export
-health_insight_update <- function(health_daily, summaries, prev_state,
+health_insight_update <- function(data, prev_state,
                                    hr_max = NULL, hr_rest = NULL,
                                    on_date = NULL) {
+  td <- .as_traning_data(data)
+  health_daily <- td@health_daily
   empty <- list(prosa = "", trigger = "", datum = NA, status = NA_character_,
                 score = NA_real_, kvalitet = NA_character_,
                 components = list(), components_present = list(),
                 tier1_metric = NA_character_)
 
   if (is.null(prev_state) || is.null(prev_state$date)) return(empty)
-  current <- health_insight_readiness(health_daily, summaries,
-                                       hr_max, hr_rest, on_date)
+  current <- health_insight_readiness(td, hr_max, hr_rest, on_date)
   if (is.na(current$datum)) return(empty)
 
   prev_date <- as.Date(prev_state$date)
@@ -2052,15 +2055,18 @@ health_insight_update <- function(health_daily, summaries, prev_state,
 #' the Vayu MCP \code{get_recent_data} tool — gives the model a structured
 #' snapshot of what we know right now.
 #'
-#' @param health_daily Long-format tibble.
-#' @param summaries Garmin summaries.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
 #' @param hours Window size in hours (default 24).
 #' @return A list with: \code{since}, \code{until}, \code{metrics} (named list,
 #'   one entry per metric with date/value points), \code{sessions} (data
 #'   frame), \code{last_pushes} (data frame from notifications.jsonl, may be
 #'   empty).
 #' @export
-recent_data_dump <- function(health_daily, summaries, hours = 24) {
+recent_data_dump <- function(data, hours = 24) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   now <- Sys.time()
   cutoff_ts <- now - hours * 3600
   cutoff_date <- as.Date(cutoff_ts)
@@ -2121,10 +2127,13 @@ recent_data_dump <- function(health_daily, summaries, hours = 24) {
 #' Per-metric most recent value, with timestamp and age in hours. Sorted from
 #' oldest to newest so any data-quality gaps surface at the top.
 #'
-#' @param health_daily Long-format tibble.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
 #' @return Tibble with columns metric, date, value, age_hours.
 #' @export
-latest_known_metrics <- function(health_daily) {
+latest_known_metrics <- function(data) {
+  td <- .as_traning_data(data)
+  health_daily <- td@health_daily
   if (nrow(health_daily) == 0) {
     return(tibble::tibble(metric = character(), date = as.Date(character()),
                           value = numeric(), age_hours = numeric()))

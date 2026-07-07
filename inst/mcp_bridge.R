@@ -150,7 +150,18 @@ if (is.null(func_name) || !func_name %in% names(func_registry)) {
   "fetch.plot.pace_tertile_share", "fetch.plot.longest_runs_year",
   "fetch.plot.season_pace", "fetch.plot.heatmap_km",
   "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era",
-  "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.monotony"
+  "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.monotony",
+  # PR 4 — health group ("h"-dep functions: report_acwr/pmc/readiness/
+  # metric, the health-insight + data-inspection helpers, and the
+  # health plot wrappers). These take a `traning_data` bundle, not
+  # separate summaries/health_daily args — see the "Health functions"
+  # block in build_call_args() below.
+  "report_acwr", "report_pmc", "report_readiness", "report_metric",
+  "health_insight_readiness", "health_insight_update", "recent_data_dump",
+  "latest_known_metrics",
+  "fetch.plot.acwr", "fetch.plot.pmc", "fetch.plot.resting_hr",
+  "fetch.plot.hrv", "fetch.plot.sleep", "fetch.plot.vo2max",
+  "fetch.plot.readiness_score"
 )
 
 # --- Data paths ---
@@ -277,16 +288,21 @@ build_call_args <- function(func_name, func_args) {
   # Inject required data objects
   d <- func_registry[[func_name]]
 
-  # Functions that take summaries as first arg
+  # Functions that take summaries as first arg. report_acwr, report_pmc,
+  # fetch.plot.acwr and fetch.plot.pmc are deliberately excluded here
+  # even though they were previously summaries-first: they're
+  # S7-migrated (PR 4) and need a full traning_data bundle (summaries +
+  # health_daily), not a bare summaries data.frame — see the "PMC /
+  # ACWR" block below, which injects their `data =` arg instead.
   summaries_funcs <- c(
     "report_monthtop", "report_runs_year_month", "report_monthlast",
     "report_yearstop", "report_yearstatus", "report_monthstatus",
-    "report_ef", "report_hre", "report_acwr", "report_monotony",
-    "report_pmc", "report_recovery_hr",
+    "report_ef", "report_hre", "report_monotony",
+    "report_recovery_hr",
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
     "plot_monthlast", "plot_yearstop",
-    "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
-    "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
+    "fetch.plot.ef", "fetch.plot.hre",
+    "fetch.plot.monotony", "fetch.plot.recovery_hr",
     "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
     "compute_taper_plan",
     # Löpprofil
@@ -378,27 +394,35 @@ build_call_args <- function(func_name, func_args) {
            list(decoupling_data = decoupling_data))
   }
 
-  # Health functions
-  if (func_name == "report_readiness") {
-    a <- c(list(health_daily = health_daily, summaries = summaries), a)
+  # Health functions — S7-migrated (PR 4): each of these takes a single
+  # `data =` traning_data bundle instead of separate summaries/
+  # health_daily args (see .migrated_to_data above). .health_bundle()
+  # folds whatever `summaries`/`health_daily` this request already
+  # loaded (per func_registry's dep string) into one bundle; when
+  # `summaries` wasn't loaded (pure "h"-dep functions), it substitutes
+  # a minimal but valid empty summaries stub — traning_data's validator
+  # only requires a `sessionStart` column, not any rows.
+  .augmented_flag <- !is.null(summaries) && "garmin_matched" %in% names(summaries)
+  .health_bundle <- function() {
+    s <- if (!is.null(summaries)) {
+      summaries
+    } else {
+      tibble::tibble(sessionStart = as.POSIXct(character()))
+    }
+    traning_data(summaries = s, health_daily = health_daily,
+                 augmented = .augmented_flag)
   }
-  if (func_name == "fetch.plot.readiness_score") {
-    a <- c(list(health_daily = health_daily, summaries = summaries), a)
-  }
-  if (func_name == "fetch.plot.resting_hr") {
-    a <- c(list(health_daily = health_daily, summaries = summaries), a)
-  }
-  if (func_name == "fetch.plot.vo2max") {
-    a <- c(list(health_daily = health_daily, summaries = summaries), a)
-  }
-  if (func_name %in% c("fetch.plot.hrv", "fetch.plot.sleep",
+
+  if (func_name %in% c("report_readiness", "fetch.plot.readiness_score",
+                        "fetch.plot.resting_hr", "fetch.plot.vo2max",
+                        "fetch.plot.hrv", "fetch.plot.sleep",
                         "report_metric")) {
-    a <- c(list(health_daily = health_daily), a)
+    a <- c(list(data = .health_bundle()), a)
   }
 
   # New health-insight + data-dump functions
   if (func_name %in% c("health_insight_readiness", "recent_data_dump")) {
-    a <- c(list(health_daily = health_daily, summaries = summaries), a)
+    a <- c(list(data = .health_bundle()), a)
     if (func_name == "recent_data_dump" && !is.null(func_args$hours)) {
       a$hours <- as.numeric(func_args$hours)
     }
@@ -408,7 +432,7 @@ build_call_args <- function(func_name, func_args) {
     }
   }
   if (func_name == "health_insight_update") {
-    a <- c(list(health_daily = health_daily, summaries = summaries), a)
+    a <- c(list(data = .health_bundle()), a)
     if (!is.null(func_args$prev_state)) {
       a$prev_state <- func_args$prev_state
     }
@@ -417,16 +441,18 @@ build_call_args <- function(func_name, func_args) {
     }
   }
   if (func_name == "latest_known_metrics") {
-    a <- c(list(health_daily = health_daily), a)
+    a <- c(list(data = .health_bundle()), a)
   }
 
-  # PMC / ACWR — pass health_daily so the multi-sport (TRIMP-mode)
-  # paths can fold in background-activity TRIMP. Functions accept
-  # health_daily as a named arg; when sport is sport-specific the
+  # PMC / ACWR — S7-migrated (PR 4): pass a bundle carrying
+  # health_daily so the multi-sport (TRIMP-mode) paths can fold in
+  # background-activity TRIMP; when sport is sport-specific the
   # downstream code ignores it, so passing here is safe regardless.
+  # These two are deliberately excluded from summaries_funcs above, so
+  # this is the only place their `data =` arg gets set.
   if (func_name %in% c("report_pmc", "report_acwr",
                         "fetch.plot.pmc", "fetch.plot.acwr")) {
-    a$health_daily <- health_daily
+    a <- c(list(data = .health_bundle()), a)
   }
 
   a
