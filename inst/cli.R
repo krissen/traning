@@ -660,26 +660,33 @@ if (do_readiness) {
 
 if (do_hr_zones) {
   # Per-second zone computation with caching (accurate VT1/VT2 thresholds).
-  # The cache is sport-keyed, so pass do_sport through.
+  # The cache is sport-keyed, so pass do_sport through — both to the cache
+  # loader AND to the bundle's @sport, so the traning_data validator's
+  # sport-keying guard is satisfied.
   zone_data <- load_zone_distribution(summaries, myruns, force = do_force,
                                       sport = do_sport)
+  td_for_zones <- traning_data(summaries = summaries, myruns = myruns,
+                                zone_data = zone_data, sport = do_sport,
+                                augmented = "garmin_matched" %in% names(summaries))
   if (do_plot) {
-    emit_plot(fetch.plot.hr_zones(summaries,
+    emit_plot(fetch.plot.hr_zones(td_for_zones,
                 from = date_range$from, to = date_range$to,
-                zone_data = zone_data, sport = do_sport), "hr-zones")
+                sport = do_sport), "hr-zones")
   } else {
-    emit_table(report_hr_zones(summaries, n = do_limit %||% 12L,
+    emit_table(report_hr_zones(td_for_zones, n = do_limit %||% 12L,
                   from = date_range$from, to = date_range$to,
-                  zone_data = zone_data, sport = do_sport), "hr-zones")
+                  sport = do_sport), "hr-zones")
   }
 }
 
 if (do_recovery_hr) {
+  td_for_rhr <- traning_data(summaries = summaries, sport = do_sport,
+                              augmented = "garmin_matched" %in% names(summaries))
   if (do_plot) {
-    emit_plot(fetch.plot.recovery_hr(summaries, from = date_range$from, to = date_range$to,
+    emit_plot(fetch.plot.recovery_hr(td_for_rhr, from = date_range$from, to = date_range$to,
                                      sport = do_sport), "recovery-hr")
   } else {
-    emit_table(report_recovery_hr(summaries, n = do_limit %||% 28L,
+    emit_table(report_recovery_hr(td_for_rhr, n = do_limit %||% 28L,
                              from = date_range$from, to = date_range$to,
                              sport = do_sport), "recovery-hr")
   }
@@ -688,15 +695,16 @@ if (do_recovery_hr) {
 if (do_decoupling) {
   decoupling_data <- load_decoupling(summaries, myruns, force = do_force,
                                      sport = do_sport)
+  td_for_decoupling <- traning_data(summaries = summaries, myruns = myruns,
+                                     decoupling_data = decoupling_data, sport = do_sport,
+                                     augmented = "garmin_matched" %in% names(summaries))
   if (do_plot) {
-    emit_plot(fetch.plot.decoupling(summaries, myruns,
+    emit_plot(fetch.plot.decoupling(td_for_decoupling,
                 from = date_range$from, to = date_range$to,
-                decoupling_data = decoupling_data,
                 sport = do_sport), "decoupling")
   } else {
-    emit_table(report_decoupling(n = do_limit %||% 28L,
+    emit_table(report_decoupling(td_for_decoupling, n = do_limit %||% 28L,
                   from = date_range$from, to = date_range$to,
-                  decoupling_data = decoupling_data,
                   sport = do_sport), "decoupling")
   }
 }

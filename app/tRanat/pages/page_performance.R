@@ -26,6 +26,7 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
     sp      <- shiny::reactive(sport())
+    augmented_flag <- "garmin_matched" %in% names(summaries)
 
     # EF
     metric_panel_server("ef",
@@ -64,44 +65,61 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
       }
     })
 
+    # Bundle carries the sport-keyed decoupling cache; @sport tracks
+    # sp() so the traning_data validator's sport-keying guard passes.
+    decoupling_bundle <- shiny::reactive({
+      traning_data(summaries = summaries, myruns = myruns,
+                   decoupling_data = decoupling_for_sport(),
+                   sport = sp(), augmented = augmented_flag)
+    })
+
     metric_panel_server("decoupling",
       plot_fn = shiny::reactive({
-        fetch.plot.decoupling(summaries, myruns,
-          from = dr_from(), to = dr_to(),
-          decoupling_data = decoupling_for_sport(),
-          sport = sp())
+        fetch.plot.decoupling(decoupling_bundle(),
+          from = dr_from(), to = dr_to(), sport = sp())
       }),
       report_fn = shiny::reactive({
-        report_decoupling(summaries = summaries, myruns = myruns,
-          from = dr_from(), to = dr_to(),
-          decoupling_data = decoupling_for_sport(),
-          sport = sp())
+        report_decoupling(decoupling_bundle(),
+          from = dr_from(), to = dr_to(), sport = sp())
       }),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )
 
-    # HR Zones
+    # HR Zones — no precomputed zone_data cache is threaded in here (this
+    # mirrors pre-migration behaviour: hr_zones always recomputes
+    # on the fly for the current sport), so the bundle carries no
+    # @zone_data and @sport is free to just track sp().
+    hr_zones_bundle <- shiny::reactive({
+      traning_data(summaries = summaries, sport = sp(),
+                   augmented = augmented_flag)
+    })
+
     metric_panel_server("hr_zones",
       plot_fn = shiny::reactive({
-        fetch.plot.hr_zones(summaries, from = dr_from(), to = dr_to(),
+        fetch.plot.hr_zones(hr_zones_bundle(), from = dr_from(), to = dr_to(),
                              sport = sp())
       }),
       report_fn = shiny::reactive({
-        report_hr_zones(summaries, from = dr_from(), to = dr_to(),
+        report_hr_zones(hr_zones_bundle(), from = dr_from(), to = dr_to(),
                         sport = sp())
       }),
       is_mobile = is_mobile
     )
 
     # Recovery HR
+    recovery_hr_bundle <- shiny::reactive({
+      traning_data(summaries = summaries, sport = sp(),
+                   augmented = augmented_flag)
+    })
+
     metric_panel_server("recovery_hr",
       plot_fn = shiny::reactive({
-        fetch.plot.recovery_hr(summaries, from = dr_from(), to = dr_to(),
+        fetch.plot.recovery_hr(recovery_hr_bundle(), from = dr_from(), to = dr_to(),
                                 sport = sp())
       }),
       report_fn = shiny::reactive({
-        report_recovery_hr(summaries, from = dr_from(), to = dr_to(),
+        report_recovery_hr(recovery_hr_bundle(), from = dr_from(), to = dr_to(),
                            sport = sp())
       }),
       is_mobile = is_mobile

@@ -695,10 +695,16 @@ fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
 }
 
 #' Scatter plot of Recovery Heart Rate over time (see above)
+#'
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). Requires Garmin-augmented \code{@summaries}
+#'   (\code{garmin_recoveryHeartRate}).
 #' @inheritParams fetch.plot.pmc
 #' @export
-fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
+fetch.plot.recovery_hr <- function(data, from = NULL, to = NULL,
                                    sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   rhr_data <- compute_recovery_hr(summaries, sport = sport)
 
   if (nrow(rhr_data) == 0) {
@@ -784,20 +790,23 @@ fetch.plot.recovery_hr <- function(summaries, from = NULL, to = NULL,
 #' with threshold bands (<3% green, 3-5% yellow, 5-8% orange, >8% red).
 #' Lower panel: weekly km bars for volume context.
 #'
-#' @param decoupling_data Tibble from \code{compute_decoupling()} or
-#'   \code{load_decoupling()}.  If NULL, computed from summaries + myruns.
-#' @param summaries Summaries tibble (used for weekly km bars and as fallback
-#'   if \code{decoupling_data} is NULL).
-#' @param myruns Myruns list (only needed if \code{decoupling_data} is NULL).
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). \code{@decoupling_data}, when present, is
+#'   used directly; otherwise it is computed on the fly from
+#'   \code{@summaries} and \code{@myruns}. \code{@sport} must match
+#'   \code{sport} whenever \code{@decoupling_data} is populated — the
+#'   cache is sport-keyed (see \code{\link{traning_data}}).
 #' @param from Date or character.  Optional left x-axis limit.
 #' @param to Date or character.  Optional right x-axis limit.
 #' @return ggplot2 object
 #' @export
-fetch.plot.decoupling <- function(summaries, myruns = NULL,
-                                  from = NULL, to = NULL,
-                                  decoupling_data = NULL,
+fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
                                   cap_pct = 25,
                                   sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  myruns <- td@myruns
+  decoupling_data <- td@decoupling_data
   if (is.null(decoupling_data)) {
     decoupling_data <- compute_decoupling(summaries, myruns,
                                            cap_pct = cap_pct,
