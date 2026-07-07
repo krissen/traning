@@ -55,10 +55,16 @@ page_race_server <- function(id, summaries, health_daily, dates,
   force(summaries)
   force(health_daily)
   shiny::moduleServer(id, function(input, output, session) {
+    # compute_taper_plan/compute_race_readiness are S7-migrated (PR 6):
+    # they take a single traning_data bundle instead of separate
+    # summaries/health_daily args. Build it once and reuse.
+    td_bundle <- traning_data(summaries = summaries, health_daily = health_daily,
+                               augmented = "garmin_matched" %in% names(summaries))
+
     taper_plan <- shiny::reactive({
       shiny::req(input$race_date, input$taper_weeks)
       tryCatch(
-        compute_taper_plan(summaries,
+        compute_taper_plan(td_bundle,
                             race_date = input$race_date,
                             distance_km = input$distance_km,
                             taper_weeks = as.integer(input$taper_weeks)),
@@ -71,7 +77,7 @@ page_race_server <- function(id, summaries, health_daily, dates,
     readiness <- shiny::reactive({
       shiny::req(input$race_date, input$taper_weeks)
       tryCatch(
-        compute_race_readiness(summaries, health_daily,
+        compute_race_readiness(td_bundle,
                                 target_date = input$race_date,
                                 taper_weeks = as.integer(input$taper_weeks)),
         error = function(e) {

@@ -168,7 +168,13 @@ if (is.null(func_name) || !func_name %in% names(func_registry)) {
   # zone_data/decoupling_data caches — see the "Derived-cache / garmin
   # functions" block in build_call_args() below.
   "report_recovery_hr", "report_hr_zones", "report_decoupling",
-  "fetch.plot.recovery_hr", "fetch.plot.hr_zones", "fetch.plot.decoupling"
+  "fetch.plot.recovery_hr", "fetch.plot.hr_zones", "fetch.plot.decoupling",
+  # PR 6 — race group ("s"/"sh" buckets, the last legacy-signature
+  # functions). compute_taper_plan stays summaries-only and is routed
+  # through summaries_funcs below (its shim accepts a bare summaries
+  # data.frame); compute_race_readiness now needs a bundle — see the
+  # "PMC / ACWR" block's sibling for it below.
+  "compute_taper_plan", "compute_race_readiness"
 )
 
 # --- Data paths ---
@@ -326,7 +332,12 @@ build_call_args <- function(func_name, func_args) {
     a <- c(stats::setNames(list(summaries), summaries_arg), a)
   }
 
-  # Phase 5d: race tools
+  # Phase 5d: race tools. compute_taper_plan's `data =` arg is already
+  # injected above via summaries_funcs (it's summaries-only); this block
+  # only adds its extra scalar args. compute_race_readiness's `data =`
+  # bundle is injected further down, alongside the other .health_bundle()
+  # consumers — .health_bundle() isn't defined until later in this
+  # function body, so that injection can't happen here.
   if (func_name == "compute_taper_plan") {
     if (!is.null(func_args$race_date))
       a$race_date <- as.Date(func_args$race_date)
@@ -336,7 +347,6 @@ build_call_args <- function(func_name, func_args) {
       a$taper_weeks <- as.integer(func_args$taper_weeks)
   }
   if (func_name == "compute_race_readiness") {
-    a <- c(list(summaries = summaries, health_daily = health_daily), a)
     if (!is.null(func_args$target_date))
       a$target_date <- as.Date(func_args$target_date)
     if (!is.null(func_args$taper_weeks))
@@ -480,6 +490,12 @@ build_call_args <- function(func_name, func_args) {
   # this is the only place their `data =` arg gets set.
   if (func_name %in% c("report_pmc", "report_acwr",
                         "fetch.plot.pmc", "fetch.plot.acwr")) {
+    a <- c(list(data = .health_bundle()), a)
+  }
+
+  # compute_race_readiness — S7-migrated (PR 6): pass a bundle carrying
+  # health_daily so the HRV/resting-HR stability components can compute.
+  if (func_name == "compute_race_readiness") {
     a <- c(list(data = .health_bundle()), a)
   }
 
