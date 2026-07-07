@@ -25,24 +25,27 @@
 #' \code{year_month}, \code{z1_pct}, \code{z2_pct}, \code{z3_pct},
 #' \code{n_activities}, and \code{total_min}.
 #'
-#' @param summaries Data frame from \code{my_dbs_load()}.
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). \code{@zone_data}, when present, is used
+#'   directly; otherwise it is computed on the fly from
+#'   \code{@summaries} and \code{sport}. \code{@sport} must match
+#'   \code{sport} whenever \code{@zone_data} is populated — the cache is
+#'   sport-keyed (see \code{\link{traning_data}}).
 #' @param from Date or NULL. Start of display window.
 #' @param to Date or NULL. End of display window.
 #' @param by Character. Aggregation level — currently only \code{"monthly"}
 #'   is supported.
-#' @param zone_data Optional precomputed zone-distribution list (from
-#'   \code{compute_zone_distribution()} or \code{load_zone_distribution()}).
-#'   When NULL, computed on the fly from \code{summaries} and
-#'   \code{sport}.
 #' @param sport Sport bucket (default \code{"running"}). Forwarded to
-#'   \code{compute_zone_distribution()} when \code{zone_data} is NULL.
-#'   Has no effect when \code{zone_data} is supplied — pass a sport-
-#'   scoped \code{zone_data} in that case.
+#'   \code{compute_zone_distribution()} when \code{@zone_data} is NULL.
+#'   Has no effect when \code{@zone_data} is supplied — pass a sport-
+#'   scoped bundle in that case.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.hr_zones <- function(summaries, from = NULL, to = NULL,
-                                by = "monthly", zone_data = NULL,
-                                sport = "running") {
+fetch.plot.hr_zones <- function(data, from = NULL, to = NULL,
+                                by = "monthly", sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  zone_data <- td@zone_data
   if (is.null(zone_data))
     zone_data <- compute_zone_distribution(summaries, sport = sport)
 

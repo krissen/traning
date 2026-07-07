@@ -161,7 +161,14 @@ if (is.null(func_name) || !func_name %in% names(func_registry)) {
   "latest_known_metrics",
   "fetch.plot.acwr", "fetch.plot.pmc", "fetch.plot.resting_hr",
   "fetch.plot.hrv", "fetch.plot.sleep", "fetch.plot.vo2max",
-  "fetch.plot.readiness_score"
+  "fetch.plot.readiness_score",
+  # PR 5 — derived-cache / garmin group ("sg"/"smgz"/"sgz"/"smgd" buckets).
+  # These take a `traning_data` bundle carrying Garmin-augmented
+  # summaries and, for the zone/decoupling pair, the sport-keyed
+  # zone_data/decoupling_data caches — see the "Derived-cache / garmin
+  # functions" block in build_call_args() below.
+  "report_recovery_hr", "report_hr_zones", "report_decoupling",
+  "fetch.plot.recovery_hr", "fetch.plot.hr_zones", "fetch.plot.decoupling"
 )
 
 # --- Data paths ---
@@ -298,11 +305,10 @@ build_call_args <- function(func_name, func_args) {
     "report_monthtop", "report_runs_year_month", "report_monthlast",
     "report_yearstop", "report_yearstatus", "report_monthstatus",
     "report_ef", "report_hre", "report_monotony",
-    "report_recovery_hr",
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
     "plot_monthlast", "plot_yearstop",
     "fetch.plot.ef", "fetch.plot.hre",
-    "fetch.plot.monotony", "fetch.plot.recovery_hr",
+    "fetch.plot.monotony",
     "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
     "compute_taper_plan",
     # Löpprofil
@@ -377,40 +383,62 @@ build_call_args <- function(func_name, func_args) {
     }
   }
 
-  # Functions with zone_data
-  if (func_name == "report_hr_zones") {
-    a <- c(list(summaries = summaries), a, list(zone_data = zone_data))
-  }
-  if (func_name == "fetch.plot.hr_zones") {
-    a <- c(list(summaries = summaries), a, list(zone_data = zone_data))
-  }
-
-  # Decoupling functions
-  if (func_name == "report_decoupling") {
-    a <- c(a, list(decoupling_data = decoupling_data))
-  }
-  if (func_name == "fetch.plot.decoupling") {
-    a <- c(list(summaries = summaries, myruns = myruns), a,
-           list(decoupling_data = decoupling_data))
-  }
-
-  # Health functions — S7-migrated (PR 4): each of these takes a single
-  # `data =` traning_data bundle instead of separate summaries/
-  # health_daily args (see .migrated_to_data above). .health_bundle()
-  # folds whatever `summaries`/`health_daily` this request already
-  # loaded (per func_registry's dep string) into one bundle; when
-  # `summaries` wasn't loaded (pure "h"-dep functions), it substitutes
-  # a minimal but valid empty summaries stub — traning_data's validator
-  # only requires a `sessionStart` column, not any rows.
+  # Generic bundle builder — S7-migrated functions (PR 4 health group, PR 5
+  # derived-cache/garmin group) each take a single `data =` traning_data
+  # bundle instead of separate summaries/myruns/health_daily/zone_data/
+  # decoupling_data args (see .migrated_to_data above). .bundle() folds
+  # whatever this request already loaded (per func_registry's dep string)
+  # into one bundle; when `summaries` wasn't loaded (pure "h"-dep
+  # functions), it substitutes a minimal but valid empty summaries stub —
+  # traning_data's validator only requires a `sessionStart` column, not
+  # any rows.
+  #
+  # `sport_in` threads `sport_arg` (resolved above, before the zone_data/
+  # decoupling_data cache loads) into the bundle's @sport so the
+  # validator's sport-keying guard is satisfied whenever a zone_data/
+  # decoupling_data cache is attached — those caches are only valid for
+  # the sport they were computed for.
   .augmented_flag <- !is.null(summaries) && "garmin_matched" %in% names(summaries)
-  .health_bundle <- function() {
+  .bundle <- function(myruns_in = NULL, zone_data_in = NULL,
+                       decoupling_data_in = NULL, sport_in = NULL) {
     s <- if (!is.null(summaries)) {
       summaries
     } else {
       tibble::tibble(sessionStart = as.POSIXct(character()))
     }
-    traning_data(summaries = s, health_daily = health_daily,
-                 augmented = .augmented_flag)
+    bundle_args <- list(summaries = s, health_daily = health_daily,
+                        augmented = .augmented_flag)
+    if (!is.null(myruns_in)) bundle_args$myruns <- myruns_in
+    if (!is.null(zone_data_in)) bundle_args$zone_data <- zone_data_in
+    if (!is.null(decoupling_data_in)) bundle_args$decoupling_data <- decoupling_data_in
+    if (!is.null(sport_in)) bundle_args$sport <- sport_in
+    # `do.call()`'s first argument must be the *function name string*
+    # here, not the bare symbol `traning_data` — this script also binds
+    # a top-level variable `traning_data` to the TRANING_DATA path
+    # (see below), which would shadow the S7 class constructor if
+    # evaluated as a symbol. `do.call("traning_data", ...)` resolves via
+    # match.fun(mode = "function"), which skips the non-function
+    # variable and finds the constructor.
+    do.call("traning_data", bundle_args)
+  }
+  .health_bundle <- function() .bundle()
+
+  # Derived-cache / garmin functions (PR 5). report_recovery_hr /
+  # fetch.plot.recovery_hr only need Garmin-augmented summaries ("sg"),
+  # but are bundled here too (rather than left as bare-summaries via
+  # summaries_funcs) so @augmented and @sport are carried consistently
+  # with the zone/decoupling pair.
+  if (func_name %in% c("report_recovery_hr", "fetch.plot.recovery_hr")) {
+    a <- c(list(data = .bundle(sport_in = sport_arg)), a)
+  }
+  if (func_name %in% c("report_hr_zones", "fetch.plot.hr_zones")) {
+    a <- c(list(data = .bundle(myruns_in = myruns, zone_data_in = zone_data,
+                               sport_in = sport_arg)), a)
+  }
+  if (func_name %in% c("report_decoupling", "fetch.plot.decoupling")) {
+    a <- c(list(data = .bundle(myruns_in = myruns,
+                               decoupling_data_in = decoupling_data,
+                               sport_in = sport_arg)), a)
   }
 
   if (func_name %in% c("report_readiness", "fetch.plot.readiness_score",

@@ -314,7 +314,9 @@ test_that("compute_decoupling max_half_speed_diff_pct is adjustable", {
 test_that("report_decoupling returns tibble with Swedish columns", {
   myruns <- make_dc_myruns(test_summaries_dc)
   dc_data <- compute_decoupling(test_summaries_dc, myruns)
-  result <- report_decoupling(decoupling_data = dc_data)
+  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
+                          decoupling_data = dc_data)
+  result <- report_decoupling(bundle)
   expect_s3_class(result, "tbl_df")
   expected_cols <- c("Datum", "Km", "Tempo", "HR", "Dekopp %", "Dekopp 28d", "Temp")
   expect_true(all(expected_cols %in% names(result)))
@@ -323,16 +325,20 @@ test_that("report_decoupling returns tibble with Swedish columns", {
 test_that("report_decoupling respects n parameter", {
   myruns <- make_dc_myruns(test_summaries_dc)
   dc_data <- compute_decoupling(test_summaries_dc, myruns)
-  result <- report_decoupling(decoupling_data = dc_data, n = 3)
+  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
+                          decoupling_data = dc_data)
+  result <- report_decoupling(bundle, n = 3)
   expect_lte(nrow(result), 3)
 })
 
 test_that("report_decoupling respects from/to date range", {
   myruns <- make_dc_myruns(test_summaries_dc)
   dc_data <- compute_decoupling(test_summaries_dc, myruns)
+  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
+                          decoupling_data = dc_data)
   from <- Sys.Date() - 10
   to <- Sys.Date()
-  result <- report_decoupling(decoupling_data = dc_data, from = from, to = to)
+  result <- report_decoupling(bundle, from = from, to = to)
   if (nrow(result) > 0) {
     expect_true(all(result$Datum >= from))
     expect_true(all(result$Datum < to))
@@ -347,8 +353,47 @@ test_that("report_decoupling handles empty input", {
     decoupling_pct = numeric(0), decoupling_rolling28 = numeric(0),
     temperature = numeric(0)
   )
-  result <- report_decoupling(decoupling_data = empty)
+  bundle <- traning_data(summaries = test_summaries_dc, decoupling_data = empty)
+  result <- report_decoupling(bundle)
   expect_equal(nrow(result), 0)
+})
+
+# --- report_decoupling: bundle path (lazy-compute fallback + sport-keying) ---
+
+test_that("report_decoupling: cache-populated bundle skips recompute", {
+  myruns <- make_dc_myruns(test_summaries_dc)
+  dc_data <- compute_decoupling(test_summaries_dc, myruns)
+  # Tag the cached decoupling_pct with a sentinel value that
+  # compute_decoupling() would never produce, so if the report silently
+  # recomputed from summaries/myruns instead of using the cache, this
+  # value would not survive into the output.
+  dc_data$decoupling_pct[1] <- 999
+  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
+                          decoupling_data = dc_data, sport = "running")
+  result <- report_decoupling(bundle, n = nrow(dc_data))
+  expect_s3_class(result, "tbl_df")
+  expect_true(any(result[["Dekopp %"]] == 999))
+})
+
+test_that("report_decoupling: NULL decoupling_data triggers lazy-compute fallback", {
+  myruns <- make_dc_myruns(test_summaries_dc)
+  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
+                          sport = "running")
+  expect_null(bundle@decoupling_data)
+  result <- report_decoupling(bundle)
+  expect_s3_class(result, "tbl_df")
+  expected_cols <- c("Datum", "Km", "Tempo", "HR", "Dekopp %", "Dekopp 28d", "Temp")
+  expect_true(all(expected_cols %in% names(result)))
+})
+
+test_that("traning_data validator rejects decoupling_data with mismatched empty sport", {
+  myruns <- make_dc_myruns(test_summaries_dc)
+  dc_data <- compute_decoupling(test_summaries_dc, myruns)
+  expect_error(
+    traning_data(summaries = test_summaries_dc, myruns = myruns,
+                 decoupling_data = dc_data, sport = ""),
+    regexp = "sport"
+  )
 })
 
 # --- load_decoupling (cache) ---

@@ -487,18 +487,24 @@ report_pmc <- function(data, n = 28, from = NULL, to = NULL,
 }
 
 #' Recovery Heart Rate report — recent runs with recovery HR
+#'
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). Requires Garmin-augmented \code{@summaries}
+#'   (\code{garmin_recoveryHeartRate}).
 #' @inheritParams report_ef
 #' @return Tibble
 #' @export
-report_recovery_hr <- function(summaries, n = 28, from = NULL, to = NULL,
+report_recovery_hr <- function(data, n = 28, from = NULL, to = NULL,
                                sport = "running") {
-  data <- compute_recovery_hr(summaries, sport = sport)
-  if (nrow(data) == 0) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  rhr <- compute_recovery_hr(summaries, sport = sport)
+  if (nrow(rhr) == 0) {
     return(tibble::tibble(
       Datum = as.Date(character(0)), Km = numeric(0),
       `Recovery HR` = numeric(0), `RHR 28d` = numeric(0)))
   }
-  data %>%
+  rhr %>%
     dplyr::mutate(
       Datum = sessionStart,
       Km = round(distance_km, 1),
@@ -515,11 +521,20 @@ report_recovery_hr <- function(summaries, n = 28, from = NULL, to = NULL,
 #' Connect hrTimeInZone data mapped to Seiler 3-zone model (Z1 = low,
 #' Z2 = threshold, Z3 = high).
 #'
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). \code{@zone_data}, when present, is used
+#'   directly; otherwise it is computed on the fly from
+#'   \code{@summaries} and \code{sport}. \code{@sport} must match
+#'   \code{sport} whenever \code{@zone_data} is populated — the cache is
+#'   sport-keyed (see \code{\link{traning_data}}).
 #' @inheritParams report_ef
 #' @return Tibble with monthly zone distribution and PI
 #' @export
-report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
-                            zone_data = NULL, sport = "running") {
+report_hr_zones <- function(data, n = 12, from = NULL, to = NULL,
+                            sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  zone_data <- td@zone_data
   if (is.null(zone_data))
     zone_data <- compute_zone_distribution(summaries, sport = sport)
 
@@ -557,18 +572,21 @@ report_hr_zones <- function(summaries, n = 12, from = NULL, to = NULL,
 #' first and second half) with 28-day rolling mean. Requires per-second
 #' data from myruns. Generalises to cycling/walking via \code{sport=}.
 #'
-#' @param decoupling_data Tibble from \code{compute_decoupling()} or
-#'   \code{load_decoupling()}.  If NULL, computed on the fly from
-#'   \code{summaries} and \code{myruns}.
-#' @param summaries Summaries tibble (only used if \code{decoupling_data} is NULL).
-#' @param myruns Myruns list (only used if \code{decoupling_data} is NULL).
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame). \code{@decoupling_data}, when present, is
+#'   used directly; otherwise it is computed on the fly from
+#'   \code{@summaries} and \code{@myruns}. \code{@sport} must match
+#'   \code{sport} whenever \code{@decoupling_data} is populated — the
+#'   cache is sport-keyed (see \code{\link{traning_data}}).
 #' @inheritParams report_ef
 #' @return Tibble
 #' @export
-report_decoupling <- function(summaries = NULL, myruns = NULL,
-                              n = 28, from = NULL, to = NULL,
-                              decoupling_data = NULL,
+report_decoupling <- function(data, n = 28, from = NULL, to = NULL,
                               sport = "running") {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  myruns <- td@myruns
+  decoupling_data <- td@decoupling_data
   if (is.null(decoupling_data)) {
     decoupling_data <- compute_decoupling(summaries, myruns, sport = sport)
   }

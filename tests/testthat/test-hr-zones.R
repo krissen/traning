@@ -316,3 +316,38 @@ test_that("report_hr_zones returns empty tibble when no running data exists", {
   expect_s3_class(result, "tbl_df")
   expect_equal(nrow(result), 0)
 })
+
+# --- report_hr_zones: bundle path (lazy-compute fallback + sport-keying) ---
+
+test_that("report_hr_zones: cache-populated bundle skips recompute", {
+  zone_data <- compute_zone_distribution(test_summaries_zone)
+  # Tag the cached monthly Z1 % with a sentinel value that
+  # compute_zone_distribution() would never produce, so if the report
+  # silently recomputed from summaries instead of using the cache, this
+  # value would not survive into the output.
+  zone_data$monthly$z1_pct[1] <- 999
+  bundle <- traning_data(summaries = test_summaries_zone,
+                          zone_data = zone_data, sport = "running")
+  result <- report_hr_zones(bundle, n = nrow(zone_data$monthly))
+  expect_s3_class(result, "tbl_df")
+  expect_true(any(result[["Z1 %"]] == 999))
+})
+
+test_that("report_hr_zones: NULL zone_data triggers lazy-compute fallback", {
+  bundle <- traning_data(summaries = test_summaries_zone, sport = "running")
+  expect_null(bundle@zone_data)
+  result <- report_hr_zones(bundle)
+  expect_s3_class(result, "tbl_df")
+  expected_cols <- c("Datum", "Z1 %", "Z2 %", "Z3 %", "PI", "Turer", "Tot min")
+  expect_true(all(expected_cols %in% names(result)))
+  expect_gt(nrow(result), 0)
+})
+
+test_that("traning_data validator rejects zone_data with mismatched empty sport", {
+  zone_data <- compute_zone_distribution(test_summaries_zone)
+  expect_error(
+    traning_data(summaries = test_summaries_zone,
+                 zone_data = zone_data, sport = ""),
+    regexp = "sport"
+  )
+})
