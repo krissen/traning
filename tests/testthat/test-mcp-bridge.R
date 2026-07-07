@@ -63,6 +63,39 @@ test_that("report_ef returns data JSON", {
   expect_true(out$rows > 0)
 })
 
+test_that("report_datesum with from/to returns filtered data, not an error", {
+  # Regression: report_datesum takes do_datesum_from/do_datesum_to, so the
+  # generic from/to that the date handler stashes must be dropped before
+  # dispatch — otherwise the call errors with "unused arguments (from=..)".
+  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  out <- run_bridge("report_datesum", '{"from":"2024-01-01","to":"2024-06-30"}')
+  expect_equal(out$type, "data")
+})
+
+# --- Dispatch-table unification (PR 7): one representative function per
+# dep bucket, exercising the single generic `traning_data` bundle build
+# in build_call_args() rather than per-function data-injection blocks.
+
+test_that("report_metric (h bucket) returns data JSON", {
+  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  out <- run_bridge("report_metric", '{"metric":"resting_hr","n":5}')
+  expect_equal(out$type, "data")
+})
+
+test_that("report_hr_zones (smgz bucket) returns data JSON", {
+  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  out <- run_bridge("report_hr_zones", '{"n":3}')
+  expect_equal(out$type, "data")
+  expect_true(out$rows >= 0)
+})
+
+test_that("report_decoupling (smgd bucket) returns data JSON", {
+  skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
+  out <- run_bridge("report_decoupling", '{"n":5}')
+  expect_equal(out$type, "data")
+  expect_true(out$rows >= 0)
+})
+
 # --- Date range filtering ---
 
 test_that("from/to date filtering works", {
