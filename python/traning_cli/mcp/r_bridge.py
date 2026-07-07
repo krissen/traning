@@ -9,7 +9,7 @@ import stat as stat_lib
 import subprocess
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -156,7 +156,7 @@ def _new_plot_path() -> Path:
     Two concurrent calls cannot collide: filename carries both a UTC
     timestamp and 8 hex chars of randomness.
     """
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     return _plot_dir() / f"vayu_{stamp}_{secrets.token_hex(4)}.png"
 
 

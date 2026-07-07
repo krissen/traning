@@ -7,10 +7,9 @@ import subprocess
 import tempfile
 import threading
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-
-from contextlib import asynccontextmanager
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 
@@ -61,7 +60,8 @@ def _run_import_garmin() -> tuple[str, str | None]:
                             elapsed, result.stderr.strip()[-300:])
                 return "", "MISSLYCKADES"
             log.info("Import garmin OK (%ds)", elapsed)
-            lines = [l for l in result.stdout.strip().splitlines() if l.strip()]
+            lines = [raw_line for raw_line in result.stdout.strip().splitlines()
+                     if raw_line.strip()]
             summary = "klart"
             for line in reversed(lines):
                 low = line.lower()
@@ -402,11 +402,11 @@ def _flush_pending_workouts() -> None:
                 else:
                     ok = True
                     # Surface the trailing import-summary line for journal logs.
-                    lines = [l.strip() for l in result.stdout.strip().splitlines()
-                             if l.strip()]
+                    lines = [line.strip() for line in result.stdout.strip().splitlines()
+                             if line.strip()]
                     summary = next(
-                        (l for l in reversed(lines)
-                         if any(w in l.lower() for w in ["import", "inget att"])),
+                        (line for line in reversed(lines)
+                         if any(w in line.lower() for w in ["import", "inget att"])),
                         "klart",
                     )
                     log.info("HAE auto-import OK (%ds, %d pending): %s",
@@ -631,7 +631,10 @@ def create_app() -> FastAPI:
     async def trigger_garmin(background_tasks: BackgroundTasks):
         """Trigger a Garmin fetch in the background."""
         def _run_fetch():
-            traning_bin = Path(__file__).resolve().parent.parent.parent.parent / "python" / ".venv" / "bin" / "traning"
+            traning_bin = (
+                Path(__file__).resolve().parent.parent.parent.parent
+                / "python" / ".venv" / "bin" / "traning"
+            )
             result = subprocess.run(
                 [str(traning_bin), "fetch", "garmin"],
                 capture_output=True, text=True, timeout=120,

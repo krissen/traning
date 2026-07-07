@@ -10,15 +10,15 @@ import logging
 import subprocess
 import unicodedata
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 
+from ..garmin.utils import get_data_dir
 from ..git_utils import git_lock
 from ..health.utils import (
-    health_canonical_dir, health_incoming_dir,
-    health_metrics_dir, health_workouts_dir,
+    health_canonical_dir,
+    health_metrics_dir,
+    health_workouts_dir,
 )
-from ..garmin.utils import get_data_dir
 
 log = logging.getLogger(__name__)
 

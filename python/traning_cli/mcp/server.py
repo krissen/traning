@@ -5,7 +5,7 @@ import sys
 
 from fastmcp import FastMCP
 
-from . import tools, prompts
+from . import prompts, tools
 
 mcp = FastMCP(
     "Vayu",

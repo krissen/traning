@@ -7,7 +7,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .utils import hae_host, hae_port, health_metrics_dir, DEFAULT_TIMEOUT
+from .utils import DEFAULT_TIMEOUT, hae_host, hae_port, health_metrics_dir
 
 log = logging.getLogger(__name__)
 
@@ -27,7 +27,7 @@ def check_server(timeout: float = 3.0) -> bool:
         sock.connect((host, port))
         sock.close()
         return True
-    except (socket.timeout, ConnectionRefusedError, OSError):
+    except (TimeoutError, ConnectionRefusedError, OSError):
         return False
 
 
@@ -69,10 +69,10 @@ def _query_tcp(start: str, end: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
                 if not chunk:
                     break
                 chunks.append(chunk)
-            except socket.timeout:
+            except TimeoutError:
                 break
         sock.close()
-    except (socket.timeout, ConnectionError, OSError) as e:
+    except (TimeoutError, ConnectionError, OSError) as e:
         raise HAEQueryError(f"connection error: {e}") from e
 
     raw = b"".join(chunks)

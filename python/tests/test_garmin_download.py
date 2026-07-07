@@ -9,7 +9,6 @@ forever and it would never be retried.
 """
 
 import pytest
-
 from traning_cli.garmin import download as dl
 
 ACTIVITY = {

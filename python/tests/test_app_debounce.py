@@ -12,9 +12,9 @@ that and gets the actual module object with the debounce internals.
 import importlib
 
 import pytest
+from traning_cli.server import state
 
 app_mod = importlib.import_module("traning_cli.server.app")
-from traning_cli.server import state
 
 
 @pytest.fixture(autouse=True)

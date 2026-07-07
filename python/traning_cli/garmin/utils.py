@@ -38,7 +38,7 @@ def get_data_dir() -> Path:
         renviron = _read_renviron(get_project_root() / ".Renviron")
         raw = renviron.get("TRANING_DATA")
     if not raw:
-        raise EnvironmentError(
+        raise OSError(
             "TRANING_DATA is not set. "
             "Add it to .Renviron or export it in your shell."
         )

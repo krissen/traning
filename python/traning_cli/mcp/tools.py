@@ -3,14 +3,11 @@
 import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 import requests
-
 from fastmcp.utilities.types import Image
 
-from .r_bridge import _run_r, r_report, r_plot
-
+from .r_bridge import _run_r, r_plot, r_report
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -29,9 +26,9 @@ def _data_or_plot(
 
 
 def _build_args(
-    after: Optional[str] = None,
-    before: Optional[str] = None,
-    n: Optional[int] = None,
+    after: str | None = None,
+    before: str | None = None,
+    n: int | None = None,
     **extra,
 ) -> dict:
     """Build an args dict, omitting None values."""
@@ -60,11 +57,12 @@ def _build_args(
 
 def get_readiness(
     n: int = 14,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
 ) -> Image | dict | list:
-    """Daily readiness score with component breakdown (HRV, sleep, resting HR, training load, wrist temp).
+    """Daily readiness score with component breakdown (HRV, sleep, resting HR,
+    training load, wrist temp).
 
     Returns a composite score (0-100) fusing Apple Watch health data
     (including sleeping wrist temperature as illness early-warning) with
@@ -81,8 +79,8 @@ def get_readiness(
 
 
 def get_sleep(
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
 ) -> Image | dict | list:
     """Sleep data from Apple Watch (total hours, deep/REM/core stages).
@@ -101,8 +99,8 @@ def get_sleep(
 
 
 def get_hrv(
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
 ) -> Image | dict | list:
     """Heart rate variability (HRV) from Apple Watch as Ln(RMSSD).
@@ -128,10 +126,10 @@ def get_hrv(
 def get_training_load(
     metric: str = "pmc",
     n: int = 28,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
-    sport: Optional[str] = None,
+    sport: str | None = None,
 ) -> Image | dict | list:
     """Training load metrics: PMC (fitness/fatigue/form), ACWR, or monotony.
 
@@ -170,7 +168,10 @@ def get_training_load(
         "monotony": ("report_monotony", "fetch.plot.monotony"),
     }
     if metric not in report_map:
-        return {"type": "error", "message": f"Unknown metric: {metric}. Use pmc, acwr, or monotony."}
+        return {
+            "type": "error",
+            "message": f"Unknown metric: {metric}. Use pmc, acwr, or monotony.",
+        }
 
     # Per-metric default:
     #  - PMC is whole-system (TRIMP composes).
@@ -187,8 +188,8 @@ def get_training_load(
 def get_efficiency(
     metric: str = "ef",
     n: int = 28,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
     sport: str = "running",
 ) -> Image | dict | list:
@@ -220,8 +221,8 @@ def get_efficiency(
 
 def get_zones(
     n: int = 12,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
     sport: str = "running",
 ) -> Image | dict | list:
@@ -265,8 +266,8 @@ _RUN_CHARACTER_CHARTS = {
 
 def get_run_character(
     chart: str = "pace_year",
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     sport: str = "running",
 ) -> Image | dict:
     """Yearly characterization plots (Löpprofil tab in the Shiny app).
@@ -331,8 +332,8 @@ def get_run_character(
 
 def get_sessions(
     n: int = 20,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
     sport: str = "running",
 ) -> Image | dict | list:
@@ -365,8 +366,8 @@ def get_sessions(
 
 def get_monthly_summary(
     n: int = 12,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     top: bool = False,
     plot: bool = False,
     sport: str = "running",
@@ -389,8 +390,8 @@ def get_monthly_summary(
 
 def get_yearly_summary(
     n: int = None,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     top: bool = False,
     plot: bool = False,
     sport: str = "running",
@@ -426,7 +427,7 @@ _SPORT_MIX_METRICS = ("distance", "duration", "trimp")
 
 def get_taper_plan(
     race_date: str,
-    distance_km: Optional[float] = None,
+    distance_km: float | None = None,
     taper_weeks: int = 2,
 ) -> dict:
     """Weekly km schedule from this Monday through race week.
@@ -553,8 +554,8 @@ def get_race_readiness(
 def get_sport_mix(
     period: str = "month",
     metric: str = "distance",
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     min_value: float = 0.1,
 ) -> Image | dict:
     """Stacked bar chart: chosen metric per period broken down by sport.
@@ -598,9 +599,9 @@ def get_sport_mix(
 
 
 def get_sport_ctl_overlay(
-    sports: Optional[list[str]] = None,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    sports: list[str] | None = None,
+    after: str | None = None,
+    before: str | None = None,
 ) -> Image | dict:
     """CTL (chronic training load) overlay across multiple sport buckets.
 
@@ -621,9 +622,9 @@ def get_sport_ctl_overlay(
 
 
 def get_sport_calendar(
-    after: Optional[str] = None,
-    before: Optional[str] = None,
-    sport: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
+    sport: str | None = None,
 ) -> Image | dict:
     """Activity calendar — one cell per day, coloured by dominant sport.
 
@@ -648,8 +649,8 @@ def get_sport_calendar(
 
 def get_decoupling(
     n: int = 28,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
     sport: str = "running",
 ) -> Image | dict | list:
@@ -670,8 +671,8 @@ def get_decoupling(
 
 def get_recovery_hr(
     n: int = 28,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
     sport: str = "all",
 ) -> Image | dict | list:
@@ -694,8 +695,8 @@ def get_recovery_hr(
 
 
 def get_resting_hr(
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
 ) -> Image | dict | list:
     """Resting heart rate trend from Apple Watch.
@@ -713,8 +714,8 @@ def get_resting_hr(
 
 
 def get_vo2max(
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     plot: bool = False,
 ) -> Image | dict | list:
     """VO2max estimate trend (Apple Watch daily + Garmin per-activity).
@@ -735,8 +736,8 @@ def get_vo2max(
 
 def get_health_metric(
     metric: str,
-    after: Optional[str] = None,
-    before: Optional[str] = None,
+    after: str | None = None,
+    before: str | None = None,
     n: int = 30,
 ) -> dict:
     """Return time series for any health metric from the database.
@@ -807,14 +808,23 @@ def compare_periods(
 _METRIC_DEFINITIONS = {
     "readiness": {
         "name": "Readiness Score",
-        "description": "Daily composite score (0-100) fusing HRV, sleep, resting HR, training load, and wrist temperature.",
-        "components": "HRV 30%, Sleep 25%, Resting HR 20%, Training load 15%, Wrist temp 10% (falls back to 4-component model without wrist temp)",
+        "description": (
+            "Daily composite score (0-100) fusing HRV, sleep, resting HR, "
+            "training load, and wrist temperature."
+        ),
+        "components": (
+            "HRV 30%, Sleep 25%, Resting HR 20%, Training load 15%, Wrist temp 10% "
+            "(falls back to 4-component model without wrist temp)"
+        ),
         "thresholds": {"green": ">=70", "yellow": "40-69", "red": "<40"},
         "references": ["Seshadri 2019", "Plews 2013", "Buchheit 2014"],
     },
     "pmc": {
         "name": "Performance Management Chart",
-        "description": "CTL (fitness, 42-day EWMA of TRIMP), ATL (fatigue, 7-day EWMA), TSB = CTL - ATL (form).",
+        "description": (
+            "CTL (fitness, 42-day EWMA of TRIMP), ATL (fatigue, 7-day EWMA), "
+            "TSB = CTL - ATL (form)."
+        ),
         "thresholds": {"fresh": "TSB > 0", "optimal": "TSB 5-15", "overreaching": "TSB < -20"},
         "references": ["Banister 1991", "Murray 2017"],
     },
@@ -826,7 +836,10 @@ _METRIC_DEFINITIONS = {
     },
     "ef": {
         "name": "Efficiency Factor",
-        "description": "Speed (m/min) / avg HR (bpm). Higher = more efficient. Generalises to any sport with speed and HR.",
+        "description": (
+            "Speed (m/min) / avg HR (bpm). Higher = more efficient. "
+            "Generalises to any sport with speed and HR."
+        ),
         "interpretation": "Upward trend indicates improving aerobic fitness.",
         "references": ["Friel 2009"],
     },
@@ -838,13 +851,22 @@ _METRIC_DEFINITIONS = {
     },
     "decoupling": {
         "name": "Aerobic Decoupling",
-        "description": "Pace/speed:HR efficiency drift between first and second half of a session. Generalises to cycling/walking with steady speed + HR samples.",
-        "thresholds": {"well_coupled": "<3%", "acceptable": "3-5%", "moderate_drift": "5-8%", "significant": ">8%"},
+        "description": (
+            "Pace/speed:HR efficiency drift between first and second half of a "
+            "session. Generalises to cycling/walking with steady speed + HR samples."
+        ),
+        "thresholds": {
+            "well_coupled": "<3%", "acceptable": "3-5%",
+            "moderate_drift": "5-8%", "significant": ">8%",
+        },
         "references": ["Friel 2009"],
     },
     "monotony": {
         "name": "Training Monotony",
-        "description": "7-day mean daily load / SD. High monotony (>2.0) increases illness/injury risk.",
+        "description": (
+            "7-day mean daily load / SD. High monotony (>2.0) increases "
+            "illness/injury risk."
+        ),
         "thresholds": {"low": "<1.5", "moderate": "1.5-2.0", "high": ">2.0"},
         "references": ["Foster 1998"],
     },
@@ -887,7 +909,10 @@ _HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
     "vo2_max":                ("Fitness", "VO2max estimate"),
     "six_minute_walking_test_distance": ("Fitness", "6-minute walk test distance"),
     # Activity
-    "active_energy":          ("Activity", "Active energy burned; unit depends on HAE configuration (typically kJ for Apple Watch, kcal possible)"),
+    "active_energy":          ("Activity", (
+        "Active energy burned; unit depends on HAE configuration "
+        "(typically kJ for Apple Watch, kcal possible)"
+    )),
     "basal_energy_burned":    ("Activity", "Basal metabolic energy (kcal)"),
     "step_count":             ("Activity", "Daily steps"),
     "walking_running_distance": ("Activity", "Walking + running distance (km)"),
@@ -1068,7 +1093,10 @@ def explain_metric(metric_name: str) -> dict:
         available = ", ".join(sorted(_METRIC_DEFINITIONS.keys()))
         return {
             "schema_version": "1.0",
-            "summary": {"status": "error", "message": f"Unknown metric: {key}. Available: {available}"},
+            "summary": {
+                "status": "error",
+                "message": f"Unknown metric: {key}. Available: {available}",
+            },
             "details": [],
             "_meta": {},
         }
@@ -1086,7 +1114,7 @@ def explain_metric(metric_name: str) -> dict:
 # Form / state-based insight + raw data inspection
 # ---------------------------------------------------------------------------
 
-def get_form(date: Optional[str] = None) -> dict:
+def get_form(date: str | None = None) -> dict:
     """Today's form ("dagsform") in Swedish prose, with structured drivers.
 
     Returns a state-based interpretation of today's readiness: status
@@ -1172,7 +1200,7 @@ def get_latest_known() -> dict:
 # Pipeline status
 # ---------------------------------------------------------------------------
 
-def _cache_mtime(filename: str) -> Optional[str]:
+def _cache_mtime(filename: str) -> str | None:
     """Return ISO timestamp of a cache file's mtime, or None if missing."""
     data_dir = os.environ.get("TRANING_DATA")
     if not data_dir:
@@ -1218,7 +1246,7 @@ def get_pipeline_status() -> dict:
     api_key = os.environ.get("TRANING_API_KEY")
 
     receiver: dict = {}
-    error: Optional[str] = None
+    error: str | None = None
 
     if not api_key:
         error = "TRANING_API_KEY not set in environment"
