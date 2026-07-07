@@ -166,12 +166,12 @@ test_that("compute_taper_plan handles a zero baseline (no recent running)", {
 
 test_that("compute_race_readiness validates inputs", {
   s <- .fixture_summaries_for_taper(weeks_back = 12L, weekly_km = 40)
-  expect_error(compute_race_readiness(s, NULL, NA),
+  expect_error(compute_race_readiness(s, NA),
                "target_date")
-  expect_error(compute_race_readiness(s, NULL, Sys.Date() + 14L,
+  expect_error(compute_race_readiness(s, Sys.Date() + 14L,
                                        taper_weeks = 0L),
                "taper_weeks")
-  expect_error(compute_race_readiness(s, NULL, Sys.Date() + 14L,
+  expect_error(compute_race_readiness(s, Sys.Date() + 14L,
                                        taper_weeks = 9L),
                "taper_weeks")
 })
@@ -201,7 +201,7 @@ test_that("compute_race_readiness returns Otillräcklig data with empty inputs",
     avgHeartRateMoving = numeric(0),
     durationMoving = as.difftime(numeric(0), units = "mins")
   )
-  r <- compute_race_readiness(empty, NULL, Sys.Date() + 14L)
+  r <- compute_race_readiness(empty, Sys.Date() + 14L)
   expect_equal(r$status, "Otillräcklig data")
   expect_true(is.na(r$score))
 })
@@ -209,7 +209,7 @@ test_that("compute_race_readiness returns Otillräcklig data with empty inputs",
 
 test_that("compute_race_readiness produces a score with PMC data only", {
   s <- .fixture_summaries_for_taper(weeks_back = 12L, weekly_km = 40)
-  r <- compute_race_readiness(s, NULL, Sys.Date() + 21L)
+  r <- compute_race_readiness(s, Sys.Date() + 21L)
   expect_false(is.na(r$score))
   expect_true(r$score >= 0 && r$score <= 100)
   # CTL trend + TSB projection are present; HRV / RHR absent.
@@ -221,7 +221,7 @@ test_that("compute_race_readiness produces a score with PMC data only", {
 
 test_that("compute_race_readiness prose mentions days_until and status", {
   s <- .fixture_summaries_for_taper(weeks_back = 12L, weekly_km = 40)
-  r <- compute_race_readiness(s, NULL, Sys.Date() + 21L)
+  r <- compute_race_readiness(s, Sys.Date() + 21L)
   expect_match(r$prose, "21 dagar kvar")
   # Score line is always present.
   expect_match(r$prose, "/100")
@@ -234,7 +234,7 @@ test_that("readiness prose lists missing components", {
   # not silently use the running-only components and pretend
   # everything was measured.
   s <- .fixture_summaries_for_taper(weeks_back = 12L, weekly_km = 40)
-  r <- compute_race_readiness(s, NULL, Sys.Date() + 21L)
+  r <- compute_race_readiness(s, Sys.Date() + 21L)
   expect_match(r$prose, "Saknade komponenter")
   expect_match(r$prose, "HRV")
   expect_match(r$prose, "Vilopuls")
@@ -257,4 +257,27 @@ test_that(".score_stability hits the linear band", {
   expect_equal(traning:::.score_stability(-1, 1, 3,
                                            direction = "lower-is-better"),
                100)
+})
+
+
+# --- S7 bundle equivalence ---------------------------------------------------
+
+test_that("compute_taper_plan gives identical output for bundle and bare-summaries calls", {
+  s <- .fixture_summaries_for_taper(weeks_back = 8L, weekly_km = 40)
+  race_date <- Sys.Date() + 28L
+  bundle <- traning_data(summaries = s)
+  expect_identical(
+    compute_taper_plan(bundle, race_date, distance_km = 21.1, taper_weeks = 2L),
+    compute_taper_plan(s, race_date, distance_km = 21.1, taper_weeks = 2L)
+  )
+})
+
+
+test_that("compute_race_readiness gives identical output for bundle and bare-summaries calls", {
+  s <- .fixture_summaries_for_taper(weeks_back = 12L, weekly_km = 40)
+  bundle <- traning_data(summaries = s)
+  expect_identical(
+    compute_race_readiness(bundle, Sys.Date() + 21L),
+    compute_race_readiness(s, Sys.Date() + 21L)
+  )
 })

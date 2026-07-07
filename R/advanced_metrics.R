@@ -1617,7 +1617,8 @@ load_decoupling <- function(summaries, myruns,
 #' than that remain at baseline. See
 #' \code{docs/dev/race-taper-design.md} for trade-offs.
 #'
-#' @param summaries Augmented summaries from \code{my_dbs_load()}.
+#' @param data A \code{traning_data} bundle, or a legacy augmented
+#'   \code{summaries} data.frame from \code{my_dbs_load()}.
 #' @param race_date Date of the race. Must be on or after today.
 #' @param distance_km Optional race distance, echoed back in the
 #'   plan's attributes; does not change the curve.
@@ -1628,9 +1629,11 @@ load_decoupling <- function(summaries, myruns,
 #'   relative_to_baseline}. The \code{distance_km} input is preserved
 #'   as an attribute on the tibble.
 #' @export
-compute_taper_plan <- function(summaries, race_date,
+compute_taper_plan <- function(data, race_date,
                                 distance_km = NA_real_,
                                 taper_weeks = 2L) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
   race_date <- as.Date(race_date)
   if (is.na(race_date) || race_date < Sys.Date()) {
     stop("race_date must be today or in the future")
@@ -1771,9 +1774,9 @@ render_taper_plan_prose <- function(plan) {
 #' from the average rather than scored as 0, so the result degrades
 #' gracefully when health data is missing.
 #'
-#' @param summaries Augmented summaries from \code{my_dbs_load()}.
-#' @param health_daily Daily health data from \code{load_health_data()};
-#'   may be \code{NULL}.
+#' @param data A \code{traning_data} bundle carrying \code{summaries}
+#'   and, optionally, \code{health_daily} — or a legacy augmented
+#'   \code{summaries} data.frame from \code{my_dbs_load()}.
 #' @param target_date Race date. May be in the past or future.
 #' @param taper_weeks Used by the TSB projection to estimate how much
 #'   ATL will decay between today and \code{target_date}. Default 2.
@@ -1783,8 +1786,11 @@ render_taper_plan_prose <- function(plan) {
 #'   \code{status} ("Klar" / "Tveksam" / "Inte klar" /
 #'   "Otillräcklig data"), and \code{prose} (multi-line Swedish text).
 #' @export
-compute_race_readiness <- function(summaries, health_daily, target_date,
+compute_race_readiness <- function(data, target_date,
                                     taper_weeks = 2L) {
+  td <- .as_traning_data(data)
+  summaries <- td@summaries
+  health_daily <- td@health_daily
   target_date <- as.Date(target_date)
   if (length(target_date) != 1L || is.na(target_date)) {
     stop("target_date must be a non-NA, length-1 Date")
