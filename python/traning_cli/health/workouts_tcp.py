@@ -12,22 +12,22 @@ contains only basic stats.
 
 import json
 import logging
-import socket
 import time
 import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from .utils import hae_host, hae_port, health_workouts_dir
+from .hae_client import HAEError, HAEWorkoutsError, query_hae
+from .utils import health_workouts_dir
 
 log = logging.getLogger(__name__)
 
+__all__ = [
+    "HAEError", "HAEWorkoutsError", "fetch_workouts_tcp",
+]
+
 DEFAULT_TIMEOUT = 300.0  # seconds; large windows can take 15s+
 DEFAULT_TZ = "+0100"  # Stockholm winter; HAE accepts any tz with absolute datetimes
-
-
-class HAEWorkoutsError(RuntimeError):
-    """A TCP query for workouts failed."""
 
 
 def _query_workouts(start: str, end: str, include_metadata: bool = True,
@@ -39,61 +39,19 @@ def _query_workouts(start: str, end: str, include_metadata: bool = True,
     Returns the list of workout dicts on success (possibly empty).
     Raises HAEWorkoutsError on connection / parse / shape failures.
     """
-    request = json.dumps({
-        "jsonrpc": "2.0",
-        "id": "fetch_workouts",
-        "method": "callTool",
-        "params": {
-            "name": "workouts",
-            "arguments": {
-                "start": start,
-                "end": end,
-                "includeMetadata": include_metadata,
-                "includeRoutes": False,
-                "metadataAggregation": metadata_aggregation,
-            },
+    body = query_hae(
+        "workouts",
+        {
+            "start": start,
+            "end": end,
+            "includeMetadata": include_metadata,
+            "includeRoutes": False,
+            "metadataAggregation": metadata_aggregation,
         },
-    })
-
-    host, port = hae_host(), hae_port()
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect((host, port))
-        sock.sendall(request.encode("utf-8"))
-        chunks = []
-        while True:
-            try:
-                chunk = sock.recv(65536)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-            except TimeoutError:
-                break
-        sock.close()
-    except (TimeoutError, ConnectionError, OSError) as e:
-        raise HAEWorkoutsError(f"connection error: {e}") from e
-
-    raw = b"".join(chunks)
-    if len(raw) < 10:
-        raise HAEWorkoutsError(
-            f"empty/short response ({len(raw)} bytes) — HAE likely warming up"
-        )
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise HAEWorkoutsError(
-            f"JSON parse failed at byte {e.pos}/{len(raw)}: {e.msg}"
-        ) from e
-
-    result = data.get("result", {})
-    if "error" in result:
-        raise HAEWorkoutsError(f"HAE error: {result['error']}")
-    if "data" not in result:
-        raise HAEWorkoutsError(f"unexpected shape, top-level keys: {list(data)}")
-
-    return result["data"].get("workouts", []) or []
+        request_id="fetch_workouts",
+        timeout=timeout,
+    )
+    return body.get("workouts", []) or []
 
 
 def _workout_filename(w: dict) -> str:
