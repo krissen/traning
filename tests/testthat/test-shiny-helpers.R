@@ -5,7 +5,7 @@
 # make_fake_cache() / with_traning_data() live in helper-shiny-data.R
 # (shared with test-load-traning-data.R).
 
-test_that("load_session_data returns list with expected names", {
+test_that("load_session_data returns a valid traning_data bundle", {
   td <- tempfile("traning_data_")
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
   make_fake_cache(td)
@@ -14,8 +14,9 @@ test_that("load_session_data returns list with expected names", {
     out <- load_session_data()
   })
 
-  expect_type(out, "list")
-  expect_named(out, c("summaries", "myruns", "decoupling_data", "health_daily"))
+  expect_true(S7::S7_inherits(out, traning_data))
+  expect_s3_class(out@summaries, "data.frame")
+  expect_type(out@myruns, "list")
 })
 
 test_that("load_session_data summaries matches my_dbs_load", {
@@ -32,8 +33,8 @@ test_that("load_session_data summaries matches my_dbs_load", {
     out <- load_session_data()
   })
 
-  expect_equal(out$summaries, ref$summaries)
-  expect_equal(out$myruns, ref$myruns)
+  expect_equal(out@summaries, ref$summaries)
+  expect_equal(out@myruns, ref$myruns)
 })
 
 test_that("load_session_data handles missing health/decoupling caches", {
@@ -48,15 +49,15 @@ test_that("load_session_data handles missing health/decoupling caches", {
   })
 
   # health_daily ska vara tibble med rätt schema även när cache saknas
-  expect_true(inherits(out$health_daily, "data.frame"))
-  expect_named(out$health_daily, c("date", "metric", "value", "source"),
+  expect_true(inherits(out@health_daily, "data.frame"))
+  expect_named(out@health_daily, c("date", "metric", "value", "source"),
                ignore.order = TRUE)
 
   # decoupling_data är NULL (kallt cold-path-misslyckande) eller en
   # data.frame (lyckad cold compute) — båda är acceptabla då vi bara
   # vill bekräfta att laddaren inte kraschar utan färdig cache.
-  expect_true(is.null(out$decoupling_data) ||
-              inherits(out$decoupling_data, "data.frame"))
+  expect_true(is.null(out@decoupling_data) ||
+              inherits(out@decoupling_data, "data.frame"))
 })
 
 test_that("load_session_data honours explicit traning_data over env var", {
@@ -78,7 +79,7 @@ test_that("load_session_data honours explicit traning_data over env var", {
     file.path(cache_dir_right, "summaries.RData"),
     file.path(cache_dir_right, "myruns.RData")
   )
-  expect_equal(out$summaries, ref$summaries)
+  expect_equal(out@summaries, ref$summaries)
 })
 
 test_that("load_session_data is reentrant — two calls return equivalent data", {
@@ -91,8 +92,8 @@ test_that("load_session_data is reentrant — two calls return equivalent data",
     b <- load_session_data()
   })
 
-  expect_equal(a$summaries, b$summaries)
-  expect_equal(a$myruns, b$myruns)
+  expect_equal(a@summaries, b@summaries)
+  expect_equal(a@myruns, b@myruns)
 })
 
 test_that("load_session_data errors when TRANING_DATA is unset", {

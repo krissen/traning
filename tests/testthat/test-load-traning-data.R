@@ -74,22 +74,19 @@ test_that("load_traning_data rejects unknown slot names", {
   })
 })
 
-test_that("load_session_data delegates to load_traning_data and unpacks it", {
+test_that("load_session_data delegates to load_traning_data and returns the bundle", {
   td <- tempfile("traning_data_")
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
   make_fake_cache(td)
 
   with_traning_data(td, {
     bundle <- load_traning_data(td)
-    via_list <- load_session_data()
+    via_session <- load_session_data()
   })
 
-  expected <- list(
-    summaries       = bundle@summaries,
-    myruns          = bundle@myruns,
-    decoupling_data = bundle@decoupling_data,
-    health_daily    = bundle@health_daily
-  )
-
-  expect_equal(via_list, expected)
+  expect_true(S7::S7_inherits(via_session, traning_data))
+  expect_equal(via_session@summaries, bundle@summaries)
+  expect_equal(via_session@myruns, bundle@myruns)
+  expect_equal(via_session@decoupling_data, bundle@decoupling_data)
+  expect_equal(via_session@health_daily, bundle@health_daily)
 })

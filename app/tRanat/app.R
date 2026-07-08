@@ -119,6 +119,10 @@ server <- function(input, output, session) {
   # baseline:n och sessionen aldrig fick reload-notis. (Vi accepterar
   # det mindre fönstret där en import landar mellan baseline-capture
   # och load — den ger en tidig notis snarare än en tappad.)
+  # NOTE: cache_dir/mtime-watchning nedan läser mtime på cachefilerna
+  # direkt från disk — helt oberoende av `data`-bundlen (PR 8 nedan) —
+  # så den logiken är opåverkad av att load_session_data() nu returnerar
+  # en traning_data-bundle istället för en list.
   cache_dir    <- file.path(Sys.getenv("TRANING_DATA"), "cache")
   summary_path <- file.path(cache_dir, "summaries.RData")
   health_path  <- file.path(cache_dir, "health_daily.RData")
@@ -135,6 +139,9 @@ server <- function(input, output, session) {
   # och behåller dessutom globala summaries/myruns/... för
   # bakåtkompatibilitet. Per-session-anropet säkerställer att varje
   # ny eller omladdad dashboard ser cachen som finns på disk just nu.
+  # `data` är en traning_data-bundle (S7) — page-servrarna nedan
+  # konsumerar den direkt via `@`-access istället för att packa upp
+  # den till separata summaries/health_daily/... argument.
   data <- load_session_data()
 
   # Global date range + sport
@@ -205,18 +212,16 @@ server <- function(input, output, session) {
   # Page servers — sport= is forwarded to every page that has any
   # sport-aware compute_*/report_*/plot_* call. Pages that are
   # genuinely sport-blind (overview, health, race) can ignore it.
-  page_overview_server("overview", data$summaries, data$health_daily,
-                        data$myruns, data$decoupling_data, dates, is_mobile)
-  page_training_server("training", data$summaries, data$health_daily,
-                        dates, is_mobile, sport)
-  page_progress_server("progress", data$summaries, dates, is_mobile, sport)
-  page_sport_mix_server("sport_mix", data$summaries, dates, is_mobile, sport)
-  page_health_server("health", data$summaries, data$health_daily, dates, is_mobile)
-  page_performance_server("performance", data$summaries, data$myruns,
-                           data$health_daily, data$decoupling_data,
-                           dates, is_mobile, sport)
-  page_runprofile_server("runprofile", data$summaries, dates, is_mobile, sport)
-  page_race_server("race", data$summaries, data$health_daily, dates, is_mobile)
+  # `data` is the traning_data bundle; page servers use `@`-access
+  # internally (PR 8 of the S7 migration).
+  page_overview_server("overview", data, dates, is_mobile)
+  page_training_server("training", data, dates, is_mobile, sport)
+  page_progress_server("progress", data, dates, is_mobile, sport)
+  page_sport_mix_server("sport_mix", data, dates, is_mobile, sport)
+  page_health_server("health", data, dates, is_mobile)
+  page_performance_server("performance", data, dates, is_mobile, sport)
+  page_runprofile_server("runprofile", data, dates, is_mobile, sport)
+  page_race_server("race", data, dates, is_mobile)
   page_import_server("import")
 }
 

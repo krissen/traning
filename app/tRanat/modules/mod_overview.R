@@ -54,10 +54,13 @@ overview_ui <- function(id) {
   )
 }
 
-overview_server <- function(id, summaries, health_daily, myruns,
-                            decoupling_data, dates, is_mobile) {
-  force(summaries)
-  force(health_daily)
+overview_server <- function(id, data, dates, is_mobile) {
+  force(data)
+  # compute_pmc/compute_acwr/compute_readiness were NOT migrated to the
+  # S7 traning_data(data, ...) contract — they still take positional
+  # summaries/health_daily args, so unpack the bundle's slots once here.
+  summaries    <- data@summaries
+  health_daily <- data@health_daily
   shiny::moduleServer(id, function(input, output, session) {
 
     # `dates()` styr de två mini-graferna nedan. Värde-boxarna avviker

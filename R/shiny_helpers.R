@@ -147,34 +147,25 @@ load_traning_data <- function(data_dir = Sys.getenv("TRANING_DATA"), slots = NUL
 
 #' Ladda alla cacher som tRanat-dashboarden behöver
 #'
-#' Returnerar en namngiven lista med `summaries`, `myruns`,
-#' `decoupling_data` och `health_daily`. Tänkt att anropas både vid
-#' app-start (en gång per R-process, från `global.R`) och per Shiny-
-#' session (från `server()` i `app.R`). Per-session-anropet säkerställer
-#' att varje omladdad dashboard ser den cache som finns på disk just nu
-#' — utan service-restart.
+#' Tänkt att anropas både vid app-start (en gång per R-process, från
+#' `global.R`) och per Shiny-session (från `server()` i `app.R`).
+#' Per-session-anropet säkerställer att varje omladdad dashboard ser
+#' den cache som finns på disk just nu — utan service-restart.
 #'
-#' Detta är en tunn wrapper runt \code{\link{load_traning_data}()} som
-#' packar upp `traning_data`-bundlen till appens historiska list-form
-#' (`$`-access), så tRanat-appen (som ännu inte migrerats till S7:s
-#' `@`-access) förblir opåverkad.
+#' Detta är en tunn wrapper runt \code{\link{load_traning_data}()} —
+#' tRanat-appen (PR 8 av S7-migreringen) konsumerar `traning_data`-
+#' bundlen direkt via `@`-access istället för att packa upp den till
+#' en list-form, så page-servrarna slipper återuppbygga bundlen själva
+#' för de S7-migrerade report/plot-funktionerna.
 #'
 #' @param data_dir Datakatalogen (default: `TRANING_DATA`-miljö-
 #'   variabeln). Används som rot för samtliga cache-paths så att
 #'   en explicit `data_dir` håller hela laddningen konsistent
 #'   även om `Sys.getenv("TRANING_DATA")` pekar någon annanstans.
-#' @return Lista med fyra element: `summaries`, `myruns`,
-#'   `decoupling_data`, `health_daily`.
+#' @return Ett `traning_data`-objekt, se \code{\link{load_traning_data}}.
 #' @export
 load_session_data <- function(data_dir = Sys.getenv("TRANING_DATA")) {
-  bundle <- load_traning_data(data_dir)
-
-  list(
-    summaries       = bundle@summaries,
-    myruns          = bundle@myruns,
-    decoupling_data = bundle@decoupling_data,
-    health_daily    = bundle@health_daily
-  )
+  load_traning_data(data_dir)
 }
 
 # Normalisera en NA/NULL-gräns till NULL. `mod_date_preset` returnerar

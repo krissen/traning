@@ -19,28 +19,27 @@ page_health_ui <- function(id) {
   )
 }
 
-page_health_server <- function(id, summaries, health_daily, dates, is_mobile) {
-  force(summaries); force(health_daily)
+page_health_server <- function(id, data, dates, is_mobile) {
+  force(data)
+  health_daily <- data@health_daily
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
     # fetch.plot.readiness_score/resting_hr/hrv/sleep/vo2max and
     # report_readiness are S7-migrated (PR 4): they take a single
     # traning_data bundle instead of separate summaries/health_daily
-    # args. Build it once and reuse.
-    td_bundle <- traning_data(summaries = summaries, health_daily = health_daily,
-                               augmented = "garmin_matched" %in% names(summaries))
+    # args. `data` is that bundle already.
 
     # Readiness — patchwork, must use renderPlot
     metric_panel_server("readiness",
       plot_fn = shiny::reactive({
         shiny::req(health_daily)
-        fetch.plot.readiness_score(td_bundle,
+        fetch.plot.readiness_score(data,
           from = dr_from(), to = dr_to())
       }),
       report_fn = shiny::reactive({
         shiny::req(health_daily)
-        report_readiness(td_bundle,
+        report_readiness(data,
           from = dr_from(), to = dr_to())
       }),
       use_plotly = FALSE,
@@ -51,7 +50,7 @@ page_health_server <- function(id, summaries, health_daily, dates, is_mobile) {
     metric_panel_server("resting_hr",
       plot_fn = shiny::reactive({
         shiny::req(health_daily)
-        fetch.plot.resting_hr(td_bundle, from = dr_from(), to = dr_to())
+        fetch.plot.resting_hr(data, from = dr_from(), to = dr_to())
       }),
       report_fn = shiny::reactive({
         shiny::req(health_daily)
@@ -67,7 +66,7 @@ page_health_server <- function(id, summaries, health_daily, dates, is_mobile) {
     metric_panel_server("hrv",
       plot_fn = shiny::reactive({
         shiny::req(health_daily)
-        fetch.plot.hrv(td_bundle, from = dr_from(), to = dr_to())
+        fetch.plot.hrv(data, from = dr_from(), to = dr_to())
       }),
       report_fn = shiny::reactive({
         shiny::req(health_daily)
@@ -85,7 +84,7 @@ page_health_server <- function(id, summaries, health_daily, dates, is_mobile) {
     metric_panel_server("sleep",
       plot_fn = shiny::reactive({
         shiny::req(health_daily)
-        fetch.plot.sleep(td_bundle, from = dr_from(), to = dr_to())
+        fetch.plot.sleep(data, from = dr_from(), to = dr_to())
       }),
       report_fn = shiny::reactive({
         shiny::req(health_daily)
@@ -105,7 +104,7 @@ page_health_server <- function(id, summaries, health_daily, dates, is_mobile) {
     metric_panel_server("vo2max",
       plot_fn = shiny::reactive({
         shiny::req(health_daily)
-        fetch.plot.vo2max(td_bundle, from = dr_from(), to = dr_to())
+        fetch.plot.vo2max(data, from = dr_from(), to = dr_to())
       }),
       report_fn = shiny::reactive({
         shiny::req(health_daily)

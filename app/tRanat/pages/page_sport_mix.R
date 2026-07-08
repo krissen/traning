@@ -52,8 +52,9 @@ page_sport_mix_ui <- function(id) {
   )
 }
 
-page_sport_mix_server <- function(id, summaries, dates, is_mobile, sport) {
-  force(summaries)
+page_sport_mix_server <- function(id, data, dates, is_mobile, sport) {
+  force(data)
+  summaries <- data@summaries
   # Bucket allowlist sourced directly from the package so this page's
   # logic doesn't depend on mod_sport_select having been sourced first.
   bucket_values <- traning::sport_bucket_names()

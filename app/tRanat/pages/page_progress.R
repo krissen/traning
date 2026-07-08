@@ -55,14 +55,15 @@ page_progress_ui <- function(id) {
   )
 }
 
-page_progress_server <- function(id, summaries, dates, is_mobile, sport) {
+page_progress_server <- function(id, data, dates, is_mobile, sport) {
   # `dates` is intentionally unused. The Utveckling page presents
   # historical comparisons that are meaningful only across the full
   # dataset (e.g. "April över åren" needs every April on record);
   # forwarding the global 12-month preset would silently collapse the
   # view to one or two recent years. The "Datumperiod" card at the
   # bottom carries its own dateRangeInput for ad-hoc lookups.
-  force(summaries)
+  force(data)
+  summaries <- data@summaries
   shiny::moduleServer(id, function(input, output, session) {
     sp <- shiny::reactive(sport())
 
