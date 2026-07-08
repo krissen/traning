@@ -50,15 +50,20 @@ my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
 #' Load summaries and myruns from RData files
 #' @param db_summaries Path to summaries.RData
 #' @param db_myruns Path to myruns.RData
+#' @param load_myruns Logical; whether to load `db_myruns` (default TRUE).
+#'   The myruns cache is typically ~89MB, dwarfing summaries.RData — set to
+#'   FALSE for callers that only need `summaries` (e.g. the Shiny landing
+#'   page's initial load) and want to skip that cost. When FALSE, `myruns`
+#'   is returned as `list()` regardless of what's on disk.
 #' @return List with elements "summaries" and "myruns"
 #' @export
-my_dbs_load <- function(db_summaries, db_myruns) {
+my_dbs_load <- function(db_summaries, db_myruns, load_myruns = TRUE) {
   if (file.exists(db_summaries)) {
     load(db_summaries)
   } else {
     summaries <- data.frame()
   }
-  if (file.exists(db_myruns)) {
+  if (load_myruns && file.exists(db_myruns)) {
     load(db_myruns)
   } else {
     myruns <- list()

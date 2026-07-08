@@ -14,21 +14,32 @@
 #' `garmin_matched`-markören, och `@augmented` sätts i enlighet med
 #' huruvida augmenteringen faktiskt kördes.
 #'
-#' `slots` styr vilken *optionell* data som laddas utöver
-#' summaries/myruns (som alltid laddas):
+#' `slots` styr vilken *optionell* data som laddas utöver `summaries`
+#' (som alltid laddas):
 #' \itemize{
 #'   \item `NULL` (default): ladda samma uppsättning som
-#'     `load_session_data()` historiskt gjort — `"health_daily"` och
-#'     `"decoupling_data"` — för bakåtkompatibel paritet.
+#'     `load_traning_data()` historiskt gjort — `"health_daily"`,
+#'     `"decoupling_data"` och `"myruns"` — för bakåtkompatibel paritet
+#'     (alla tidigare anrop, inkl. MCP-bryggans spawn-läge, förväntar
+#'     sig myruns i bundlen).
 #'   \item ett tecken-vektor, t.ex. `character(0)` eller
 #'     `"health_daily"`: ladda bara de namngivna slotsen. Tänkt för
-#'     konsumenter (t.ex. MCP-bryggan) där myruns/decoupling är dyra att
-#'     ladda och en ren summaries-rapport inte ska betala för dem.
+#'     konsumenter (t.ex. tRanat-landningssidan) där myruns/decoupling
+#'     är dyra att ladda (myruns.RData är ~89MB) och sidan i fråga
+#'     aldrig läser dem.
 #' }
-#' Giltiga namn i `slots` är `"health_daily"` och `"decoupling_data"`.
-#' `zone_data` laddas aldrig här (beräknas lazy nedströms) och `myruns`
-#' laddas alltid tillsammans med `summaries` eftersom de delar samma
-#' cache-par (`my_dbs_load()`).
+#' Giltiga namn i `slots` är `"health_daily"`, `"decoupling_data"` och
+#' `"myruns"`. `zone_data` laddas aldrig här (beräknas lazy nedströms).
+#' `myruns` laddas numera opt-in via `my_dbs_load(load_myruns = ...)`
+#' snarare än alltid tillsammans med `summaries` — se
+#' \code{\link{my_dbs_load}}. `"decoupling_data"` kräver `myruns`
+#' (\code{load_decoupling()} beräknar decoupling FRÅN de per-sekund-
+#' spåren i myruns) — att begära `"decoupling_data"` utan `"myruns"`
+#' i `slots` är därför ett fel snarare än en tyst tom bundle: en
+#' bundle med `@decoupling_data = NULL` och `@myruns = list()` ser för
+#' `fetch.plot.decoupling()`/`report_decoupling()` ut som "inte
+#' beräknad än" och faller tillbaka till `compute_decoupling(summaries,
+#' myruns)` — som med tom `myruns` tyst ger 0 rader, inte ett fel.
 #'
 #' Saknade optionella cachefiler tolereras — motsvarande slot blir
 #' `NULL`/tom, inget fel kastas (matchar `load_session_data()`s
@@ -37,8 +48,8 @@
 #' @param data_dir Datakatalogen (default: `TRANING_DATA`-miljö-
 #'   variabeln). Används som rot för samtliga cache-paths.
 #' @param slots Character-vektor med optionella slots att ladda
-#'   (`"health_daily"`, `"decoupling_data"`), eller `NULL` för att
-#'   ladda båda (bakåtkompatibel default).
+#'   (`"health_daily"`, `"decoupling_data"`, `"myruns"`), eller `NULL`
+#'   för att ladda alla tre (bakåtkompatibel default).
 #' @return Ett `traning_data`-objekt (`sport = "running"`,
 #'   `zone_data = NULL`).
 #' @export
@@ -47,7 +58,7 @@ load_traning_data <- function(data_dir = Sys.getenv("TRANING_DATA"), slots = NUL
     stop("TRANING_DATA is not set. Copy .Renviron.example to .Renviron and set the path.")
   }
 
-  valid_slots <- c("health_daily", "decoupling_data")
+  valid_slots <- c("health_daily", "decoupling_data", "myruns")
   if (is.null(slots)) {
     slots <- valid_slots
   }
@@ -59,13 +70,23 @@ load_traning_data <- function(data_dir = Sys.getenv("TRANING_DATA"), slots = NUL
       call. = FALSE
     )
   }
+  if ("decoupling_data" %in% slots && !"myruns" %in% slots) {
+    stop(
+      "load_traning_data: slot 'decoupling_data' requires slot 'myruns' ",
+      "(decoupling is computed from per-second myruns tracks). Add ",
+      "'myruns' to `slots`, or drop 'decoupling_data' if myruns is not ",
+      "wanted here.",
+      call. = FALSE
+    )
+  }
 
   cache_dir    <- file.path(data_dir, "cache")
   db_summaries <- file.path(cache_dir, "summaries.RData")
   db_myruns    <- file.path(cache_dir, "myruns.RData")
   gc_json_dir  <- file.path(data_dir, "kristian", "filer", "gconnect")
 
-  my_templist <- my_dbs_load(db_summaries, db_myruns)
+  my_templist <- my_dbs_load(db_summaries, db_myruns,
+                              load_myruns = "myruns" %in% slots)
   summaries   <- my_templist[["summaries"]]
   myruns      <- my_templist[["myruns"]]
   rm(my_templist)
@@ -158,14 +179,61 @@ load_traning_data <- function(data_dir = Sys.getenv("TRANING_DATA"), slots = NUL
 #' en list-form, så page-servrarna slipper återuppbygga bundlen själva
 #' för de S7-migrerade report/plot-funktionerna.
 #'
+#' Laddar bara `"health_daily"` — INTE `"myruns"` eller
+#' `"decoupling_data"`. myruns.RData är ~89MB och bara Prestation-sidans
+#' decoupling-panel läser det (se `@myruns`/`@decoupling_data`); att
+#' ladda det vid varje sessionsstart betalade en dominerande del av
+#' landningssidans 3-4s laddningstid för en resurs de flesta sessioner
+#' aldrig konsumerar. Den bundle som returneras härifrån har alltså
+#' `@myruns = list()` och `@decoupling_data = NULL` — Prestation-sidan
+#' laddar myruns lazy själv via \code{\link{load_myruns}()} när dess
+#' decoupling-panel faktiskt renderas (se `app/tRanat/pages/
+#' page_performance.R`, `perf_bundle`). Övriga paneler/sidor läser bara
+#' `@summaries`/`@health_daily` och är opåverkade.
+#'
 #' @param data_dir Datakatalogen (default: `TRANING_DATA`-miljö-
 #'   variabeln). Används som rot för samtliga cache-paths så att
 #'   en explicit `data_dir` håller hela laddningen konsistent
 #'   även om `Sys.getenv("TRANING_DATA")` pekar någon annanstans.
 #' @return Ett `traning_data`-objekt, se \code{\link{load_traning_data}}.
+#'   `@myruns` är tom lista och `@decoupling_data` är `NULL` — se
+#'   \code{\link{load_myruns}()} för att ladda myruns separat.
 #' @export
 load_session_data <- function(data_dir = Sys.getenv("TRANING_DATA")) {
-  load_traning_data(data_dir)
+  load_traning_data(data_dir, slots = c("health_daily"))
+}
+
+#' Ladda enbart myruns-cachen från disk
+#'
+#' Tunn wrapper som laddar `myruns.RData` (~89MB) fristående från
+#' `summaries`/övriga cacher — speglar
+#' `inst/mcp_bridge_server.R`s `.load_myruns_only()`
+#' (samma per-fil-logik, utan MCP-bryggans in-memory-memoisering).
+#' Tänkt för konsumenter som lazy-laddar myruns efter att
+#' \code{\link{load_session_data}()} redan levererat en bundle med
+#' `@myruns = list()` — se `app/tRanat/pages/page_performance.R`s
+#' `perf_bundle`-reactive, som anropar detta först när Prestation-
+#' sidans decoupling-panel faktiskt renderas.
+#'
+#' Saknad `myruns.RData` tolereras (matchar `my_dbs_load()`s
+#' beteende): funktionen returnerar `list()` snarare än att kasta fel.
+#'
+#' @param data_dir Datakatalogen (default: `TRANING_DATA`-miljö-
+#'   variabeln). Används som rot för cache-pathen.
+#' @return En lista av trackeR-körningsobjekt, aligned till
+#'   `summaries`-raderna (samma kontrakt som `my_dbs_load()$myruns`).
+#' @export
+load_myruns <- function(data_dir = Sys.getenv("TRANING_DATA")) {
+  if (!nzchar(data_dir)) {
+    stop("TRANING_DATA is not set. Copy .Renviron.example to .Renviron and set the path.")
+  }
+  db_myruns <- file.path(data_dir, "cache", "myruns.RData")
+  if (!file.exists(db_myruns)) {
+    return(list())
+  }
+  e <- new.env()
+  load(db_myruns, envir = e)
+  e$myruns
 }
 
 # Normalisera en NA/NULL-gräns till NULL. `mod_date_preset` returnerar
