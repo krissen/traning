@@ -18,6 +18,13 @@
   # external generics (e.g. base::print, base::format for the S7 classes
   # in R/traning_data.R) are registered correctly. See ?S7::methods_register.
   S7::methods_register()
+
+  # Load the shared metric taxonomy (inst/metric_taxonomy.json, shared
+  # with the Python side) once per session rather than re-reading the
+  # JSON on every call. .sum_metrics is used throughout R/health_export.R
+  # via `%in% .sum_metrics`.
+  taxonomy <- .load_metric_taxonomy()
+  .sum_metrics <<- taxonomy$sum_metrics
 }
 
 #' Save summaries and myruns to RData files
