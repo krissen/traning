@@ -36,6 +36,19 @@ cmd_code() {
     _info "Installing R dependencies ..."
     ssh "$REMOTE" "cd $REMOTE_CODE && bash scripts/install_r_deps.sh"
 
+    # The MCP bridge (inst/mcp_bridge.R) now loads via library(traning)
+    # against the INSTALLED package rather than devtools::load_all() on
+    # the live checkout (~0.45s faster per call — see mcp_bridge.R for
+    # details). That means `git pull` alone no longer updates the R code
+    # the running server actually serves; the installed package must be
+    # refreshed on every code deploy, or traning-vayu keeps serving stale
+    # R code after this point. `set -e` on the remote side means a build
+    # failure here aborts the deploy before the restart below, so we never
+    # restart onto a half-installed package.
+    _info "Installing traning R package ..."
+    ssh "$REMOTE" "set -e; cd $REMOTE_CODE && \
+        R CMD INSTALL --no-multiarch --with-keep.source ."
+
     _info "Copying systemd units ..."
     ssh "$REMOTE" "sudo cp \
         $REMOTE_CODE/python/traning_cli/server/deploy/traning-*.service \
