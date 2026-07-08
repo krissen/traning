@@ -3,7 +3,7 @@
 page_performance_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
-    bslib::layout_column_wrap(width = 1/2, class = "section-spacer",
+    bslib::layout_columns(col_widths = 6, class = "section-spacer",
       metric_panel_ui(ns("ef"),  "Efficiency Factor (EF)"),
       metric_panel_ui(ns("hre"), "Heart Rate Efficiency (HRE)")
     ),
@@ -11,14 +11,14 @@ page_performance_ui <- function(id) {
       metric_panel_ui(ns("decoupling"), "Aerob dekopp.",
         use_plotly = FALSE)
     ),
-    bslib::layout_column_wrap(width = 1/2, class = "section-spacer",
+    bslib::layout_columns(col_widths = 6, class = "section-spacer",
       metric_panel_ui(ns("hr_zones"),     "HR-zoner (Seiler)"),
       metric_panel_ui(ns("recovery_hr"),  "Recovery HR")
     )
   )
 }
 
-page_performance_server <- function(id, data, dates, is_mobile, sport) {
+page_performance_server <- function(id, data, dates, is_mobile, sport, data_version) {
   force(data)
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
@@ -69,15 +69,24 @@ page_performance_server <- function(id, data, dates, is_mobile, sport) {
       b
     })
 
+    # bindCache(): fetch.plot.decoupling()/report_decoupling() call
+    # compute_decoupling() internally when @decoupling_data is NULL
+    # (any non-"running" sport, per the comment above) — genuinely
+    # expensive. Key is (from, to, sport, data_version); decoupling_
+    # bundle() itself is fully determined by sport()+data (both already
+    # in the key), so it doesn't need to be a separate key component.
+    # data_version guards against bindCache's app-scoped (cross-session)
+    # default cache serving a stale plot to a session that loaded newer
+    # data — see page_training.R for the full rationale.
     metric_panel_server("decoupling",
       plot_fn = shiny::reactive({
         fetch.plot.decoupling(decoupling_bundle(),
           from = dr_from(), to = dr_to(), sport = sp())
-      }),
+      }) |> shiny::bindCache(dr_from(), dr_to(), sp(), data_version),
       report_fn = shiny::reactive({
         report_decoupling(decoupling_bundle(),
           from = dr_from(), to = dr_to(), sport = sp())
-      }),
+      }) |> shiny::bindCache(dr_from(), dr_to(), sp(), data_version),
       use_plotly = FALSE,
       is_mobile = is_mobile
     )

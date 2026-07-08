@@ -3,11 +3,11 @@
 page_progress_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
-    bslib::layout_column_wrap(width = 1/2, class = "section-spacer",
+    bslib::layout_columns(col_widths = 6, class = "section-spacer",
       metric_panel_ui(ns("monthstatus"), "L\u00f6pande m\u00e5nad"),
       metric_panel_ui(ns("monthlast"),   "F\u00f6rra m\u00e5naden")
     ),
-    bslib::layout_column_wrap(width = 1/2, class = "section-spacer",
+    bslib::layout_columns(col_widths = 6, class = "section-spacer",
       metric_panel_ui(ns("yearstatus"), "L\u00f6pande \u00e5r"),
       metric_panel_ui(ns("yearstop"),   "Hela \u00e5r")
     ),

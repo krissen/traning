@@ -13,13 +13,13 @@ page_runprofile_ui <- function(id) {
       metric_panel_ui(ns("pace_ridges"), "Tempo per år (täthet)",
         use_plotly = FALSE, plot_height = "600px", with_table = FALSE)
     ),
-    bslib::layout_column_wrap(width = 1/2, class = "section-spacer",
+    bslib::layout_columns(col_widths = 6, class = "section-spacer",
       metric_panel_ui(ns("tertile_share"),
         "Tempo-fördelning per år", with_table = FALSE),
       metric_panel_ui(ns("longest_runs"), "Längsta pass per år",
         with_table = FALSE)
     ),
-    bslib::layout_column_wrap(width = 1/2, class = "section-spacer",
+    bslib::layout_columns(col_widths = 6, class = "section-spacer",
       metric_panel_ui(ns("season_pace"), "Säsongsmönster i tempo",
         with_table = FALSE),
       metric_panel_ui(ns("heatmap_km"), "Veckokilometer per år",

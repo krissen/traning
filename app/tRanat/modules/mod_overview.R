@@ -1,6 +1,6 @@
 # mod_overview.R — Overview dashboard with KPI value boxes and mini charts
 
-overview_ui <- function(id) {
+mod_overview_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
     # --- KPI value boxes ---
@@ -15,7 +15,7 @@ overview_ui <- function(id) {
       shiny::uiOutput(ns("vb_acwr"))
     ),
     # --- Mini trend charts ---
-    bslib::layout_column_wrap(width = 1/2, class = "section-spacer",
+    bslib::layout_columns(col_widths = 6, class = "section-spacer",
       bslib::card(
         full_screen = TRUE,
         bslib::card_header("Beredskap"),
@@ -54,7 +54,7 @@ overview_ui <- function(id) {
   )
 }
 
-overview_server <- function(id, data, dates, is_mobile) {
+mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
   force(data)
   # compute_pmc/compute_acwr/compute_readiness were NOT migrated to the
   # S7 traning_data(data, ...) contract — they still take positional
@@ -71,10 +71,20 @@ overview_server <- function(id, data, dates, is_mobile) {
     dr_to   <- shiny::reactive(dates()$to)
 
     # --- Shared computed data (cached per session) ---
+    # bindCache() default `cache = "app"` is shared across ALL sessions
+    # of this R process (not just this session) — so every key MUST
+    # include `data_version`, a snapshot of the cache-file mtimes taken
+    # in app.R just before load_session_data() populated `data` for
+    # *this* session. Two sessions that loaded the same on-disk data
+    # share `data_version` and safely share cache entries; a session
+    # that starts after a mid-run import (new mtimes → new
+    # data_version) gets a fresh key and never reads another session's
+    # stale entry. These four reactives take no other inputs (no
+    # from/to/sport), so data_version is the only key component needed.
     pmc_data <- shiny::reactive({
       tryCatch(compute_pmc(summaries, health_daily = health_daily),
                error = function(e) NULL)
-    })
+    }) |> shiny::bindCache(data_version)
 
     # Overview ACWR card uses whole-system load (sport="all" → TRIMP
     # mode) so it stays coherent with the PMC card above it; vardags-
@@ -85,7 +95,7 @@ overview_server <- function(id, data, dates, is_mobile) {
       tryCatch(compute_acwr(summaries, sport = "all",
                             health_daily = health_daily),
                error = function(e) NULL)
-    })
+    }) |> shiny::bindCache(data_version)
 
     # "Vecka km" KPI explicitly tracks running km — km doesn't compose
     # across sports, so this card stays sport="running" / mode="km"
@@ -93,8 +103,11 @@ overview_server <- function(id, data, dates, is_mobile) {
     running_volume_data <- shiny::reactive({
       tryCatch(compute_acwr(summaries, sport = "running", mode = "km"),
                error = function(e) NULL)
-    })
+    }) |> shiny::bindCache(data_version)
 
+    # readiness_data depends on pmc_data() (a cached reactive itself),
+    # so its own key only needs data_version too — pmc_data() already
+    # resolves to the cached value for this data_version.
     readiness_data <- shiny::reactive({
       tryCatch({
         shiny::req(health_daily)
@@ -103,7 +116,7 @@ overview_server <- function(id, data, dates, is_mobile) {
         # TRIMP scan from two passes to one.
         compute_readiness(health_daily, summaries, pmc = pmc_data())
       }, error = function(e) NULL)
-    })
+    }) |> shiny::bindCache(data_version)
 
     # --- Value box: Readiness ---
     output$vb_readiness <- shiny::renderUI({
