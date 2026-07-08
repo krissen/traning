@@ -116,6 +116,22 @@ plot_runs_month <- function(data, from = NULL, to = NULL,
     "Löpturer {.swedish_months[do_month]} {do_year}"
   )
 
+  # A month with zero matching sessions (e.g. early in the current
+  # calendar month, or a sport bucket with no activity yet) leaves
+  # plot_data with 0 rows. plotly::ggplotly() cannot convert a ggplot
+  # built from an empty data.frame with x/y mapped in geom_segment()/
+  # geom_point() — it fails internally with "object 'x' not found"
+  # instead of rendering an empty chart. Short-circuit to the same
+  # empty-state convention used elsewhere (e.g. .run_profile_empty(),
+  # plot_multisport.R) rather than letting that error surface as a raw
+  # shiny-output-error.
+  if (nrow(plot_data) == 0) {
+    return(
+      ggplot2::ggplot() +
+        ggplot2::ggtitle(paste0(title, " — inga löpturer registrerade"))
+    )
+  }
+
   plot_data %>%
     ggplot2::ggplot() +
     ggplot2::geom_segment(
