@@ -1,11 +1,18 @@
 # Tests for inst/mcp_bridge.R — the R-side MCP bridge
 
 # Helper: run mcp_bridge.R and parse JSON output
+#
+# The bridge defaults to library(traning) (the INSTALLED package) for
+# production speed (see inst/mcp_bridge.R:.load_traning()). Tests must
+# instead exercise the CURRENT branch's source — an installed package on
+# the test machine could be stale relative to the checkout under test —
+# so every subprocess spawned here forces TRANING_BRIDGE_LOADER=load_all.
 run_bridge <- function(func, args = "{}", plot = FALSE) {
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
   cmd_args <- c(bridge, paste0("--func=", func), paste0("--args=", shQuote(args)))
   if (plot) cmd_args <- c(cmd_args, "--plot")
-  result <- system2("Rscript", args = cmd_args, stdout = TRUE, stderr = NULL)
+  result <- system2("Rscript", args = cmd_args, stdout = TRUE, stderr = NULL,
+                     env = "TRANING_BRIDGE_LOADER=load_all")
   jsonlite::fromJSON(paste(result, collapse = "\n"), simplifyVector = FALSE)
 }
 
@@ -21,7 +28,8 @@ test_that("NULL function returns error", {
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
   result <- suppressWarnings(
     system2("Rscript", args = c(bridge, paste0("--args=", shQuote("{}"))),
-            stdout = TRUE, stderr = NULL)
+            stdout = TRUE, stderr = NULL,
+            env = "TRANING_BRIDGE_LOADER=load_all")
   )
   out <- jsonlite::fromJSON(paste(result, collapse = "\n"), simplifyVector = FALSE)
   expect_equal(out$type, "error")
@@ -140,7 +148,8 @@ test_that("plot_path argument writes to caller-owned path", {
                              paste0("--args=", shQuote('{"from":"2025-01-01"}')),
                              "--plot",
                              paste0("--plot_path=", target)),
-                    stdout = TRUE, stderr = NULL)
+                    stdout = TRUE, stderr = NULL,
+                    env = "TRANING_BRIDGE_LOADER=load_all")
   out <- jsonlite::fromJSON(paste(result, collapse = "\n"),
                             simplifyVector = FALSE)
   expect_equal(out$type, "plot")
@@ -161,7 +170,8 @@ test_that("invalid JSON args handled gracefully", {
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
   rc <- system2("Rscript", args = c(bridge, "--func=report_monthstatus",
                                      "--args=not-json"),
-                stdout = FALSE, stderr = NULL)
+                stdout = FALSE, stderr = NULL,
+                env = "TRANING_BRIDGE_LOADER=load_all")
   # Should exit non-zero
   expect_true(rc != 0)
 })

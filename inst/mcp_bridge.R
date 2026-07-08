@@ -12,7 +12,57 @@ args <- commandArgs(trailingOnly = FALSE)
 script_path <- sub("--file=", "", args[grep("--file=", args)])
 if (length(script_path) == 0) script_path <- "inst/mcp_bridge.R"
 pkg_root <- normalizePath(file.path(dirname(script_path), ".."))
-suppressMessages(devtools::load_all(pkg_root, quiet = TRUE))
+
+# .load_traning(): load the `traning` package for this bridge invocation.
+#
+# Production default is `library(traning)` against the INSTALLED package —
+# ~0.45s faster per call than devtools::load_all() (measured: ~0.47s vs
+# ~0.92s), which matters because the bridge is spawned fresh per MCP tool
+# call. The tradeoff is that library() serves whatever was installed at the
+# last `deploy.sh code` run, not the live checkout — see the deploy.sh
+# change in this same PR, which now runs `R CMD INSTALL` on every code
+# deploy so the installed package can't go stale.
+#
+# Two escape hatches:
+#   - TRANING_BRIDGE_LOADER=load_all forces devtools::load_all(pkg_root) —
+#     used by tests/testthat/test-mcp-bridge.R so the bridge always
+#     exercises the current branch's source, not a possibly-stale install.
+#   - If library(traning) fails outright (package never installed on this
+#     box), fall back to load_all so the bridge still works out of a bare
+#     checkout; a warning is written to stderr so the fallback is visible
+#     without corrupting the stdout JSON channel.
+#
+# All diagnostic output from this function goes to stderr via message() —
+# stdout is reserved for the single JSON response emitted at the end of
+# this script.
+.load_traning <- function(pkg_root) {
+  use_load_all <- identical(Sys.getenv("TRANING_BRIDGE_LOADER"), "load_all")
+
+  if (use_load_all) {
+    suppressMessages(devtools::load_all(pkg_root, quiet = TRUE))
+    message("mcp_bridge: loaded traning via load_all (TRANING_BRIDGE_LOADER=load_all)")
+    return(invisible("load_all"))
+  }
+
+  loaded <- tryCatch({
+    suppressMessages(library(traning, character.only = FALSE))
+    TRUE
+  }, error = function(e) FALSE)
+
+  if (loaded) {
+    message(sprintf(
+      "mcp_bridge: loaded traning via library() (version %s)",
+      as.character(utils::packageVersion("traning"))
+    ))
+    return(invisible("library"))
+  }
+
+  message("mcp_bridge: library(traning) failed (package not installed?); falling back to load_all")
+  suppressMessages(devtools::load_all(pkg_root, quiet = TRUE))
+  invisible("load_all_fallback")
+}
+
+.load_traning(pkg_root)
 
 library(optparse)
 
