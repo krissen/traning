@@ -237,7 +237,7 @@ load_myruns <- function(data_dir = Sys.getenv("TRANING_DATA")) {
 }
 
 # Normalisera en NA/NULL-gräns till NULL. `mod_date_preset` returnerar
-# NA om en custom `dateRangeInput` har rensats — base-subset med
+# NA om en custom date-range-picker har rensats — base-subset med
 # logiska NA ger 1 rad av NA, så NA måste tolkas som "ingen gräns".
 .normalize_range_bound <- function(x) {
   if (is.null(x)) return(NULL)

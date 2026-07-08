@@ -25,11 +25,20 @@ date_preset_ui <- function(id) {
       shiny::conditionalPanel(
         condition = "input.preset === 'custom'",
         ns = ns,
-        shiny::dateRangeInput(ns("custom_range"), NULL,
-          start     = Sys.Date() - 42,
-          end       = Sys.Date(),
-          separator = "\u2014",
-          width     = "100%"
+        shinyWidgets::airDatepickerInput(ns("custom_range"), NULL,
+          range       = TRUE,
+          value       = c(Sys.Date() - 42, Sys.Date()),
+          separator   = " \u2014 ",
+          clearButton = FALSE,
+          autoClose   = TRUE,
+          # shinyWidgets 0.9.1's bundled air-datepicker v3 locale map
+          # lacks an "sv" entry (despite match.arg() accepting it),
+          # which crashes the JS binding (`_handleLocale`:
+          # JSON.parse(JSON.stringify(undefined))). "en" is the
+          # widest-supported safe choice; app-authored labels stay
+          # Swedish regardless.
+          language    = "en",
+          width       = "100%"
         )
       ),
       NULL
