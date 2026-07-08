@@ -9,7 +9,8 @@ from pathlib import Path
 
 import click
 
-from .git_utils import git_lock
+from .git_utils import git_commit_paths
+from .r_import import run_r_import
 
 TRANING_ROOT = Path(__file__).resolve().parent.parent.parent
 CLI_R = TRANING_ROOT / "inst" / "cli.R"
@@ -22,12 +23,6 @@ def _exec(cmd):
     """Run subprocess, passing through stdio. Exit with child's return code."""
     result = subprocess.run(cmd)
     sys.exit(result.returncode)
-
-
-def _run(cmd):
-    """Run subprocess, passing through stdio. Return the return code."""
-    result = subprocess.run(cmd)
-    return result.returncode
 
 
 def _has_remote(data_dir: Path) -> bool:
@@ -285,19 +280,14 @@ def fetch_workouts(since, until, no_metadata, aggregation, dry_run, verbose):
 
 def _commit_data(data_dir, n: int) -> None:
     """Git add + commit new files in the data repo."""
-    try:
-        with git_lock(data_dir):
-            subprocess.run(
-                ["git", "add", "kristian/filer/gconnect/", "kristian/filer/tcx/"],
-                cwd=data_dir, check=True, capture_output=True,
-            )
-            subprocess.run(
-                ["git", "commit", "-m", f"(import) Fetch {n} new activities from Garmin Connect"],
-                cwd=data_dir, check=True, capture_output=True,
-            )
+    message = f"(import) Fetch {n} new activities from Garmin Connect"
+    committed = git_commit_paths(
+        data_dir, ["kristian/filer/gconnect/", "kristian/filer/tcx/"], message,
+    )
+    if committed:
         log.info("Committed %d new activities to data repo", n)
-    except subprocess.CalledProcessError as e:
-        log.warning("Git commit failed: %s", e.stderr.decode().strip())
+    else:
+        log.debug("No new Garmin activities to commit")
 
 
 # -- backfill --------------------------------------------------------------
@@ -346,12 +336,13 @@ def import_group():
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def import_garmin(repair, verbose):
     """Import TCX workouts into RData cache."""
-    cmd = ["Rscript", str(CLI_R), "--import"]
+    args = ["--import"]
     if repair:
-        cmd.append("--repair")
+        args.append("--repair")
     if verbose:
-        cmd.append("--verbose")
-    _exec(cmd)
+        args.append("--verbose")
+    result = run_r_import(CLI_R, args, capture_output=False)
+    sys.exit(result.returncode)
 
 
 @import_group.command(name="health")
@@ -360,12 +351,13 @@ def import_garmin(repair, verbose):
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def import_health(force, verbose):
     """Import health data (JSON) into RData cache."""
-    cmd = ["Rscript", str(CLI_R), "--import-health"]
+    args = ["--import-health"]
     if force:
-        cmd.append("--force")
+        args.append("--force")
     if verbose:
-        cmd.append("--verbose")
-    _exec(cmd)
+        args.append("--verbose")
+    result = run_r_import(CLI_R, args, capture_output=False)
+    sys.exit(result.returncode)
 
 
 @import_group.command(name="all")
@@ -377,22 +369,22 @@ def import_health(force, verbose):
 def import_all(force, repair, verbose):
     """Import everything (Garmin + Health)."""
     click.echo("=== Garmin-import ===")
-    cmd_garmin = ["Rscript", str(CLI_R), "--import"]
+    args_garmin = ["--import"]
     if repair:
-        cmd_garmin.append("--repair")
+        args_garmin.append("--repair")
     if verbose:
-        cmd_garmin.append("--verbose")
-    rc = subprocess.run(cmd_garmin).returncode
+        args_garmin.append("--verbose")
+    rc = run_r_import(CLI_R, args_garmin, capture_output=False).returncode
     if rc != 0:
         click.echo("Garmin-import misslyckades", err=True)
 
     click.echo("=== Health-import ===")
-    cmd_health = ["Rscript", str(CLI_R), "--import-health"]
+    args_health = ["--import-health"]
     if force:
-        cmd_health.append("--force")
+        args_health.append("--force")
     if verbose:
-        cmd_health.append("--verbose")
-    rc2 = subprocess.run(cmd_health).returncode
+        args_health.append("--verbose")
+    rc2 = run_r_import(CLI_R, args_health, capture_output=False).returncode
     if rc2 != 0:
         click.echo("Health-import misslyckades", err=True)
 
@@ -457,10 +449,10 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
         return
 
     click.echo("Importerar till R-cache ...")
-    cmd = ["Rscript", str(CLI_R), "--import"]
+    args = ["--import"]
     if verbose:
-        cmd.append("--verbose")
-    rc = _run(cmd)
+        args.append("--verbose")
+    rc = run_r_import(CLI_R, args, capture_output=False).returncode
     if rc != 0:
         raise click.ClickException(f"R-import misslyckades (exit code {rc})")
 
@@ -520,12 +512,12 @@ def sync_health(server, inbox, days_back, fetch_all, force, dry_run, verbose):
         return
 
     click.echo("Importerar hälsodata till R-cache ...")
-    cmd = ["Rscript", str(CLI_R), "--import-health"]
+    args = ["--import-health"]
     if force:
-        cmd.append("--force")
+        args.append("--force")
     if verbose:
-        cmd.append("--verbose")
-    rc = _run(cmd)
+        args.append("--verbose")
+    rc = run_r_import(CLI_R, args, capture_output=False).returncode
     if rc != 0:
         raise click.ClickException(f"R-import av hälsodata misslyckades (exit code {rc})")
 
@@ -566,10 +558,10 @@ def sync_all(dry_run, reauth, verbose):
 
     if n_garmin > 0 and not dry_run:
         click.echo("Importerar Garmin-data ...")
-        cmd = ["Rscript", str(CLI_R), "--import"]
+        args = ["--import"]
         if verbose:
-            cmd.append("--verbose")
-        rc = _run(cmd)
+            args.append("--verbose")
+        rc = run_r_import(CLI_R, args, capture_output=False).returncode
         if rc != 0:
             click.echo("Garmin R-import misslyckades", err=True)
 
@@ -591,10 +583,10 @@ def sync_all(dry_run, reauth, verbose):
 
     if n_health > 0 and not dry_run:
         click.echo("Importerar hälsodata ...")
-        cmd = ["Rscript", str(CLI_R), "--import-health"]
+        args = ["--import-health"]
         if verbose:
-            cmd.append("--verbose")
-        rc = _run(cmd)
+            args.append("--verbose")
+        rc = run_r_import(CLI_R, args, capture_output=False).returncode
         if rc != 0:
             click.echo("Health R-import misslyckades", err=True)
 

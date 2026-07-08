@@ -11,10 +11,12 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
+from fastapi import BackgroundTasks, Depends, FastAPI
 
+from ..r_import import parse_import_summary, run_r_import
 from ..settings import get_settings
 from .auth import require_api_key
+from .models import HealthPayload, WorkoutsPayload
 from .notify import log_notification, notify
 from .state import (
     load_notify_state,
@@ -48,27 +50,17 @@ def _run_import_garmin() -> tuple[str, str | None]:
     ``cli.R --import`` script, which is not safe to run twice in
     parallel — the second writer can clobber the first's partial state.
     """
-    cmd = ["Rscript", str(_CLI_R), "--import"]
     t0 = time.time()
     with _import_lock:
         try:
-            result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300,
-            )
+            result = run_r_import(_CLI_R, ["--import"], timeout=300)
             elapsed = int(time.time() - t0)
             if result.returncode != 0:
                 log.warning("Import garmin failed (%ds): %s",
                             elapsed, result.stderr.strip()[-300:])
                 return "", "MISSLYCKADES"
             log.info("Import garmin OK (%ds)", elapsed)
-            lines = [raw_line for raw_line in result.stdout.strip().splitlines()
-                     if raw_line.strip()]
-            summary = "klart"
-            for line in reversed(lines):
-                low = line.lower()
-                if any(w in low for w in ["import", "inget att"]):
-                    summary = line.strip()
-                    break
+            summary = parse_import_summary(result.stdout)
             return summary, None
         except subprocess.TimeoutExpired:
             elapsed = int(time.time() - t0)
@@ -210,8 +202,8 @@ def _import_and_notify(files: list, kind: str = "health"):
             if prev_path:
                 try:
                     os.unlink(prev_path)
-                except OSError:
-                    pass
+                except OSError as e:
+                    log.debug("Failed to remove temp state file %s: %s", prev_path, e)
 
         if message is None:
             # Successful silent flush — nothing to send, log empty notification
@@ -387,10 +379,9 @@ def _flush_pending_workouts() -> None:
         t0 = time.time()
         with _import_lock:
             try:
-                result = subprocess.run(
-                    ["Rscript", str(_CLI_R), "--import"],
-                    capture_output=True, text=True, timeout=300,
-                    cwd=str(_CLI_R.parent.parent),
+                result = run_r_import(
+                    _CLI_R, ["--import"],
+                    cwd=_CLI_R.parent.parent, timeout=300,
                 )
                 elapsed = int(time.time() - t0)
                 if result.returncode != 0:
@@ -401,13 +392,7 @@ def _flush_pending_workouts() -> None:
                 else:
                     ok = True
                     # Surface the trailing import-summary line for journal logs.
-                    lines = [line.strip() for line in result.stdout.strip().splitlines()
-                             if line.strip()]
-                    summary = next(
-                        (line for line in reversed(lines)
-                         if any(w in line.lower() for w in ["import", "inget att"])),
-                        "klart",
-                    )
+                    summary = parse_import_summary(result.stdout)
                     log.info("HAE auto-import OK (%ds, %d pending): %s",
                              elapsed, n, summary)
             except subprocess.TimeoutExpired:
@@ -550,27 +535,11 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])
-    async def receive_health(request: Request):
+    async def receive_health(payload: HealthPayload):
         global _last_received, _total_received
 
-        try:
-            payload = await request.json()
-        except Exception:
-            raise HTTPException(status_code=422, detail="Invalid JSON")
-
-        # Validate HAE format
-        data = payload.get("data")
-        if not isinstance(data, dict) or "metrics" not in data:
-            raise HTTPException(
-                status_code=422,
-                detail="Expected HAE format: {\"data\": {\"metrics\": [...]}}"
-            )
-
-        metrics = data["metrics"]
-        if not isinstance(metrics, list) or len(metrics) == 0:
-            raise HTTPException(status_code=422, detail="No metrics in payload")
-
-        n, changed_files = save_health_push(payload)
+        metrics = payload.data.metrics
+        n, changed_files = save_health_push(payload.model_dump())
         if n > 0:
             commit_health_data(n_metrics=n)
             # save_health_push returns Path objects; downstream join + R CLI
@@ -590,26 +559,10 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/workouts", dependencies=[Depends(require_api_key)])
-    async def receive_workouts(request: Request):
+    async def receive_workouts(payload: WorkoutsPayload):
         global _last_received, _total_received
 
-        try:
-            payload = await request.json()
-        except Exception:
-            raise HTTPException(status_code=422, detail="Invalid JSON")
-
-        data = payload.get("data")
-        if not isinstance(data, dict) or "workouts" not in data:
-            raise HTTPException(
-                status_code=422,
-                detail="Expected HAE format: {\"data\": {\"workouts\": [...]}}"
-            )
-
-        workouts = data["workouts"]
-        if not isinstance(workouts, list) or len(workouts) == 0:
-            raise HTTPException(status_code=422, detail="No workouts in payload")
-
-        n = save_workout_push(payload)
+        n = save_workout_push(payload.model_dump())
         if n > 0:
             commit_health_data(n_workouts=n)
             # Schedule a silent debounced import so HAE workouts hit

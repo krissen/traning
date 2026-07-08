@@ -7,13 +7,12 @@ canonical/{metric}/{YYYY-MM-DD}.json.  All known samples for a given
 
 import json
 import logging
-import subprocess
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
 
 from ..garmin.utils import get_data_dir
-from ..git_utils import git_lock
+from ..git_utils import git_commit_paths
 from ..health.utils import (
     health_canonical_dir,
     health_metrics_dir,
@@ -339,37 +338,24 @@ def commit_health_data(data_dir: Path | None = None, n_metrics: int = 0,
     if data_dir is None:
         data_dir = get_data_dir()
 
-    try:
-        with git_lock(data_dir):
-            subprocess.run(
-                ["git", "add",
-                 "kristian/health_export/canonical/",
-                 "kristian/health_export/metrics/",
-                 "kristian/health_export/workouts/"],
-                cwd=data_dir, check=True, capture_output=True,
-            )
-            # Check if there's anything staged
-            result = subprocess.run(
-                ["git", "diff", "--cached", "--quiet"],
-                cwd=data_dir, capture_output=True,
-            )
-            if result.returncode == 0:
-                log.info("No new health data to commit")
-                return False
+    parts = []
+    if n_metrics:
+        parts.append(f"{n_metrics} metrics")
+    if n_workouts:
+        parts.append(f"{n_workouts} workouts")
+    desc = " + ".join(parts) or "health data"
 
-            parts = []
-            if n_metrics:
-                parts.append(f"{n_metrics} metrics")
-            if n_workouts:
-                parts.append(f"{n_workouts} workouts")
-            desc = " + ".join(parts) or "health data"
-
-            subprocess.run(
-                ["git", "commit", "-m", f"(health) Receive {desc} via API"],
-                cwd=data_dir, check=True, capture_output=True,
-            )
+    committed = git_commit_paths(
+        data_dir,
+        [
+            "kristian/health_export/canonical/",
+            "kristian/health_export/metrics/",
+            "kristian/health_export/workouts/",
+        ],
+        f"(health) Receive {desc} via API",
+    )
+    if committed:
         log.info("Committed health data: %s", desc)
-        return True
-    except subprocess.CalledProcessError as e:
-        log.warning("Git commit failed: %s", e.stderr.decode().strip())
-        return False
+    else:
+        log.info("No new health data to commit")
+    return committed
