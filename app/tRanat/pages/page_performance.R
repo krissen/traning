@@ -57,27 +57,36 @@ page_performance_server <- function(id, data, dates, is_mobile, sport, data_vers
     # under a different @sport. S7 objects are copy-on-modify: `b <-
     # data; b@sport <- sp()` yields an independent, re-validated copy.
     # For the running default we keep the base bundle's @decoupling_data
-    # (already sport="running", matching load_session_data()); for any
-    # other sport we drop it so the function's lazy-compute fallback
-    # recomputes for that sport.
+    # (already sport="running", matching load_session_data()). For any
+    # other sport, compute_decoupling() is date-independent (it scores
+    # every qualifying session; date filtering happens downstream in
+    # fetch.plot.decoupling()/report_decoupling() via from/to), so we
+    # compute it ONCE here — in a single shared reactive — and populate
+    # @decoupling_data with the result. Without this, plot_fn and
+    # report_fn below would each hit fetch.plot.decoupling()'s/
+    # report_decoupling()'s own "if NULL, compute_decoupling()"
+    # fallback independently, duplicating the expensive computation on
+    # every invalidation for non-running sports.
     decoupling_bundle <- shiny::reactive({
       b <- data
       b@sport <- sp()
       if (!identical(sp(), "running")) {
-        b@decoupling_data <- NULL
+        b@decoupling_data <- compute_decoupling(b@summaries, b@myruns,
+                                                 sport = sp())
       }
       b
-    })
+    }) |> shiny::bindCache(sp(), data_version)
 
-    # bindCache(): fetch.plot.decoupling()/report_decoupling() call
-    # compute_decoupling() internally when @decoupling_data is NULL
-    # (any non-"running" sport, per the comment above) — genuinely
-    # expensive. Key is (from, to, sport, data_version); decoupling_
-    # bundle() itself is fully determined by sport()+data (both already
-    # in the key), so it doesn't need to be a separate key component.
-    # data_version guards against bindCache's app-scoped (cross-session)
-    # default cache serving a stale plot to a session that loaded newer
-    # data — see page_training.R for the full rationale.
+    # bindCache(): fetch.plot.decoupling()/report_decoupling() now read
+    # the pre-populated @decoupling_data from decoupling_bundle() above
+    # (memoized per sport()+data_version, so the expensive
+    # compute_decoupling() call itself only runs once per invalidation
+    # rather than once per plot_fn/report_fn). This bindCache still
+    # caches the rendered plot/table for a given (from, to, sport,
+    # data_version) combination. data_version guards against bindCache's
+    # app-scoped (cross-session) default cache serving a stale plot to a
+    # session that loaded newer data — see page_training.R for the full
+    # rationale.
     metric_panel_server("decoupling",
       plot_fn = shiny::reactive({
         fetch.plot.decoupling(decoupling_bundle(),
