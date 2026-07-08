@@ -86,6 +86,9 @@ my_options <- list(
   make_option("--import-health",
     type = "logical", action = "store_true", default = FALSE,
     help = "Import Apple Watch health data from Health Auto Export JSON"),
+  make_option("--overview-cache",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Rebuild the Shiny overview-page precache (PMC/ACWR/readiness)"),
   make_option("--force",
     type = "logical", action = "store_true", default = FALSE,
     help = "Force re-import of all files (bypass manifest)"),
@@ -197,6 +200,7 @@ do_decoupling   <- options$decoupling
 do_hr_zones     <- options$`hr-zones`
 do_readiness    <- options$readiness
 do_import_health <- options$`import-health`
+do_overview_cache <- options$`overview-cache`
 do_force        <- options$force
 do_plot         <- options$plot
 do_output       <- options$output
@@ -630,6 +634,12 @@ if (do_import_health) {
   import_health_export(force = do_force, verbose = TRUE)
 }
 
+if (do_overview_cache) {
+  health_daily_for_overview <- tryCatch(load_health_data(), error = function(e) NULL)
+  load_overview_metrics(summaries, health_daily_for_overview, force = TRUE)
+  cat("Overview-cache ombyggd.\n")
+}
+
 # --- Readiness (requires health data) ---
 if (do_day_summary) {
   td <- Sys.getenv("TRANING_DATA")
@@ -707,6 +717,20 @@ if (do_decoupling) {
                   from = date_range$from, to = date_range$to,
                   sport = do_sport), "decoupling")
   }
+}
+
+# --- Warm the Shiny overview-page precache after an import ------------------
+# Every Python import entrypoint (garmin, health, backfill, "import all")
+# funnels through --import and/or --import-health, so warming here covers
+# all of them without touching the Python side. Reuses the `summaries`
+# already loaded/updated above rather than re-reading from disk. In
+# `import all`, --import-health runs last (summaries already reflect the
+# --import pass), so this fires exactly once per invocation, not once per
+# flag.
+if (do_import || do_import_health) {
+  hd_for_overview_warm <- tryCatch(load_health_data(), error = function(e) NULL)
+  tryCatch(load_overview_metrics(summaries, hd_for_overview_warm, force = TRUE),
+           error = function(e) message("overview-cache: ", conditionMessage(e)))
 }
 
 # vim: ts=2 sw=2 et

@@ -79,12 +79,28 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
     # share `data_version` and safely share cache entries; a session
     # that starts after a mid-run import (new mtimes → new
     # data_version) gets a fresh key and never reads another session's
-    # stale entry. These four reactives take no other inputs (no
-    # from/to/sport), so data_version is the only key component needed.
-    pmc_data <- shiny::reactive({
-      tryCatch(compute_pmc(summaries, health_daily = health_daily),
+    # stale entry.
+    #
+    # All four metrics below come from ONE disk-cached
+    # load_overview_metrics() call (R/advanced_metrics.R) instead of
+    # four independent compute_*() calls — the overview page never
+    # varies these by sport, so a single non-sport-keyed precache
+    # covers it. `read_only = TRUE` means Shiny sessions never write
+    # the cache (only `cli.R --import` / `--overview-cache` do), so
+    # parallel sessions can't race on the file. bindCache() on
+    # `overview_metrics` itself is kept as belt-and-suspenders — a
+    # cache hit still costs a disk read + validity check, cheap but
+    # not free.
+    overview_metrics <- shiny::reactive({
+      tryCatch(load_overview_metrics(summaries, health_daily,
+                                     read_only = TRUE),
                error = function(e) NULL)
     }) |> shiny::bindCache(data_version)
+
+    pmc_data <- shiny::reactive({
+      m <- overview_metrics()
+      if (is.null(m)) NULL else m$pmc
+    })
 
     # Overview ACWR card uses whole-system load (sport="all" → TRIMP
     # mode) so it stays coherent with the PMC card above it; vardags-
@@ -92,31 +108,27 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
     # running-only ACWR via fetch.plot.acwr() / report_acwr() when the
     # user asks for sport=running.
     acwr_data <- shiny::reactive({
-      tryCatch(compute_acwr(summaries, sport = "all",
-                            health_daily = health_daily),
-               error = function(e) NULL)
-    }) |> shiny::bindCache(data_version)
+      m <- overview_metrics()
+      if (is.null(m)) NULL else m$acwr_all
+    })
 
     # "Vecka km" KPI explicitly tracks running km — km doesn't compose
     # across sports, so this card stays sport="running" / mode="km"
     # even when the ACWR card above goes whole-system.
     running_volume_data <- shiny::reactive({
-      tryCatch(compute_acwr(summaries, sport = "running", mode = "km"),
-               error = function(e) NULL)
-    }) |> shiny::bindCache(data_version)
+      m <- overview_metrics()
+      if (is.null(m)) NULL else m$volume_running
+    })
 
-    # readiness_data depends on pmc_data() (a cached reactive itself),
-    # so its own key only needs data_version too — pmc_data() already
-    # resolves to the cached value for this data_version.
+    # The cached readiness was built from compute_readiness(health_daily,
+    # summaries, pmc = pmc) using the SAME pmc as pmc_data() above (see
+    # load_overview_metrics()), so this still skips a second TRIMP scan
+    # — the reuse just happens once at cache-build time instead of once
+    # per session.
     readiness_data <- shiny::reactive({
-      tryCatch({
-        shiny::req(health_daily)
-        # Pass the shared pmc_data() in so compute_readiness skips its
-        # internal compute_pmc — halves the overview-page's first-load
-        # TRIMP scan from two passes to one.
-        compute_readiness(health_daily, summaries, pmc = pmc_data())
-      }, error = function(e) NULL)
-    }) |> shiny::bindCache(data_version)
+      m <- overview_metrics()
+      if (is.null(m)) NULL else m$readiness
+    })
 
     # --- Value box: Readiness ---
     output$vb_readiness <- shiny::renderUI({

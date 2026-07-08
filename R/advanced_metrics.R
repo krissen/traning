@@ -1557,6 +1557,130 @@ load_decoupling <- function(summaries, myruns,
   per_run
 }
 
+# Default cache path for the overview-page precache
+.overview_cache_path <- function() {
+  traning_data <- Sys.getenv("TRANING_DATA")
+  if (traning_data == "") return(NULL)
+  normalizePath(file.path(traning_data, "cache", "overview.RData"),
+                mustWork = FALSE)
+}
+
+# mtime of one of the two source caches the overview precache depends on
+# (summaries.RData / health_daily.RData). Both live in the same
+# TRANING_DATA/cache/ directory that .overview_cache_path() derives from,
+# regardless of the summaries/health_daily objects the caller happens to
+# pass in-memory — this is what lets a stale on-disk precache be detected
+# even though the R objects themselves look identical. Returns NA when
+# TRANING_DATA is unset or the source file doesn't exist (e.g. tests) so
+# comparisons are still well-defined (NA identical to NA is TRUE).
+.overview_source_mtime <- function(filename) {
+  traning_data <- Sys.getenv("TRANING_DATA")
+  if (traning_data == "") return(NA)
+  path <- file.path(traning_data, "cache", filename)
+  if (!file.exists(path)) return(NA)
+  file.info(path)$mtime
+}
+
+#' Load precomputed overview-page metrics with disk caching
+#'
+#' Wraps the four metrics rendered on the Shiny "Översikt" page —
+#' \code{compute_pmc()}, \code{compute_acwr(sport = "all")},
+#' \code{compute_acwr(sport = "running", mode = "km")} and
+#' \code{compute_readiness()} — in a single RData cache so the page's
+#' first load after import doesn't pay for two independent full TRIMP
+#' scans (\code{compute_pmc()} and the whole-system \code{compute_acwr()}
+#' each call \code{compute_trimp()} internally). \code{compute_readiness()}
+#' reuses the already-computed \code{pmc}, so a cold build costs exactly
+#' two TRIMP scans, not three.
+#'
+#' The overview page takes no \code{sport} argument (its four metrics use
+#' hard-coded scopes), so a single non-sport-keyed cache is sufficient —
+#' unlike \code{load_decoupling()} / \code{load_zone_distribution()}, which
+#' are keyed per sport bucket.
+#'
+#' Freshness requires ALL of:
+#' \itemize{
+#'   \item the cache file exists and loads without error,
+#'   \item its stored \code{summaries_mtime} matches the current mtime of
+#'     \code{TRANING_DATA/cache/summaries.RData},
+#'   \item its stored \code{health_mtime} matches the current mtime of
+#'     \code{TRANING_DATA/cache/health_daily.RData},
+#'   \item its stored \code{built_date} equals \code{Sys.Date()}.
+#' }
+#' The \code{built_date} check exists because \code{compute_pmc()} /
+#' \code{compute_acwr()} extend the date spine to \code{Sys.Date()} and
+#' decay CTL/ATL/TSB on rest days — the value boxes read the row for
+#' TODAY via \code{slice_max(date)}. A cache built yesterday and read
+#' today (with no new import) would show yesterday's decayed values as
+#' if they were today's, so a stale \code{built_date} is always treated
+#' as a miss even though the source mtimes haven't changed.
+#'
+#' @param summaries Sessions tibble (see \code{compute_pmc()}).
+#' @param health_daily Health tibble or NULL (see \code{compute_readiness()}).
+#' @param cache_path Character or NULL. Path to cache file. NULL =
+#'   auto-detect from \code{TRANING_DATA}.
+#' @param force Logical. If TRUE, discard cache and recompute unconditionally.
+#' @param read_only Logical. If TRUE, never write the cache to disk (typical
+#'   Shiny per-session load) — mirrors \code{load_decoupling()}'s
+#'   read_only rationale: parallel Shiny sessions never race on the file.
+#' @return A list with elements \code{pmc}, \code{acwr_all},
+#'   \code{volume_running}, \code{readiness} — the exact
+#'   \code{compute_*()} outputs.
+#' @export
+load_overview_metrics <- function(summaries, health_daily = NULL,
+                                  cache_path = NULL, force = FALSE,
+                                  read_only = FALSE) {
+  if (is.null(cache_path)) cache_path <- .overview_cache_path()
+
+  summaries_mtime <- .overview_source_mtime("summaries.RData")
+  health_mtime    <- .overview_source_mtime("health_daily.RData")
+
+  if (!force && !is.null(cache_path) && file.exists(cache_path)) {
+    # A corrupt/truncated file must be treated as a miss, never an error
+    # — worst case is a cold recompute (today's pre-cache behaviour).
+    cache_fresh <- tryCatch({
+      suppressWarnings(load(cache_path))  # loads: overview_cache
+      exists("overview_cache") &&
+        identical(overview_cache$summaries_mtime, summaries_mtime) &&
+        identical(overview_cache$health_mtime, health_mtime) &&
+        identical(overview_cache$built_date, Sys.Date())
+    }, error = function(e) FALSE)
+
+    if (isTRUE(cache_fresh)) {
+      message("Overview-cache: fräsch (byggd ",
+              format(overview_cache$built_date), ").")
+      return(overview_cache[c("pmc", "acwr_all", "volume_running",
+                              "readiness")])
+    }
+  }
+
+  # Miss (or force) — recompute. compute_readiness() reuses `pmc` so
+  # this pays for two TRIMP scans (pmc + whole-system acwr), not three.
+  pmc <- compute_pmc(summaries, health_daily = health_daily)
+  acwr_all <- compute_acwr(summaries, sport = "all",
+                           health_daily = health_daily)
+  volume_running <- compute_acwr(summaries, sport = "running", mode = "km")
+  readiness <- compute_readiness(health_daily, summaries, pmc = pmc)
+
+  overview_cache <- list(
+    pmc             = pmc,
+    acwr_all        = acwr_all,
+    volume_running  = volume_running,
+    readiness       = readiness,
+    summaries_mtime = summaries_mtime,
+    health_mtime    = health_mtime,
+    built_date      = Sys.Date()
+  )
+
+  if (!is.null(cache_path) && !read_only) {
+    save_atomic(overview_cache, file = cache_path)
+    message("Overview-cache sparad (byggd ",
+            format(overview_cache$built_date), ").")
+  }
+
+  overview_cache[c("pmc", "acwr_all", "volume_running", "readiness")]
+}
+
 
 # --- Phase 5d: Taper plan & race readiness -----------------------------------
 #
