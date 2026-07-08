@@ -117,6 +117,26 @@ def test_flush_pending_workouts_skips_when_already_in_progress(monkeypatch):
     assert app_mod._pending_workouts_count == 5
 
 
+def test_flush_pending_workouts_skip_rearms_timer(monkeypatch):
+    """A flush skipped because one is already in progress must not strand
+    the leftover pending count — it re-arms its own retry timer instead of
+    only waiting for the next workout push."""
+    app_mod._pending_workouts_count = 5
+    app_mod._workouts_flushing = True
+    app_mod._workouts_timer = None
+
+    def fail_if_called(*a, **kw):
+        raise AssertionError("subprocess.run must not run while a flush is in progress")
+
+    monkeypatch.setattr(app_mod.subprocess, "run", fail_if_called)
+
+    app_mod._flush_pending_workouts()
+
+    assert app_mod._workouts_timer is not None
+    assert app_mod._workouts_timer.is_alive()
+    assert app_mod._pending_workouts_count == 5
+
+
 def test_flush_pending_workouts_noop_when_nothing_pending(monkeypatch):
     app_mod._pending_workouts_count = 0
 

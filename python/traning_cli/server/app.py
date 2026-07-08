@@ -326,6 +326,13 @@ _workouts_flushing: bool = False
 _last_workouts_import_ts: datetime | None = None
 _last_workouts_import_count: int = 0
 
+# Re-arm delay used when a flush is skipped because a prior one is still
+# in flight (see _flush_pending_workouts). Short relative to
+# _DEBOUNCE_WORKOUTS_SECS/the up-to-300s import timeout: its only job is to
+# guarantee the leftover pending count gets flushed on its own once the
+# in-flight import finishes, without waiting for the next workout push.
+_WORKOUTS_RETRY_SECS = 30
+
 
 def _decrement_after_flush(current: int, n: int, ok: bool) -> int:
     """Compute the pending-workouts count after a flush attempt.
@@ -354,12 +361,30 @@ def _flush_pending_workouts() -> None:
     On failure the counter is left intact and surfaced via /v1/status's
     ``pending_workouts`` field so the next workout push reschedules the
     timer and the import is retried then.
+
+    If a prior flush is still in flight, this run is skipped but re-arms
+    a short retry timer of its own (see ``_WORKOUTS_RETRY_SECS``) — the
+    leftover pending count is guaranteed to flush without waiting for a
+    new workout push.
     """
     global _workouts_timer, _pending_workouts_count, _workouts_flushing
     global _last_workouts_import_ts, _last_workouts_import_count
     with _workouts_lock:
         if _workouts_flushing:
-            log.debug("HAE auto-import: flush already in progress, skipping")
+            # A prior flush is still running (only reachable if the
+            # debounce window fires again before an up-to-300s import
+            # finishes). Not counted, but leave nothing stranded: re-arm a
+            # short timer so the leftover pending count still gets flushed
+            # on its own rather than waiting for the next workout push.
+            log.debug(
+                "HAE auto-import: flush already in progress, "
+                "re-arming in %ds", _WORKOUTS_RETRY_SECS,
+            )
+            _workouts_timer = threading.Timer(
+                _WORKOUTS_RETRY_SECS, _flush_pending_workouts
+            )
+            _workouts_timer.daemon = True
+            _workouts_timer.start()
             return
         n = _pending_workouts_count
         _workouts_timer = None

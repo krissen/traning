@@ -166,3 +166,61 @@ def test_fetch_new_activities_retries_incomplete_activity_on_next_run(data_dir, 
     n2 = dl.fetch_new_activities(client, data_dir, limit=10)
     assert n2 == 1
     assert len(list(gc_dir.glob("*_summary.json"))) == 1
+
+
+# --- retry cap: give up on permanently-failing activities --------------------
+
+
+def test_partial_download_gives_up_after_max_attempts(data_dir, monkeypatch):
+    """A permanently-failing activity is retried up to MAX_PARTIAL_ATTEMPTS
+    times, then the summary is kept in place (so dedup skips it) instead of
+    being retried forever."""
+    monkeypatch.setattr(dl.time, "sleep", lambda *_: None)
+    attempts = {"n": 0}
+
+    class AlwaysFailsTcxClient:
+        def get_activities(self, start, limit):
+            return [dict(ACTIVITY)] if start == 0 else []
+
+        def get_activity(self, activity_id):
+            return {"activityId": activity_id}
+
+        def download_activity(self, activity_id):
+            attempts["n"] += 1
+            raise RuntimeError("boom tcx (permanent)")
+
+    client = AlwaysFailsTcxClient()
+    gc_dir = dl.gconnect_dir(data_dir)
+
+    for i in range(1, dl.MAX_PARTIAL_ATTEMPTS + 1):
+        n = dl.fetch_new_activities(client, data_dir, limit=10)
+        assert n == 0
+        assert attempts["n"] == i
+
+    # Given up: summary is kept in place so the dedup scan skips it, and
+    # the retry-state entry for this activity has been cleared.
+    assert len(list(gc_dir.glob("*_summary.json"))) == 1
+    state = dl._load_retry_state(dl._retry_state_path(data_dir))
+    assert str(ACTIVITY["activityId"]) not in state
+
+    # A further run must NOT call download_activity again — the activity
+    # is already "known" via the dedup scan of existing summary files.
+    n_final = dl.fetch_new_activities(client, data_dir, limit=10)
+    assert n_final == 0
+    assert attempts["n"] == dl.MAX_PARTIAL_ATTEMPTS
+
+
+def test_partial_download_success_clears_retry_counter(gc_tc_dirs, tmp_path):
+    """A successful full download clears any prior failed-attempt counter."""
+    gc_dir, tc_dir = gc_tc_dirs
+    retry_state_path = dl._retry_state_path(tmp_path)
+    dl._save_retry_state(retry_state_path, {str(ACTIVITY["activityId"]): 2})
+
+    client = FakeGarminClient()
+    ok = dl._download_activity(
+        client, ACTIVITY, gc_dir, tc_dir, retry_state_path=retry_state_path
+    )
+
+    assert ok is True
+    state = dl._load_retry_state(retry_state_path)
+    assert str(ACTIVITY["activityId"]) not in state
