@@ -1,13 +1,13 @@
 # Unified visual theme for tRäning plots.
 #
-# Source of truth: app/tRanat/www/styles.css (the Shiny app's CSS custom
-# properties define the look-and-feel). This file mirrors the relevant
-# variables for use in ggplot output (CLI PNG renders + Shiny plots).
+# Source of truth: traning_palette (below), used both for ggplot output
+# (CLI PNG renders + Shiny plots) and, via traning_css_root(), for the
+# Shiny app's CSS custom properties and Bootstrap theme (app/tRanat/
+# app.R). styles.css's :root block used to hardcode a second copy of
+# these hex values; it's now generated from traning_palette at app
+# startup so there is a single source of truth. Layout:
 #
-# If a CSS variable in styles.css changes, update the matching hex below
-# in the same commit. Layout:
-#
-#   styles.css                          this file
+#   CSS var                             this file
 #   --primary:     #3e2723   →  traning_palette$primary
 #   --secondary:   #6d4c41   →  traning_palette$secondary
 #   --accent:      #8d6e63   →  traning_palette$accent
@@ -230,5 +230,57 @@ scale_colour_traning <- function(...) {
 .theme_rotated_x <- function(angle = 45, size = NULL) {
   ggplot2::theme(
     axis.text.x = ggplot2::element_text(angle = angle, hjust = 1, size = size)
+  )
+}
+
+#' Generate the Shiny app's `:root` CSS custom-property block
+#'
+#' Renders the `:root { ... }` block previously hardcoded in
+#' `app/tRanat/www/styles.css`, sourcing every colour that also appears
+#' in `traning_palette` from that list instead of a second hex literal.
+#' A handful of `:root` entries (secondary background/text tones, the
+#' font stacks) have no equivalent in `traning_palette` — those aren't
+#' triplicated anywhere else, so they stay as literals here, co-located
+#' with the rest of the block for a single emission point.
+#'
+#' Called from `app/tRanat/app.R` and injected into the document
+#' `<head>` before `styles.css` is linked, so that `styles.css`'s
+#' `var(--x)` references resolve against these values.
+#'
+#' @return A single string: the `:root { ... }` CSS block.
+#' @export
+traning_css_root <- function() {
+  p <- traning_palette
+  sprintf(
+    ":root {\n%s\n}",
+    paste(
+      "  /* --- Core palette --- */",
+      sprintf("  --bg-warm:        %s;", "#f5f1ed"),
+      sprintf("  --bg-card:        %s;", p$bg_card),
+      sprintf("  --bg-header:      %s;", p$primary),
+      sprintf("  --bg-terminal:    %s;", "#1a1a1a"),
+      "",
+      sprintf("  --text-dark:      %s;", p$text_dark),
+      sprintf("  --text-muted:     %s;", "#6d5d4f"),
+      sprintf("  --text-light:     %s;", "#a89888"),
+      sprintf("  --text-on-dark:   %s;", "#d4cdc3"),
+      "",
+      sprintf("  --primary:        %s;", p$primary),
+      sprintf("  --secondary:      %s;", p$secondary),
+      sprintf("  --accent:         %s;", p$accent),
+      sprintf("  --accent-warm:    %s;", p$accent_warm),
+      sprintf("  --border-warm:    %s;", p$border_warm),
+      "",
+      "  /* --- Status colors (muted, not screaming) --- */",
+      sprintf("  --status-green:   %s;", unname(p$status["green"])),
+      sprintf("  --status-yellow:  %s;", unname(p$status["yellow"])),
+      sprintf("  --status-red:     %s;", unname(p$status["red"])),
+      sprintf("  --status-blue:    %s;", unname(p$status["blue"])),
+      "",
+      "  /* --- Monospace stack --- */",
+      "  --font-mono:      'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;",
+      "  --font-sans:      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;",
+      sep = "\n"
+    )
   )
 }

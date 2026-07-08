@@ -33,16 +33,20 @@ source("pages/page_sport_mix.R",      local = TRUE)
 source("pages/page_import.R",         local = TRUE)
 
 # --- Theme ---
+# Colours are sourced from traning_palette (R/theme.R) — the single
+# canonical palette, also used by traning_css_root() below and by
+# ggplot output. Values not present in traning_palette (bg/fg, and
+# navbar-dark-color which has no plot equivalent) stay as literals.
 theme <- bs_theme(
   version = 5,
   bg      = "#f5f1ed",
-  fg      = "#2c2013",
-  primary = "#3e2723",
-  secondary = "#6d4c41",
-  success = "#5a8a5a",
-  warning = "#b8963a",
-  danger  = "#a85a4a",
-  info    = "#5a7a9a",
+  fg      = traning_palette$text_dark,
+  primary = traning_palette$primary,
+  secondary = traning_palette$secondary,
+  success = unname(traning_palette$status["green"]),
+  warning = unname(traning_palette$status["yellow"]),
+  danger  = unname(traning_palette$status["red"]),
+  info    = unname(traning_palette$status["blue"]),
   base_font = font_collection(
     "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"
   ),
@@ -50,10 +54,10 @@ theme <- bs_theme(
     "Monaco", "Menlo", "Consolas", "Courier New", "monospace"
   ),
   font_scale = 0.92,
-  "navbar-bg"          = "#3e2723",
+  "navbar-bg"          = traning_palette$primary,
   "navbar-dark-color"  = "#d4cdc3",
-  "card-border-color"  = "#d4c8b8",
-  "card-bg"            = "#faf8f5"
+  "card-border-color"  = traning_palette$border_warm,
+  "card-bg"            = traning_palette$bg_card
 )
 
 # --- UI ---
@@ -64,6 +68,11 @@ ui <- page_navbar(
   fillable = FALSE,
   header = tagList(
     shinyjs::useShinyjs(),
+    # traning_css_root() emits the :root { ... } custom-property block
+    # generated from traning_palette (R/theme.R) — the single canonical
+    # palette. Must come before styles.css so its var(--x) references
+    # resolve against these values.
+    tags$head(tags$style(HTML(traning_css_root()))),
     tags$head(tags$link(rel = "stylesheet", href = "styles.css")),
     # Mobile detection
     tags$script("

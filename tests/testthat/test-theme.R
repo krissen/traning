@@ -14,8 +14,10 @@ test_that("traning_palette has expected top-level keys", {
 })
 
 test_that("traning_palette CSS-mirrored vars match styles.css", {
-  # These hex values are duplicated from app/tRanat/www/styles.css. If
-  # CSS changes, both files must be updated in the same commit.
+  # traning_palette is the single source of truth for the app palette:
+  # traning_css_root() emits the CSS :root block from it and app.R's
+  # bs_theme() derives from it. These assertions pin the canonical hex
+  # values so an accidental change is caught.
   expect_identical(traning_palette$primary, "#3e2723")
   expect_identical(traning_palette$secondary, "#6d4c41")
   expect_identical(traning_palette$accent, "#8d6e63")
@@ -124,4 +126,28 @@ test_that("scale_colour_traning() interpolates past the 5 anchor colours", {
 test_that(".theme_run_profile() and .theme_rotated_x() still work", {
   expect_s3_class(traning:::.theme_run_profile(), "theme")
   expect_s3_class(traning:::.theme_rotated_x(), "theme")
+})
+
+test_that("every CSS var used in styles.css is defined by traning_css_root()", {
+  # traning_css_root() is the single source of the app's :root custom
+  # properties. Any var(--x) referenced in styles.css must be defined
+  # there, or that rule would silently render with the CSS fallback/unset
+  # on some page. This guards against a future dropped definition.
+  css_path <- file.path("..", "..", "app", "tRanat", "www", "styles.css")
+  skip_if_not(file.exists(css_path), "styles.css not found from test cwd")
+
+  used <- unique(unlist(regmatches(
+    readLines(css_path, warn = FALSE),
+    gregexpr("var\\(--[a-z0-9-]+", readLines(css_path, warn = FALSE))
+  )))
+  used <- sub("^var\\(", "", used)  # "--foo"
+
+  root <- traning_css_root()
+  defined <- unique(unlist(regmatches(
+    root, gregexpr("--[a-z0-9-]+(?=\\s*:)", root, perl = TRUE)
+  )))
+
+  missing <- setdiff(used, defined)
+  expect_identical(missing, character(0),
+                   info = paste("undefined CSS vars:", paste(missing, collapse = ", ")))
 })

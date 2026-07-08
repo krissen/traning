@@ -1,34 +1,11 @@
 /* tRanat — Retro running dashboard theme
    Inspired by kaffegrejen (warm browns, terminal) and ansikten (Amiga tones) */
 
-:root {
-  /* --- Core palette --- */
-  --bg-warm:        #f5f1ed;
-  --bg-card:        #faf8f5;
-  --bg-header:      #3e2723;
-  --bg-terminal:    #1a1a1a;
-
-  --text-dark:      #2c2013;
-  --text-muted:     #6d5d4f;
-  --text-light:     #a89888;
-  --text-on-dark:   #d4cdc3;
-
-  --primary:        #3e2723;
-  --secondary:      #6d4c41;
-  --accent:         #8d6e63;
-  --accent-warm:    #c8a882;
-  --border-warm:    #d4c8b8;
-
-  /* --- Status colors (muted, not screaming) --- */
-  --status-green:   #5a8a5a;
-  --status-yellow:  #b8963a;
-  --status-red:     #a85a4a;
-  --status-blue:    #5a7a9a;
-
-  /* --- Monospace stack --- */
-  --font-mono:      'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace;
-  --font-sans:      -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
+/* The :root { ... } custom-property block (palette + font stacks) is no
+   longer defined here — it's generated from traning_palette (R/theme.R)
+   via traning_css_root() and injected into the document <head> in
+   app.R, before this stylesheet is linked. See R/theme.R for the single
+   source of truth. */
 
 /* --- Global --- */
 body {
