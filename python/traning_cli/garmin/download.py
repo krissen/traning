@@ -30,7 +30,10 @@ PAGE_SIZE = 100  # activities per API page
 # etc.) rather than transiently flaky — retrying it forever would waste an
 # API call and log a warning on every single run. See _download_activity().
 RETRY_STATE_FILENAME = ".garmin_retry_state.json"
-MAX_PARTIAL_ATTEMPTS = 3
+# 5 attempts × the 15-min Garmin timer ≈ 75 min before an activity is written
+# off — enough margin that a long-but-transient details/TCX outage recovers,
+# while still bounding a permanently-broken activity's retries.
+MAX_PARTIAL_ATTEMPTS = 5
 
 
 def _retry_state_path(data_dir: Path) -> Path:
