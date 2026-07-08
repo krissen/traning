@@ -1,6 +1,21 @@
 # tRäning — Changelog
 
-## 2026-07-08 — Snabbare analys, konsoliderad backend
+## 2026-07-08 — Snabbare förstasida, förfinad dashboard
+
+Förfining av dashboarden efter moderniseringen. Samma utseende och siffror,
+mindre väntan och en tystare webbläsarkonsol.
+
+- **Snabbare förstasida.** Översiktens nyckeltal (fitness, form, ACWR,
+  beredskap, veckovolym) förberäknas nu vid import i stället för att räknas
+  fram vid varje kall sidladdning, och den 89 MB stora pass-cachen som bara
+  Prestation behöver laddas inte längre på förstasidan. Kall laddning gick
+  från ~4 s till ~1 s.
+- **Nya datumväljare.** Datumperiod-väljarna (Utveckling, Tävling och den
+  globala rubriken) byttes till en modern kalenderwidget. Utseendet och
+  snabbvalsknapparna (1v/1 mån/…/Allt) är oförändrade; bytet tar bort de
+  föråldrade varningar som den gamla widgeten skrev i webbläsarkonsolen.
+- **Ikon och mobilanpassning.** Sajten har nu en egen flik-ikon, och en
+  bugg som slog ut mobilanpassningen på små skärmar är rättad.
 
 Prestandaförbättringar och en genomgående konsolidering av backend. Inga
 beteendeändringar i utdata utöver de nämnda snabbheterna.
