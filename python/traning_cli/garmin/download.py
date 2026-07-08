@@ -25,6 +25,34 @@ BACKOFF_MAX = 60.0
 MAX_RETRIES = 5
 PAGE_SIZE = 100  # activities per API page
 
+# Partial-download retry cap. An activity whose details/TCX fail this many
+# times in a row is permanently unavailable (deleted upstream, corrupt,
+# etc.) rather than transiently flaky — retrying it forever would waste an
+# API call and log a warning on every single run. See _download_activity().
+RETRY_STATE_FILENAME = ".garmin_retry_state.json"
+MAX_PARTIAL_ATTEMPTS = 3
+
+
+def _retry_state_path(data_dir: Path) -> Path:
+    return data_dir / RETRY_STATE_FILENAME
+
+
+def _load_retry_state(path: Path) -> dict[str, int]:
+    if not path.is_file():
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
+        log.warning("Could not read retry state %s, starting fresh", path)
+        return {}
+
+
+def _save_retry_state(path: Path, state: dict[str, int]) -> None:
+    try:
+        path.write_text(json.dumps(state, indent=2))
+    except OSError:
+        log.warning("Could not write retry state %s", path)
+
 
 def get_existing_activity_ids(gc_dir: Path) -> set[int]:
     """Scan gconnect/ for *_summary.json and extract activity IDs."""
@@ -98,7 +126,13 @@ def fetch_new_activities(
                 continue
 
             try:
-                complete = _download_activity(client, activity, gc_dir, tc_dir)
+                complete = _download_activity(
+                    client,
+                    activity,
+                    gc_dir,
+                    tc_dir,
+                    retry_state_path=_retry_state_path(data_dir),
+                )
             except Exception:
                 log.exception("Failed to download activity %s, skipping", activity_id)
                 continue
@@ -109,13 +143,20 @@ def fetch_new_activities(
                 if new_count % 10 == 0:
                     log.info("Fetched %d new activities so far ...", new_count)
             else:
-                # Not counted and not added to existing_ids — the next run's
-                # dedup scan (get_existing_activity_ids) won't find a summary
-                # file for this activity, so it will be retried in full.
-                log.warning(
-                    "Activity %s incomplete this run, will retry next run",
-                    activity_id,
+                summary_still_missing = not any(
+                    gc_dir.glob(f"*_{activity_id}_summary.json")
                 )
+                if summary_still_missing:
+                    # No summary left behind — the next run's dedup scan
+                    # (get_existing_activity_ids) won't find one for this
+                    # activity, so it will be retried in full.
+                    log.warning(
+                        "Activity %s incomplete this run, will retry next run",
+                        activity_id,
+                    )
+                # else: _download_activity hit MAX_PARTIAL_ATTEMPTS and gave
+                # up, keeping the summary in place so it won't be retried
+                # again — it already logged its own "giving up" message.
 
         offset += PAGE_SIZE
 
@@ -144,6 +185,7 @@ def _download_activity(
     activity: dict,
     gc_dir: Path,
     tc_dir: Path,
+    retry_state_path: Path | None = None,
 ) -> bool:
     """Download summary JSON, details JSON, and TCX for one activity.
 
@@ -154,6 +196,15 @@ def _download_activity(
     would make the activity look "already fetched" forever and it would
     never be retried. On partial failure we remove the summary again so
     the next run re-fetches the activity in full.
+
+    ``retry_state_path``, when given, points at a small JSON file (one run
+    per Garmin account) tracking how many times each activity has failed a
+    partial download in a row. After ``MAX_PARTIAL_ATTEMPTS`` consecutive
+    failures the activity is treated as permanently unavailable: we stop
+    removing the summary (so the dedup scan in ``get_existing_activity_ids``
+    picks it up and skips it on future runs) and log a clear "giving up"
+    message instead of retrying forever. A subsequent successful full
+    download clears the counter for that activity id.
     """
     activity_id = activity["activityId"]
     start_gmt = activity.get("startTimeGMT", "")
@@ -203,8 +254,31 @@ def _download_activity(
         complete = False
 
     if not complete:
+        if retry_state_path is not None:
+            state = _load_retry_state(retry_state_path)
+            attempts = state.get(str(activity_id), 0) + 1
+            if attempts >= MAX_PARTIAL_ATTEMPTS:
+                log.error(
+                    "Giving up on activity %s after %d failed attempts; "
+                    "keeping the partial summary so it is not retried again",
+                    activity_id,
+                    attempts,
+                )
+                state.pop(str(activity_id), None)
+                _save_retry_state(retry_state_path, state)
+                # Leave summary_path in place: get_existing_activity_ids()
+                # will now see this activity as "already fetched" and skip
+                # it on future runs, capping the retries.
+                return False
+            state[str(activity_id)] = attempts
+            _save_retry_state(retry_state_path, state)
         summary_path.unlink(missing_ok=True)
         return False
+
+    if retry_state_path is not None:
+        state = _load_retry_state(retry_state_path)
+        if state.pop(str(activity_id), None) is not None:
+            _save_retry_state(retry_state_path, state)
 
     name = activity.get("activityName", "?")
     log.info("Downloaded: %s — %s", iso_timestamp[:10], name)
