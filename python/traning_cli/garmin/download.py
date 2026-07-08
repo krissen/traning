@@ -183,6 +183,32 @@ def _fetch_activity_list(client: Garmin, start: int, limit: int) -> list[dict]:
     return []
 
 
+def _notify_giveup(activity_id: int, activity: dict, attempts: int) -> None:
+    """Best-effort user notification that an activity was permanently skipped.
+
+    ``notify()`` already never raises, but we wrap the call anyway so a
+    notification-layer regression can never take down the Garmin fetch —
+    the give-up (keeping the summary, clearing the retry counter) must
+    complete regardless of whether the user is successfully notified.
+
+    Imports ``notify`` lazily so the fetch path (run every 15 min by the
+    Garmin timer) doesn't pull in the ``server`` package's FastAPI app
+    unless a give-up actually happens.
+    """
+    name = activity.get("activityName", "?")
+    start_gmt = activity.get("startTimeGMT", "?")
+    message = (
+        f"Aktivitet {activity_id} ({start_gmt} — {name}) misslyckades "
+        f"{attempts} gånger i rad och hoppas över permanent."
+    )
+    try:
+        from ..server.notify import notify
+
+        notify("tRäning: Garmin-aktivitet överhoppad", message)
+    except Exception:
+        log.warning("Could not send give-up notification for activity %s", activity_id)
+
+
 def _download_activity(
     client: Garmin,
     activity: dict,
@@ -269,6 +295,7 @@ def _download_activity(
                 )
                 state.pop(str(activity_id), None)
                 _save_retry_state(retry_state_path, state)
+                _notify_giveup(activity_id, activity, attempts)
                 # Leave summary_path in place: get_existing_activity_ids()
                 # will now see this activity as "already fetched" and skip
                 # it on future runs, capping the retries.

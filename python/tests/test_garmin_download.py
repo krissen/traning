@@ -210,6 +210,72 @@ def test_partial_download_gives_up_after_max_attempts(data_dir, monkeypatch):
     assert attempts["n"] == dl.MAX_PARTIAL_ATTEMPTS
 
 
+def test_partial_download_giveup_sends_notification(data_dir, monkeypatch):
+    """When an activity is given up on, the user is notified with a message
+    mentioning the activity."""
+    monkeypatch.setattr(dl.time, "sleep", lambda *_: None)
+
+    class AlwaysFailsTcxClient:
+        def get_activities(self, start, limit):
+            return [dict(ACTIVITY)] if start == 0 else []
+
+        def get_activity(self, activity_id):
+            return {"activityId": activity_id}
+
+        def download_activity(self, activity_id):
+            raise RuntimeError("boom tcx (permanent)")
+
+    calls = []
+
+    def fake_notify(title, message):
+        calls.append((title, message))
+        return True
+
+    monkeypatch.setattr("traning_cli.server.notify.notify", fake_notify)
+
+    client = AlwaysFailsTcxClient()
+    for _ in range(dl.MAX_PARTIAL_ATTEMPTS):
+        dl.fetch_new_activities(client, data_dir, limit=10)
+
+    assert len(calls) == 1
+    title, message = calls[0]
+    assert "Garmin" in title
+    assert str(ACTIVITY["activityId"]) in message
+
+
+def test_partial_download_giveup_notification_failure_does_not_break_flow(data_dir, monkeypatch):
+    """A raising notify() must not prevent the give-up from completing."""
+    monkeypatch.setattr(dl.time, "sleep", lambda *_: None)
+
+    class AlwaysFailsTcxClient:
+        def get_activities(self, start, limit):
+            return [dict(ACTIVITY)] if start == 0 else []
+
+        def get_activity(self, activity_id):
+            return {"activityId": activity_id}
+
+        def download_activity(self, activity_id):
+            raise RuntimeError("boom tcx (permanent)")
+
+    def raising_notify(title, message):
+        raise RuntimeError("notify boom")
+
+    monkeypatch.setattr("traning_cli.server.notify.notify", raising_notify)
+
+    client = AlwaysFailsTcxClient()
+    gc_dir = dl.gconnect_dir(data_dir)
+
+    for _ in range(dl.MAX_PARTIAL_ATTEMPTS):
+        n = dl.fetch_new_activities(client, data_dir, limit=10)
+        assert n == 0
+
+    # Give-up completed despite the notify exception: summary kept, retry
+    # counter cleared.
+    assert len(list(gc_dir.glob("*_summary.json"))) == 1
+    state = dl._load_retry_state(dl._retry_state_path(data_dir))
+    assert str(ACTIVITY["activityId"]) not in state
+
+
 def test_partial_download_success_clears_retry_counter(gc_tc_dirs, tmp_path):
     """A successful full download clears any prior failed-attempt counter."""
     gc_dir, tc_dir = gc_tc_dirs
