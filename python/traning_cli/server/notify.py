@@ -2,11 +2,12 @@
 
 import json
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
 
 import requests
+
+from ..settings import get_settings
 
 log = logging.getLogger(__name__)
 
@@ -18,8 +19,9 @@ def notify(title: str, message: str) -> bool:
     Returns True if notification was sent, False otherwise.
     Never raises — notification failure must not block data operations.
     """
-    ha_url = os.environ.get("HA_URL", "http://localhost:8123")
-    ha_token = os.environ.get("HA_TOKEN")
+    settings = get_settings()
+    ha_url = settings.ha_url
+    ha_token = settings.ha_token
 
     if not ha_token:
         log.debug("HA_TOKEN not set, skipping notification")
@@ -56,7 +58,7 @@ def log_notification(
     Log path: $TRANING_DATA/logs/notifications.jsonl
     Never raises — logging failure must not affect operation.
     """
-    data_dir = os.environ.get("TRANING_DATA")
+    data_dir = get_settings().traning_data
     if not data_dir:
         return
 

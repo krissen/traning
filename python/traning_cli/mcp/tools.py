@@ -1,12 +1,12 @@
 """Vayu MCP tools — curated training analysis functions."""
 
-import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import requests
 from fastmcp.utilities.types import Image
 
+from ..settings import get_settings
 from .r_bridge import _run_r, r_plot, r_report
 
 # ---------------------------------------------------------------------------
@@ -1065,7 +1065,7 @@ def _resolve_metric(name: str) -> str:
 
 def _discover_health_metrics() -> list[str]:
     """Return sorted list of health metric names from the canonical directory."""
-    data_dir = os.environ.get("TRANING_DATA")
+    data_dir = get_settings().traning_data
     if not data_dir:
         try:
             from ..garmin.utils import get_data_dir
@@ -1202,7 +1202,7 @@ def get_latest_known() -> dict:
 
 def _cache_mtime(filename: str) -> str | None:
     """Return ISO timestamp of a cache file's mtime, or None if missing."""
-    data_dir = os.environ.get("TRANING_DATA")
+    data_dir = get_settings().traning_data
     if not data_dir:
         return None
     p = Path(data_dir) / "cache" / filename
@@ -1228,22 +1228,23 @@ def get_pipeline_status() -> dict:
     environment. If the receiver is unreachable, the function still
     returns the cache mtimes plus an `error` field.
     """
-    receiver_url = os.environ.get("TRANING_RECEIVER_URL")
+    settings = get_settings()
+    receiver_url = settings.traning_receiver_url
     if not receiver_url:
         # The receiver binds TRANING_RECEIVER_HOST (a Tailscale IP on
         # kailash), so probing localhost yields a false "unreachable".
         # A wildcard bind (0.0.0.0) is reachable via loopback. `or`
         # covers both an unset var and a present-but-empty one (e.g.
         # TRANING_RECEIVER_PORT=), which .get(key, default) would miss.
-        host = os.environ.get("TRANING_RECEIVER_HOST") or "127.0.0.1"
-        port = os.environ.get("TRANING_RECEIVER_PORT") or "8421"
+        host = settings.traning_receiver_host or "127.0.0.1"
+        port = settings.traning_receiver_port or "8421"
         if host == "0.0.0.0":
             host = "127.0.0.1"
         receiver_url = f"http://{host}:{port}"
     # Trim a trailing slash so the f"{receiver_url}/v1/status" join below
     # can't produce a "//v1/status" that some proxies route differently.
     receiver_url = receiver_url.rstrip("/")
-    api_key = os.environ.get("TRANING_API_KEY")
+    api_key = settings.traning_api_key
 
     receiver: dict = {}
     error: str | None = None

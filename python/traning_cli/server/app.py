@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 
+from ..settings import get_settings
 from .auth import require_api_key
 from .notify import log_notification, notify
 from .state import (
@@ -256,7 +257,7 @@ def _import_and_notify(files: list, kind: str = "health"):
 # tmp+rename pattern as .notify_state.json), and ``_resume_pending_state``
 # reloads it and re-arms the debounce timers on startup.
 
-_DEBOUNCE_SECS = int(os.environ.get("TRANING_HEALTH_DEBOUNCE", "600"))
+_DEBOUNCE_SECS = get_settings().traning_health_debounce
 _pending_files: set[str] = set()
 _pending_timer: threading.Timer | None = None
 _pending_lock = threading.Lock()
@@ -319,9 +320,7 @@ def _schedule_health_import(files: list[str]) -> None:
 # 21:30 day-summary picks the HAE rows up as usual; here we only ensure
 # they reach summaries.RData in time.
 
-_DEBOUNCE_WORKOUTS_SECS = int(os.environ.get(
-    "TRANING_WORKOUTS_DEBOUNCE", str(_DEBOUNCE_SECS)
-))
+_DEBOUNCE_WORKOUTS_SECS = get_settings().workouts_debounce_secs
 _pending_workouts_count: int = 0
 _workouts_timer: threading.Timer | None = None
 _workouts_lock = threading.Lock()
