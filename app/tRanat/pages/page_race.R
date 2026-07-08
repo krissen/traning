@@ -16,9 +16,8 @@ page_race_ui <- function(id) {
           shinyWidgets::airDatepickerInput(ns("race_date"), "Tävlingsdag",
                             value     = Sys.Date() + 42L,
                             minDate   = Sys.Date(),
-                            # shinyWidgets' bundled v3 locale map has no
-                            # "sv" entry and crashes the JS binding on
-                            # it (see mod_date_preset.R); "en" is safe.
+                            # language="en" for crash-free init; www/air-datepicker-sv.js
+                            # swaps the calendar to Swedish post-init (see mod_date_preset.R).
                             language  = "en",
                             firstDay  = 1L,
                             autoClose = TRUE,

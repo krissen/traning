@@ -38,8 +38,8 @@ page_progress_ui <- function(id) {
               value       = c(Sys.Date() - 180, Sys.Date()),
               clearButton = FALSE,
               autoClose   = TRUE,
-              # See mod_date_preset.R: shinyWidgets' bundled v3 locale
-              # map has no "sv" entry and crashes on it; "en" is safe.
+              # language="en" for crash-free init; www/air-datepicker-sv.js
+              # swaps the calendar to Swedish post-init (see mod_date_preset.R).
               language    = "en",
               width       = "100%"
             )
