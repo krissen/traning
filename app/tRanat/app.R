@@ -74,15 +74,19 @@ ui <- page_navbar(
     # resolve against these values.
     tags$head(tags$style(HTML(traning_css_root()))),
     tags$head(tags$link(rel = "stylesheet", href = "styles.css")),
-    # Mobile detection
-    tags$script("
+    tags$head(tags$link(rel = "icon", type = "image/svg+xml", href = "favicon.svg")),
+    # Mobile detection. HTML() is required: without it htmltools escapes
+    # the `<` in `window.innerWidth < 768` to `&lt;`, which the browser
+    # then parses as literal JS — a SyntaxError that kills the whole
+    # script, so input$is_mobile would never be set.
+    tags$script(HTML("
       $(document).on('shiny:connected', function() {
         Shiny.setInputValue('is_mobile', window.innerWidth < 768);
         $(window).on('resize', function() {
           Shiny.setInputValue('is_mobile', window.innerWidth < 768);
         });
       });
-    "),
+    ")),
     bslib::layout_columns(
       col_widths = bslib::breakpoints(sm = 12, md = c(8, 4)),
       date_preset_ui("dates"),
@@ -156,8 +160,10 @@ server <- function(input, output, session) {
   # on-disk data share entries safely, while a session that starts
   # after a mid-run import (new mtimes → new data_version) always gets
   # a fresh key instead of reading another session's plot computed
-  # from older data.
-  data_version <- baseline_mtime
+  # from older data. Captured AFTER load_session_data() (below), not from
+  # baseline_mtime, so it fingerprints the data this session actually
+  # loaded — closing the micro-window where an import between the baseline
+  # snapshot and the load would stamp an older mtime than the loaded data.
 
   # Per-session-cache-snapshot. global.R definierar load_session_data()
   # och behåller dessutom globala summaries/myruns/... för
@@ -167,6 +173,7 @@ server <- function(input, output, session) {
   # konsumerar den direkt via `@`-access istället för att packa upp
   # den till separata summaries/health_daily/... argument.
   data <- load_session_data()
+  data_version <- read_cache_mtimes()
 
   # Global date range + sport
   dates <- date_preset_server("dates")
