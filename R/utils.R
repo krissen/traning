@@ -3,6 +3,9 @@
 #' @importFrom rlang %||%
 NULL
 
+#' @importFrom dplyr %>%
+NULL
+
 # --- Output defaults from environment ----------------------------------------
 
 #' Read output defaults from environment variables
