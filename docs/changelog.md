@@ -1,5 +1,26 @@
 # tRäning — Changelog
 
+## 2026-07-08 — Snabbare analys, konsoliderad backend
+
+Prestandaförbättringar och en genomgående konsolidering av backend. Inga
+beteendeändringar i utdata utöver de nämnda snabbheterna.
+
+- **Snabbare Vayu/MCP-svar.** R-bryggan som Vayu använder startade tidigare
+  en ny R-process och läste in hela paketet vid varje verktygsanrop
+  (~1,5 s). Den håller nu en varm, laddad R-process vid liv och återanvänder
+  den — efterföljande anrop svarar på ~0,1 s. Färsk data plockas fortfarande
+  upp automatiskt (cache-tidsstämplar kontrolleras per anrop), och vid minsta
+  problem faller bryggan tillbaka till den gamla vägen, så svar aldrig hänger.
+- **Snappigare dashboard.** De tunga panelerna (PMC, ACWR, monotoni,
+  decoupling, beredskap) cachar nu sitt resultat, så att byta flik och komma
+  tillbaka räknar inte om dem — cachen invalideras korrekt när ny data
+  importeras.
+- **Konsoliderad backend (internt, beteendebevarande).** Utspridd
+  konfiguration samlades i ett centralt inställningsobjekt; tre kopierade
+  HAE-nätverksklienter blev en; FastAPI-mottagaren validerar nu inkommande
+  data med typade modeller; den varma temapaletten och metrik-taxonomin
+  (summametriker) har var sin enda källa i stället för att dubbelunderhållas.
+
 ## 2026-07-08 — Robustare datainsamling, korrekt datumgräns, enhetlig datamodell
 
 Beteendeförbättringar och en intern konsolidering av datamodellen.
