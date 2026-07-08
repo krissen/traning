@@ -18,22 +18,21 @@ page_performance_ui <- function(id) {
   )
 }
 
-page_performance_server <- function(id, summaries, myruns, health_daily,
-                                     decoupling_data, dates, is_mobile,
-                                     sport) {
-  force(summaries); force(myruns); force(decoupling_data)
+page_performance_server <- function(id, data, dates, is_mobile, sport) {
+  force(data)
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
     dr_to   <- shiny::reactive(dates()$to)
     sp      <- shiny::reactive(sport())
-    augmented_flag <- "garmin_matched" %in% names(summaries)
 
-    # EF
+    # EF / HRE only read @summaries and take `sport` as an explicit
+    # arg (not @sport-keyed), so the base bundle is safe to pass as-is
+    # for any sport selection.
     metric_panel_server("ef",
-      plot_fn   = shiny::reactive(fetch.plot.ef(summaries, from = dr_from(),
+      plot_fn   = shiny::reactive(fetch.plot.ef(data, from = dr_from(),
                                                   to = dr_to(),
                                                   sport = sp())),
-      report_fn = shiny::reactive(report_ef(summaries, from = dr_from(),
+      report_fn = shiny::reactive(report_ef(data, from = dr_from(),
                                               to = dr_to(),
                                               sport = sp())),
       is_mobile = is_mobile
@@ -41,36 +40,33 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
 
     # HRE
     metric_panel_server("hre",
-      plot_fn   = shiny::reactive(fetch.plot.hre(summaries, from = dr_from(),
+      plot_fn   = shiny::reactive(fetch.plot.hre(data, from = dr_from(),
                                                    to = dr_to(),
                                                    sport = sp())),
-      report_fn = shiny::reactive(report_hre(summaries, from = dr_from(),
+      report_fn = shiny::reactive(report_hre(data, from = dr_from(),
                                                to = dr_to(),
                                                sport = sp())),
       is_mobile = is_mobile
     )
 
     # Decoupling — renderPlot (faceted, works better static for this
-    # one). The decoupling cache is keyed to running; for any other
-    # sport (or if the running cache itself failed to load in
-    # global.R and decoupling_data is NULL) we recompute, but cache
-    # the result via shiny::reactive() so the plot and table renders
-    # share one full-history pass instead of triggering two on every
-    # reactive invalidation.
-    decoupling_for_sport <- shiny::reactive({
-      if (identical(sp(), "running") && !is.null(decoupling_data)) {
-        decoupling_data
-      } else {
-        compute_decoupling(summaries, myruns, sport = sp())
-      }
-    })
-
-    # Bundle carries the sport-keyed decoupling cache; @sport tracks
-    # sp() so the traning_data validator's sport-keying guard passes.
+    # one). fetch.plot.decoupling()/report_decoupling() read
+    # @decoupling_data directly and recompute only when it's NULL, and
+    # the cache is sport-keyed (see traning_data() docs) — so we must
+    # not hand them the base bundle's running-only @decoupling_data
+    # under a different @sport. S7 objects are copy-on-modify: `b <-
+    # data; b@sport <- sp()` yields an independent, re-validated copy.
+    # For the running default we keep the base bundle's @decoupling_data
+    # (already sport="running", matching load_session_data()); for any
+    # other sport we drop it so the function's lazy-compute fallback
+    # recomputes for that sport.
     decoupling_bundle <- shiny::reactive({
-      traning_data(summaries = summaries, myruns = myruns,
-                   decoupling_data = decoupling_for_sport(),
-                   sport = sp(), augmented = augmented_flag)
+      b <- data
+      b@sport <- sp()
+      if (!identical(sp(), "running")) {
+        b@decoupling_data <- NULL
+      }
+      b
     })
 
     metric_panel_server("decoupling",
@@ -86,13 +82,15 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
       is_mobile = is_mobile
     )
 
-    # HR Zones — no precomputed zone_data cache is threaded in here (this
-    # mirrors pre-migration behaviour: hr_zones always recomputes
-    # on the fly for the current sport), so the bundle carries no
-    # @zone_data and @sport is free to just track sp().
+    # HR Zones — no precomputed zone_data cache is threaded through the
+    # app (this mirrors pre-migration behaviour: hr_zones always
+    # recomputes on the fly for the current sport), so drop @zone_data
+    # (already NULL on the base bundle) and just track @sport.
     hr_zones_bundle <- shiny::reactive({
-      traning_data(summaries = summaries, sport = sp(),
-                   augmented = augmented_flag)
+      b <- data
+      b@sport <- sp()
+      b@zone_data <- NULL
+      b
     })
 
     metric_panel_server("hr_zones",
@@ -107,10 +105,13 @@ page_performance_server <- function(id, summaries, myruns, health_daily,
       is_mobile = is_mobile
     )
 
-    # Recovery HR
+    # Recovery HR — reads only @summaries; no sport-keyed cache
+    # involved, but @sport is tracked for consistency with the panels
+    # above.
     recovery_hr_bundle <- shiny::reactive({
-      traning_data(summaries = summaries, sport = sp(),
-                   augmented = augmented_flag)
+      b <- data
+      b@sport <- sp()
+      b
     })
 
     metric_panel_server("recovery_hr",

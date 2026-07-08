@@ -40,12 +40,13 @@ page_runprofile_ui <- function(id) {
   )
 }
 
-page_runprofile_server <- function(id, summaries, dates, is_mobile, sport) {
+page_runprofile_server <- function(id, data, dates, is_mobile, sport) {
   # `dates` is intentionally unused — these plots span the full history
   # by design (yearly characterization, season-across-all-years, era
   # comparison). Forwarding the global date preset would collapse them
   # to a single year and lose their point.
-  force(summaries)
+  force(data)
+  summaries <- data@summaries
   shiny::moduleServer(id, function(input, output, session) {
     sp <- shiny::reactive(sport())
 
