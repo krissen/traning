@@ -75,6 +75,12 @@ ui <- page_navbar(
     tags$head(tags$style(HTML(traning_css_root()))),
     tags$head(tags$link(rel = "stylesheet", href = "styles.css")),
     tags$head(tags$link(rel = "icon", type = "image/svg+xml", href = "favicon.svg")),
+    # Swaps every airDatepickerInput's calendar to a Swedish locale
+    # post-init (shinyWidgets bundles no "sv" locale for air-datepicker
+    # v3; passing language="sv" crashes the JS binding). Self-gates on
+    # shiny:connected, so source order relative to the widgets doesn't
+    # matter. See www/air-datepicker-sv.js for the full explanation.
+    tags$head(tags$script(src = "air-datepicker-sv.js")),
     # Mobile detection. HTML() is required: without it htmltools escapes
     # the `<` in `window.innerWidth < 768` to `&lt;`, which the browser
     # then parses as literal JS — a SyntaxError that kills the whole

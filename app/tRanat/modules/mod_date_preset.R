@@ -31,12 +31,17 @@ date_preset_ui <- function(id) {
           separator   = " \u2014 ",
           clearButton = FALSE,
           autoClose   = TRUE,
-          # shinyWidgets 0.9.1's bundled air-datepicker v3 locale map
-          # lacks an "sv" entry (despite match.arg() accepting it),
-          # which crashes the JS binding (`_handleLocale`:
-          # JSON.parse(JSON.stringify(undefined))). "en" is the
-          # widest-supported safe choice; app-authored labels stay
-          # Swedish regardless.
+          # language="en" for crash-free init: shinyWidgets 0.9.1's
+          # bundled air-datepicker v3 locale map lacks an "sv" entry
+          # (despite match.arg() accepting "sv"), and passing it
+          # crashes the JS binding's _handleLocale()
+          # (JSON.parse(JSON.stringify(undefined))), taking down the
+          # whole Shiny session. www/air-datepicker-sv.js reaches into
+          # the binding's instance store post-init and calls each
+          # instance's own `.update({locale})` with a real Swedish
+          # locale object, so the calendar renders in Swedish anyway —
+          # a real fix, not a workaround. App-authored labels
+          # (button text, headers) stay Swedish regardless either way.
           language    = "en",
           width       = "100%"
         )
