@@ -91,11 +91,22 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
     # `overview_metrics` itself is kept as belt-and-suspenders — a
     # cache hit still costs a disk read + validity check, cheap but
     # not free.
+    #
+    # `Sys.Date()` is part of the key on purpose: compute_pmc/acwr decay
+    # CTL/ATL/TSB to today on rest days and the value boxes read the
+    # today row, so the result is date-dependent even when no source
+    # file changed. Without it, a persistent app process running past
+    # midnight without a cache-file rewrite keeps `data_version`
+    # identical and would serve yesterday's app-scoped entry — never
+    # calling load_overview_metrics(), so its own built_date guard never
+    # runs. Adding today to the key forces the reactive to re-enter
+    # load_overview_metrics() on the first hit of a new day (which then
+    # rebuilds fresh; read_only skips the disk write).
     overview_metrics <- shiny::reactive({
       tryCatch(load_overview_metrics(summaries, health_daily,
                                      read_only = TRUE),
                error = function(e) NULL)
-    }) |> shiny::bindCache(data_version)
+    }) |> shiny::bindCache(data_version, Sys.Date())
 
     pmc_data <- shiny::reactive({
       m <- overview_metrics()
