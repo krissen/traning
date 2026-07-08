@@ -1,10 +1,10 @@
 """Vayu — MCP server for tRäning (personal running analysis)."""
 
-import os
 import sys
 
 from fastmcp import FastMCP
 
+from ..settings import get_settings
 from . import prompts, tools
 
 mcp = FastMCP(
@@ -69,8 +69,9 @@ def main():
     kwargs = {}
     if "--sse" in sys.argv:
         transport = "sse"
-        kwargs["host"] = os.environ.get("VAYU_HOST", "0.0.0.0")
-        kwargs["port"] = int(os.environ.get("VAYU_PORT", "8422"))
+        settings = get_settings()
+        kwargs["host"] = settings.vayu_host
+        kwargs["port"] = settings.vayu_port
     mcp.run(transport=transport, **kwargs)
 
 

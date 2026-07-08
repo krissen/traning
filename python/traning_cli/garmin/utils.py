@@ -1,30 +1,25 @@
 """Naming conventions, path helpers, and logging for Garmin fetch."""
 
 import logging
-import os
 import re
 from pathlib import Path
 
+from ..settings import _read_renviron, get_project_root, get_settings
 
-def _read_renviron(path: Path) -> dict[str, str]:
-    """Parse a .Renviron file (KEY=VALUE lines, # comments)."""
-    env = {}
-    if not path.is_file():
-        return env
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        if "=" in line:
-            key, _, value = line.partition("=")
-            env[key.strip()] = value.strip()
-    return env
-
-
-def get_project_root() -> Path:
-    """Return the traning project root directory."""
-    # garmin/utils.py -> garmin/ -> traning_cli/ -> python/ -> repo root
-    return Path(__file__).resolve().parent.parent.parent.parent
+# Re-exported for backwards compatibility — other modules import
+# _read_renviron/get_project_root from here rather than traning_cli.settings.
+__all__ = [
+    "_read_renviron",
+    "get_project_root",
+    "get_data_dir",
+    "gconnect_dir",
+    "tcx_dir",
+    "token_dir",
+    "activity_filename_prefix",
+    "prefix_to_symlink_name",
+    "extract_activity_id",
+    "setup_logging",
+]
 
 
 def get_data_dir() -> Path:
@@ -32,20 +27,10 @@ def get_data_dir() -> Path:
 
     Checks the environment first, then falls back to .Renviron in the
     project root (so the same config works for both R and Python).
+
+    Thin wrapper around Settings.get_data_dir() — see traning_cli.settings.
     """
-    raw = os.environ.get("TRANING_DATA")
-    if not raw:
-        renviron = _read_renviron(get_project_root() / ".Renviron")
-        raw = renviron.get("TRANING_DATA")
-    if not raw:
-        raise OSError(
-            "TRANING_DATA is not set. "
-            "Add it to .Renviron or export it in your shell."
-        )
-    p = Path(raw)
-    if not p.is_dir():
-        raise FileNotFoundError(f"TRANING_DATA directory not found: {p}")
-    return p
+    return get_settings().get_data_dir()
 
 
 def gconnect_dir(data_dir: Path) -> Path:

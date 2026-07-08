@@ -1,23 +1,23 @@
 """Path helpers and config for Health Auto Export data."""
 
-import os
 from pathlib import Path
 
 from ..garmin.utils import get_data_dir
+from ..settings import get_settings
 
 DEFAULT_HAE_PORT = 9000
 DEFAULT_TIMEOUT = 10
 
 
 def hae_host() -> str:
-    host = os.environ.get("HAE_HOST", "")
+    host = get_settings().hae_host
     if not host:
         raise RuntimeError("HAE_HOST is not set. Set it to the HAE TCP server hostname.")
     return host
 
 
 def hae_port() -> int:
-    return int(os.environ.get("HAE_PORT", str(DEFAULT_HAE_PORT)))
+    return get_settings().hae_port
 
 
 def health_metrics_dir(data_dir: Path | None = None) -> Path:

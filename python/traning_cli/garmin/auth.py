@@ -12,22 +12,18 @@ Credentials are read from environment or .Renviron (GARMIN_EMAIL, GARMIN_PASSWOR
 
 import getpass
 import logging
-import os
 from pathlib import Path
 
 from garminconnect import Garmin
 
-from .utils import _read_renviron, get_project_root
+from ..settings import get_settings
 
 log = logging.getLogger(__name__)
 
 
 def _get_credentials() -> tuple[str, str]:
     """Get Garmin credentials from env/.Renviron or prompt."""
-    renviron = _read_renviron(get_project_root() / ".Renviron")
-
-    email = os.environ.get("GARMIN_EMAIL") or renviron.get("GARMIN_EMAIL")
-    password = os.environ.get("GARMIN_PASSWORD") or renviron.get("GARMIN_PASSWORD")
+    email, password = get_settings().get_garmin_credentials()
 
     if not email:
         email = input("Email: ").strip()

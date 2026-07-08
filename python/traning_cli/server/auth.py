@@ -1,16 +1,16 @@
 """API key authentication middleware."""
 
-import os
-
 from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
+
+from ..settings import get_settings
 
 _header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 def get_api_key() -> str:
     """Return the configured API key, or raise if not set."""
-    key = os.environ.get("TRANING_API_KEY")
+    key = get_settings().traning_api_key
     if not key:
         raise RuntimeError("TRANING_API_KEY environment variable not set")
     return key

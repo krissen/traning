@@ -16,13 +16,15 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from ..settings import get_settings
+
 log = logging.getLogger(__name__)
 
 _STATE_FILENAME = ".notify_state.json"
 
 
 def _state_path() -> Path | None:
-    data_dir = os.environ.get("TRANING_DATA")
+    data_dir = get_settings().traning_data
     if not data_dir:
         return None
     return Path(data_dir) / _STATE_FILENAME
@@ -108,7 +110,7 @@ _PENDING_STATE_FILENAME = ".pending_state.json"
 
 
 def _pending_state_path() -> Path | None:
-    data_dir = os.environ.get("TRANING_DATA")
+    data_dir = get_settings().traning_data
     if not data_dir:
         return None
     return Path(data_dir) / _PENDING_STATE_FILENAME
