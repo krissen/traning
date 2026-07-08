@@ -2,102 +2,39 @@
 
 import json
 import logging
-import socket
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from .hae_client import HAEError, HAEQueryError, check_server, query_hae
 from .utils import DEFAULT_TIMEOUT, hae_host, hae_port, health_metrics_dir
 
 log = logging.getLogger(__name__)
 
-
-class HAEQueryError(RuntimeError):
-    """A TCP query to HAE failed in a way that may be transient (warm-up,
-    truncated response, network blip). Distinguishes from a successful
-    query that genuinely returned no metrics."""
-
-
-def check_server(timeout: float = 3.0) -> bool:
-    """Check if the HAE TCP server is reachable."""
-    host, port = hae_host(), hae_port()
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect((host, port))
-        sock.close()
-        return True
-    except (TimeoutError, ConnectionRefusedError, OSError):
-        return False
+__all__ = [
+    "HAEError", "HAEQueryError", "check_server", "fetch_tcp",
+]
 
 
 def _query_tcp(start: str, end: str, timeout: float = DEFAULT_TIMEOUT) -> dict:
     """Send a query to HAE TCP server and return the parsed result body.
 
-    Returns ``data["result"]["data"]`` (typically ``{"metrics": [...]}``)
-    on success — possibly empty if HAE has no data for the window.
-    Raises HAEQueryError for connection / parse / shape failures so callers
-    can distinguish those from genuinely empty responses and retry.
+    Returns the result body (typically ``{"metrics": [...]}``) on success —
+    possibly empty if HAE has no data for the window. Raises HAEQueryError
+    for connection / parse / shape failures so callers can distinguish
+    those from genuinely empty responses and retry.
     """
-    host, port = hae_host(), hae_port()
-    request = json.dumps({
-        "jsonrpc": "2.0",
-        "id": "fetch",
-        "method": "callTool",
-        "params": {
-            "name": "health_metrics",
-            "metrics": "",
-            "arguments": {
-                "start": start,
-                "end": end,
-                "interval": "days",
-                "aggregate": True,
-            }
-        }
-    })
-
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
-        sock.connect((host, port))
-        sock.sendall(request.encode("utf-8"))
-
-        chunks = []
-        while True:
-            try:
-                chunk = sock.recv(65536)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-            except TimeoutError:
-                break
-        sock.close()
-    except (TimeoutError, ConnectionError, OSError) as e:
-        raise HAEQueryError(f"connection error: {e}") from e
-
-    raw = b"".join(chunks)
-    if len(raw) < 10:
-        raise HAEQueryError(
-            f"empty/short response ({len(raw)} bytes) — HAE likely warming up"
-        )
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError as e:
-        excerpt = raw[:200].decode("utf-8", errors="replace")
-        raise HAEQueryError(
-            f"JSON parse failed at byte {e.pos}/{len(raw)}: {e.msg}; "
-            f"first 200 bytes: {excerpt!r}"
-        ) from e
-
-    if "error" in data:
-        raise HAEQueryError(f"HAE returned error: {data['error']}")
-    if "result" not in data or "data" not in data["result"]:
-        raise HAEQueryError(
-            f"unexpected response shape: top-level keys {list(data)}"
-        )
-
-    return data["result"]["data"]
+    return query_hae(
+        "health_metrics",
+        {
+            "start": start,
+            "end": end,
+            "interval": "days",
+            "aggregate": True,
+        },
+        request_id="fetch",
+        timeout=timeout,
+    )
 
 
 def _latest_cached_date(metrics_dir: Path) -> str | None:
