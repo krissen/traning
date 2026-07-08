@@ -144,6 +144,21 @@ server <- function(input, output, session) {
   }
   baseline_mtime <- read_cache_mtimes()
 
+  # data_version: the exact mtime snapshot that was current just before
+  # load_session_data() populated this session's `data` bundle below —
+  # i.e. a stable fingerprint of the on-disk data this session is
+  # actually showing. Threaded into bindCache() keys on the expensive
+  # compute_*-backed reactives (PMC/ACWR/monotony/decoupling/readiness
+  # in mod_overview.R, page_training.R, page_performance.R,
+  # page_health.R). bindCache()'s default cache is app-scoped (shared
+  # across ALL sessions of this R process), so every cached reactive's
+  # key MUST include this value: two sessions that loaded the same
+  # on-disk data share entries safely, while a session that starts
+  # after a mid-run import (new mtimes → new data_version) always gets
+  # a fresh key instead of reading another session's plot computed
+  # from older data.
+  data_version <- baseline_mtime
+
   # Per-session-cache-snapshot. global.R definierar load_session_data()
   # och behåller dessutom globala summaries/myruns/... för
   # bakåtkompatibilitet. Per-session-anropet säkerställer att varje
@@ -223,12 +238,12 @@ server <- function(input, output, session) {
   # genuinely sport-blind (overview, health, race) can ignore it.
   # `data` is the traning_data bundle; page servers use `@`-access
   # internally (PR 8 of the S7 migration).
-  page_overview_server("overview", data, dates, is_mobile)
-  page_training_server("training", data, dates, is_mobile, sport)
+  page_overview_server("overview", data, dates, is_mobile, data_version)
+  page_training_server("training", data, dates, is_mobile, sport, data_version)
   page_progress_server("progress", data, dates, is_mobile, sport)
   page_sport_mix_server("sport_mix", data, dates, is_mobile, sport)
-  page_health_server("health", data, dates, is_mobile)
-  page_performance_server("performance", data, dates, is_mobile, sport)
+  page_health_server("health", data, dates, is_mobile, data_version)
+  page_performance_server("performance", data, dates, is_mobile, sport, data_version)
   page_runprofile_server("runprofile", data, dates, is_mobile, sport)
   page_race_server("race", data, dates, is_mobile)
   page_import_server("import")
