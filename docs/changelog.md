@@ -11,9 +11,10 @@ mindre väntan och en tystare webbläsarkonsol.
   Prestation behöver laddas inte längre på förstasidan. Kall laddning gick
   från ~4 s till ~1 s.
 - **Nya datumväljare.** Datumperiod-väljarna (Utveckling, Tävling och den
-  globala rubriken) byttes till en modern kalenderwidget. Utseendet och
-  snabbvalsknapparna (1v/1 mån/…/Allt) är oförändrade; bytet tar bort de
-  föråldrade varningar som den gamla widgeten skrev i webbläsarkonsolen.
+  globala rubriken) byttes till en modern kalenderwidget med svensk kalender
+  (månads- och veckodagsnamn). Utseendet och snabbvalsknapparna
+  (1v/1 mån/…/Allt) är oförändrade; bytet tar bort de föråldrade varningar
+  som den gamla widgeten skrev i webbläsarkonsolen.
 - **Ikon och mobilanpassning.** Sajten har nu en egen flik-ikon, och en
   bugg som slog ut mobilanpassningen på små skärmar är rättad.
 
