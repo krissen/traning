@@ -33,10 +33,15 @@ page_progress_ui <- function(id) {
           ),
           bslib::layout_columns(
             col_widths = bslib::breakpoints(sm = 12, md = 4),
-            shiny::dateRangeInput(ns("datesum_range"), NULL,
-              start = Sys.Date() - 180,
-              end   = Sys.Date(),
-              width = "100%"
+            shinyWidgets::airDatepickerInput(ns("datesum_range"), NULL,
+              range       = TRUE,
+              value       = c(Sys.Date() - 180, Sys.Date()),
+              clearButton = FALSE,
+              autoClose   = TRUE,
+              # See mod_date_preset.R: shinyWidgets' bundled v3 locale
+              # map has no "sv" entry and crashes on it; "en" is safe.
+              language    = "en",
+              width       = "100%"
             )
           )
         ),
@@ -61,7 +66,7 @@ page_progress_server <- function(id, data, dates, is_mobile, sport) {
   # dataset (e.g. "April över åren" needs every April on record);
   # forwarding the global 12-month preset would silently collapse the
   # view to one or two recent years. The "Datumperiod" card at the
-  # bottom carries its own dateRangeInput for ad-hoc lookups.
+  # bottom carries its own date-range picker for ad-hoc lookups.
   force(data)
   summaries <- data@summaries
   shiny::moduleServer(id, function(input, output, session) {
@@ -117,11 +122,11 @@ page_progress_server <- function(id, data, dates, is_mobile, sport) {
 
     # --- Datumperiod (own date range) ---
     # ignoreInit = TRUE so the initial actionButton value (0) doesn't
-    # fire all six observers at startup and clobber the dateRangeInput's
-    # default 180-day span.
+    # fire all six observers at startup and clobber the date-range
+    # picker's default 180-day span.
     .set_range <- function(start, end) {
-      shiny::updateDateRangeInput(session, "datesum_range",
-                                  start = start, end = end)
+      shinyWidgets::updateAirDateInput(session, "datesum_range",
+                                       value = c(start, end))
     }
     shiny::observeEvent(input$preset_1w,
       .set_range(Sys.Date() - 7,   Sys.Date()), ignoreInit = TRUE)
@@ -138,7 +143,7 @@ page_progress_server <- function(id, data, dates, is_mobile, sport) {
       if (is.finite(earliest)) {
         .set_range(as.Date(earliest), Sys.Date())
       } else {
-        # Empty cache — fall back to the dateRangeInput default span.
+        # Empty cache — fall back to the date-range picker's default span.
         .set_range(Sys.Date() - 180, Sys.Date())
       }
     }, ignoreInit = TRUE)

@@ -13,11 +13,15 @@ page_race_ui <- function(id) {
       bslib::card_body(
         bslib::layout_columns(
           col_widths = bslib::breakpoints(sm = 12, md = c(4, 4, 4)),
-          shiny::dateInput(ns("race_date"), "Tävlingsdag",
-                            value = Sys.Date() + 42L,
-                            min   = Sys.Date(),
-                            language = "sv",
-                            weekstart = 1L,
+          shinyWidgets::airDatepickerInput(ns("race_date"), "Tävlingsdag",
+                            value     = Sys.Date() + 42L,
+                            minDate   = Sys.Date(),
+                            # shinyWidgets' bundled v3 locale map has no
+                            # "sv" entry and crashes the JS binding on
+                            # it (see mod_date_preset.R); "en" is safe.
+                            language  = "en",
+                            firstDay  = 1L,
+                            autoClose = TRUE,
                             width = "100%"),
           shiny::numericInput(ns("distance_km"), "Distans (km)",
                                value = 21.1, min = 1, max = 200,
