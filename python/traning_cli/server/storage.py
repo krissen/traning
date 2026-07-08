@@ -18,6 +18,7 @@ from ..health.utils import (
     health_metrics_dir,
     health_workouts_dir,
 )
+from ..metric_taxonomy import load_sum_metrics
 
 log = logging.getLogger(__name__)
 
@@ -28,13 +29,9 @@ log = logging.getLogger(__name__)
 # want the day's total; canonical files for these metrics carry a
 # `daily_total` field so the R reader can take a fast path.
 #
-# Must stay in sync with `.sum_metrics` in R/health_export.R.
-_SUM_METRICS = frozenset({
-    "step_count", "active_energy", "basal_energy_burned",
-    "flights_climbed", "apple_exercise_time", "apple_stand_time",
-    "apple_stand_hour", "walking_running_distance",
-    "cycling_distance", "mindful_minutes", "time_in_daylight",
-})
+# Single source of truth shared with the R side
+# (R/health_export.R::.sum_metrics) is inst/metric_taxonomy.json.
+_SUM_METRICS = load_sum_metrics()
 
 
 def _daily_total(samples: list[dict]) -> float | None:

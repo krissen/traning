@@ -581,13 +581,55 @@
 
 # --- Daily aggregation --------------------------------------------------------
 
+#' Locate the shared metric taxonomy JSON
+#'
+#' Resolution order: \code{system.file()} (installed package, or the
+#' source-package layout under \code{devtools::load_all()}, where
+#' \code{system.file()} already resolves into \code{<repo>/inst}), then a
+#' repo-relative fallback from the working directory for contexts where
+#' \code{system.file()} returns \code{""} (e.g. a stripped-down test
+#' runner). Mirrors the resolution pattern in \code{traning_cli_path()}
+#' (R/python_cli.R).
+#' @return Character path to metric_taxonomy.json, or NA_character_ if
+#'   not found.
+#' @keywords internal
+.metric_taxonomy_path <- function() {
+  pkg_path <- system.file("metric_taxonomy.json", package = "traning")
+  if (nzchar(pkg_path)) return(pkg_path)
+
+  cwd <- getwd()
+  candidates <- c(
+    file.path(cwd, "inst", "metric_taxonomy.json"),
+    file.path(cwd, "..", "inst", "metric_taxonomy.json"),
+    file.path(cwd, "..", "..", "inst", "metric_taxonomy.json")
+  )
+  for (cand in candidates) {
+    if (file.exists(cand)) return(normalizePath(cand, mustWork = FALSE))
+  }
+  NA_character_
+}
+
+#' Load the shared metric taxonomy (sum_metrics, etc.)
+#'
+#' Single source of truth shared with the Python side
+#' (\code{python/traning_cli/server/storage.py::_SUM_METRICS}), stored at
+#' \code{inst/metric_taxonomy.json}. Loaded once per session and cached
+#' in the package's namespace environment (see \code{.onLoad}).
+#' @return Named list, e.g. \code{list(sum_metrics = c(...))}.
+#' @keywords internal
+.load_metric_taxonomy <- function() {
+  path <- .metric_taxonomy_path()
+  if (is.na(path)) {
+    stop("metric_taxonomy.json not found (system.file() and repo-relative ",
+         "fallbacks all failed)")
+  }
+  jsonlite::fromJSON(path, simplifyVector = TRUE)
+}
+
 # Metrics that should be summed (accumulated over a day), not averaged.
-.sum_metrics <- c(
-  "step_count", "active_energy", "basal_energy_burned", "flights_climbed",
-  "apple_exercise_time", "apple_stand_time", "apple_stand_hour",
-  "walking_running_distance", "cycling_distance", "mindful_minutes",
-  "time_in_daylight"
-)
+# Loaded from inst/metric_taxonomy.json (shared with the Python side) at
+# package load time; see .onLoad in R/import.R.
+.sum_metrics <- character(0)
 
 # Metrics where daily minimum is the correct aggregate.
 # Resting HR: the lowest reading represents true resting state;

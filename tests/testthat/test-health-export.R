@@ -104,6 +104,27 @@ test_that("pivot_health_wide produces one row per date", {
   expect_true("vo2_max" %in% names(wide))
 })
 
+test_that(".sum_metrics matches inst/metric_taxonomy.json", {
+  expected <- c(
+    "step_count", "active_energy", "basal_energy_burned", "flights_climbed",
+    "apple_exercise_time", "apple_stand_time", "apple_stand_hour",
+    "walking_running_distance", "cycling_distance", "mindful_minutes",
+    "time_in_daylight"
+  )
+  expect_equal(traning:::.sum_metrics, expected)
+
+  taxonomy_path <- system.file("metric_taxonomy.json", package = "traning")
+  expect_true(nzchar(taxonomy_path))
+  expect_true(file.exists(taxonomy_path))
+  taxonomy <- jsonlite::fromJSON(taxonomy_path, simplifyVector = TRUE)
+  expect_equal(taxonomy$sum_metrics, expected)
+  # The loaded namespace value must match the JSON on disk — this is the
+  # guard that replaces the old "must stay in sync" code comment: both
+  # this test and test_storage.py::test_sum_metrics_matches_taxonomy_json
+  # (Python) assert against the same inst/metric_taxonomy.json.
+  expect_equal(traning:::.sum_metrics, taxonomy$sum_metrics)
+})
+
 test_that(".aggregate_daily sums step_count and takes min resting HR", {
   df <- tibble::tibble(
     date   = as.Date(c("2026-04-01", "2026-04-01", "2026-04-01",
