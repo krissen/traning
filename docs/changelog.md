@@ -1,5 +1,28 @@
 # tRäning — Changelog
 
+## 2026-07-08 — Robustare datainsamling, korrekt datumgräns, enhetlig datamodell
+
+Beteendeförbättringar och en intern konsolidering av datamodellen.
+
+- **Ofullständiga Garmin-hämtningar återförsöks.** Om detaljer eller TCX
+  inte kunde laddas ned för en aktivitet räknades den tidigare ändå som
+  hämtad och togs aldrig om — själva träningsdatan (TCX) kunde tyst gå
+  förlorad. Nu behandlas en ofullständig hämtning som ej klar och tas om
+  vid nästa körning.
+- **Köade importer överlever en receiver-omstart.** Väntande hälso- och
+  träningsfiler (debounce-kön) sparades bara i minnet och tappades om
+  mottagaren startades om medan de låg i kö. Kön persistas nu och
+  återupptas vid start.
+- **Korrekt datumgräns i sessionsplottar.** Datumfiltret i EF-, HRE-,
+  vilopuls- och decoupling-plottarna trunkerade tidigare tidsstämplar i
+  UTC, vilket kunde utesluta en session nära lokal midnatt från en
+  from-gräns. Jämförelsen sker nu i lokal tidszon.
+- **Enhetlig datamodell (internt).** Analys- och plotfunktionerna
+  konsoliderades kring ett enda `traning_data`-objekt med enhetliga
+  signaturer och en tabell-driven dispatch, vilket tog bort den
+  duplicerade argumenthanteringen mellan CLI:t och MCP-bryggan. Rent
+  beteendebevarande — ingen skillnad i utdata.
+
 ## 2026-07-07 — Döda scripts borttagna, designdoc-status städad
 
 Hygienstädning utan beteendeförändring.
