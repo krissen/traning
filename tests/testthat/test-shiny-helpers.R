@@ -19,6 +19,23 @@ test_that("load_session_data returns a valid traning_data bundle", {
   expect_type(out@myruns, "list")
 })
 
+test_that("load_session_data defers myruns/decoupling (lazy-load)", {
+  td <- tempfile("traning_data_")
+  on.exit(unlink(td, recursive = TRUE), add = TRUE)
+  make_fake_cache(td)
+
+  with_traning_data(td, {
+    out <- load_session_data()
+  })
+
+  # myruns.RData is ~89MB and only the Performance page's decoupling
+  # panel needs it — load_session_data() must NOT load it on the
+  # landing path. See R/shiny_helpers.R load_session_data() docs and
+  # app/tRanat/pages/page_performance.R's perf_bundle reactive.
+  expect_equal(out@myruns, list())
+  expect_null(out@decoupling_data)
+})
+
 test_that("load_session_data summaries matches my_dbs_load", {
   td <- tempfile("traning_data_")
   on.exit(unlink(td, recursive = TRUE), add = TRUE)
@@ -34,7 +51,10 @@ test_that("load_session_data summaries matches my_dbs_load", {
   })
 
   expect_equal(out@summaries, ref$summaries)
-  expect_equal(out@myruns, ref$myruns)
+  # load_session_data() no longer loads myruns (deferred — see above);
+  # the base bundle always carries @myruns = list() regardless of what
+  # my_dbs_load() would return for the on-disk cache.
+  expect_equal(out@myruns, list())
 })
 
 test_that("load_session_data handles missing health/decoupling caches", {
@@ -53,11 +73,10 @@ test_that("load_session_data handles missing health/decoupling caches", {
   expect_named(out@health_daily, c("date", "metric", "value", "source"),
                ignore.order = TRUE)
 
-  # decoupling_data är NULL (kallt cold-path-misslyckande) eller en
-  # data.frame (lyckad cold compute) — båda är acceptabla då vi bara
-  # vill bekräfta att laddaren inte kraschar utan färdig cache.
-  expect_true(is.null(out@decoupling_data) ||
-              inherits(out@decoupling_data, "data.frame"))
+  # decoupling_data is always NULL now — load_session_data() no longer
+  # requests the "decoupling_data" slot (it requires "myruns", which
+  # the landing path deliberately skips; see the lazy-load test above).
+  expect_null(out@decoupling_data)
 })
 
 test_that("load_session_data honours explicit traning_data over env var", {
