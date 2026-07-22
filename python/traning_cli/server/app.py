@@ -503,20 +503,31 @@ def _resume_pending_state() -> None:
         log.info("Resumed %d pending workout(s) after restart", count)
 
 
+# Endpoints whose clients are worth identifying — the HAE pushes only.
+# Leaving /health out keeps the monitoring probes from burying the signal.
+_CLIENT_LOG_PATHS = frozenset({"/v1/health", "/v1/workouts"})
+
+
 def _log_client(request: Request, endpoint: str) -> None:
     """Log which client sent a push, one line per push.
 
     The User-Agent carries the HAE app version, which is what lets a
     silent outage be correlated with an app update afterwards. Only the
     client host and User-Agent are read — never the API key header.
+
+    Never raises: a push must not fail because its log line could not be
+    written.
     """
-    client = request.client.host if request.client else "unknown"
-    log.info(
-        "%s push from %s (User-Agent: %s)",
-        endpoint,
-        client,
-        request.headers.get("user-agent", "unknown"),
-    )
+    try:
+        client = request.client.host if request.client else "unknown"
+        log.info(
+            "%s push from %s (User-Agent: %s)",
+            endpoint,
+            client,
+            request.headers.get("user-agent", "unknown"),
+        )
+    except Exception:
+        log.debug("Could not log client for %s", endpoint, exc_info=True)
 
 
 # Track state for /v1/status endpoint
@@ -542,6 +553,18 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=_lifespan,
     )
+
+    @application.middleware("http")
+    async def log_push_client(request: Request, call_next):
+        """Log the pushing client before the request is validated.
+
+        Sitting in the handler is not enough: a payload whose shape the
+        app changed is rejected with 422 before the handler runs, and
+        that is precisely the outage the User-Agent is meant to explain.
+        """
+        if request.method == "POST" and request.url.path in _CLIENT_LOG_PATHS:
+            _log_client(request, request.url.path)
+        return await call_next(request)
 
     @application.get("/health")
     async def healthcheck():
@@ -576,10 +599,8 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])
-    async def receive_health(payload: HealthPayload, request: Request):
+    async def receive_health(payload: HealthPayload):
         global _last_received, _total_received
-
-        _log_client(request, "/v1/health")
 
         metrics = payload.data.metrics
         n, changed_files = save_health_push(payload.model_dump())
@@ -602,10 +623,8 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/workouts", dependencies=[Depends(require_api_key)])
-    async def receive_workouts(payload: WorkoutsPayload, request: Request):
+    async def receive_workouts(payload: WorkoutsPayload):
         global _last_received, _total_received
-
-        _log_client(request, "/v1/workouts")
 
         n = save_workout_push(payload.model_dump())
         if n > 0:

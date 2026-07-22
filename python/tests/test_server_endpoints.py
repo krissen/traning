@@ -167,3 +167,38 @@ def test_client_logging_never_leaks_the_api_key(client, caplog):
     with caplog.at_level("INFO", logger=app_mod.log.name):
         client.post("/v1/health", json=body, headers=HEADERS)
     assert API_KEY not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("path", "body"),
+    [
+        ("/v1/health", {"data": {"metrics": "not-a-list"}}),
+        ("/v1/workouts", {"data": {"workouts": []}}),
+    ],
+)
+def test_rejected_payload_still_logs_user_agent(client, caplog, path, body):
+    """A 422 is exactly when the app version matters — log it anyway.
+
+    Validation happens before the handler, so this only holds as long as
+    the logging sits in middleware.
+    """
+    headers = {**HEADERS, "User-Agent": "HealthAutoExport/9.0.0"}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        resp = client.post(path, json=body, headers=headers)
+    assert resp.status_code == 422
+    assert f"{path} push from" in caplog.text
+    assert "HealthAutoExport/9.0.0" in caplog.text
+
+
+def test_health_probe_is_not_logged_as_a_push(client, caplog):
+    """The monitoring probe hits /health every day — keep it out."""
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.get("/health")
+    assert "push from" not in caplog.text
+
+
+def test_push_is_logged_once(client, caplog):
+    body = {"data": {"metrics": [{"name": "heart_rate", "units": "bpm", "data": [1]}]}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=HEADERS)
+    assert caplog.text.count("/v1/health push from") == 1
