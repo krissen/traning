@@ -123,7 +123,7 @@
   max(ts)
 }
 
-# Newest file mtime in an inbox directory — an *arrival* time, which is
+# Newest write into an inbox directory — an *arrival* time, which is
 # the thing freshness is about. It matters that this is not a content
 # date: after an outage the phone backfills chronologically, so a file
 # delivered a minute ago can carry a workout from seven weeks back.
@@ -135,14 +135,41 @@
 # without this a restart would read as "workouts never arrived".
 # Caveat: a fresh git clone rewrites mtimes to checkout time, which
 # reads as artificially fresh.
-.freshness_dir_mtime <- function(dir) {
+#
+# Cost matters here — the workouts inbox holds ~15 000 files and the
+# canonical metric tree ~62 000 across 78 per-metric subdirectories, and
+# this runs on every doctor pass and every evening notification. So the
+# primary signal is the mtime of the directories themselves, which the
+# kernel bumps whenever an entry is created: one stat per directory
+# instead of one per file. Creating a file is what an arriving push
+# does, so this sees arrivals without walking the archive.
+#
+# A rewrite of an existing filename leaves the directory mtime alone
+# (canonical dedups per metric per day, so the day's later pushes
+# overwrite). That costs at most a day of resolution — the first push
+# of each day still creates files — which sits well inside the 36 h
+# threshold. Small directories are scanned file-by-file anyway, so the
+# gap only applies to archives too large to walk cheaply.
+.freshness_dir_mtime <- function(dir, max_scan = 5000L) {
   if (is.null(dir) || !nzchar(dir) || !dir.exists(dir)) return(.na_time())
-  files <- list.files(dir, recursive = TRUE, full.names = TRUE, no.. = TRUE)
-  if (length(files) == 0) return(.na_time())
-  ts <- suppressWarnings(file.mtime(files))
-  ts <- ts[!is.na(ts)]
-  if (length(ts) == 0) return(.na_time())
-  max(ts)
+
+  # The directory itself plus one level of subdirectories: canonical
+  # writes land in canonical/<metric>/, so the root's own mtime would
+  # only move when a brand-new metric appears.
+  subdirs <- list.dirs(dir, recursive = FALSE, full.names = TRUE)
+  files <- list.files(dir, recursive = FALSE, full.names = TRUE, no.. = TRUE)
+  # An inbox that was created but never written to would otherwise
+  # report its own creation time as an arrival.
+  if (length(subdirs) == 0 && length(files) == 0) return(.na_time())
+
+  candidates <- suppressWarnings(file.mtime(c(dir, subdirs)))
+  if (length(files) > 0 && length(files) <= max_scan) {
+    candidates <- c(candidates, suppressWarnings(file.mtime(files)))
+  }
+
+  candidates <- candidates[!is.na(candidates)]
+  if (length(candidates) == 0) return(.na_time())
+  max(candidates)
 }
 
 # Pick the newest timestamp from the first tier that has any evidence
@@ -279,8 +306,8 @@
 #'
 #' \describe{
 #'   \item{\code{metrics}}{Apple Health metric pushes. Evidence: the
-#'     newest day in \code{health_daily} or the newest file in the
-#'     metrics inbox; failing both, the receiver's
+#'     newest day in \code{health_daily} or the newest write into the
+#'     canonical / legacy metric inboxes; failing those, the receiver's
 #'     \code{last_received}. That field is bumped by \emph{any} inbound
 #'     push, workouts included, so it cannot prove this flow
 #'     specifically and only serves a host with no data root.}
@@ -330,8 +357,10 @@
 #'   in-memory counters and the import queue settle and the two flows
 #'   resume out of step.
 #' @param data_dir Data root, default \code{TRANING_DATA}.
-#' @param metrics_dir,workouts_dir Inbox directories, derived from
-#'   \code{data_dir} by default.
+#' @param metrics_dir,canonical_dir,workouts_dir Inbox directories,
+#'   derived from \code{data_dir} by default. \code{canonical_dir} is
+#'   the per-metric-per-day surface that receives every non-sleep
+#'   metric; \code{metrics_dir} now holds only legacy sleep files.
 #' @param status_payload Pre-fetched \code{/v1/status} payload (a list).
 #'   Supply this in tests to avoid network access.
 #' @param status_fetch Function returning the payload, or \code{NULL} to
@@ -356,6 +385,7 @@ data_freshness <- function(health_daily = NULL,
                             receiver_grace_hours = 1,
                             data_dir = Sys.getenv("TRANING_DATA"),
                             metrics_dir = NULL,
+                            canonical_dir = NULL,
                             workouts_dir = NULL,
                             status_payload = NULL,
                             status_fetch = .receiver_status) {
@@ -367,6 +397,10 @@ data_freshness <- function(health_daily = NULL,
   if (is.null(metrics_dir) && nzchar(data_dir)) {
     metrics_dir <- file.path(data_dir, "kristian", "health_export", "metrics")
   }
+  if (is.null(canonical_dir) && nzchar(data_dir)) {
+    canonical_dir <- file.path(data_dir, "kristian", "health_export",
+                                "canonical")
+  }
   if (is.null(workouts_dir) && nzchar(data_dir)) {
     workouts_dir <- file.path(data_dir, "kristian", "health_export", "workouts")
   }
@@ -374,7 +408,13 @@ data_freshness <- function(health_daily = NULL,
   metrics_flow <- .freshness_assess_flow(
     "metrics",
     list(
+      # canonical/ is where save_health_push() writes every non-sleep
+      # metric and what import_health_export() prefers; metrics/ now
+      # carries only legacy sleep files. Without canonical the check
+      # would miss live arrivals whenever the cache import is the thing
+      # that is stuck — which is precisely when this evidence matters.
       list(health_cache = .freshness_health_ts(health_daily),
+           canonical_files = .freshness_dir_mtime(canonical_dir),
            metric_files = .freshness_dir_mtime(metrics_dir)),
       # Weaker tier: /v1/status's last_received is bumped by any inbound
       # push, workouts included, so it would mask a metric outage. Used

@@ -33,12 +33,30 @@ sessions_at <- function(...) {
                  sport = "running", distance = 8000)
 }
 
-# A directory whose only file has the given mtime.
+# A flat inbox whose last write happened at `ts` — both the file and
+# the directory, since a directory whose newest entry is a month old
+# has a month-old mtime too.
 inbox_at <- function(ts, dir = tempfile()) {
   dir.create(dir, recursive = TRUE)
   f <- file.path(dir, "push.json")
   writeLines("{}", f)
   Sys.setFileTime(f, ts)
+  Sys.setFileTime(dir, ts)
+  dir
+}
+
+# A canonical-shaped tree: canonical/<metric>/<date>.json, with the
+# newest write in one of the per-metric subdirectories.
+canonical_at <- function(ts, dir = tempfile(), metrics = c("hrv", "steps")) {
+  for (m in metrics) {
+    sub <- file.path(dir, m)
+    dir.create(sub, recursive = TRUE)
+    f <- file.path(sub, "2026-07-21.json")
+    writeLines("{}", f)
+    Sys.setFileTime(f, ts)
+    Sys.setFileTime(sub, ts)
+  }
+  Sys.setFileTime(dir, ts)
   dir
 }
 
@@ -48,8 +66,9 @@ hours_ago <- function(h, now = NOW) now - as.difftime(h, units = "hours")
 # every test states its own evidence and none reads the real data root.
 assess <- function(..., now = NOW) {
   args <- list(...)
-  if (is.null(args$metrics_dir))  args$metrics_dir  <- tempfile()
-  if (is.null(args$workouts_dir)) args$workouts_dir <- tempfile()
+  if (is.null(args$metrics_dir))   args$metrics_dir   <- tempfile()
+  if (is.null(args$canonical_dir)) args$canonical_dir <- tempfile()
+  if (is.null(args$workouts_dir))  args$workouts_dir  <- tempfile()
   if (is.null(args$status_payload)) args$status_fetch <- function() NULL
   do.call(data_freshness, c(args, list(now = now, data_dir = "")))
 }
@@ -299,7 +318,53 @@ test_that("a stale inbox with a null counter still alarms", {
   expect_equal(fr$flows$workouts$source, "workout_files")
 })
 
-test_that("the metrics inbox is honoured when the cache lags behind it", {
+test_that("the canonical tree is honoured when the cache import is stuck", {
+  # save_health_push() writes every non-sleep metric under canonical/,
+  # and import_health_export() prefers it; metrics/ now carries only
+  # legacy sleep files. A stuck import with live pushes is exactly when
+  # this evidence decides, so missing it would alarm falsely.
+  fr <- assess(health_daily = health_at("2026-07-01"),
+               canonical_dir = canonical_at(hours_ago(2)))
+  expect_equal(fr$flows$metrics$status, "ok")
+  expect_equal(fr$flows$metrics$source, "canonical_files")
+})
+
+test_that("a quiet canonical tree does not vouch for the metric flow", {
+  fr <- assess(health_daily = health_at("2026-07-01"),
+               canonical_dir = canonical_at(hours_ago(24 * 20)))
+  expect_equal(fr$flows$metrics$status, "fail")
+})
+
+test_that(".freshness_dir_mtime sees writes in per-metric subdirectories", {
+  # The root's own mtime only moves when a brand-new metric appears, so
+  # the one-level directory walk is what carries the canonical layout.
+  dir <- canonical_at(hours_ago(48))
+  sub <- file.path(dir, "hrv")
+  fresh <- file.path(sub, "2026-07-22.json")
+  writeLines("{}", fresh)
+  Sys.setFileTime(fresh, hours_ago(1))
+  Sys.setFileTime(sub, hours_ago(1))
+  expect_gt(.freshness_dir_mtime(dir), hours_ago(2))
+})
+
+test_that(".freshness_dir_mtime skips the file scan on large archives", {
+  # Directory mtimes alone must carry a directory too big to walk —
+  # the workouts inbox holds ~15 000 files and this runs daily.
+  dir <- inbox_at(hours_ago(50))
+  Sys.setFileTime(dir, hours_ago(1))
+  expect_gt(.freshness_dir_mtime(dir, max_scan = 0L), hours_ago(2))
+})
+
+test_that(".freshness_dir_mtime returns NA for a missing or empty directory", {
+  expect_true(is.na(.freshness_dir_mtime(tempfile())))
+  expect_true(is.na(.freshness_dir_mtime(NULL)))
+  # An inbox created but never written to must not report its own
+  # creation time as an arrival.
+  empty <- withr::local_tempdir()
+  expect_true(is.na(.freshness_dir_mtime(empty)))
+})
+
+test_that("the legacy metrics inbox is honoured when the cache lags behind it", {
   # Pushes still arriving but the import broke: the inbox is fresher
   # than the cache, and the flow is alive.
   fr <- assess(health_daily = health_at("2026-07-01"),
