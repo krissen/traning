@@ -143,13 +143,23 @@ test_that("asymmetric silence escalates to fail after a week", {
   expect_equal(fr$status, "fail")
 })
 
-test_that("the asymmetric wording names the flow and the likely cause", {
+test_that("the asymmetric wording names the flow and, at fail, the cause", {
   fr <- assess(status_payload = payload(received = 2, workouts = 24 * 49))
   expect_match(fr$prose,
     "^Passdata från Apple Health har inte kommit in sedan 2 juni")
   expect_match(fr$prose, "trasig automation")
   expect_match(fr$message, "workouts: silent for")
   expect_match(fr$message, "tightened")
+})
+
+test_that("at warn the asymmetry is stated as an observation, not a cause", {
+  # The eight-day training break in Oct--Nov 2024 sat in this band for
+  # six consecutive days. Observing the silence is fair there; blaming
+  # an automation is not.
+  fr <- assess(status_payload = payload(received = 2, workouts = 60))
+  expect_equal(fr$flows$workouts$status, "warn")
+  expect_match(fr$prose, "medan hälsodata fortsätter komma in")
+  expect_no_match(fr$prose, "trasig automation")
 })
 
 test_that("no asymmetry is claimed when both flows are quiet", {

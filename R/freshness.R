@@ -279,12 +279,20 @@
   date_sv <- .freshness_date_sv(newest$ts, reference = now)
   prose <- if (status == "ok") {
     sprintf("%s kom in senast %s.", label, date_sv)
-  } else if (tightened) {
-    # The actionable half of the message: a live metric feed proves the
-    # phone is pushing, so a silent workout feed is a broken automation
-    # rather than a quiet training week.
+  } else if (tightened && status == "fail") {
+    # Only at fail do we name a cause. A live metric feed proves the
+    # phone is pushing, so by this point a silent workout feed is far
+    # more likely a broken automation than a quiet training week.
     sprintf(paste("%s har inte kommit in sedan %s, medan hälsodata",
                   "fortsätter komma in — troligen en trasig automation."),
+            label, date_sv)
+  } else if (tightened) {
+    # At warn, state the observation and stop. The real eight-day
+    # training break in Oct--Nov 2024 would have drawn six consecutive
+    # days of "broken automation" had the accusation started here —
+    # and an accusation that is wrong is worse than a neutral note at
+    # the same frequency.
+    sprintf("%s har inte kommit in sedan %s, medan hälsodata fortsätter komma in.",
             label, date_sv)
   } else {
     sprintf(
