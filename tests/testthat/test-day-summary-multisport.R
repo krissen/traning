@@ -38,6 +38,45 @@ test_that(".fmt_duration_sv reads durations the way the prose says them", {
   expect_true(is.na(traning:::.fmt_duration_sv(NA_real_)))
 })
 
+# --- Sport line --------------------------------------------------------------
+
+test_that("long efforts show both distance and time", {
+  d <- as.Date("2026-07-21")
+  s <- .ms_session("2026-07-21 09:00", "paddelsporter", km = 26, min = 365,
+                   hr = 83)
+  txt <- .ms_prose(s, d)
+  expect_match(txt, "Dagens pass: paddling 26\\.0 km / 6 h 5 min\\.")
+})
+
+test_that("a long run gets the same treatment as a long paddle", {
+  d <- as.Date("2026-07-21")
+  s <- .ms_session("2026-07-21 09:00", "running", km = 24, min = 150,
+                   hr = 140)
+  txt <- .ms_prose(s, d)
+  expect_match(txt, "löpning 24\\.0 km / 2 h 30 min")
+})
+
+test_that("short efforts keep the distance-only wording", {
+  d <- as.Date("2026-07-21")
+  s <- .ms_session("2026-07-21 09:00", "running", km = 10, min = 55,
+                   hr = 140)
+  txt <- .ms_prose(s, d)
+  expect_match(txt, "löpning 10\\.0 km\\.")
+  expect_false(grepl("/", txt, fixed = TRUE))
+})
+
+test_that("sports without a distance are described by time alone", {
+  d <- as.Date("2026-07-21")
+  s <- dplyr::bind_rows(
+    .ms_session("2026-07-21 09:00", "yoga", km = 0, min = 40, hr = 90),
+    .ms_session("2026-07-21 18:00", "karntraning", km = 0, min = 100,
+                hr = 95)
+  )
+  txt <- .ms_prose(s, d)
+  expect_match(txt, "yoga 40 min")
+  expect_match(txt, "kärnträning 1 h 40 min")
+})
+
 # --- Dominant alternative session -------------------------------------------
 
 test_that(".day_alt_class aggregates auto-pause segments per sport", {
@@ -103,7 +142,7 @@ test_that("a paddling day gets alternative prose instead of a bare sport line", 
                 hr = 120)
   )
   txt <- .ms_prose(s, d)
-  expect_match(txt, "Dagens pass: paddling 24\\.0 km \\(2 pass\\)")
+  expect_match(txt, "Dagens pass: paddling 24\\.0 km / 6 h \\(2 pass\\)")
   expect_match(txt, "Mycket långt lågintensivt pass — stor aerob volym")
   expect_match(txt, "Måttlig återhämtning trots låg intensitet")
   expect_false(grepl("Vilodag", txt))

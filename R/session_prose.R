@@ -391,14 +391,8 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
   per <- .day_per_sport(other_today)
   if (nrow(per) == 0) return(NULL)
   parts <- vapply(seq_len(nrow(per)), function(i) {
-    label <- tolower(.sport_label_sv(per$sport[i]))
-    n  <- per$n[i]
-    km <- per$km[i]
-    mn <- per$min[i]
-    base <- if (km >= 1) sprintf("%s %.1f km", label, km)
-             else if (mn > 0) sprintf("%s %d min", label, round(mn))
-             else label
-    if (n > 1) sprintf("%s (%d pass)", base, n) else base
+    .per_sport_fragment(.sport_label_sv(per$sport[i]),
+                        per$n[i], per$km[i], per$min[i])
   }, character(1))
   paste0("Tidigare idag: ", paste(parts, collapse = " + "), ".")
 }

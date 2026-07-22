@@ -45,24 +45,46 @@
     dplyr::arrange(dplyr::desc(.data$km))
 }
 
+# One sport's contribution to a day: "löpning 12.2 km",
+# "paddling 26.0 km / 6 h 5 min", "styrketräning 45 min",
+# "cykling 9.5 km (2 pass)".
+#
+# Long efforts get both figures: distance alone told the reader nothing
+# about a six-hour paddle, and for a 2.5-hour long run the time is just
+# as informative. Sports without a distance (strength, yoga) only ever
+# had the time. The 90-minute gate is the same `long` threshold the
+# session classifiers use.
+#
+# Shared by the day summary and the "Tidigare idag" line in
+# session_prose(), so the two notifications describe the same session
+# the same way.
+.per_sport_fragment <- function(label, n, km, mn) {
+  label <- tolower(label)
+  dur <- .fmt_duration_sv(mn)
+  base <- if (is.finite(km) && km >= 1) {
+    if (is.finite(mn) && mn >= .ALT_DUR_LONG && !is.na(dur)) {
+      sprintf("%s %.1f km / %s", label, km, dur)
+    } else {
+      sprintf("%s %.1f km", label, km)
+    }
+  } else if (is.finite(mn) && mn > 0 && !is.na(dur)) {
+    sprintf("%s %s", label, dur)
+  } else {
+    label
+  }
+  # Annotate with pass-count only when more than one session of the
+  # same sport was logged that day. Use parenthetical to avoid the
+  # ambiguous "Nx Y km" reading (which could be parsed as "N sessions
+  # of Y km each" rather than "N sessions totalling Y km").
+  if (n > 1) sprintf("%s (%d pass)", base, n) else base
+}
+
 # Format the per-sport line: "Löpning 12.2 km + cykling 9.2 km + gång 2.5 km."
 .day_sports_line <- function(per_sport) {
   if (nrow(per_sport) == 0) return(NULL)
   parts <- vapply(seq_len(nrow(per_sport)), function(i) {
-    label <- tolower(.sport_label_sv(per_sport$sport[i]))
-    n <- per_sport$n[i]; km <- per_sport$km[i]; mn <- per_sport$min[i]
-    base <- if (km >= 1) {
-      sprintf("%s %.1f km", label, km)
-    } else if (mn > 0) {
-      sprintf("%s %d min", label, round(mn))
-    } else {
-      label
-    }
-    # Annotate with pass-count only when more than one session of the
-    # same sport was logged that day. Use parenthetical to avoid the
-    # ambiguous "Nx Y km" reading (which could be parsed as "N sessions
-    # of Y km each" rather than "N sessions totalling Y km").
-    if (n > 1) sprintf("%s (%d pass)", base, n) else base
+    .per_sport_fragment(.sport_label_sv(per_sport$sport[i]),
+                        per_sport$n[i], per_sport$km[i], per_sport$min[i])
   }, character(1))
   paste0("Dagens pass: ", paste(parts, collapse = " + "), ".")
 }
