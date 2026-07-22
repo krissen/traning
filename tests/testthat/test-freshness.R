@@ -435,6 +435,36 @@ test_that("Swedish month names are locale-independent", {
   })
 })
 
+test_that("a just-after-midnight arrival is dated in local time", {
+  # as.Date() on a POSIXct converts via UTC, which would render a 00:30
+  # local arrival as the previous day — and disagree with the English
+  # message, which is built with format().
+  midnight <- as.POSIXct("2026-07-12 00:30:00", tz = "")
+  fr <- assess(now = as.POSIXct("2026-07-21 21:30:00", tz = ""),
+               status_payload = list(
+                 last_received = format(midnight, "%Y-%m-%dT%H:%M:%S")))
+  expect_match(fr$flows$metrics$prose, "sedan 12 juli")
+  expect_match(fr$flows$metrics$message, "2026-07-12 00:30")
+})
+
+test_that("a just-before-midnight arrival is dated in local time", {
+  # The mirror case: UTC+2 in summer means 23:30 local is already the
+  # next day in UTC.
+  late <- as.POSIXct("2026-07-11 23:30:00", tz = "")
+  fr <- assess(now = as.POSIXct("2026-07-21 21:30:00", tz = ""),
+               status_payload = list(
+                 last_received = format(late, "%Y-%m-%dT%H:%M:%S")))
+  expect_match(fr$flows$metrics$prose, "sedan 11 juli")
+  expect_match(fr$flows$metrics$message, "2026-07-11 23:30")
+})
+
+test_that("the year boundary is judged in local time too", {
+  # 00:30 on 1 January locally is still 31 December in UTC, so the
+  # year suffix would appear on a same-year date.
+  ny <- as.POSIXct("2026-01-01 00:30:00", tz = "")
+  expect_equal(.freshness_date_sv(ny, reference = ny), "1 januari")
+})
+
 test_that("dates from another year carry the year", {
   fr <- assess(status_payload = payload(received = 24 * 300))
   expect_match(fr$prose, "2025")

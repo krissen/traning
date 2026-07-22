@@ -220,11 +220,15 @@
 # timestamp falls outside the reference year.
 .freshness_date_sv <- function(ts, reference = Sys.time()) {
   if (is.na(ts)) return(NA_character_)
-  d <- as.Date(ts)
-  base <- sprintf("%d %s", as.integer(format(d, "%d")),
-                  .swedish_months[as.integer(format(d, "%m"))])
-  if (format(d, "%Y") != format(as.Date(reference), "%Y")) {
-    base <- paste(base, format(d, "%Y"))
+  # Read the calendar fields off the timestamp directly. as.Date() on a
+  # POSIXct converts via UTC, so an arrival at 00:30 local time would
+  # render as the previous day here while the English message — built
+  # with format() — named the right one. A function whose whole purpose
+  # is to say *when* something last arrived cannot afford that.
+  base <- sprintf("%d %s", as.integer(format(ts, "%d")),
+                  .swedish_months[as.integer(format(ts, "%m"))])
+  if (format(ts, "%Y") != format(reference, "%Y")) {
+    base <- paste(base, format(ts, "%Y"))
   }
   base
 }
