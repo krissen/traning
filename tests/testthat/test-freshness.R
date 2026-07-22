@@ -167,6 +167,78 @@ test_that("the 2026-07-21 total outage flags both flows, workouts first", {
     "Hälsodata från Apple Health har inte kommit in sedan 11 juli")
 })
 
+# --- Waking up and backfilling -------------------------------------------
+# Empirical: after the phone app was reopened on 2026-07-21 the first
+# metric push landed 19:01:41 and the first workout push 19:15:10, then
+# workouts drained a ~50-day gap chronologically (+210 files in one
+# sweep, 216 queued for import).
+
+test_that("a backfill in flight counts as a live workout feed", {
+  # last_workouts_import still points at the pre-outage import while
+  # the queue drains, but deliveries are demonstrably happening.
+  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
+                                         pending_workouts = 216))
+  expect_equal(fr$flows$workouts$status, "ok")
+  expect_equal(fr$flows$workouts$source, "pending_import")
+  expect_false(fr$asymmetric)
+})
+
+test_that("an armed import timer also counts as a live workout feed", {
+  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
+                                         pending_workouts = 0,
+                                         workouts_timer_armed = TRUE))
+  expect_equal(fr$flows$workouts$status, "ok")
+  expect_equal(fr$flows$workouts$source, "pending_import")
+})
+
+test_that("an empty queue does not vouch for the workout feed", {
+  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
+                                         pending_workouts = 0,
+                                         workouts_timer_armed = FALSE))
+  expect_equal(fr$flows$workouts$status, "fail")
+})
+
+test_that("the asymmetry is not held against a just-restarted receiver", {
+  # The 14-minute window where metrics have resumed and workouts have
+  # not yet: the flows do not wake in step, and the in-memory counters
+  # are meaningless this soon after start.
+  fr <- assess(status_payload = payload(received = 0.1, workouts = 60,
+                                         uptime_seconds = 300))
+  expect_equal(fr$flows$metrics$status, "ok")
+  expect_false(fr$flows$workouts$tightened)
+  expect_equal(fr$flows$workouts$status, "ok")
+})
+
+test_that("the restart grace expires and the asymmetry then bites", {
+  fr <- assess(status_payload = payload(received = 2, workouts = 60,
+                                         uptime_seconds = 4000))
+  expect_true(fr$flows$workouts$tightened)
+  expect_equal(fr$flows$workouts$status, "warn")
+})
+
+test_that("the restart grace is a parameter", {
+  fr <- assess(status_payload = payload(received = 2, workouts = 60,
+                                         uptime_seconds = 4000),
+               receiver_grace_hours = 2)
+  expect_false(fr$flows$workouts$tightened)
+})
+
+test_that("a long-running receiver is never in grace", {
+  # uptime absent (older receiver build) must not read as "just booted".
+  fr <- assess(status_payload = payload(received = 2, workouts = 60))
+  expect_true(fr$flows$workouts$tightened)
+})
+
+test_that("freshness is measured on arrival, not on what the file contains", {
+  # A backfilled June workout delivered a minute ago: content seven
+  # weeks old, arrival current. The feed is alive.
+  fr <- assess(status_payload = payload(received = 2),
+               summaries = sessions_at("2026-06-02 08:00:00"),
+               workouts_dir = inbox_at(hours_ago(0.1)))
+  expect_equal(fr$flows$workouts$status, "ok")
+  expect_equal(fr$flows$workouts$source, "workout_files")
+})
+
 # --- Evidence tiering ----------------------------------------------------
 
 test_that("fresh Garmin sessions do not mask a dead HAE workout feed", {

@@ -123,11 +123,18 @@
   max(ts)
 }
 
-# Newest file mtime in an inbox directory. This is the durable record
-# of a delivery: /v1/status's counters live in process memory and reset
-# on every receiver restart, so without this a restart would read as
-# "workouts never arrived". Caveat: a fresh git clone rewrites mtimes
-# to checkout time, which reads as artificially fresh.
+# Newest file mtime in an inbox directory — an *arrival* time, which is
+# the thing freshness is about. It matters that this is not a content
+# date: after an outage the phone backfills chronologically, so a file
+# delivered a minute ago can carry a workout from seven weeks back.
+# Judged on content it looks ancient; judged on arrival it correctly
+# reads as a live feed.
+#
+# It is also the durable half of the receiver's evidence: /v1/status's
+# counters live in process memory and reset on every restart, so
+# without this a restart would read as "workouts never arrived".
+# Caveat: a fresh git clone rewrites mtimes to checkout time, which
+# reads as artificially fresh.
 .freshness_dir_mtime <- function(dir) {
   if (is.null(dir) || !nzchar(dir) || !dir.exists(dir)) return(.na_time())
   files <- list.files(dir, recursive = TRUE, full.names = TRUE, no.. = TRUE)
@@ -153,6 +160,25 @@
     return(list(ts = ts[[i]], source = names(tier)[i]))
   }
   list(ts = .na_time(), source = NA_character_)
+}
+
+# Is the receiver holding workouts it has received but not yet
+# imported? After the phone app is reopened it backfills the whole
+# gap in chronological chunks — 216 files were queued at once on
+# 2026-07-21 — and during that catch-up the last *import* timestamp
+# still points at the old data. Deliveries in flight are the opposite
+# of a dead feed, so this counts as arrival evidence.
+.freshness_backfill_in_flight <- function(status_payload) {
+  pending <- suppressWarnings(
+    as.numeric(status_payload[["pending_workouts"]] %||% NA_real_))
+  armed <- isTRUE(status_payload[["workouts_timer_armed"]])
+  armed || (!is.na(pending) && pending > 0)
+}
+
+# Seconds since the receiver process started, NA when unknown.
+.freshness_uptime <- function(status_payload) {
+  suppressWarnings(
+    as.numeric(status_payload[["uptime_seconds"]] %||% NA_real_))
 }
 
 # --- Swedish wording ---------------------------------------------------------
@@ -258,16 +284,22 @@
 #'     \code{last_received}. That field is bumped by \emph{any} inbound
 #'     push, workouts included, so it cannot prove this flow
 #'     specifically and only serves a host with no data root.}
-#'   \item{\code{workouts}}{Apple Health workout pushes. Evidence: the
-#'     receiver's \code{last_workouts_import} or the newest file in the
-#'     workouts inbox; failing both, the newest \code{sessionStart}
-#'     (which also covers the separate Garmin pipeline, so it cannot
-#'     prove this flow either).}
+#'   \item{\code{workouts}}{Apple Health workout pushes. Evidence: a
+#'     backfill in flight (\code{pending_workouts}), the receiver's
+#'     \code{last_workouts_import}, or the newest file in the workouts
+#'     inbox; failing all three, the newest \code{sessionStart} (which
+#'     also covers the separate Garmin pipeline, so it cannot prove
+#'     this flow either).}
 #' }
 #'
 #' Evidence is tiered rather than pooled: a weaker proxy never competes
 #' on recency with a flow-specific one, which is what would let a live
 #' neighbouring flow mask a dead one.
+#'
+#' Freshness is measured on \emph{arrival}, never on the content date
+#' of what arrived. After an outage the phone backfills chronologically,
+#' so a file delivered a minute ago may carry a seven-week-old workout;
+#' judged on content that live feed would read as dead.
 #'
 #' Thresholds and Swedish wording live here so the doctor check
 #' (\code{check_data_freshness()}) and the day-summary prose agree.
@@ -288,6 +320,10 @@
 #'   Absolute time is the weaker signal; the asymmetry — metrics
 #'   arriving while workouts are silent — is the fingerprint of a single
 #'   dead automation and is worth reacting to sooner.
+#' @param receiver_grace_hours Suppress the asymmetry tightening for
+#'   this long after a receiver restart (default 1 h), while the
+#'   in-memory counters and the import queue settle and the two flows
+#'   resume out of step.
 #' @param data_dir Data root, default \code{TRANING_DATA}.
 #' @param metrics_dir,workouts_dir Inbox directories, derived from
 #'   \code{data_dir} by default.
@@ -312,6 +348,7 @@ data_freshness <- function(health_daily = NULL,
                             workout_fail_hours = 24 * 14,
                             workout_asym_warn_hours = 48,
                             workout_asym_fail_hours = 24 * 7,
+                            receiver_grace_hours = 1,
                             data_dir = Sys.getenv("TRANING_DATA"),
                             metrics_dir = NULL,
                             workouts_dir = NULL,
@@ -343,19 +380,30 @@ data_freshness <- function(health_daily = NULL,
     warn_hours = metrics_warn_hours, fail_hours = metrics_fail_hours)
 
   # Tighten the workout thresholds when metrics are demonstrably
-  # arriving — see workout_asym_* in the docs above.
-  tightened <- identical(metrics_flow$status, "ok")
+  # arriving — see workout_asym_* in the docs above. Suppressed for the
+  # first hour after a receiver restart: the in-memory counters and the
+  # import queue have not settled, and the two flows do not resume in
+  # step. On 2026-07-21 the first metric push landed at 19:01 and the
+  # first workout push at 19:15, so a tightened verdict in between
+  # would have alarmed on a feed that was in the middle of waking up.
+  uptime <- .freshness_uptime(status_payload)
+  settled <- is.na(uptime) || uptime >= receiver_grace_hours * 3600
+  tightened <- identical(metrics_flow$status, "ok") && settled
   workouts_flow <- .freshness_assess_flow(
     "workouts",
     list(
-      # last_workouts_import is in-memory and resets on every receiver
-      # restart; the inbox mtime is the durable half of the same
-      # evidence, so they share a tier.
-      list(receiver_import = .parse_iso_time(
+      # Strongest evidence, all arrival-based: a queued import proves
+      # deliveries are happening right now, last_workouts_import is
+      # in-memory and resets on every receiver restart, and the inbox
+      # mtime is the durable half of the same evidence.
+      list(pending_import = if (.freshness_backfill_in_flight(status_payload))
+                              now else .na_time(),
+           receiver_import = .parse_iso_time(
              status_payload[["last_workouts_import"]]),
            workout_files = .freshness_dir_mtime(workouts_dir)),
-      # Weaker tier: summaries also carries the separate Garmin
-      # pipeline, so fresh sessions do not prove the HAE workout feed.
+      # Weaker tier, and a content date rather than an arrival time:
+      # summaries also carries the separate Garmin pipeline, and during
+      # a backfill its newest sessionStart lags weeks behind delivery.
       list(sessions = .freshness_session_ts(summaries))
     ),
     now = now,
