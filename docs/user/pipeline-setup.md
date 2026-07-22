@@ -271,9 +271,17 @@ read 0 again, whether the push succeeded or never happened. The files on
 disk and the data-repo commits are the lasting evidence.
 
 Confirm both endpoints separately — `last_received` moving proves only that
-*something* arrived. Workouts are alive when a new file appears in
-`health_export/workouts/`; metrics are alive when today's date shows up
-under `health_export/canonical/<metric>/`.
+*something* arrived. Test arrival, not content: a canonical file named with
+today's date may well have been written by an earlier push the same day.
+Ask which files were **touched** instead:
+
+```bash
+# Metrics that arrived in the last 10 minutes (0 = nothing came in)
+ssh kailash 'find ~/dokument/traning-data/kristian/health_export/canonical -name "*.json" -newermt "10 minutes ago" | wc -l'
+
+# Same question for workouts
+ssh kailash 'find ~/dokument/traning-data/kristian/health_export/workouts -name "*.json" -newermt "10 minutes ago" | wc -l'
+```
 
 ## Services on kailash
 
