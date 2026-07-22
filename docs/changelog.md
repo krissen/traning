@@ -21,8 +21,9 @@ signalen är att inget nytt landar. Den här ändringen gör det läget läsbart
 - **Mottagaren loggar vem som pushar.** Varje push mot `/v1/health` och
   `/v1/workouts` loggar nu klientadress och User-Agent på en egen rad,
   skriven innan payloaden valideras — så även en avvisad push lämnar spår.
-  User-Agent bär appens version, vilket gör att ett avbrott i efterhand kan
-  jämföras mot en appuppdatering. Övervakningens `/health`-anrop loggas inte.
+  User-Agent bär normalt appens version, vilket gör att ett avbrott i
+  efterhand kan jämföras mot en appuppdatering. Övervakningens
+  `/health`-anrop loggas inte.
 - **Avvisade pushar namnger fältet.** En push som avvisas som felformad
   loggar vilket fält som fällde valideringen och varför, så en ändrad
   payload-form kan läsas direkt ur journalen. Värdena utelämnas medvetet —
