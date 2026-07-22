@@ -50,6 +50,68 @@ test_that("sport mapping recognises Swedish workout names", {
   expect_equal(.sport_for_name("Yoga"), "yoga")
 })
 
+test_that("sport mapping covers the full observed HAE name list", {
+  # One assertion per name Apple has actually written into the export,
+  # so a rename or a slugifier change surfaces as a failing case rather
+  # than as a second sport value for the same activity.
+  expected <- list(
+    "Löpning" = "running", "Kör" = "running",
+    "Utomhus Kör" = "running", "Inomhus Kör" = "running",
+    "Cykling" = "cycling", "Utomhus Cykling" = "cycling",
+    "Gång" = "walking", "Utomhus Gång" = "walking",
+    "Inomhus Gång" = "walking", "Vandring" = "walking",
+    "Öppet vatten-Simning" = "swimming",
+    "Paddelsporter" = "paddelsporter",
+    "Rodd" = "rodd",
+    "Skridskosporter" = "skridskosporter",
+    "Snösporter" = "snosporter",
+    "Utförsåkning" = "utforsakning",
+    "Funktionell styrketräning" = "strength",
+    "Kärnträning" = "karntraning",
+    "Yoga" = "yoga",
+    "Sinne & kropp" = "sinne_&_kropp",
+    "Övrigt" = "ovrigt",
+    "Badminton" = "badminton",
+    "Bordtennis" = "bordtennis",
+    "Tennis" = "tennis",
+    "Fotboll" = "fotboll",
+    "Hockey" = "hockey",
+    "Fitness-spel" = "fitness-spel",
+    "Bågskytte" = "bagskytte"
+  )
+  for (nm in names(expected)) {
+    expect_equal(traning:::.hae_sport_from_name(nm), expected[[nm]],
+                 info = paste("HAE name:", nm))
+    expect_true(traning:::.hae_sport_is_mapped(nm),
+                info = paste("HAE name:", nm))
+  }
+})
+
+test_that("every mapped sport has a Swedish label", {
+  # A sport without a label falls back to capitalising the slug, which
+  # is what produced "Sinne_&_kropp" in the notification text.
+  for (sport in unique(unlist(traning:::.HAE_SPORT_NAMES))) {
+    label <- traning::sport_label(sport)
+    expect_false(grepl("_", label, fixed = TRUE),
+                 info = paste("sport:", sport, "label:", label))
+  }
+})
+
+test_that("unknown activity types are reported, not silently slugged", {
+  expect_false(traning:::.hae_sport_is_mapped("Klättring"))
+  expect_equal(traning:::.hae_sport_from_name("Klättring"), "klattring")
+
+  tmp <- withr::local_tempdir()
+  .write_hae(tmp, "climb", "2026-04-06 12:00:00 +0200",
+             "Klättring", distance_km = 0, duration_s = 3600)
+  .write_hae(tmp, "run", "2026-04-07 12:00:00 +0200",
+             "Utomhus Kör", distance_km = 8, duration_s = 2400)
+  res <- import_hae_workouts(tmp, data.frame(), list())
+  expect_equal(res$n_imported, 2L)
+  expect_equal(res$n_unmapped_sports, 1L)
+  expect_equal(res$unmapped_names, "Klättring")
+})
+
 # --- parse_hae_workout --------------------------------------------------------
 
 test_that("parse_hae_workout reads a running file correctly", {

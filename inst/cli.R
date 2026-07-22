@@ -346,6 +346,14 @@ if (do_import) {
                   sep = "=", collapse = ", "),
             "\n", sep = "")
       }
+      # New Apple activity types get neither a Swedish label nor a
+      # bucket until they are added to .HAE_SPORT_NAMES — say so on the
+      # first import instead of letting them show up as raw slugs later.
+      if (hae_res$n_unmapped_sports > 0) {
+        cat("  okänd aktivitetstyp: ",
+            paste(hae_res$unmapped_names, collapse = ", "),
+            " (saknar etikett och bucket)\n", sep = "")
+      }
     }
   }
 
