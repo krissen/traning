@@ -182,6 +182,99 @@ test_that("check_configs warns when present but digest unpinned (NA)", {
   expect_match(res$message, "no digest pinned")
 })
 
+# --- check_data_freshness ------------------------------------------------
+
+freshness_now <- as.POSIXct("2026-07-21 21:30:00", tz = "")
+
+freshness_payload <- function(received = NULL, workouts = NULL,
+                               now = freshness_now) {
+  iso <- function(h) format(now - as.difftime(h, units = "hours"),
+                             "%Y-%m-%dT%H:%M:%S")
+  list(last_received = if (is.null(received)) NULL else iso(received),
+       last_workouts_import = if (is.null(workouts)) NULL else iso(workouts))
+}
+
+# Pin the inbox directories away from the real data root so the check
+# is hermetic on a dev box that has one.
+check_freshness <- function(...) {
+  check_data_freshness(now = freshness_now, data_dir = "",
+                        metrics_dir = tempfile(), workouts_dir = tempfile(),
+                        ...)
+}
+
+test_that("check_data_freshness is ok on two live flows", {
+  res <- check_freshness(status_payload = freshness_payload(2, 3),
+                          health_daily = tibble::tibble(),
+                          summaries = tibble::tibble())
+  expect_equal(res$status, "ok")
+  expect_equal(res$details$flows$metrics$status, "ok")
+  expect_equal(res$details$flows$workouts$status, "ok")
+})
+
+test_that("check_data_freshness fails on the workouts-only outage", {
+  # Services, packages and configs would all be green here.
+  res <- check_freshness(status_payload = freshness_payload(2, 24 * 30),
+                          health_daily = tibble::tibble(),
+                          summaries = tibble::tibble())
+  expect_equal(res$status, "fail")
+  expect_equal(res$details$worst_flow, "workouts")
+  expect_true(res$details$asymmetric)
+  expect_equal(res$details$flows$metrics$status, "ok")
+  expect_match(res$message, "workouts: silent for")
+})
+
+test_that("check_data_freshness warns past the metric threshold", {
+  res <- check_freshness(status_payload = freshness_payload(48, 3),
+                          health_daily = tibble::tibble(),
+                          summaries = tibble::tibble())
+  expect_equal(res$status, "warn")
+  expect_equal(res$details$worst_flow, "metrics")
+})
+
+test_that("check_data_freshness reports unmeasurable freshness as warn", {
+  # Receiver unreachable, caches empty, inboxes absent: we cannot prove
+  # the feed is alive, so the check must not pass green.
+  res <- check_freshness(health_daily = tibble::tibble(),
+                          summaries = tibble::tibble(),
+                          status_fetch = function() NULL)
+  expect_equal(res$status, "warn")
+  expect_equal(res$details$freshness_status, "unknown")
+})
+
+test_that("check_data_freshness falls back to caches when receiver is down", {
+  health <- tibble::tibble(
+    date = as.Date("2026-07-11"), metric = "restingHeartRate",
+    value = 48, source = "hae")
+  res <- check_freshness(health_daily = health,
+                          summaries = tibble::tibble(),
+                          status_fetch = function() NULL)
+  expect_equal(res$status, "fail")
+  expect_equal(res$details$flows$metrics$source, "health_cache")
+  expect_false(res$details$receiver_reachable)
+})
+
+test_that("check_data_freshness thresholds are overridable", {
+  res <- check_freshness(status_payload = freshness_payload(2, 60),
+                          health_daily = tibble::tibble(),
+                          summaries = tibble::tibble(),
+                          workout_asym_warn_hours = 100,
+                          workout_asym_fail_hours = 200)
+  expect_equal(res$status, "ok")
+})
+
+test_that("check_data_freshness details survive JSON serialisation", {
+  # traning-doctor.service writes the JSON form to the journal —
+  # POSIXct fields must already be strings or toJSON drops the class.
+  res <- check_freshness(status_payload = freshness_payload(2, 3),
+                          health_daily = tibble::tibble(),
+                          summaries = tibble::tibble())
+  json <- jsonlite::toJSON(res, auto_unbox = TRUE, null = "null",
+                            na = "string")
+  parsed <- jsonlite::fromJSON(json, simplifyVector = FALSE)
+  expect_equal(parsed$details$flows$workouts$last_data,
+               "2026-07-21 18:30:00")
+})
+
 # --- doctor_run ----------------------------------------------------------
 
 test_that("doctor_run reports ok=FALSE when any check fails", {
@@ -230,6 +323,38 @@ test_that("doctor_run treats warn as not-ok (so timer notifies on drift)", {
   )
   expect_equal(res$results$configs$status, "warn")
   expect_false(res$ok)
+})
+
+test_that("doctor_run runs the freshness check and reports ok=FALSE when stale", {
+  res <- doctor_run(
+    checks = "freshness",
+    now = freshness_now,
+    freshness_status_payload = freshness_payload(240, 240),
+    freshness_args = list(data_dir = "", metrics_dir = tempfile(),
+                          workouts_dir = tempfile(),
+                          health_daily = tibble::tibble(),
+                          summaries = tibble::tibble())
+  )
+  expect_equal(names(res$results), "freshness")
+  expect_equal(res$results$freshness$status, "fail")
+  expect_false(res$ok)
+})
+
+test_that("doctor_run passes freshness_args through to the check", {
+  # The check name must also stay in sync with inst/cli.R's
+  # --doctor-check parsing.
+  expect_true("freshness" %in% .VALID_DOCTOR_CHECKS)
+  res <- doctor_run(
+    checks = "freshness",
+    now = freshness_now,
+    freshness_status_payload = freshness_payload(1, 1),
+    freshness_args = list(data_dir = "", metrics_dir = tempfile(),
+                          workouts_dir = tempfile(),
+                          health_daily = tibble::tibble(),
+                          summaries = tibble::tibble())
+  )
+  expect_equal(res$results$freshness$status, "ok")
+  expect_true(res$ok)
 })
 
 test_that("doctor_run uses injected r_version end-to-end", {
