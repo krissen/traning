@@ -160,6 +160,20 @@ The receiver is intended to be Tailscale-only on kailash. If you later move
 the HAE client off tailnet, change `TRANING_RECEIVER_HOST` in
 `/etc/traning/env` and redeploy the units from the repo.
 
+### Running the freshness check from a dev machine
+
+`traning doctor run --check freshness` asks the receiver when each flow
+last delivered. On kailash the API key comes from `/etc/traning/env`, so
+it just works. Elsewhere, set `TRANING_RECEIVER_HOST`,
+`TRANING_RECEIVER_PORT` and `TRANING_API_KEY` in `.Renviron` (see
+`.Renviron.example`) with the key from `/etc/traning/env`.
+
+Without the key the check reports `warn` and says the receiver was not
+queried — not `fail`. That distinction is deliberate: a dev box's copy
+of the data is as old as its last `git pull`, so judging it by file age
+alone would report a red pipeline on a perfectly healthy one, and an
+alarm that cries wolf is worse than no alarm.
+
 HAE pushes automatically in the background. iOS may delay execution;
 frequency depends on Background App Refresh and device state (charging
 improves reliability).

@@ -279,6 +279,7 @@ check_data_freshness <- function(health_daily = NULL,
                                   now = Sys.time(),
                                   status_payload = NULL,
                                   status_fetch = .receiver_status,
+                                  receiver_configured = .receiver_key_present(),
                                   ...) {
   if (is.null(status_payload) && is.function(status_fetch)) {
     status_payload <- tryCatch(status_fetch(), error = function(e) NULL)
@@ -304,15 +305,37 @@ check_data_freshness <- function(health_daily = NULL,
   # the timer's OnFailure= path fires rather than passing green on a
   # blind spot.
   status <- if (identical(fresh$status, "unknown")) "warn" else fresh$status
+  message <- fresh$message
+
+  # Without an API key the receiver was never asked, and the only
+  # evidence left is the age of this machine's copy of the data. On a
+  # dev box that is the age of the last `git pull`, not the health of
+  # the pipeline — reporting `fail` there teaches the reader to ignore
+  # the check. Say plainly that it could not be assessed from here
+  # instead; kailash has the key, so this never softens the real alarm.
+  unqueryable <- !isTRUE(receiver_configured) && is.null(status_payload)
+  if (unqueryable && status == "fail") {
+    status <- "warn"
+    message <- paste(
+      "Receiver not queried (TRANING_API_KEY not set) — pipeline freshness",
+      "cannot be assessed from this host; judged on local files only.",
+      message)
+  }
+
   details <- c(
     list(freshness_status = fresh$status,
          worst_flow = fresh$worst_flow,
          asymmetric = fresh$asymmetric,
+         receiver_configured = isTRUE(receiver_configured),
          prose = fresh$prose,
          flows = lapply(fresh$flows, .freshness_flow_details)),
     fresh$details
   )
-  .check_result("freshness", status, fresh$message, details)
+  .check_result("freshness", status, message, details)
+}
+
+.receiver_key_present <- function() {
+  nzchar(trimws(Sys.getenv("TRANING_API_KEY")))
 }
 
 # POSIXct fields must be strings before format_doctor_json() serialises

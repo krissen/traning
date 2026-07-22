@@ -197,9 +197,13 @@ freshness_payload <- function(received = NULL, workouts = NULL,
 # Pin the inbox directories away from the real data root so the check
 # is hermetic on a dev box that has one.
 check_freshness <- function(...) {
-  check_data_freshness(now = freshness_now, data_dir = "",
-                        metrics_dir = tempfile(), workouts_dir = tempfile(),
-                        ...)
+  args <- list(...)
+  if (is.null(args$receiver_configured)) args$receiver_configured <- TRUE
+  do.call(check_data_freshness,
+          c(list(now = freshness_now, data_dir = "",
+                 metrics_dir = tempfile(), canonical_dir = tempfile(),
+                 workouts_dir = tempfile()),
+            args))
 }
 
 test_that("check_data_freshness is ok on two live flows", {
@@ -251,6 +255,45 @@ test_that("check_data_freshness falls back to caches when receiver is down", {
   expect_equal(res$status, "fail")
   expect_equal(res$details$flows$metrics$source, "health_cache")
   expect_false(res$details$receiver_reachable)
+})
+
+test_that("an unconfigured receiver downgrades fail to a clear warn", {
+  # On a dev box the local copy is as old as the last `git pull`, so
+  # judging it by file age alone would report a red pipeline on a
+  # healthy one.
+  health <- tibble::tibble(
+    date = as.Date("2026-05-18"), metric = "restingHeartRate",
+    value = 48, source = "hae")
+  res <- check_freshness(health_daily = health,
+                          summaries = tibble::tibble(),
+                          status_fetch = function() NULL,
+                          receiver_configured = FALSE)
+  expect_equal(res$status, "warn")
+  expect_match(res$message, "TRANING_API_KEY not set")
+  expect_false(res$details$receiver_configured)
+  # The underlying verdict is still reported honestly.
+  expect_equal(res$details$freshness_status, "fail")
+})
+
+test_that("a configured receiver that is down still fails", {
+  # The downgrade must not soften the real alarm on kailash, where the
+  # key is present and an unreachable receiver is a genuine problem.
+  health <- tibble::tibble(
+    date = as.Date("2026-05-18"), metric = "restingHeartRate",
+    value = 48, source = "hae")
+  res <- check_freshness(health_daily = health,
+                          summaries = tibble::tibble(),
+                          status_fetch = function() NULL,
+                          receiver_configured = TRUE)
+  expect_equal(res$status, "fail")
+})
+
+test_that("an answering receiver is never downgraded", {
+  res <- check_freshness(status_payload = freshness_payload(240, 240),
+                          health_daily = tibble::tibble(),
+                          summaries = tibble::tibble(),
+                          receiver_configured = FALSE)
+  expect_equal(res$status, "fail")
 })
 
 test_that("check_data_freshness thresholds are overridable", {
