@@ -172,8 +172,8 @@ flowing (and vice versa) — always check both endpoints separately.
 **1. Ask the server what it last saw.**
 
 ```bash
-# Last actual POST per endpoint — distinguishes silence from rejection
-ssh kailash 'sudo journalctl -u traning-receiver --since "14 days ago" | grep -E "POST /v1/(health|workouts)"'
+# Last actual POST per endpoint, with the app version that sent it
+ssh kailash 'sudo journalctl -u traning-receiver --since "14 days ago" | grep -E "push from|POST /v1/(health|workouts)"'
 
 # In-memory counters (last_received, last_workouts_import, pending_files)
 ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
@@ -186,6 +186,17 @@ ssh kailash 'ls ~/dokument/traning-data/kristian/health_export/canonical/heart_r
 Two caveats: `/v1/status` counters live in the process and reset on every
 receiver restart (compare against `uptime_seconds`), and the journal can
 have gaps. When the two disagree, trust the files on disk.
+
+Every push logs one line identifying its sender, written before the payload
+is validated so even a rejected push leaves a trace:
+
+```
+/v1/health push from 100.80.195.128 (User-Agent: HealthAutoExport/8.4.1)
+```
+
+The User-Agent **is** the HAE app's version. Compare the last push before
+the silence with the first one after it: a version that changed across the
+gap points straight at an app update as the trigger.
 
 **2. Read the outcome.**
 
@@ -201,6 +212,9 @@ updates, its automations can stay dormant until the app is opened manually
 once. Nothing fails visibly — no error on the phone, no request at the
 receiver, and `/health` keeps answering 200. The only symptom is that
 `last_received` in `/v1/status` stands still while the clock moves.
+
+Confirm it afterwards with the User-Agent from step 1 — if the version
+differs on either side of the gap, the update was the trigger.
 
 Fix: open Health Auto Export on anandavani and leave it in the foreground
 for a few seconds. A dormant automation catches up with one large backfill
@@ -232,8 +246,8 @@ Trigger a manual export in the app, then:
 ssh kailash 'ls -t ~/dokument/traning-data/kristian/health_export/workouts | head -3'
 ssh kailash 'cd ~/dokument/traning-data && git log --since="1 hour ago" --format="%ai %s"'
 
-# The POST itself, with metric/sample counts
-ssh kailash 'sudo journalctl -u traning-receiver --since "10 min ago" | grep -E "Received|POST /v1/"'
+# The POST itself, with sending client and metric/sample counts
+ssh kailash 'sudo journalctl -u traning-receiver --since "10 min ago" | grep -E "push from|Received|POST /v1/"'
 
 # last_received should move to now
 ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
