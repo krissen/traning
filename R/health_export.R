@@ -1235,7 +1235,7 @@ health_insight_delta <- function(before, after) {
 
     if (m %in% .tier1_metrics) {
       # Tier 1: always report
-      parts <- c(parts, paste0(label, " ", round(v, 1), unit_str))
+      parts <- c(parts, paste0(label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str))
     } else if (m %in% names(.tier2_thresholds)) {
       # Tier 2: compare against 7d rolling average from before
       threshold <- .tier2_thresholds[[m]]
@@ -1251,7 +1251,7 @@ health_insight_delta <- function(before, after) {
 
       # Sleep < 5.5h always flags
       if (m == "sleep_totalSleep" && !is.na(v) && v < 5.5) {
-        parts <- c(parts, paste0(label, " ", round(v, 1), unit_str,
+        parts <- c(parts, paste0(label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str,
                                   " (kort natt)"))
         next
       }
@@ -1260,17 +1260,17 @@ health_insight_delta <- function(before, after) {
         delta <- v - avg7d
         if (abs(delta) >= threshold) {
           sign_str <- if (delta > 0) "+" else ""
-          parts <- c(parts, paste0(label, " ", round(v, 1), unit_str,
-                                    " (", sign_str, round(delta, 1),
+          parts <- c(parts, paste0(label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str,
+                                    " (", sign_str, fmt_dec_sv(delta, trim_zero = TRUE),
                                     " vs 7d)"))
         }
       } else {
         # No history — report as new
-        parts <- c(parts, paste0(label, " ", round(v, 1), unit_str))
+        parts <- c(parts, paste0(label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str))
       }
     } else {
       # Unknown metric (not in any tier) — treat as tier 1
-      parts <- c(parts, paste0(label, " ", round(v, 1), unit_str))
+      parts <- c(parts, paste0(label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str))
     }
   }
 
@@ -1286,29 +1286,29 @@ health_insight_delta <- function(before, after) {
 # Component spec used by the readiness/update insight functions:
 # label  = Swedish text
 # unit   = printed unit (no leading space)
-# fmt    = sprintf format for the numeric value
+# digits = decimals rendered in prose (Swedish comma via fmt_dec_sv)
 # baseline_label = "vs 7d" / "vs normalt" / etc., printed alongside the delta
 .readiness_components <- list(
   hrv = list(
     label_neg = "svag HRV", label_pos = "stark HRV", label_ok = "HRV",
-    unit = "ms", fmt = "%.0f", baseline_label = "vs 7d"
+    unit = "ms", digits = 0, baseline_label = "vs 7d"
   ),
   sleep = list(
     label_neg = "kort s\u00f6mn", label_pos = "bra s\u00f6mn", label_ok = "s\u00f6mn",
-    unit = "h", fmt = "%.1f", baseline_label = "vs normalt"
+    unit = "h", digits = 1, baseline_label = "vs normalt"
   ),
   rhr = list(
     label_neg = "f\u00f6rh\u00f6jd vilopuls", label_pos = "l\u00e5g vilopuls", label_ok = "vilopuls",
-    unit = "bpm", fmt = "%.0f", baseline_label = "vs baseline"
+    unit = "bpm", digits = 0, baseline_label = "vs baseline"
   ),
   load = list(
     label_neg = "h\u00f6g belastning", label_pos = "l\u00e5g belastning", label_ok = "belastning",
-    unit = "", fmt = "%.1f", baseline_label = "TSB"
+    unit = "", digits = 1, baseline_label = "TSB"
   ),
   wrist_temp = list(
     label_neg = "f\u00f6rh\u00f6jd handledstemp", label_pos = "l\u00e5g handledstemp",
     label_ok = "handledstemp",
-    unit = "\u00b0C", fmt = "%.1f", baseline_label = "vs 14d"
+    unit = "\u00b0C", digits = 1, baseline_label = "vs 14d"
   )
 )
 
@@ -1430,7 +1430,7 @@ health_insight_delta <- function(before, after) {
 
   label <- spec[[paste0("label_", kind)]]
   unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
-  val_str <- sprintf(spec$fmt, c$value)
+  val_str <- fmt_dec_sv(c$value, digits = spec$digits)
 
   if (name == "load") {
     sign_str <- if (!is.na(c$value) && c$value > 0) "+" else ""
@@ -1444,7 +1444,8 @@ health_insight_delta <- function(before, after) {
   if (delta_meaningful) {
     sign_str <- if (c$delta > 0) "+" else ""
     paste0(label, " (", val_str, unit_str, ", ", sign_str,
-           sprintf(spec$fmt, c$delta), " ", spec$baseline_label, ")")
+           fmt_dec_sv(c$delta, digits = spec$digits), " ",
+           spec$baseline_label, ")")
   } else {
     paste0(label, " (", val_str, unit_str, ")")
   }
@@ -1593,7 +1594,7 @@ health_insight_delta <- function(before, after) {
 .fmt_km <- function(km) {
   if (is.na(km)) return("")
   if (km >= 10) format(round(km), big.mark = "")
-  else sprintf("%.1f", km)
+  else fmt_dec_sv(km)
 }
 
 # Build the "Senaste dygnet: löpning 8.1 km, gång 4.2 km." line, or NULL.
@@ -1650,7 +1651,7 @@ health_insight_delta <- function(before, after) {
     # the line would read "10 km (sport 5.0, sport 5.0)" with mixed
     # precision.
     return(list(per_str = per_str, total_num = total_num,
-                total_str = sprintf("%.1f", total_num)))
+                total_str = fmt_dec_sv(total_num)))
   }
   use_decimal <- per$km < 1
   per_num <- ifelse(use_decimal, round(per$km, 1), round(per$km))
@@ -1658,7 +1659,7 @@ health_insight_delta <- function(before, after) {
   # precision for the whole vector, which would force "50.0" alongside
   # "0.3" rather than "50" alongside "0.3".
   per_str <- vapply(seq_along(per_num), function(i) {
-    if (use_decimal[i]) sprintf("%.1f", per_num[i])
+    if (use_decimal[i]) fmt_dec_sv(per_num[i])
     else format(per_num[i], big.mark = "", trim = TRUE)
   }, character(1))
   total_num <- sum(per_num)
@@ -1666,7 +1667,7 @@ health_insight_delta <- function(before, after) {
   # the total has to match that precision — otherwise "50.3 km
   # (löpning 50, styrketräning 0.3)" would print as "50 km (...)"
   # and lose the .3 from the sum.
-  total_str <- if (any(use_decimal)) sprintf("%.1f", total_num) else
+  total_str <- if (any(use_decimal)) fmt_dec_sv(total_num) else
                format(round(total_num), big.mark = "", trim = TRUE)
   list(per_str = per_str, total_num = total_num, total_str = total_str)
 }
@@ -1996,7 +1997,7 @@ health_insight_update <- function(data, prev_state,
           unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
           added_parts <- c(added_parts,
                             paste0(spec$label_ok, " ",
-                                   sprintf(spec$fmt, c$value), unit_str))
+                                   fmt_dec_sv(c$value, digits = spec$digits), unit_str))
         }
       }
       transition <- ""
@@ -2047,8 +2048,8 @@ health_insight_update <- function(data, prev_state,
     unit_str <- if (nzchar(unit)) paste0(" ", unit) else ""
     sign_str <- if (delta > 0) "+" else ""
     prosa <- paste0(toupper(substr(label, 1, 1)), substr(label, 2, nchar(label)),
-                    " ", round(val, 1), unit_str,
-                    " (", sign_str, round(delta, 1), " vs 7d).")
+                    " ", fmt_dec_sv(val, trim_zero = TRUE), unit_str,
+                    " (", sign_str, fmt_dec_sv(delta, trim_zero = TRUE), " vs 7d).")
     out <- current
     out$prosa <- prosa
     out$trigger <- "tier1"

@@ -183,6 +183,49 @@ save_atomic <- function(..., file, envir = parent.frame()) {
 
 # --- Utility -----------------------------------------------------------------
 
+#' Format a decimal number for Swedish prose
+#'
+#' Swedish writes decimals with a comma. Every number a human reads in
+#' a notification, a CLI report or a dashboard label goes through this
+#' one function, so no sentence can end up mixing "26.0 km" with
+#' "9,8 h" — and so the next prose surface added doesn't have to
+#' rediscover the convention.
+#'
+#' Deliberately \strong{not} for machine-read output. Anything written
+#' to JSON, a log line, a filename or a CSV keeps the decimal point: a
+#' comma there breaks parsing. The boundary is "text a human reads".
+#'
+#' Integers and percentages are unaffected — call it only where a
+#' decimal is actually rendered.
+#'
+#' @param x Numeric (scalar or vector).
+#' @param digits Decimals to keep (default 1).
+#' @param signed Prefix a plus sign for positive values (used for
+#'   deltas such as the CTL trend).
+#' @param trim_zero Drop a trailing zero decimal, so 7 renders as "7"
+#'   rather than "7,0". Matches what \code{round()} did at call sites
+#'   that used to interpolate the number directly, keeping this a
+#'   change of separator only.
+#' @return Character of the same length as \code{x}; \code{NA_character_}
+#'   where \code{x} is not finite.
+#' @export
+fmt_dec_sv <- function(x, digits = 1, signed = FALSE, trim_zero = FALSE) {
+  x <- as.numeric(x)
+  fmt <- paste0("%", if (signed) "+" else "", ".", digits, "f")
+  out <- rep(NA_character_, length(x))
+  ok <- is.finite(x)
+  if (any(ok)) {
+    out[ok] <- sub(".", ",", sprintf(fmt, x[ok]), fixed = TRUE)
+    if (trim_zero) {
+      # Strip trailing zeros inside the decimal part only, then a bare
+      # trailing comma: "170,0" → "170", "26,50" → "26,5", "7,2" → "7,2".
+      out[ok] <- sub("(,[0-9]*?)0+$", "\\1", out[ok])
+      out[ok] <- sub(",$", "", out[ok])
+    }
+  }
+  out
+}
+
 #' Convert a decimal-minutes scalar to M:SS format
 #'
 #' Scalar in, character scalar out. Vector input is rejected with an

@@ -63,9 +63,9 @@
   dur <- .fmt_duration_sv(mn)
   base <- if (is.finite(km) && km >= 1) {
     if (is.finite(mn) && mn >= .ALT_DUR_LONG && !is.na(dur)) {
-      sprintf("%s %.1f km / %s", label, km, dur)
+      sprintf("%s %s km / %s", label, fmt_dec_sv(km), dur)
     } else {
-      sprintf("%s %.1f km", label, km)
+      sprintf("%s %s km", label, fmt_dec_sv(km))
     }
   } else if (is.finite(mn) && mn > 0 && !is.na(dur)) {
     sprintf("%s %s", label, dur)
@@ -412,17 +412,16 @@
   mention <- (is.finite(share) && share >= 0.25) || hours >= 3
   if (!mention) return(NULL)
 
-  # Decimal point and "%d%%" to match every other number in the
-  # notification — the readiness line already renders sleep as
-  # "7.2 h" and the Z2 share as "53%".
+  # "%d%%" without a space, matching the Z2 share ("53%") that can
+  # appear in the same sentence.
   nohr <- alt_week$nohr_fraction
   share_trustworthy <- is.finite(share) &&
     (!is.finite(nohr) || nohr < 0.25)
   if (!share_trustworthy) {
-    return(sprintf("Alternativt: %.1f h.", hours))
+    return(sprintf("Alternativt: %s h.", fmt_dec_sv(hours)))
   }
-  sprintf("Alternativt: %.1f h (%d%% av veckans belastning).",
-          hours, round(share * 100))
+  sprintf("Alternativt: %s h (%d%% av veckans belastning).",
+          fmt_dec_sv(hours), round(share * 100))
 }
 
 # Compose the dominant-purpose line: "Tröskelpass dominerade dagens

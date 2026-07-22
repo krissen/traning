@@ -172,7 +172,8 @@
 
   ctl_delta_str <- if (!is.null(pmc_prev) && is.finite(pmc_prev$ctl)) {
     d <- ctl - pmc_prev$ctl
-    if (abs(d) >= 0.1) sprintf(" CTL %+.1f.", d) else ""
+    if (abs(d) >= 0.1) sprintf(" CTL %s.", fmt_dec_sv(d, signed = TRUE))
+    else ""
   } else ""
 
   ctl_rising <- !is.null(pmc_prev) && is.finite(pmc_prev$ctl) &&
@@ -446,7 +447,7 @@ session_prose_with_context <- function(base, summaries, cls,
   pace_val <- as.numeric(latest$avgPaceMoving[1])
   hr_val <- as.numeric(latest$avgHeartRateMoving[1])
 
-  parts <- paste0(label, " ", km, " km")
+  parts <- paste0(label, " ", fmt_dec_sv(km, trim_zero = TRUE), " km")
   if (!is.na(pace_val)) {
     parts <- paste0(parts, ", ", dec_to_mmss(pace_val), "/km")
   }
@@ -472,13 +473,13 @@ session_prose_with_context <- function(base, summaries, cls,
                          dec_to_mmss(avg_pace), ")")
     } else if (!is.na(avg_km) && km > avg_km * 1.1) {
       positive <- paste0("Längre än månadens snitt (",
-                         round(avg_km, 1), " km)")
+                         fmt_dec_sv(avg_km, trim_zero = TRUE), " km)")
     }
   } else if (nrow(this_month) >= 2) {
     avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
     if (!is.na(avg_km) && km > avg_km * 1.1) {
       positive <- paste0("Längre än månadens snitt (",
-                         round(avg_km, 1), " km)")
+                         fmt_dec_sv(avg_km, trim_zero = TRUE), " km)")
     }
   }
   if (is.null(positive)) {

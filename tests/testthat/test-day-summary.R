@@ -42,9 +42,9 @@ test_that("day_summary_prose includes sport mix and dominant type", {
   txt <- day_summary_prose(summaries, date = d, hr_max = 185, hr_rest = 50)
   # Sport mix line present
   expect_match(txt, "Dagens pass")
-  expect_match(txt, "löpning 8\\.0 km")
-  expect_match(txt, "cykling 6\\.5 km")
-  expect_match(txt, "gång 1\\.5 km")
+  expect_match(txt, "löpning 8,0 km")
+  expect_match(txt, "cykling 6,5 km")
+  expect_match(txt, "gång 1,5 km")
   # Endurance label (RPE 30 → endurance per classify_session)
   expect_match(txt, "Distanspass")
 })
@@ -68,7 +68,7 @@ test_that("day_summary_prose annotates pass-count for repeat sports", {
   # no TRANING_DATA) makes every HRmax and HRrest lookup warn.
   txt <- day_summary_prose(summaries, date = d, hr_max = 185, hr_rest = 50)
   # "(2 pass)" annotation, total km summed (9.5 km)
-  expect_match(txt, "cykling 9\\.5 km \\(2 pass\\)")
+  expect_match(txt, "cykling 9,5 km \\(2 pass\\)")
 })
 
 test_that(".day_state_line: Röd readiness overrides TSB form claim", {

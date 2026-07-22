@@ -38,6 +38,32 @@ test_that(".fmt_duration_sv reads durations the way the prose says them", {
   expect_true(is.na(traning:::.fmt_duration_sv(NA_real_)))
 })
 
+# --- Swedish decimal comma ---------------------------------------------------
+
+test_that("fmt_dec_sv renders Swedish decimals", {
+  expect_equal(traning:::fmt_dec_sv(26.0), "26,0")
+  expect_equal(traning:::fmt_dec_sv(9.75), "9,8")
+  expect_equal(traning:::fmt_dec_sv(3.2, signed = TRUE), "+3,2")
+  expect_equal(traning:::fmt_dec_sv(-0.5, signed = TRUE), "-0,5")
+  expect_true(is.na(traning:::fmt_dec_sv(NA_real_)))
+})
+
+test_that("one notification never mixes decimal separators", {
+  # Regression: the sport line rendered "26.0 km" while the week line
+  # rendered "9,8 h" in the same sentence.
+  d <- as.Date("2026-07-21")
+  s <- dplyr::bind_rows(
+    .ms_session("2026-07-19 07:00", "running", km = 12.4, min = 70,
+                hr = 150),
+    .ms_session("2026-07-21 09:00", "paddelsporter", km = 26, min = 365,
+                hr = 83)
+  )
+  txt <- .ms_prose(s, d)
+  expect_false(grepl("[0-9]\\.[0-9]", txt),
+               info = paste("decimal point in Swedish prose:", txt))
+  expect_true(grepl("[0-9],[0-9]", txt))
+})
+
 # --- Sport line --------------------------------------------------------------
 
 test_that("long efforts show both distance and time", {
@@ -45,7 +71,7 @@ test_that("long efforts show both distance and time", {
   s <- .ms_session("2026-07-21 09:00", "paddelsporter", km = 26, min = 365,
                    hr = 83)
   txt <- .ms_prose(s, d)
-  expect_match(txt, "Dagens pass: paddling 26\\.0 km / 6 h 5 min\\.")
+  expect_match(txt, "Dagens pass: paddling 26,0 km / 6 h 5 min\\.")
 })
 
 test_that("a long run gets the same treatment as a long paddle", {
@@ -53,7 +79,7 @@ test_that("a long run gets the same treatment as a long paddle", {
   s <- .ms_session("2026-07-21 09:00", "running", km = 24, min = 150,
                    hr = 140)
   txt <- .ms_prose(s, d)
-  expect_match(txt, "löpning 24\\.0 km / 2 h 30 min")
+  expect_match(txt, "löpning 24,0 km / 2 h 30 min")
 })
 
 test_that("short efforts keep the distance-only wording", {
@@ -61,7 +87,7 @@ test_that("short efforts keep the distance-only wording", {
   s <- .ms_session("2026-07-21 09:00", "running", km = 10, min = 55,
                    hr = 140)
   txt <- .ms_prose(s, d)
-  expect_match(txt, "löpning 10\\.0 km\\.")
+  expect_match(txt, "löpning 10,0 km\\.")
   expect_false(grepl("/", txt, fixed = TRUE))
 })
 
@@ -142,7 +168,7 @@ test_that("a paddling day gets alternative prose instead of a bare sport line", 
                 hr = 120)
   )
   txt <- .ms_prose(s, d)
-  expect_match(txt, "Dagens pass: paddling 24\\.0 km / 6 h \\(2 pass\\)")
+  expect_match(txt, "Dagens pass: paddling 24,0 km / 6 h \\(2 pass\\)")
   expect_match(txt, "Mycket långt lågintensivt pass — stor aerob volym")
   expect_match(txt, "Måttlig återhämtning trots låg intensitet")
   expect_false(grepl("Vilodag", txt))
@@ -186,7 +212,7 @@ test_that("a mixed day describes both the run and the alternative session", {
     .ms_session("2026-07-21 18:00", "strength", min = 45, hr = 118)
   )
   txt <- .ms_prose(s, d)
-  expect_match(txt, "Dagens pass: löpning 8\\.2 km \\+ styrketräning 45 min")
+  expect_match(txt, "Dagens pass: löpning 8,2 km \\+ styrketräning 45 min")
   expect_match(txt, "Distanspass")
   expect_match(txt, "Styrketräning 45 min — med i veckans totalbelastning")
   # Running first, alternative second
@@ -257,7 +283,7 @@ test_that("the weekly alternative dose is reported in hours and load share", {
   )
   line <- traning:::.day_week_line(s, d, hr_max = 185, hr_rest = 50,
                                   hr_max_alt = 185)
-  expect_match(line, "Alternativt: 5\\.0 h \\([0-9]+% av veckans belastning\\)")
+  expect_match(line, "Alternativt: 5,0 h \\([0-9]+% av veckans belastning\\)")
 })
 
 test_that("the load share is withheld when a quarter of the time lacks HR", {
@@ -269,7 +295,7 @@ test_that("the load share is withheld when a quarter of the time lacks HR", {
   )
   line <- traning:::.day_week_line(s, d, hr_max = 185, hr_rest = 50,
                                   hr_max_alt = 185)
-  expect_match(line, "Alternativt: 5\\.0 h\\.")
+  expect_match(line, "Alternativt: 5,0 h\\.")
   expect_false(grepl("av veckans belastning", line))
 })
 
@@ -314,7 +340,7 @@ test_that("the 2026-07-21 paddling session is named, timed and classified", {
   expect_match(txt, "paddling")
   expect_false(grepl("paddelsporter", txt))
   # 2. Distance and time both present
-  expect_match(txt, "Dagens pass: paddling 26\\.0 km / 6 h 5 min\\.")
+  expect_match(txt, "Dagens pass: paddling 26,0 km / 6 h 5 min\\.")
   # 3. Qualitative class: 82.6 bpm is low intensity even against a
   #    conservative HRmax, and 365 min is the top duration band.
   expect_match(txt, "Mycket långt lågintensivt pass — stor aerob volym")
@@ -376,5 +402,5 @@ test_that("the week line labels its running-only metrics on a paddling week", {
   line <- traning:::.day_week_line(s, d, hr_max = 185, hr_rest = 50,
                                   hr_max_alt = 185)
   expect_match(line, "Mellanzon-andel \\(löpning\\) [0-9]+%")
-  expect_match(line, "Alternativt: 6\\.1 h")
+  expect_match(line, "Alternativt: 6,1 h")
 })

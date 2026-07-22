@@ -171,3 +171,48 @@ test_that("save_table falls back to TRANING_TABLE_FORMAT env default when format
   expect_true(file.exists(path))
   expect_true(endsWith(path, ".json"))
 })
+
+# --- Swedish decimal formatting ---------------------------------------------
+
+test_that("fmt_dec_sv renders a Swedish decimal comma", {
+  expect_equal(fmt_dec_sv(26), "26,0")
+  expect_equal(fmt_dec_sv(9.75), "9,8")
+  expect_equal(fmt_dec_sv(1.234, digits = 2), "1,23")
+  expect_equal(fmt_dec_sv(0), "0,0")
+  expect_equal(fmt_dec_sv(-3.5), "-3,5")
+})
+
+test_that("fmt_dec_sv signs deltas and trims zero decimals on request", {
+  expect_equal(fmt_dec_sv(3.2, signed = TRUE), "+3,2")
+  expect_equal(fmt_dec_sv(-0.5, signed = TRUE), "-0,5")
+  # trim_zero reproduces what round() + paste0() used to render
+  expect_equal(fmt_dec_sv(7, trim_zero = TRUE), "7")
+  expect_equal(fmt_dec_sv(7.2, trim_zero = TRUE), "7,2")
+  expect_equal(fmt_dec_sv(26.50, digits = 2, trim_zero = TRUE), "26,5")
+  expect_equal(fmt_dec_sv(100, digits = 0, trim_zero = TRUE), "100")
+})
+
+test_that("fmt_dec_sv is vectorised and NA-safe", {
+  expect_equal(fmt_dec_sv(c(1.5, 2.25)), c("1,5", "2,2"))
+  expect_true(is.na(fmt_dec_sv(NA_real_)))
+  expect_true(is.na(fmt_dec_sv(Inf)))
+  expect_equal(fmt_dec_sv(c(1.5, NA)), c("1,5", NA_character_))
+  expect_equal(fmt_dec_sv(numeric(0)), character(0))
+})
+
+test_that("machine-read output keeps the decimal point", {
+  # The comma is a prose convention only. A CSV or JSON export written
+  # with commas inside numbers would not round-trip.
+  tbl <- data.frame(km = c(10.5, 3.25))
+  out_dir <- tempfile()
+  dir.create(out_dir)
+  on.exit(unlink(out_dir, recursive = TRUE), add = TRUE)
+  withr::local_envvar(c(TRANING_OPEN = "false"))
+
+  csv <- save_table(tbl, output = file.path(out_dir, "t.csv"))
+  expect_true(any(grepl("10.5", readLines(csv), fixed = TRUE)))
+
+  json <- save_table(tbl, output = file.path(out_dir, "t.json"))
+  parsed <- jsonlite::fromJSON(json)
+  expect_equal(parsed$km, c(10.5, 3.25))
+})
