@@ -180,8 +180,8 @@ ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
 
 # What actually landed on disk — authoritative, survives journal rotation.
 # Sorted by write time, so the top entry is the most recent arrival.
-ssh kailash 'ls -lt ~/dokument/traning-data/kristian/health_export/workouts | head -3'
-ssh kailash 'ls -lt ~/dokument/traning-data/kristian/health_export/canonical/heart_rate | head -3'
+ssh kailash 'ls -lt ~/dokument/traning-data/kristian/health_export/workouts | head -4'
+ssh kailash 'ls -lt ~/dokument/traning-data/kristian/health_export/canonical/heart_rate | head -4'
 ```
 
 Two caveats: `/v1/status` counters live in the process and reset on every
