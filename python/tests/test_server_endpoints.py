@@ -170,22 +170,30 @@ def test_client_logging_never_leaks_the_api_key(client, caplog):
 
 
 @pytest.mark.parametrize(
-    ("path", "body"),
+    ("path", "body", "send_key", "expected_status"),
     [
-        ("/v1/health", {"data": {"metrics": "not-a-list"}}),
-        ("/v1/workouts", {"data": {"workouts": []}}),
+        ("/v1/health", {"data": {"metrics": "not-a-list"}}, True, 422),
+        ("/v1/workouts", {"data": {"workouts": []}}, True, 422),
+        ("/v1/health", {"data": {"metrics": [{"name": "hr", "data": []}]}}, False, 401),
+        ("/v1/workouts", {"data": {"workouts": [{"name": "Running"}]}}, False, 401),
     ],
 )
-def test_rejected_payload_still_logs_user_agent(client, caplog, path, body):
-    """A 422 is exactly when the app version matters — log it anyway.
+def test_rejected_push_still_logs_user_agent(
+    client, caplog, path, body, send_key, expected_status
+):
+    """A rejected push is exactly when the app version matters.
 
-    Validation happens before the handler, so this only holds as long as
-    the logging sits in middleware.
+    Both rejections happen before the handler — auth in a dependency,
+    validation in pydantic — so this only holds as long as the logging
+    sits in middleware. 401 covers the "dropped X-API-Key" row of the
+    troubleshooting table, 422 the "app changed payload shape" row.
     """
-    headers = {**HEADERS, "User-Agent": "HealthAutoExport/9.0.0"}
+    headers = {"User-Agent": "HealthAutoExport/9.0.0"}
+    if send_key:
+        headers |= HEADERS
     with caplog.at_level("INFO", logger=app_mod.log.name):
         resp = client.post(path, json=body, headers=headers)
-    assert resp.status_code == 422
+    assert resp.status_code == expected_status
     assert f"{path} push from" in caplog.text
     assert "HealthAutoExport/9.0.0" in caplog.text
 
