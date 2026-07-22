@@ -123,6 +123,104 @@ test_that(".day_state_line: Grön readiness keeps TSB phrasing", {
   expect_false(grepl("Dagsform", txt %||% ""))
 })
 
+# --- Freshness guard ---------------------------------------------------------
+# Regression: 2026-07-21 said "Vilodag. Dagsform 🔴 Röd 21 …" on a day
+# with a six-hour paddling session, because the HAE workout feed had
+# been dead since 2026-06-02 and nothing checked data age.
+
+# Build a freshness verdict without touching the network or disk.
+day_freshness <- function(received = NULL, workouts = NULL,
+                           now = as.POSIXct("2026-07-21 21:30:00", tz = "")) {
+  data_freshness(
+    now = now, data_dir = "",
+    metrics_dir = tempfile(), workouts_dir = tempfile(),
+    status_payload = list(last_received = received,
+                          last_workouts_import = workouts))
+}
+
+test_that("day_summary_prose keeps 'Vilodag.' when the workout feed is fresh", {
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct("2026-05-06 10:00", tz = "UTC"),
+    sport = "running", distance = 5000,
+    avgPaceMoving = 5.0, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(28, units = "mins"))
+  fresh <- day_freshness(received = "2026-07-21T20:00:00",
+                          workouts = "2026-07-21T19:00:00")
+  expect_true(fresh$ok)
+  txt <- day_summary_prose(s, date = "2026-05-08", freshness = fresh)
+  expect_match(txt, "^Vilodag\\.")
+})
+
+test_that("a stale metric feed alone does not rewrite a genuine rest day", {
+  # Metrics degrade the readiness half of the summary, but they say
+  # nothing about whether a session happened.
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct("2026-05-06 10:00", tz = "UTC"),
+    sport = "running", distance = 5000,
+    avgPaceMoving = 5.0, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(28, units = "mins"))
+  fr <- day_freshness(received = "2026-07-11T08:00:00",
+                       workouts = "2026-07-21T19:00:00")
+  expect_equal(fr$flows$metrics$status, "fail")
+  expect_equal(fr$flows$workouts$status, "ok")
+  txt <- day_summary_prose(s, date = "2026-05-08", freshness = fr)
+  expect_match(txt, "^Vilodag\\.")
+})
+
+test_that("day_summary_prose flags a dead workout feed instead of claiming rest", {
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct("2026-06-02 10:00", tz = "UTC"),
+    sport = "running", distance = 5000,
+    avgPaceMoving = 5.0, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(28, units = "mins"))
+  # The real outage: metrics still arriving, workouts silent since 2 June.
+  stale <- day_freshness(received = "2026-07-21T20:00:00",
+                          workouts = "2026-06-02T08:00:00")
+  expect_equal(stale$flows$workouts$status, "fail")
+  txt <- day_summary_prose(s, date = "2026-07-21", freshness = stale)
+  expect_no_match(txt, "^Vilodag\\.")
+  expect_match(txt, "^Inga registrerade pass —")
+  expect_match(txt, "Passdata från Apple Health har inte kommit in sedan 2 juni")
+  expect_match(txt, "trasig automation")
+})
+
+test_that("day_summary_prose flags a dead workout feed on empty summaries too", {
+  stale <- day_freshness(received = "2026-07-21T20:00:00",
+                          workouts = "2026-06-02T08:00:00")
+  txt <- day_summary_prose(NULL, date = "2026-07-21", freshness = stale)
+  expect_match(txt, "^Inga registrerade pass —")
+})
+
+test_that("day_summary_prose leaves an actual training day untouched", {
+  # The guard only applies to zero-session days — a stale feed must
+  # not rewrite a day that does have sessions.
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct("2026-07-21 08:00", tz = "UTC"),
+    sport = "running", distance = 8000,
+    avgPaceMoving = 5.5, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(45, units = "mins"))
+  stale <- day_freshness(received = "2026-07-21T20:00:00",
+                          workouts = "2026-06-02T08:00:00")
+  txt <- day_summary_prose(s, date = "2026-07-21", freshness = stale)
+  expect_match(txt, "Dagens pass")
+  expect_no_match(txt, "Inga registrerade pass")
+})
+
+test_that(".day_freshness_guard leaves historical rest days alone", {
+  # Without the date gate, today's dead feed would retro-flag every
+  # rest day in the archive.
+  expect_null(.day_freshness_guard(Sys.Date() - 30, NULL, NULL))
+})
+
+test_that(".day_freshness_guard never signals when the probe blows up", {
+  # The 21:30 notification matters more than the watchdog.
+  local_mocked_bindings(
+    data_freshness = function(...) stop("boom"),
+    .package = "traning"
+  )
+  expect_null(.day_freshness_guard(Sys.Date(), NULL, NULL))
+})
+
 test_that("day_summary_prose returns 'Vilodag.' when no sessions on the date", {
   # Sessions exist on other days but not on the requested date.
   s <- tibble::tibble(

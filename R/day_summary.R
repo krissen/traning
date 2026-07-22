@@ -208,6 +208,35 @@
   }
 }
 
+# Rest-day guard: zero sessions can mean "rested" or "the workout feed
+# died". Returns the workout flow from data_freshness() when the day's
+# emptiness is not trustworthy, NULL when "Vilodag." stands.
+#
+# Only the *workout* flow decides here. A stale metric feed degrades
+# the readiness half of the summary but says nothing about whether a
+# session happened, so it must not turn a genuine rest day into a
+# data-missing claim.
+#
+# Only current-day summaries are guarded. A summary for a day well in
+# the past is computed from an archive that has long since been
+# completed, so a feed that is quiet *today* says nothing about it —
+# and measuring against Sys.time() there would retro-flag every
+# historical rest day.
+#
+# The check must never delay or break the 21:30 notification: the whole
+# probe is wrapped in tryCatch and the HTTP timeout is short.
+.day_freshness_guard <- function(date, summaries, health_daily,
+                                  freshness = NULL) {
+  if (is.null(freshness) && date < Sys.Date() - 1) return(NULL)
+  fresh <- freshness %||% tryCatch(
+    data_freshness(health_daily = health_daily, summaries = summaries,
+                   status_fetch = function() .receiver_status(timeout = 3L)),
+    error = function(e) NULL)
+  workouts <- fresh$flows$workouts
+  if (is.null(workouts) || isTRUE(workouts$ok)) return(NULL)
+  workouts
+}
+
 # ---- Main entry ------------------------------------------------------------
 
 #' Generate end-of-day qualitative summary prose
@@ -231,21 +260,33 @@
 #'   this to align its form-narrative with the morning readiness
 #'   verdict (Grön / Gul / Röd) — without it, TSB-only phrasing can
 #'   contradict the day's autonomic/sleep state.
+#' @param freshness Optional pre-computed \code{data_freshness()} list.
+#'   NULL = probe the receiver (current-day summaries only). Supply
+#'   this in tests to avoid network access.
 #' @return Character string. Always non-empty; "Vilodag." on full
-#'   rest days when no PMC context is computable.
+#'   rest days when no PMC context is computable, or a
+#'   data-is-missing line when the feed has gone quiet.
 #' @export
 day_summary_prose <- function(summaries, date = Sys.Date(),
                                hr_max = NULL, hr_rest = NULL,
-                               health_daily = NULL) {
+                               health_daily = NULL,
+                               freshness = NULL) {
   date <- as.Date(date)
 
-  if (is.null(summaries) || nrow(summaries) == 0) {
-    return("Vilodag.")
-  }
-
+  # Loaded before the empty-summaries branch: the freshness guard uses
+  # the newest health-metric day as fallback when the receiver does not
+  # answer, and that branch is exactly where the guard matters most.
   if (is.null(health_daily)) {
     health_daily <- tryCatch(load_health_data(),
                               error = function(e) NULL)
+  }
+
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    stale <- .day_freshness_guard(date, summaries, health_daily, freshness)
+    if (!is.null(stale)) {
+      return(paste0("Inga registrerade pass — ", stale$prose))
+    }
+    return("Vilodag.")
   }
 
   todays <- summaries %>%
@@ -253,7 +294,9 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   per_sport <- .day_per_sport(todays)
 
   if (nrow(todays) == 0 || sum(per_sport$min, na.rm = TRUE) < 1) {
-    base <- "Vilodag."
+    stale <- .day_freshness_guard(date, summaries, health_daily, freshness)
+    base <- if (is.null(stale)) "Vilodag."
+            else paste0("Inga registrerade pass — ", stale$prose)
     state <- .day_state_line(summaries, health_daily, date, hr_max, hr_rest)
     if (!is.null(state)) return(paste(base, state))
     return(base)
