@@ -257,7 +257,7 @@ test_that("the weekly alternative dose is reported in hours and load share", {
   )
   line <- traning:::.day_week_line(s, d, hr_max = 185, hr_rest = 50,
                                   hr_max_alt = 185)
-  expect_match(line, "Alternativt: 5,0 h \\([0-9]+ % av veckans belastning\\)")
+  expect_match(line, "Alternativt: 5\\.0 h \\([0-9]+% av veckans belastning\\)")
 })
 
 test_that("the load share is withheld when a quarter of the time lacks HR", {
@@ -269,7 +269,7 @@ test_that("the load share is withheld when a quarter of the time lacks HR", {
   )
   line <- traning:::.day_week_line(s, d, hr_max = 185, hr_rest = 50,
                                   hr_max_alt = 185)
-  expect_match(line, "Alternativt: 5,0 h\\.")
+  expect_match(line, "Alternativt: 5\\.0 h\\.")
   expect_false(grepl("av veckans belastning", line))
 })
 
@@ -284,4 +284,97 @@ test_that("a small alternative dose is not mentioned", {
   expect_lt(stats$share, 0.25)
   expect_lt(stats$hours, 3)
   expect_null(traning:::.alt_week_dose_line(stats))
+})
+
+# --- The 2026-07-21 paddling session, as imported ---------------------------
+#
+# The session that produced "Vilodag." in the 2026-07-21 evening
+# summary, taken from the row that later landed in the cache:
+#   sessionStart 2026-07-21 12:10:31, sport "paddelsporter",
+#   durationMoving 365 min, distance 25 965 m, avgHeartRate 82.6.
+.paddle_20260721 <- function() {
+  tibble::tibble(
+    sessionStart = as.POSIXct("2026-07-21 12:10:31", tz = "UTC"),
+    sport = "paddelsporter",
+    distance = 25965,
+    avgPaceMoving = NA_real_,
+    avgHeartRate = 82.6,
+    avgHeartRateMoving = 82.6,
+    durationMoving = as.difftime(365, units = "mins"),
+    duration = as.difftime(365, units = "mins"),
+    garmin_directWorkoutRpe = NA_real_,
+    source = "hae"
+  )
+}
+
+test_that("the 2026-07-21 paddling session is named, timed and classified", {
+  txt <- .ms_prose(.paddle_20260721(), as.Date("2026-07-21"))
+
+  # 1. Swedish label, not the raw slug
+  expect_match(txt, "paddling")
+  expect_false(grepl("paddelsporter", txt))
+  # 2. Distance and time both present
+  expect_match(txt, "Dagens pass: paddling 26\\.0 km / 6 h 5 min\\.")
+  # 3. Qualitative class: 82.6 bpm is low intensity even against a
+  #    conservative HRmax, and 365 min is the top duration band.
+  expect_match(txt, "Mycket långt lågintensivt pass — stor aerob volym")
+  expect_match(txt, "Måttlig återhämtning trots låg intensitet")
+  # 4. Not a rest day
+  expect_false(grepl("Vilodag", txt))
+})
+
+test_that("the paddling session is classified low even at HRmax 139", {
+  # 139 bpm was the session max; anchoring on it is the most
+  # conservative HRmax available, and 82.6 / 139 = 0.59 is still low.
+  cls <- classify_alt_session(.paddle_20260721(), hr_max = 139)
+  expect_equal(cls$intensity, "low")
+  expect_equal(cls$class, "low_very_long")
+  expect_equal(cls$recovery_cost, "moderate")
+})
+
+test_that("the paddling session contributes load without a compute_trimp change", {
+  # TRIMP parity: compute_trimp() is purely HR-based and already
+  # defaults to sport = "all", so a non-running session with HR and
+  # more than 10 minutes counts in full. Verified rather than changed.
+  s <- .paddle_20260721()
+  trimp <- compute_trimp(s, hr_max = 185, hr_rest = 50)
+  expect_equal(nrow(trimp), 1)
+  expect_equal(trimp$date, as.Date("2026-07-21"))
+  expect_gt(trimp$daily_trimp, 0)
+
+  # The same figure comes out when the bucket is narrowed to endurance,
+  # which paddling now belongs to.
+  trimp_end <- compute_trimp(s, hr_max = 185, hr_rest = 50,
+                             sport = "endurance")
+  expect_equal(trimp_end$daily_trimp, trimp$daily_trimp)
+
+  # And it reaches the fitness curve.
+  pmc <- compute_pmc(s, hr_max = 185, hr_rest = 50)
+  expect_gt(pmc$ctl[pmc$date == as.Date("2026-07-21")], 0)
+})
+
+test_that("the week line labels its running-only metrics on a paddling week", {
+  # The rolling Z2 fraction counts running sessions only; on a week
+  # whose training was paddling it must not claim to describe the week.
+  d <- as.Date("2026-07-21")
+  zone_run <- function(time_str, z2_sec, z3_sec) {
+    tibble::tibble(
+      sessionStart = as.POSIXct(time_str, tz = "UTC"),
+      sport = "running", distance = 10000,
+      avgPaceMoving = NA_real_, avgHeartRateMoving = 150,
+      durationMoving = as.difftime(60, units = "mins"),
+      garmin_directWorkoutRpe = NA_real_,
+      garmin_hrTimeInZone_1 = 600, garmin_hrTimeInZone_2 = 600,
+      garmin_hrTimeInZone_3 = z2_sec, garmin_hrTimeInZone_4 = z3_sec,
+      garmin_hrTimeInZone_5 = 0
+    )
+  }
+  s <- dplyr::bind_rows(
+    zone_run("2026-07-15 07:00", 2400, 0),
+    .paddle_20260721()
+  )
+  line <- traning:::.day_week_line(s, d, hr_max = 185, hr_rest = 50,
+                                  hr_max_alt = 185)
+  expect_match(line, "Mellanzon-andel \\(löpning\\) [0-9]+%")
+  expect_match(line, "Alternativt: 6\\.1 h")
 })

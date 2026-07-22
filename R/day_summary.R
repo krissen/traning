@@ -412,15 +412,17 @@
   mention <- (is.finite(share) && share >= 0.25) || hours >= 3
   if (!mention) return(NULL)
 
-  hours_sv <- sub(".", ",", sprintf("%.1f", hours), fixed = TRUE)
+  # Decimal point and "%d%%" to match every other number in the
+  # notification — the readiness line already renders sleep as
+  # "7.2 h" and the Z2 share as "53%".
   nohr <- alt_week$nohr_fraction
   share_trustworthy <- is.finite(share) &&
     (!is.finite(nohr) || nohr < 0.25)
   if (!share_trustworthy) {
-    return(sprintf("Alternativt: %s h.", hours_sv))
+    return(sprintf("Alternativt: %.1f h.", hours))
   }
-  sprintf("Alternativt: %s h (%d %% av veckans belastning).",
-          hours_sv, round(share * 100))
+  sprintf("Alternativt: %.1f h (%d%% av veckans belastning).",
+          hours, round(share * 100))
 }
 
 # Compose the dominant-purpose line: "Tröskelpass dominerade dagens
