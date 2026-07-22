@@ -9,17 +9,31 @@
 # user-facing prose (push notifications, headers).  Falls back to a
 # generic "Aktivitet" when an unmapped value is passed.
 .SPORT_LABELS_SV <- list(
-  "running"      = "Löpning",
-  "cycling"      = "Cykling",
-  "walking"      = "Gång",
-  "swimming"     = "Simning",
-  "strength"     = "Styrketräning",
-  "karntraning"  = "Kärnträning",
-  "ovrigt"       = "Aktivitet",
-  "endurance"    = "Konditionspass",
-  "ballsport"    = "Bollsport",
-  "wintersport"  = "Vintersport",
-  "gym"          = "Gymträning"
+  "running"        = "Löpning",
+  "cycling"        = "Cykling",
+  "walking"        = "Gång",
+  "swimming"       = "Simning",
+  "paddelsporter"  = "Paddling",
+  "rodd"           = "Rodd",
+  "skridskosporter" = "Skridsko",
+  "snosporter"     = "Snösport",
+  "utforsakning"   = "Utförsåkning",
+  "strength"       = "Styrketräning",
+  "karntraning"    = "Kärnträning",
+  "yoga"           = "Yoga",
+  "sinne_&_kropp"  = "Sinne & kropp",
+  "badminton"      = "Badminton",
+  "bordtennis"     = "Bordtennis",
+  "tennis"         = "Tennis",
+  "fotboll"        = "Fotboll",
+  "hockey"         = "Hockey",
+  "fitness-spel"   = "Konditionsspel",
+  "bagskytte"      = "Bågskytte",
+  "ovrigt"         = "Aktivitet",
+  "endurance"      = "Konditionspass",
+  "ballsport"      = "Bollsport",
+  "wintersport"    = "Vintersport",
+  "gym"            = "Gymträning"
 )
 
 #' Swedish display label for a sport bucket
@@ -172,7 +186,16 @@ sport_bucket_names <- function() {
   "promenad" = "walking",
   "simning"  = "swimming",
   "styrka"   = "strength",
-  "styrketräning" = "strength"
+  "styrketräning" = "strength",
+  # Canonical values stay as the HAE slugs (they are persisted in the
+  # RData cache); the aliases only make natural search words work from
+  # the CLI and the Shiny selector.
+  "paddling" = "paddelsporter",
+  "paddel"   = "paddelsporter",
+  "kajak"    = "paddelsporter",
+  "kanot"    = "paddelsporter",
+  "skridsko" = "skridskosporter",
+  "vandring" = "walking"
 )
 
 #' Resolve a sport argument to a vector of raw sport-column values

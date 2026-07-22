@@ -16,6 +16,9 @@ test_that(".resolve_sport_bucket handles direct sport names", {
 })
 
 test_that(".resolve_sport_bucket handles Swedish aliases", {
+  expect_equal(traning:::.resolve_sport_bucket("paddling"), "paddelsporter")
+  expect_equal(traning:::.resolve_sport_bucket("kajak"), "paddelsporter")
+  expect_equal(traning:::.resolve_sport_bucket("vandring"), "walking")
   expect_equal(traning:::.resolve_sport_bucket("löpning"), "running")
   expect_equal(traning:::.resolve_sport_bucket("lopning"), "running")
   expect_equal(traning:::.resolve_sport_bucket("cykling"), "cycling")
@@ -191,7 +194,12 @@ test_that("filter_sport (exported) matches .filter_sport (internal)", {
 test_that("sport_label (exported) returns Swedish display labels", {
   expect_equal(sport_label("running"), "Löpning")
   expect_equal(sport_label("cycling"), "Cykling")
-  expect_equal(sport_label("yoga"), "Yoga")  # title-case fallback
+  expect_equal(sport_label("yoga"), "Yoga")
+  expect_equal(sport_label("paddelsporter"), "Paddling")
+  expect_equal(sport_label("sinne_&_kropp"), "Sinne & kropp")
+  expect_equal(sport_label("fitness-spel"), "Konditionsspel")
+  # Unmapped values still fall back to title case
+  expect_equal(sport_label("klattring"), "Klattring")
   expect_equal(sport_label(NULL), "Aktivitet")
   expect_equal(sport_label("all"), "Aktivitet")
 })
