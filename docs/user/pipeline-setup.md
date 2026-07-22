@@ -178,9 +178,10 @@ ssh kailash 'sudo journalctl -u traning-receiver --since "14 days ago" | grep -E
 # In-memory counters (last_received, last_workouts_import, pending_files)
 ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
 
-# What actually landed on disk — authoritative, survives journal rotation
-ssh kailash 'ls -t ~/dokument/traning-data/kristian/health_export/workouts | head -3'
-ssh kailash 'ls ~/dokument/traning-data/kristian/health_export/canonical/heart_rate | tail -3'
+# What actually landed on disk — authoritative, survives journal rotation.
+# Sorted by write time, so the top entry is the most recent arrival.
+ssh kailash 'ls -lt ~/dokument/traning-data/kristian/health_export/workouts | head -3'
+ssh kailash 'ls -lt ~/dokument/traning-data/kristian/health_export/canonical/heart_rate | head -3'
 ```
 
 Two caveats: `/v1/status` counters live in the process and reset on every
@@ -258,9 +259,10 @@ ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
 Files land **during the push**, not after a delay: workouts in
 `health_export/workouts/`, metrics in
 `health_export/canonical/<metric>/<date>.json` (sleep stays in
-`health_export/metrics/`). The 10-minute debounce
-(`TRANING_HEALTH_DEBOUNCE`) delays only the R import that folds the data
-into the caches. A manual export backfills the whole gap in one push, so
+`health_export/metrics/`). The 10-minute debounce delays only the R import
+that folds the data into the caches — `TRANING_HEALTH_DEBOUNCE` for metrics,
+`TRANING_WORKOUTS_DEBOUNCE` for workouts (which falls back to the health
+value when unset). A manual export backfills the whole gap in one push, so
 expect a large sample count.
 
 Check the files, not the counters. `pending_files` and `pending_workouts`
