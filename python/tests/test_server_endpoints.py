@@ -139,3 +139,31 @@ def test_receive_workouts_requires_api_key(client):
     body = {"data": {"workouts": [{"name": "Running"}]}}
     resp = client.post("/v1/workouts", json=body)
     assert resp.status_code == 401
+
+
+# --- client logging ----------------------------------------------------------
+
+
+def test_receive_health_logs_user_agent(client, caplog):
+    body = {"data": {"metrics": [{"name": "heart_rate", "units": "bpm", "data": [1]}]}}
+    headers = {**HEADERS, "User-Agent": "HealthAutoExport/8.4.1"}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=headers)
+    assert "/v1/health push from" in caplog.text
+    assert "HealthAutoExport/8.4.1" in caplog.text
+
+
+def test_receive_workouts_logs_user_agent(client, caplog):
+    body = {"data": {"workouts": [{"name": "Running"}]}}
+    headers = {**HEADERS, "User-Agent": "HealthAutoExport/8.4.1"}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/workouts", json=body, headers=headers)
+    assert "/v1/workouts push from" in caplog.text
+    assert "HealthAutoExport/8.4.1" in caplog.text
+
+
+def test_client_logging_never_leaks_the_api_key(client, caplog):
+    body = {"data": {"metrics": [{"name": "heart_rate", "units": "bpm", "data": [1]}]}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=HEADERS)
+    assert API_KEY not in caplog.text

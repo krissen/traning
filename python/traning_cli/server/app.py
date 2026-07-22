@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
 
 from ..r_import import parse_import_summary, run_r_import
 from ..settings import get_settings
@@ -503,6 +503,22 @@ def _resume_pending_state() -> None:
         log.info("Resumed %d pending workout(s) after restart", count)
 
 
+def _log_client(request: Request, endpoint: str) -> None:
+    """Log which client sent a push, one line per push.
+
+    The User-Agent carries the HAE app version, which is what lets a
+    silent outage be correlated with an app update afterwards. Only the
+    client host and User-Agent are read — never the API key header.
+    """
+    client = request.client.host if request.client else "unknown"
+    log.info(
+        "%s push from %s (User-Agent: %s)",
+        endpoint,
+        client,
+        request.headers.get("user-agent", "unknown"),
+    )
+
+
 # Track state for /v1/status endpoint
 _start_time = time.time()
 _last_received: datetime | None = None
@@ -560,8 +576,10 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])
-    async def receive_health(payload: HealthPayload):
+    async def receive_health(payload: HealthPayload, request: Request):
         global _last_received, _total_received
+
+        _log_client(request, "/v1/health")
 
         metrics = payload.data.metrics
         n, changed_files = save_health_push(payload.model_dump())
@@ -584,8 +602,10 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/workouts", dependencies=[Depends(require_api_key)])
-    async def receive_workouts(payload: WorkoutsPayload):
+    async def receive_workouts(payload: WorkoutsPayload, request: Request):
         global _last_received, _total_received
+
+        _log_client(request, "/v1/workouts")
 
         n = save_workout_push(payload.model_dump())
         if n > 0:
