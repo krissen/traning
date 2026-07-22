@@ -190,15 +190,31 @@
 
   # At minimal quality the verdict is withheld entirely, and this is
   # deliberately *not* what the morning push does with the same field.
-  # The two are different speech acts. In the morning "minimal"
-  # describes something still filling up — components land through the
-  # day and the notification re-renders — so naming the number with a
-  # parenthetical is honest. At 21:30 "minimal" is a final statement
-  # that the data never came, and no correction follows; that is
-  # exactly when a number is most misleading. On 2026-07-21 the evening
+  # Do not "fix" the inconsistency: the two differ because they do
+  # different things with the number.
+  #
+  # The morning states the figure and stops — nothing in
+  # health_insight_readiness() derives an instruction from status or
+  # score; it lists the components behind the verdict and names the
+  # missing ones inline. (The one imperative that can appear in that
+  # notification, the HRV-downtrend line, is computed from HRV history
+  # and not from the verdict at all.) The evening attaches an
+  # instruction to the same figure: the Röd branch below tells the
+  # reader to rest or go easy tomorrow.
+  #
+  # So the morning at worst shows a wrong number, while the evening
+  # turns that wrong number into a wrong instruction. On 2026-07-21 the
   # verdict was not merely thin but inverted — Röd 21 against an actual
-  # 85 Grön once the gap was backfilled — and a parenthesis does not
-  # rescue a figure that gets read in passing.
+  # 85 Grön once the gap was backfilled — and it carried advice. A
+  # parenthesis does not rescue a figure read in passing, still less
+  # one with an imperative attached.
+  #
+  # (An earlier version of this comment argued that the morning may be
+  # qualified because it re-renders as components land. That is not a
+  # reliable basis: health_insight_update()'s re-render trigger fires
+  # only when a previously absent component becomes present, so a dead
+  # feed produces no correction and the morning verdict stands all day
+  # — this branch's own scenario.)
   if (!quality$trustworthy) {
     thin <- if (length(quality$missing) > 0) {
       sprintf("Dagsformen kan inte bedömas — %s saknas för dagen.",
