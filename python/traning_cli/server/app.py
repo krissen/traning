@@ -528,8 +528,10 @@ def _log_client(request: Request, endpoint: str) -> None:
             client,
             request.headers.get("user-agent", "unknown"),
         )
-    except Exception:
-        log.debug("Could not log client for %s", endpoint, exc_info=True)
+    except Exception as err:
+        # The exception itself is never rendered: it may quote the value
+        # that broke, and the values here are health data.
+        log.debug("Could not log client for %s (%s)", endpoint, type(err).__name__)
 
 
 def _describe_validation_error(exc: RequestValidationError) -> str:
@@ -539,16 +541,33 @@ def _describe_validation_error(exc: RequestValidationError) -> str:
     echo the rejected payload back, and the payload is health data that
     has no business in the journal.
 
+    Repeated failures collapse into one entry with a count, so a payload
+    where every element is malformed yields ``metrics.*: dict_type
+    (x500)`` rather than five hundred near-identical ones.
+
     Never raises — a rejection must still get its ordinary 422 response
     if this summary cannot be built.
     """
     try:
+        seen: dict[str, tuple[str, int]] = {}
+        for err in exc.errors():
+            parts = err.get("loc", ())
+            exact = ".".join(str(part) for part in parts)
+            # Collapse list indices so element 0 and element 499 of the
+            # same broken field count as one finding.
+            collapsed = ".".join(
+                "*" if isinstance(part, int) else str(part) for part in parts
+            )
+            err_type = err.get("type", "?")
+            key = f"{collapsed}: {err_type}"
+            first, count = seen.get(key, (f"{exact}: {err_type}", 0))
+            seen[key] = (first, count + 1)
         return "; ".join(
-            f"{'.'.join(str(part) for part in err.get('loc', ()))}: {err.get('type', '?')}"
-            for err in exc.errors()
+            first if count == 1 else f"{key} (x{count})"
+            for key, (first, count) in seen.items()
         ) or "no field detail"
-    except Exception:
-        log.debug("Could not describe validation error", exc_info=True)
+    except Exception as err:
+        log.debug("Could not describe validation error (%s)", type(err).__name__)
         return "undescribable"
 
 

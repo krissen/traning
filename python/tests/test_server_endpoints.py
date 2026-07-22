@@ -215,6 +215,18 @@ def test_validation_logging_omits_the_rejected_values(client, caplog):
     assert "resting-hr-42" not in caplog.text
 
 
+def test_repeated_validation_failures_collapse_into_a_count(client, caplog):
+    """500 broken elements are one finding, not 500 near-identical ones."""
+    body = {"data": {"metrics": ["not-a-metric-object"] * 500}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=HEADERS)
+    rejection = next(
+        line for line in caplog.text.splitlines() if "rejected by validation" in line
+    )
+    assert "body.data.metrics.*: dict_type (x500)" in rejection
+    assert len(rejection) < 200
+
+
 def test_validation_logging_leaves_the_422_response_untouched(client):
     body = {"data": {"metrics": "not-a-list"}}
     resp = client.post("/v1/health", json=body, headers=HEADERS)
