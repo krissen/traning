@@ -231,7 +231,8 @@ DAY_NOW <- as.POSIXct(paste(Sys.Date(), "21:30:00"), tz = "")
 
 # Build a freshness verdict without touching the network or disk, with
 # each flow's last arrival given in hours before DAY_NOW.
-day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW) {
+day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW,
+                           pending_workouts = 0) {
   iso <- function(h) {
     if (is.null(h)) return(NULL)
     format(now - as.difftime(h, units = "hours"), "%Y-%m-%dT%H:%M:%S")
@@ -241,7 +242,8 @@ day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW) {
     metrics_dir = tempfile(), canonical_dir = tempfile(),
     workouts_dir = tempfile(),
     status_payload = list(last_received = iso(received),
-                          last_workouts_import = iso(workouts)))
+                          last_workouts_import = iso(workouts),
+                          pending_workouts = pending_workouts))
 }
 
 rest_day_summaries <- function() {
@@ -269,6 +271,40 @@ test_that("a stale metric feed alone does not rewrite a genuine rest day", {
   txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
                             freshness = fr)
   expect_match(txt, "^Vilodag\\.")
+})
+
+test_that("a queued import stops the day being called rest", {
+  # The flow is alive — that is what the queue proves — but the very
+  # sessions sitting in it are the ones missing from `summaries`.
+  # Health and completeness are different questions.
+  pending <- day_freshness(received = 2, workouts = 2, pending_workouts = 12)
+  expect_true(pending$flows$workouts$ok)
+  expect_true(pending$flows$workouts$in_flight)
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = pending)
+  expect_no_match(txt, "^Vilodag\\.")
+  expect_match(txt, "^Inga registrerade pass —")
+  expect_match(txt, "håller fortfarande på att läsas in")
+})
+
+test_that("an emptied queue leaves a genuine rest day alone", {
+  # The distinction is undelivered work *now*, not a flush that
+  # recently completed — otherwise every rest day after an import
+  # would read as suspect.
+  flushed <- day_freshness(received = 2, workouts = 2, pending_workouts = 0)
+  expect_false(flushed$flows$workouts$in_flight)
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = flushed)
+  expect_match(txt, "^Vilodag\\.")
+})
+
+test_that("an armed import timer also blocks the rest-day claim", {
+  pending <- day_freshness(received = 2, workouts = 2)
+  pending$flows$workouts$in_flight <- TRUE
+  pending$flows$workouts$prose_pending <- "test-vokabulär"
+  guard <- .day_freshness_guard(Sys.Date(), NULL, NULL, freshness = pending)
+  expect_false(is.null(guard))
+  expect_equal(guard$prose, "test-vokabulär")
 })
 
 test_that("day_summary_prose flags a dead workout feed instead of claiming rest", {

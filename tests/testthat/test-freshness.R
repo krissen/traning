@@ -220,6 +220,25 @@ test_that("an armed import timer also counts as a live workout feed", {
   expect_equal(fr$flows$workouts$source, "pending_import")
 })
 
+test_that("a queue in flight is reported as alive but incomplete", {
+  # The same signal answers two questions with opposite signs: the feed
+  # is demonstrably alive (doctor), and the material is demonstrably
+  # incomplete (evening prose). Both readings live on the flow.
+  fr <- assess(status_payload = payload(received = 2, workouts = 2,
+                                         pending_workouts = 12))
+  expect_true(fr$flows$workouts$ok)
+  expect_true(fr$flows$workouts$in_flight)
+  expect_match(fr$flows$workouts$prose_pending,
+               "^Passdata från Apple Health håller fortfarande på att läsas in")
+})
+
+test_that("no queue means no incompleteness claim to make", {
+  fr <- assess(status_payload = payload(received = 2, workouts = 2,
+                                         pending_workouts = 0))
+  expect_false(fr$flows$workouts$in_flight)
+  expect_null(fr$flows$workouts$prose_pending)
+})
+
 test_that("an empty queue does not vouch for the workout feed", {
   fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
                                          pending_workouts = 0,

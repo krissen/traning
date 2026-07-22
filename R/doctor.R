@@ -350,7 +350,8 @@ check_data_freshness <- function(health_daily = NULL,
                 else format(flow$last_data, "%Y-%m-%d %H:%M:%S"),
     warn_hours = flow$warn_hours,
     fail_hours = flow$fail_hours,
-    tightened = flow$tightened
+    tightened = flow$tightened,
+    in_flight = isTRUE(flow$in_flight)
   )
 }
 

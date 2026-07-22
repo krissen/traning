@@ -262,7 +262,17 @@
                    status_fetch = function() .receiver_status(timeout = 3L)),
     error = function(e) NULL)
   workouts <- fresh$flows$workouts
-  if (is.null(workouts) || isTRUE(workouts$ok)) return(NULL)
+  if (is.null(workouts)) return(NULL)
+  # A queue the receiver has taken in but not yet imported makes the
+  # flow demonstrably alive — and the day's material demonstrably
+  # incomplete. The doctor check reads the first meaning; here we need
+  # the second, because sessions sitting in that queue are exactly the
+  # ones missing from `summaries` when we would otherwise say "Vilodag."
+  if (isTRUE(workouts$in_flight)) {
+    workouts$prose <- workouts$prose_pending
+    return(workouts)
+  }
+  if (isTRUE(workouts$ok)) return(NULL)
   workouts
 }
 

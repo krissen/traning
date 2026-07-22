@@ -241,9 +241,24 @@
 
 .freshness_assess_flow <- function(flow, tiers, now,
                                     warn_hours, fail_hours,
-                                    tightened = FALSE) {
+                                    tightened = FALSE,
+                                    in_flight = FALSE) {
   label <- .FRESHNESS_FLOW_SV[[flow]]
   newest <- .freshness_newest(tiers)
+
+  # Undelivered work in the receiver's queue answers two different
+  # questions with opposite signs, so the flow reports both. "Is the
+  # feed alive?" — yes, demonstrably, which is what the doctor check
+  # asks and why `status` stays ok. "Is the material complete?" — no,
+  # there is data the summary has not consumed yet, which is what the
+  # evening prose asks before it dares call a day a rest day. A flow
+  # can be healthy and the basis still too thin to claim rest.
+  prose_pending <- if (in_flight) {
+    sprintf("%s håller fortfarande på att läsas in, så underlaget är ofullständigt än.",
+            label)
+  } else {
+    NULL
+  }
 
   if (is.na(newest$ts)) {
     return(list(
@@ -251,12 +266,13 @@
       last_data = .na_time(), age_hours = NA_real_,
       source = NA_character_,
       warn_hours = warn_hours, fail_hours = fail_hours,
-      tightened = tightened,
+      tightened = tightened, in_flight = in_flight,
       message = sprintf(
         "%s: no signal — receiver silent and nothing on disk.", flow),
       prose = sprintf(
         "%s går inte att verifiera, så underlaget kan vara ofullständigt.",
-        label)
+        label),
+      prose_pending = prose_pending
     ))
   }
 
@@ -304,8 +320,8 @@
     flow = flow, status = status, ok = status == "ok",
     last_data = newest$ts, age_hours = age, source = newest$source,
     warn_hours = warn_hours, fail_hours = fail_hours,
-    tightened = tightened,
-    message = message, prose = prose
+    tightened = tightened, in_flight = in_flight,
+    message = message, prose = prose, prose_pending = prose_pending
   )
 }
 
@@ -446,6 +462,11 @@ data_freshness <- function(health_daily = NULL,
   uptime <- .freshness_uptime(status_payload)
   settled <- is.na(uptime) || uptime >= receiver_grace_hours * 3600
   tightened <- identical(metrics_flow$status, "ok") && settled
+  # Deliveries the receiver has taken in but not yet imported. Note the
+  # tense: this is about undelivered work right now, not about a flush
+  # that recently completed — an emptied queue must leave a genuine rest
+  # day alone.
+  backfilling <- .freshness_backfill_in_flight(status_payload)
   workouts_flow <- .freshness_assess_flow(
     "workouts",
     list(
@@ -453,8 +474,7 @@ data_freshness <- function(health_daily = NULL,
       # deliveries are happening right now, last_workouts_import is
       # in-memory and resets on every receiver restart, and the inbox
       # mtime is the durable half of the same evidence.
-      list(pending_import = if (.freshness_backfill_in_flight(status_payload))
-                              now else .na_time(),
+      list(pending_import = if (backfilling) now else .na_time(),
            receiver_import = .parse_iso_time(
              status_payload[["last_workouts_import"]]),
            workout_files = .freshness_dir_mtime(workouts_dir)),
@@ -468,7 +488,8 @@ data_freshness <- function(health_daily = NULL,
                  else workout_warn_hours,
     fail_hours = if (tightened) workout_asym_fail_hours
                  else workout_fail_hours,
-    tightened = tightened)
+    tightened = tightened,
+    in_flight = backfilling)
 
   flows <- list(metrics = metrics_flow, workouts = workouts_flow)
   ranks <- vapply(flows, function(f) .FRESHNESS_RANK[[f$status]], integer(1))
