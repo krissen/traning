@@ -1,5 +1,33 @@
 # tRäning — Changelog
 
+## 2026-07-22 — Felsökningsguide för uteblivet HAE-inflöde
+
+Hälsodata från telefonen kan sluta komma utan att något syns som trasigt:
+mottagaren svarar friskt, inget felmeddelande visas i appen, och den enda
+signalen är att inget nytt landar. Den här ändringen gör det läget läsbart.
+
+- **Felsökningsguide när HAE-data uteblir.** `docs/user/pipeline-setup.md`
+  har ett nytt avsnitt som går från serverns bild av läget till telefonen i
+  fyra steg: vad mottagaren senast såg, hur utfallet ska tolkas (avvisad
+  nyckel, avvisad payload, nätverksfel eller total tystnad), vad som
+  kontrolleras på telefonen, och hur man bekräftar att flödet lever igen.
+  Avsnittet dokumenterar också att metrik- och passflödena är oberoende och
+  kan sluta var för sig, att de vaknar i olika takt efter en appstart, och
+  att filerna på disk är det varaktiga beviset — statusräknarna nollställs
+  vid omstart och är nollskilda bara fram till importen.
+- **Känt felläge: tyst stopp efter appuppdatering.** Efter att Health Auto
+  Export uppdaterats kan automationerna ligga vilande tills appen startats
+  manuellt en gång. Guiden beskriver hur läget känns igen och åtgärdas.
+- **Mottagaren loggar vem som pushar.** Varje push mot `/v1/health` och
+  `/v1/workouts` loggar nu klientadress och User-Agent på en egen rad,
+  skriven innan payloaden valideras — så även en avvisad push lämnar spår.
+  User-Agent bär appens version, vilket gör att ett avbrott i efterhand kan
+  jämföras mot en appuppdatering. Övervakningens `/health`-anrop loggas inte.
+- **Avvisade pushar namnger fältet.** En push som avvisas som felformad
+  loggar vilket fält som fällde valideringen och varför, så en ändrad
+  payload-form kan läsas direkt ur journalen. Värdena utelämnas medvetet —
+  de är hälsodata.
+
 ## 2026-07-08 — Snabbare förstasida, förfinad dashboard
 
 Förfining av dashboarden efter moderniseringen. Samma utseende och siffror,
