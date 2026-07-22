@@ -62,6 +62,7 @@ sport_select_ui <- function(id) {
         "Cykling"        = "cycling",
         "Gång"           = "walking",
         "Simning"        = "swimming",
+        "Paddling"       = "paddelsporter",
         "Styrketräning"  = "strength",
         "Bordtennis"     = "bordtennis",
         "Badminton"      = "badminton",
