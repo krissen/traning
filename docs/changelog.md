@@ -1,5 +1,50 @@
 # tRäning — Changelog
 
+## 2026-07-22 — Tystnad räknas inte längre som vila
+
+Systemet kunde tidigare inte skilja "du tränade inte" från "ingen data kom
+in". När passflödet från Apple Health tystnade fortsatte kvällssummeringen
+att rapportera vilodagar, och den dagliga hälsokontrollen lyste grönt hela
+tiden — mottagaren svarade ju, tjänsterna var uppe. Nu bevakas varje
+datainflöde för sig, och de påståenden som bygger på data hålls inne när
+underlaget saknas.
+
+- **Larm när ett datainflöde tystnar.** `traning doctor run` (och den
+  dagliga automatiska körningen) kontrollerar nu hur länge sedan det var
+  som data faktiskt kom in — hälsomätvärden och pass bedöms var för sig,
+  och meddelandet namnger vilket av dem som tystnat. Hälsomätvärden
+  kommer flera gånger om dagen och varnar efter 36 timmars tystnad;
+  pass kommer bara när du tränat, och tolereras i fyra dygn. Fortsätter
+  hälsodata strömma in medan passen uteblir skärps den gränsen till två
+  dygn — det mönstret betyder nästan alltid att en enskild automation
+  har slutat fungera, inte att du vilat.
+- **Kvällssummeringen påstår inte längre vila utan täckning.** En dag
+  utan registrerade pass skrivs numera som "Inga registrerade pass" med
+  besked om att underlaget saknas, i stället för "Vilodag.", när
+  passflödet varit tyst. Detsamma gäller när data ligger och väntar på
+  att läsas in — då sägs det uttryckligen att inläsningen pågår. En
+  äkta vilodag med färsk data ser ut precis som förut.
+- **Dagsform utan täckning presenteras inte som en siffra.** Beredskapen
+  räknas fram ur upp till fem komponenter (HRV, sömn, vilopuls,
+  belastning, handledstemperatur). Bygger kvällens verdikt på en enda av
+  dem visas varken färg, poäng eller träningsråd — bara att dagsformen
+  inte kan bedömas och vad som saknas. Med delvis underlag står verdiktet
+  kvar men får med sig vilka komponenter som fattas. Fullt underlag
+  formuleras som tidigare. Bakgrunden: kvällen den 21 juli gick det ut
+  ett "🔴 Röd 21 — vila eller lugnt imorgon" som byggde på ett enda
+  mätvärde; med hela underlaget på plats var dagens verkliga beredskap
+  85, grön.
+- **Rätt datum i notiser strax efter midnatt.** Data som kom in mellan
+  midnatt och 02 på natten daterades en dag för tidigt i den svenska
+  texten. Rättat.
+- **Tydligare besked på utvecklingsmaskinen.** Färskhetskontrollen kräver
+  åtkomst till mottagaren för att kunna uttala sig om pipelinen. Utan
+  den svarar den nu "kan inte bedömas härifrån" i stället för att
+  felaktigt rapportera en trasig pipeline när det bara är den lokala
+  datakopian som är gammal. `.Renviron.example` och
+  `docs/user/pipeline-setup.md` beskriver hur en utvecklingsmaskin
+  konfigureras för att göra den riktiga kontrollen.
+
 ## 2026-07-08 — Snabbare förstasida, förfinad dashboard
 
 Förfining av dashboarden efter moderniseringen. Samma utseende och siffror,
