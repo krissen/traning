@@ -204,14 +204,14 @@ receiver, and `/health` keeps answering 200. The only symptom is that
 
 Fix: open Health Auto Export on anandavani and leave it in the foreground
 for a few seconds. A dormant automation catches up with one large backfill
-push covering the whole silence, so a jump in `pending_files` right after
-opening the app confirms this was the cause.
+push covering the whole silence, so a fresh commit in the data repo right
+after opening the app confirms this was the cause.
 
 The two flows wake independently and not at the same pace. Metrics usually
 arrive within a minute; workouts can take considerably longer, since the app
 works through every session in the gap. Give workouts time before concluding
-that its automation is disabled — check `pending_workouts` and the file count
-in `health_export/workouts/` again after a while rather than immediately.
+that its automation is disabled — count the files in
+`health_export/workouts/` again after a while rather than immediately.
 
 **3. Total silence — check the phone (anandavani).**
 
@@ -228,22 +228,34 @@ in `health_export/workouts/` again after a while rather than immediately.
 Trigger a manual export in the app, then:
 
 ```bash
-# last_received should move to now; pending_files > 0
-ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
+# The files themselves — written during the push, so they are there at once
+ssh kailash 'ls -t ~/dokument/traning-data/kristian/health_export/workouts | head -3'
+ssh kailash 'cd ~/dokument/traning-data && git log --since="1 hour ago" --format="%ai %s"'
 
 # The POST itself, with metric/sample counts
 ssh kailash 'sudo journalctl -u traning-receiver --since "10 min ago" | grep -E "Received|POST /v1/"'
+
+# last_received should move to now
+ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
 ```
 
-Files land after the 10-minute debounce: workouts in `health_export/workouts/`,
-metrics in `health_export/canonical/<metric>/<date>.json` (sleep stays in
-`health_export/metrics/`). A manual export backfills the whole gap in one
-push, so expect a large sample count.
+Files land **during the push**, not after a delay: workouts in
+`health_export/workouts/`, metrics in
+`health_export/canonical/<metric>/<date>.json` (sleep stays in
+`health_export/metrics/`). The 10-minute debounce
+(`TRANING_HEALTH_DEBOUNCE`) delays only the R import that folds the data
+into the caches. A manual export backfills the whole gap in one push, so
+expect a large sample count.
+
+Check the files, not the counters. `pending_files` and `pending_workouts`
+are non-zero only between the push and the flush — after the debounce they
+read 0 again, whether the push succeeded or never happened. The files on
+disk and the data-repo commits are the lasting evidence.
 
 Confirm both endpoints separately — `last_received` moving proves only that
-*something* arrived. Workouts are alive when `pending_workouts` rises or a
-new file appears in `health_export/workouts/`; a rise in `pending_files`
-alone is the metrics automation.
+*something* arrived. Workouts are alive when a new file appears in
+`health_export/workouts/`; metrics are alive when today's date shows up
+under `health_export/canonical/<metric>/`.
 
 ## Services on kailash
 
