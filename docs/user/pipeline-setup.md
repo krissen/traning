@@ -164,6 +164,65 @@ HAE pushes automatically in the background. iOS may delay execution;
 frequency depends on Background App Refresh and device state (charging
 improves reliability).
 
+The two automations are independent. Workouts can stop while metrics keep
+flowing (and vice versa) — always check both endpoints separately.
+
+### When HAE data stops arriving
+
+**1. Ask the server what it last saw.**
+
+```bash
+# Last actual POST per endpoint — distinguishes silence from rejection
+ssh kailash 'sudo journalctl -u traning-receiver --since "14 days ago" | grep -E "POST /v1/(health|workouts)"'
+
+# In-memory counters (last_received, last_workouts_import, pending_files)
+ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
+
+# What actually landed on disk — authoritative, survives journal rotation
+ssh kailash 'ls -t ~/dokument/traning-data/kristian/health_export/workouts | head -3'
+ssh kailash 'ls ~/dokument/traning-data/kristian/health_export/canonical/heart_rate | tail -3'
+```
+
+Two caveats: `/v1/status` counters live in the process and reset on every
+receiver restart (compare against `uptime_seconds`), and the journal can
+have gaps. When the two disagree, trust the files on disk.
+
+**2. Read the outcome.**
+
+| What you see | Where the fault is |
+|--------------|--------------------|
+| `401`/`403` on POST | API key mismatch — key in HAE no longer matches `/etc/traning/env` |
+| `422` on POST | Payload rejected — app format changed, check receiver log for the field |
+| Connection resets, no POST logged | Network — Tailscale down on phone or on kailash |
+| No POST at all, `/health` still 200 | Phone side — automation disabled, expired, or never fired |
+
+**3. Total silence — check the phone (anandavani).**
+
+- Both automations still **enabled** in Health Auto Export, not just one.
+- Last run / error status per automation — a failed run usually shows there.
+- `X-API-Key` header still present. App updates and re-installs can drop
+  custom headers; re-paste from `deploy/traning-env.local` if unsure.
+- Tailscale connected, and `http://100.93.126.68:8421/health` reachable
+  from Safari on the phone (should return `{"status":"ok"}`).
+- Background App Refresh on for the app, and Low Power Mode off.
+
+**4. Verify the flow is alive again.**
+
+Trigger a manual export in the app, then:
+
+```bash
+# last_received should move to now; pending_files > 0
+ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
+
+# The POST itself, with metric/sample counts
+ssh kailash 'sudo journalctl -u traning-receiver --since "10 min ago" | grep -E "Received|POST /v1/"'
+```
+
+Files land after the 10-minute debounce: workouts in `health_export/workouts/`,
+metrics in `health_export/canonical/<metric>/<date>.json` (sleep stays in
+`health_export/metrics/`). A manual export backfills the whole gap in one
+push, so expect a large sample count.
+
 ## Services on kailash
 
 | Service | Type | Schedule |
