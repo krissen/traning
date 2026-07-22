@@ -292,15 +292,25 @@ test_that("day_summary_prose leaves an actual training day untouched", {
   # The guard only applies to zero-session days — a stale feed must
   # not rewrite a day that does have sessions.
   s <- tibble::tibble(
-    sessionStart = as.POSIXct("2026-07-21 08:00", tz = "UTC"),
+    sessionStart = as.POSIXct(paste(Sys.Date(), "08:00"), tz = ""),
     sport = "running", distance = 8000,
     avgPaceMoving = 5.5, avgHeartRateMoving = 140,
     durationMoving = as.difftime(45, units = "mins"))
-  stale <- day_freshness(received = "2026-07-21T20:00:00",
-                          workouts = "2026-06-02T08:00:00")
-  txt <- day_summary_prose(s, date = "2026-07-21", freshness = stale)
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  txt <- day_summary_prose(s, date = Sys.Date(), freshness = stale)
   expect_match(txt, "Dagens pass")
   expect_no_match(txt, "Inga registrerade pass")
+})
+
+test_that("an injected verdict does not escape the historical date gate", {
+  # The gate is unconditional: a supplied freshness list is a test
+  # seam, not a way past the invariant that only today is guarded.
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  expect_null(.day_freshness_guard(Sys.Date() - 30, NULL, NULL,
+                                    freshness = stale))
+  txt <- day_summary_prose(rest_day_summaries(), date = "2026-05-08",
+                            freshness = stale)
+  expect_match(txt, "^Vilodag\\.")
 })
 
 test_that(".day_freshness_guard leaves historical rest days alone", {

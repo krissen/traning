@@ -252,7 +252,11 @@
 # probe is wrapped in tryCatch and the HTTP timeout is short.
 .day_freshness_guard <- function(date, summaries, health_daily,
                                   freshness = NULL) {
-  if (is.null(freshness) && date < Sys.Date() - 1) return(NULL)
+  # The date gate is unconditional. Conjoining it with `is.null(freshness)`
+  # would let an injected verdict reach a historical day, which is the
+  # one case the gate exists to prevent — an injection seam must not
+  # double as an escape hatch from an invariant.
+  if (date < Sys.Date() - 1) return(NULL)
   fresh <- freshness %||% tryCatch(
     data_freshness(health_daily = health_daily, summaries = summaries,
                    status_fetch = function() .receiver_status(timeout = 3L)),
