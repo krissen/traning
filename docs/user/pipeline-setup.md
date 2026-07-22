@@ -196,6 +196,19 @@ have gaps. When the two disagree, trust the files on disk.
 | Connection resets, no POST logged | Network — Tailscale down on phone or on kailash |
 | No POST at all, `/health` still 200 | Phone side — automation disabled, expired, or never fired |
 
+**Known failure mode: silent stop after an HAE app update.** After the app
+updates, its automations can stay dormant until the app is opened manually
+once. Nothing fails visibly — no error on the phone, no request at the
+receiver, and `/health` keeps answering 200. The only symptom is that
+`last_received` in `/v1/status` stands still while the clock moves.
+
+Fix: open Health Auto Export on anandavani and leave it in the foreground
+for a few seconds. A dormant automation catches up with one large backfill
+push covering the whole silence, so a jump in `pending_files` right after
+opening the app confirms this was the cause. Re-check both endpoints
+afterwards — one automation can wake while the other stays down, in which
+case it needs re-enabling by hand.
+
 **3. Total silence — check the phone (anandavani).**
 
 - Both automations still **enabled** in Health Auto Export, not just one.
@@ -222,6 +235,11 @@ Files land after the 10-minute debounce: workouts in `health_export/workouts/`,
 metrics in `health_export/canonical/<metric>/<date>.json` (sleep stays in
 `health_export/metrics/`). A manual export backfills the whole gap in one
 push, so expect a large sample count.
+
+Confirm both endpoints separately — `last_received` moving proves only that
+*something* arrived. Workouts are alive when `pending_workouts` rises or a
+new file appears in `health_export/workouts/`; a rise in `pending_files`
+alone is the metrics automation.
 
 ## Services on kailash
 
