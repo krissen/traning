@@ -12,6 +12,8 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 
 from ..r_import import parse_import_summary, run_r_import
 from ..settings import get_settings
@@ -530,6 +532,26 @@ def _log_client(request: Request, endpoint: str) -> None:
         log.debug("Could not log client for %s", endpoint, exc_info=True)
 
 
+def _describe_validation_error(exc: RequestValidationError) -> str:
+    """Summarise a rejection as field paths and error types.
+
+    Deliberately drops pydantic's ``input`` and ``msg`` fields: both can
+    echo the rejected payload back, and the payload is health data that
+    has no business in the journal.
+
+    Never raises — a rejection must still get its ordinary 422 response
+    if this summary cannot be built.
+    """
+    try:
+        return "; ".join(
+            f"{'.'.join(str(part) for part in err.get('loc', ()))}: {err.get('type', '?')}"
+            for err in exc.errors()
+        ) or "no field detail"
+    except Exception:
+        log.debug("Could not describe validation error", exc_info=True)
+        return "undescribable"
+
+
 # Track state for /v1/status endpoint
 _start_time = time.time()
 _last_received: datetime | None = None
@@ -565,6 +587,23 @@ def create_app() -> FastAPI:
         if request.method == "POST" and request.url.path in _CLIENT_LOG_PATHS:
             _log_client(request, request.url.path)
         return await call_next(request)
+
+    @application.exception_handler(RequestValidationError)
+    async def log_validation_error(request: Request, exc: RequestValidationError):
+        """Name the field that failed validation, then answer as usual.
+
+        A 422 means the app changed its payload shape; without this the
+        journal says a push was rejected but not what about it. Only the
+        field path and error type are logged — never the rejected values,
+        which are health samples.
+        """
+        if request.url.path in _CLIENT_LOG_PATHS:
+            log.warning(
+                "%s rejected by validation: %s",
+                request.url.path,
+                _describe_validation_error(exc),
+            )
+        return await request_validation_exception_handler(request, exc)
 
     @application.get("/health")
     async def healthcheck():

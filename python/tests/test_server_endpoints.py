@@ -198,6 +198,30 @@ def test_rejected_push_still_logs_user_agent(
     assert "HealthAutoExport/9.0.0" in caplog.text
 
 
+def test_rejected_payload_logs_the_offending_field(client, caplog):
+    body = {"data": {"metrics": ["not-a-metric-object"]}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        resp = client.post("/v1/health", json=body, headers=HEADERS)
+    assert resp.status_code == 422
+    assert "rejected by validation" in caplog.text
+    assert "body.data.metrics.0" in caplog.text
+
+
+def test_validation_logging_omits_the_rejected_values(client, caplog):
+    """The payload is health data — field names may be logged, values not."""
+    body = {"data": {"metrics": ["resting-hr-42"]}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=HEADERS)
+    assert "resting-hr-42" not in caplog.text
+
+
+def test_validation_logging_leaves_the_422_response_untouched(client):
+    body = {"data": {"metrics": "not-a-list"}}
+    resp = client.post("/v1/health", json=body, headers=HEADERS)
+    assert resp.status_code == 422
+    assert "detail" in resp.json()
+
+
 def test_health_probe_is_not_logged_as_a_push(client, caplog):
     """The monitoring probe hits /health every day — keep it out."""
     with caplog.at_level("INFO", logger=app_mod.log.name):
