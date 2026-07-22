@@ -150,6 +150,11 @@
 # of each day still creates files — which sits well inside the 36 h
 # threshold. Small directories are scanned file-by-file anyway, so the
 # gap only applies to archives too large to walk cheaply.
+#
+# And this is what makes the trade defensible: because an overwrite
+# never bumps the directory, the arrival we report is always at or
+# before the true one. The error has a sign. A watchdog built on it can
+# cry wolf, but it cannot sleep through a feed that has gone quiet.
 .freshness_dir_mtime <- function(dir, max_scan = 5000L) {
   if (is.null(dir) || !nzchar(dir) || !dir.exists(dir)) return(.na_time())
 

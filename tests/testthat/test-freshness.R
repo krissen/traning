@@ -384,6 +384,17 @@ test_that(".freshness_dir_mtime skips the file scan on large archives", {
   expect_gt(.freshness_dir_mtime(dir, max_scan = 0L), hours_ago(2))
 })
 
+test_that("writing a file moves its directory's mtime", {
+  # Characterisation, not behaviour: the whole cheap-mtime design rests
+  # on the filesystem doing this. Every other test here sets mtimes with
+  # Sys.setFileTime(), so they would all stay green while production
+  # read ancient timestamps if the premise ever stopped holding.
+  dir <- withr::local_tempdir()
+  Sys.setFileTime(dir, as.POSIXct("2020-01-01 00:00:00", tz = ""))
+  writeLines("{}", file.path(dir, "arrival.json"))
+  expect_gt(file.mtime(dir), as.POSIXct("2021-01-01 00:00:00", tz = ""))
+})
+
 test_that(".freshness_dir_mtime returns NA for a missing or empty directory", {
   expect_true(is.na(.freshness_dir_mtime(tempfile())))
   expect_true(is.na(.freshness_dir_mtime(NULL)))
