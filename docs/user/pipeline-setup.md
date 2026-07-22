@@ -173,7 +173,7 @@ flowing (and vice versa) — always check both endpoints separately.
 
 ```bash
 # Last actual POST per endpoint, with the app version that sent it
-ssh kailash 'sudo journalctl -u traning-receiver --since "14 days ago" | grep -E "push from|POST /v1/(health|workouts)"'
+ssh kailash 'sudo journalctl -u traning-receiver --since "14 days ago" | grep -E "push from|rejected|POST /v1/(health|workouts)"'
 
 # In-memory counters (last_received, last_workouts_import, pending_files)
 ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
@@ -261,7 +261,7 @@ ssh kailash 'ls -t ~/dokument/traning-data/kristian/health_export/workouts | hea
 ssh kailash 'cd ~/dokument/traning-data && git log --since="1 hour ago" --format="%ai %s"'
 
 # The POST itself, with sending client and metric/sample counts
-ssh kailash 'sudo journalctl -u traning-receiver --since "10 min ago" | grep -E "push from|Received|POST /v1/"'
+ssh kailash 'sudo journalctl -u traning-receiver --since "10 min ago" | grep -E "push from|rejected|Received|POST /v1/"'
 
 # last_received should move to now
 ssh kailash 'curl -s -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status'
