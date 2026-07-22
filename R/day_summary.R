@@ -185,6 +185,31 @@
     return(tsb_text)
   }
 
+  quality <- .readiness_quality_note(readiness$kvalitet,
+                                      readiness$components %||% list())
+
+  # At minimal quality the verdict is withheld entirely, and this is
+  # deliberately *not* what the morning push does with the same field.
+  # The two are different speech acts. In the morning "minimal"
+  # describes something still filling up — components land through the
+  # day and the notification re-renders — so naming the number with a
+  # parenthetical is honest. At 21:30 "minimal" is a final statement
+  # that the data never came, and no correction follows; that is
+  # exactly when a number is most misleading. On 2026-07-21 the evening
+  # verdict was not merely thin but inverted — Röd 21 against an actual
+  # 85 Grön once the gap was backfilled — and a parenthesis does not
+  # rescue a figure that gets read in passing.
+  if (!quality$trustworthy) {
+    thin <- if (length(quality$missing) > 0) {
+      sprintf("Dagsformen kan inte bedömas — %s saknas för dagen.",
+              paste(quality$missing, collapse = "/"))
+    } else {
+      "Dagsformen kan inte bedömas — underlaget är för tunt."
+    }
+    if (is.null(tsb_text)) return(thin)
+    return(paste(thin, tsb_text))
+  }
+
   score <- readiness$score
   ball <- switch(status,
                  "Grön" = "\U0001F7E2",
@@ -193,7 +218,7 @@
                  "")
   score_str <- if (is.finite(score)) sprintf(" %.0f", score) else ""
   prefix <- paste0("Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
-                   status, score_str)
+                   status, score_str, quality$suffix)
 
   if (status == "Röd") {
     # Hard override — TSB form claim could actively mislead

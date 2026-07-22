@@ -123,71 +123,168 @@ test_that(".day_state_line: Grön readiness keeps TSB phrasing", {
   expect_false(grepl("Dagsform", txt %||% ""))
 })
 
+# --- Readiness data quality --------------------------------------------------
+# Regression: the evening push on 2026-07-21 read "Dagsform 🔴 Röd 21 —
+# återhämtningssignaler dominerar. Vila eller lugnt imorgon." on a
+# one-component verdict. Once the health gap was backfilled the same
+# day's actual readiness was 85 Grön — the verdict was inverted, and it
+# carried training advice.
+
+readiness_at <- function(status, score, kvalitet, present = character()) {
+  comp <- function(name) {
+    list(value = if (name %in% present) 1 else NA_real_,
+         delta = NA_real_, flag = FALSE, score = NA_real_)
+  }
+  list(status = status, score = score, kvalitet = kvalitet,
+       components = list(hrv = comp("hrv"), sleep = comp("sleep"),
+                          rhr = comp("rhr"), load = comp("load")),
+       components_present = list())
+}
+
+quality_summaries <- function() {
+  tibble::tibble(
+    sessionStart = as.POSIXct("2026-05-06 18:00", tz = "UTC"),
+    sport = "running", distance = 8000,
+    avgPaceMoving = 5.5, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(45, units = "mins"))
+}
+
+test_that("full quality leaves the verdict phrased exactly as before", {
+  d <- as.Date("2026-05-08")
+  full <- readiness_at("Röd", 40, "full",
+                        present = c("hrv", "sleep", "rhr", "load"))
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = full)
+  expect_equal(
+    txt,
+    paste("Dagsform \U0001F534 Röd 40 — återhämtningssignaler dominerar.",
+          "Vila eller lugnt imorgon."))
+})
+
+test_that("partial quality keeps the verdict but says what is missing", {
+  d <- as.Date("2026-05-08")
+  partial <- readiness_at("Gul", 55, "partial",
+                           present = c("hrv", "rhr", "load"))
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = partial)
+  expect_match(txt, "Dagsform \U0001F7E1 Gul 55 \\(partial, sömn saknas än\\)")
+})
+
+test_that("partial quality still carries the Röd advice", {
+  # Partial is thin, not untrustworthy — the advice stands.
+  d <- as.Date("2026-05-08")
+  partial <- readiness_at("Röd", 35, "partial",
+                           present = c("hrv", "rhr", "load"))
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = partial)
+  expect_match(txt, "\\(partial, sömn saknas än\\)")
+  expect_match(txt, "Vila eller lugnt imorgon")
+})
+
+test_that("minimal quality withholds the verdict, the score and the advice", {
+  d <- as.Date("2026-05-08")
+  minimal <- readiness_at("Röd", 21, "minimal", present = "load")
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = minimal)
+  expect_match(txt, "^Dagsformen kan inte bedömas")
+  expect_match(txt, "HRV/sömn/vilopuls saknas")
+  expect_no_match(txt, "Röd")
+  expect_no_match(txt, "21")
+  expect_no_match(txt, "Vila eller lugnt imorgon")
+})
+
+test_that("minimal quality keeps the TSB narrative it falls back on", {
+  d <- as.Date("2026-05-08")
+  minimal <- readiness_at("Röd", 21, "minimal", present = "load")
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = minimal)
+  # A TSB line is computable from these summaries, so the state line
+  # keeps saying something useful rather than going silent.
+  expect_gt(nchar(txt), nchar("Dagsformen kan inte bedömas — "))
+})
+
+test_that(".readiness_quality_note tolerates an empty component list", {
+  # is.na(NULL) is logical(0), which would abort an if-clause.
+  note <- .readiness_quality_note("full", list())
+  expect_equal(note$suffix, "")
+  expect_true(note$trustworthy)
+  expect_setequal(note$missing, c("HRV", "sömn", "vilopuls"))
+})
+
+test_that(".readiness_quality_note grades trustworthiness by quality alone", {
+  expect_true(.readiness_quality_note("full", list())$trustworthy)
+  expect_true(.readiness_quality_note("partial", list())$trustworthy)
+  expect_false(.readiness_quality_note("minimal", list())$trustworthy)
+  expect_true(.readiness_quality_note(NA_character_, list())$trustworthy)
+})
+
 # --- Freshness guard ---------------------------------------------------------
 # Regression: 2026-07-21 said "Vilodag. Dagsform 🔴 Röd 21 …" on a day
 # with a six-hour paddling session, because the HAE workout feed had
 # been dead since 2026-06-02 and nothing checked data age.
 
-# Build a freshness verdict without touching the network or disk.
-day_freshness <- function(received = NULL, workouts = NULL,
-                           now = as.POSIXct("2026-07-21 21:30:00", tz = "")) {
+# The guard only fires for the current day, so these cases have to be
+# anchored to today rather than to a fixed calendar date. The exact
+# Swedish wording is locked in test-freshness.R; what matters here is
+# that day_summary_prose reaches for the workout flow's verdict.
+DAY_NOW <- as.POSIXct(paste(Sys.Date(), "21:30:00"), tz = "")
+
+# Build a freshness verdict without touching the network or disk, with
+# each flow's last arrival given in hours before DAY_NOW.
+day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW) {
+  iso <- function(h) {
+    if (is.null(h)) return(NULL)
+    format(now - as.difftime(h, units = "hours"), "%Y-%m-%dT%H:%M:%S")
+  }
   data_freshness(
     now = now, data_dir = "",
-    metrics_dir = tempfile(), workouts_dir = tempfile(),
-    status_payload = list(last_received = received,
-                          last_workouts_import = workouts))
+    metrics_dir = tempfile(), canonical_dir = tempfile(),
+    workouts_dir = tempfile(),
+    status_payload = list(last_received = iso(received),
+                          last_workouts_import = iso(workouts)))
 }
 
-test_that("day_summary_prose keeps 'Vilodag.' when the workout feed is fresh", {
-  s <- tibble::tibble(
-    sessionStart = as.POSIXct("2026-05-06 10:00", tz = "UTC"),
+rest_day_summaries <- function() {
+  tibble::tibble(
+    sessionStart = as.POSIXct(paste(Sys.Date() - 15, "10:00"), tz = ""),
     sport = "running", distance = 5000,
     avgPaceMoving = 5.0, avgHeartRateMoving = 140,
     durationMoving = as.difftime(28, units = "mins"))
-  fresh <- day_freshness(received = "2026-07-21T20:00:00",
-                          workouts = "2026-07-21T19:00:00")
+}
+
+test_that("day_summary_prose keeps 'Vilodag.' when the workout feed is fresh", {
+  fresh <- day_freshness(received = 2, workouts = 3)
   expect_true(fresh$ok)
-  txt <- day_summary_prose(s, date = "2026-05-08", freshness = fresh)
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = fresh)
   expect_match(txt, "^Vilodag\\.")
 })
 
 test_that("a stale metric feed alone does not rewrite a genuine rest day", {
   # Metrics degrade the readiness half of the summary, but they say
   # nothing about whether a session happened.
-  s <- tibble::tibble(
-    sessionStart = as.POSIXct("2026-05-06 10:00", tz = "UTC"),
-    sport = "running", distance = 5000,
-    avgPaceMoving = 5.0, avgHeartRateMoving = 140,
-    durationMoving = as.difftime(28, units = "mins"))
-  fr <- day_freshness(received = "2026-07-11T08:00:00",
-                       workouts = "2026-07-21T19:00:00")
+  fr <- day_freshness(received = 24 * 10, workouts = 3)
   expect_equal(fr$flows$metrics$status, "fail")
   expect_equal(fr$flows$workouts$status, "ok")
-  txt <- day_summary_prose(s, date = "2026-05-08", freshness = fr)
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = fr)
   expect_match(txt, "^Vilodag\\.")
 })
 
 test_that("day_summary_prose flags a dead workout feed instead of claiming rest", {
-  s <- tibble::tibble(
-    sessionStart = as.POSIXct("2026-06-02 10:00", tz = "UTC"),
-    sport = "running", distance = 5000,
-    avgPaceMoving = 5.0, avgHeartRateMoving = 140,
-    durationMoving = as.difftime(28, units = "mins"))
-  # The real outage: metrics still arriving, workouts silent since 2 June.
-  stale <- day_freshness(received = "2026-07-21T20:00:00",
-                          workouts = "2026-06-02T08:00:00")
+  # The real outage: metrics still arriving, workouts silent for weeks.
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
   expect_equal(stale$flows$workouts$status, "fail")
-  txt <- day_summary_prose(s, date = "2026-07-21", freshness = stale)
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = stale)
   expect_no_match(txt, "^Vilodag\\.")
   expect_match(txt, "^Inga registrerade pass —")
-  expect_match(txt, "Passdata från Apple Health har inte kommit in sedan 2 juni")
-  expect_match(txt, "trasig automation")
+  expect_true(grepl(stale$flows$workouts$prose, txt, fixed = TRUE))
 })
 
 test_that("day_summary_prose flags a dead workout feed on empty summaries too", {
-  stale <- day_freshness(received = "2026-07-21T20:00:00",
-                          workouts = "2026-06-02T08:00:00")
-  txt <- day_summary_prose(NULL, date = "2026-07-21", freshness = stale)
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  txt <- day_summary_prose(NULL, date = Sys.Date(), freshness = stale)
   expect_match(txt, "^Inga registrerade pass —")
 })
 
