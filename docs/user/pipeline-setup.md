@@ -201,12 +201,23 @@ push before the silence with the first one after it: a string that changed
 across the gap makes an app update the likely trigger — it is a correlation,
 not proof, but it is the only version signal the server has.
 
+A push rejected as malformed logs a second line naming the field that
+failed and why, so a changed payload shape can be read off the journal:
+
+```
+/v1/health rejected by validation: body.data.metrics: too_short
+```
+
+The values are deliberately left out — they are health samples, and the
+journal is not the place for them. To see the payload itself, look at the
+export in the app.
+
 **2. Read the outcome.**
 
 | What you see | Where the fault is |
 |--------------|--------------------|
 | `401`/`403` on POST | API key mismatch — key in HAE no longer matches `/etc/traning/env` |
-| `422` on POST | Payload rejected — app format changed, check receiver log for the field |
+| `422` on POST | Payload rejected — app changed its format; the log names the field |
 | Connection resets, no POST logged | Network — Tailscale down on phone or on kailash |
 | No POST at all, `/health` still 200 | Phone side — automation disabled, expired, or never fired |
 
