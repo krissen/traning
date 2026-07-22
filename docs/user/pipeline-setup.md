@@ -205,9 +205,13 @@ receiver, and `/health` keeps answering 200. The only symptom is that
 Fix: open Health Auto Export on anandavani and leave it in the foreground
 for a few seconds. A dormant automation catches up with one large backfill
 push covering the whole silence, so a jump in `pending_files` right after
-opening the app confirms this was the cause. Re-check both endpoints
-afterwards — one automation can wake while the other stays down, in which
-case it needs re-enabling by hand.
+opening the app confirms this was the cause.
+
+The two flows wake independently and not at the same pace. Metrics usually
+arrive within a minute; workouts can take considerably longer, since the app
+works through every session in the gap. Give workouts time before concluding
+that its automation is disabled — check `pending_workouts` and the file count
+in `health_export/workouts/` again after a while rather than immediately.
 
 **3. Total silence — check the phone (anandavani).**
 
