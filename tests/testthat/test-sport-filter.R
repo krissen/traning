@@ -25,12 +25,22 @@ test_that(".resolve_sport_bucket handles Swedish aliases", {
 
 test_that(".resolve_sport_bucket expands curated buckets", {
   expect_setequal(traning:::.resolve_sport_bucket("endurance"),
-                  c("running", "cycling", "walking", "swimming"))
+                  c("running", "cycling", "walking", "swimming",
+                    "paddelsporter", "rodd"))
   expect_setequal(traning:::.resolve_sport_bucket("ballsport"),
                   c("badminton", "bordtennis", "fotboll", "tennis",
                     "hockey", "fitness-spel"))
   expect_setequal(traning:::.resolve_sport_bucket("gym"),
-                  c("strength", "karntraning", "ovrigt"))
+                  c("strength", "karntraning", "yoga", "sinne_&_kropp",
+                    "ovrigt"))
+})
+
+test_that("endurance captures paddling and rowing", {
+  df <- data.frame(sport = c("paddelsporter", "rodd", "tennis"),
+                   distance = c(4240, 6000, 0), stringsAsFactors = FALSE)
+  result <- traning:::.filter_sport(df, "endurance")
+  expect_equal(nrow(result), 2)
+  expect_setequal(result$sport, c("paddelsporter", "rodd"))
 })
 
 test_that("ballsport no longer captures paddelsporter", {
@@ -57,7 +67,8 @@ test_that(".resolve_sport_bucket combines vector inputs", {
   expect_setequal(traning:::.resolve_sport_bucket(c("löpning", "cykling")),
                   c("running", "cycling"))
   expect_setequal(traning:::.resolve_sport_bucket(c("endurance", "strength")),
-                  c("running", "cycling", "walking", "swimming", "strength"))
+                  c("running", "cycling", "walking", "swimming",
+                    "paddelsporter", "rodd", "strength"))
 })
 
 test_that(".filter_sport keeps only matching rows", {
@@ -187,12 +198,14 @@ test_that("sport_label (exported) returns Swedish display labels", {
 
 test_that("sport_bucket_members returns curated bucket members", {
   expect_setequal(sport_bucket_members("endurance"),
-                  c("running", "cycling", "walking", "swimming"))
+                  c("running", "cycling", "walking", "swimming",
+                    "paddelsporter", "rodd"))
   expect_setequal(sport_bucket_members("ballsport"),
                   c("badminton", "bordtennis", "fotboll", "tennis",
                     "hockey", "fitness-spel"))
   expect_setequal(sport_bucket_members("gym"),
-                  c("strength", "karntraning", "ovrigt"))
+                  c("strength", "karntraning", "yoga", "sinne_&_kropp",
+                    "ovrigt"))
 })
 
 test_that("sport_bucket_members handles direct sports + 'all' + NULL", {

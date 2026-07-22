@@ -141,15 +141,24 @@ sport_bucket_names <- function() {
 }
 
 # Curated sport buckets — group several raw sport values under one label.
+#
+# Membership criteria for `endurance`: continuous aerobic load, mean HR
+# is a usable intensity proxy, and the session produces a distance.
+# Paddling and rowing qualify; intermittent modalities (ball sports,
+# strength, yoga) and downhill/snow sports do not. "skridskosporter"
+# stays in `wintersport` because HealthKit's "Skating Sports" mixes
+# long-distance skating with figure skating and inline skating, and the
+# sessions can't be told apart from the name alone.
 .SPORT_BUCKETS <- list(
-  endurance = c("running", "cycling", "walking", "swimming"),
+  endurance = c("running", "cycling", "walking", "swimming",
+                "paddelsporter", "rodd"),
   # "paddelsporter" is NOT padel — HealthKit's `paddleSports` covers
   # canoeing, kayaking, outrigger and stand-up paddling, so it never
   # belonged in the racket/ball bucket.
   ballsport = c("badminton", "bordtennis", "fotboll", "tennis",
                 "hockey", "fitness-spel"),
   wintersport = c("skridskosporter", "snosporter", "utforsakning"),
-  gym = c("strength", "karntraning", "ovrigt")
+  gym = c("strength", "karntraning", "yoga", "sinne_&_kropp", "ovrigt")
 )
 
 # Swedish → canonical English aliases for the sport-column values.
