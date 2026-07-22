@@ -81,10 +81,324 @@
                      summaries = summaries)
   })
   costs <- vapply(classes, function(c) {
-    switch(c$recovery_cost %||% "",
-           low = 1L, moderate = 2L, high = 3L, 0L)
+    .recovery_cost_rank(c$recovery_cost)
   }, integer(1))
   classes[[which.max(costs)]]
+}
+
+# Format a duration the way the prose reads it out: "45 min", "2 h 15
+# min", "6 h". Durations within five minutes of a whole hour — on
+# either side — are read as that whole hour, so a six-hour paddle is
+# announced as "6 h" rather than "5 h 58 min".
+.fmt_duration_sv <- function(min) {
+  if (!is.finite(min)) return(NA_character_)
+  if (min < 90) return(sprintf("%d min", round(min)))
+  h <- floor(min / 60)
+  m <- round(min - h * 60)
+  if (m > 55) { h <- h + 1; m <- 0 }
+  if (m < 5) sprintf("%d h", h) else sprintf("%d h %d min", h, m)
+}
+
+# Classify the dominant non-running effort of the day, if any. Returns
+# NULL when nothing alternative was done (or nothing long enough).
+#
+# Sessions are aggregated per sport before classification: HAE splits a
+# single outing into auto-pause segments, so a six-hour paddling day
+# arrives as several rows. Classifying them one by one would report the
+# longest segment ("1 h 55 min", duration band `long`) instead of the
+# outing that was actually done.
+#
+# Mean HR for the aggregate is duration-weighted over the segments that
+# carry a reading. When less than half the time has HR, the aggregate is
+# treated as having none rather than extrapolating a short measured
+# stretch across the whole day — a data-quality guard, not a
+# physiological threshold.
+.day_alt_class <- function(todays, summaries, hr_max = NULL,
+                            min_minutes = 20) {
+  if (is.null(todays) || nrow(todays) == 0) return(NULL)
+  is_run <- stringr::str_detect(tolower(todays$sport), "running")
+  is_run[is.na(is_run)] <- FALSE
+  alt <- todays[!is_run, , drop = FALSE]
+  if (nrow(alt) == 0) return(NULL)
+
+  per <- alt %>%
+    dplyr::mutate(
+      .min = as.numeric(.data$durationMoving, units = "mins"),
+      .hr  = as.numeric(.data$avgHeartRateMoving)
+    ) %>%
+    dplyr::filter(is.finite(.data$.min), .data$.min > 0) %>%
+    dplyr::mutate(
+      .has_hr  = is.finite(.data$.hr) & .data$.hr > 0,
+      .hr_min  = ifelse(.data$.has_hr, .data$.min, 0),
+      .hr_load = ifelse(.data$.has_hr, .data$.hr * .data$.min, 0)
+    ) %>%
+    dplyr::group_by(sport = .data$sport) %>%
+    dplyr::summarise(
+      min     = sum(.data$.min),
+      hr_min  = sum(.data$.hr_min),
+      hr_load = sum(.data$.hr_load),
+      .groups = "drop"
+    ) %>%
+    dplyr::filter(.data$min >= min_minutes)
+  if (nrow(per) == 0) return(NULL)
+
+  if (is.null(hr_max) && any(per$hr_min > 0)) {
+    hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
+                       error = function(e) NULL)
+  }
+
+  classes <- lapply(seq_len(nrow(per)), function(i) {
+    hr_pct <- if (per$hr_min[i] >= 0.5 * per$min[i] && !is.null(hr_max) &&
+                  is.finite(hr_max) && hr_max > 0) {
+      max(0, min(1, (per$hr_load[i] / per$hr_min[i]) / hr_max))
+    } else NA_real_
+    .alt_result(per$sport[i], hr_pct, per$min[i])
+  })
+
+  # Highest recovery cost owns the day; ties go to the longest effort —
+  # same rule .day_running_class() applies to running.
+  ranks <- vapply(classes, function(c) .recovery_cost_rank(c$recovery_cost),
+                  integer(1))
+  best <- which(ranks == max(ranks))
+  if (length(best) > 1) {
+    best <- best[which.max(per$min[best])]
+  }
+  classes[[best[1]]]
+}
+
+# ---- Alternative-training prose fragments ----------------------------------
+#
+# Composed from a functional fragment plus an optional recovery
+# fragment rather than 12 hard-coded sentences, so every claim only has
+# to be sourced once.
+
+# Family `aerobic`. "Bygger aerob bas" / "stor aerob volym" rest on
+# Stöggl & Sperlich 2014's HVT description (improved fat and glucose
+# utilisation, beneficial for long-lasting endurance events) — the same
+# source that already carries the endurance and long-run lines in
+# .session_line_functional(). "Räknas som kvalitet i veckans dos" is
+# Seiler 2010's HIT-frequency rule.
+.alt_text_aerobic <- function(class) {
+  switch(class,
+    low_short = ,
+    low_medium =
+      "Lugnt alternativpass — rörelse till låg kostnad.",
+    low_long =
+      "Långt lågintensivt pass — bygger aerob bas.",
+    low_very_long =
+      "Mycket långt lågintensivt pass — stor aerob volym.",
+    moderate_short =
+      "Kort pass i mellanzonen.",
+    moderate_medium = ,
+    moderate_long =
+      paste("Alternativpass i mellanzonen — kostar återhämtning trots",
+            "att det inte är löpning."),
+    moderate_very_long =
+      "Långt pass i mellanzonen — hög sammanlagd belastning.",
+    hard_short = ,
+    hard_medium =
+      "Hårt alternativpass — räknas som kvalitet i veckans dos.",
+    hard_long = ,
+    hard_very_long =
+      "Långt och hårt alternativpass — tung post i veckan.",
+    NULL)
+}
+
+# Family `other` — strength, studio work, ball sports. No adaptation
+# claims: the library holds no read source on strength training, yoga
+# or ball sports, so the text only describes the session's role in our
+# own bookkeeping.
+#
+# The low_* branch is currently unreachable (every `other` sport is
+# also `intermittent`, which is handled by the neutral wording above);
+# it is kept so a continuous non-aerobic modality wouldn't fall through
+# to NULL.
+.alt_text_other <- function(class, label) {
+  base <- switch(class,
+    low_short = ,
+    low_medium = ,
+    low_long = ,
+    low_very_long = ,
+    moderate_short =
+      sprintf("%s — utanför löpdosen, men med i veckans totalbelastning.",
+              label),
+    moderate_medium = ,
+    moderate_long = ,
+    moderate_very_long =
+      sprintf("%s i mellanzonen — kostar återhämtning.", label),
+    hard_short = ,
+    hard_medium = ,
+    hard_long = ,
+    hard_very_long =
+      sprintf("%s på hög puls — räknas som kvalitet i veckans dos.", label),
+    NULL)
+  if (is.null(base)) return(NULL)
+  if (class %in% c("low_long", "low_very_long")) {
+    base <- paste(base, "Volymen kostar.")
+  }
+  base
+}
+
+# Functional fragment for the dominant alternative session.
+.alt_line_functional <- function(alt, label, dur) {
+  cls <- alt$class
+  if (is.null(cls) || is.na(cls)) return(NULL)
+
+  # No HR: state what the session was and how long it lasted, nothing
+  # else. "Stor volym i veckan" is a claim about the dose, not the
+  # intensity, so the volume rule survives.
+  if (startsWith(cls, "nohr_")) {
+    if (alt$duration_min >= .ALT_DUR_LONG) {
+      return(sprintf("%s %s — stor volym i veckan.", label, dur))
+    }
+    return(sprintf("%s %s.", label, dur))
+  }
+
+  # Mean HR underestimates intermittent work, so a low verdict is not
+  # evidence of a low load. Never call such a session "lugnt".
+  if (identical(alt$hr_reliability, "intermittent") &&
+      identical(alt$intensity, "low")) {
+    return(sprintf("%s %s — med i veckans totalbelastning.", label, dur))
+  }
+
+  if (identical(alt$modality, "aerobic")) return(.alt_text_aerobic(cls))
+  .alt_text_other(cls, label)
+}
+
+# Recovery fragment. Wording is lifted from .session_line_recovery() so
+# the per-pass and the end-of-day notification sound the same for the
+# same physiological situation.
+.alt_line_recovery <- function(alt) {
+  cost <- alt$recovery_cost
+  if (is.null(cost) || is.na(cost)) return(NULL)
+  # Without HR there is no intensity claim to make, and every recovery
+  # wording contains one.
+  if (identical(alt$confidence, "none")) return(NULL)
+  if (identical(cost, "high")) {
+    return("Hög återhämtningskostnad; nästa kvalitetspass tidigast om 48 h.")
+  }
+  if (identical(cost, "moderate")) {
+    if (identical(alt$intensity, "low")) {
+      return("Måttlig återhämtning trots låg intensitet — volymen kostar.")
+    }
+    return("Måttlig återhämtning, planera lugnare i morgon.")
+  }
+  NULL
+}
+
+# Compose the alternative-training line. `run_recovery_cost` is the cost
+# the day's running already claimed — when it matches or exceeds the
+# alternative one the recovery fragment is dropped, so the notification
+# doesn't say the same thing twice.
+.day_alt_purpose_line <- function(alt, run_recovery_cost = NULL) {
+  if (is.null(alt)) return(NULL)
+  label <- .sport_label_sv(alt$sport)
+  dur <- .fmt_duration_sv(alt$duration_min)
+  if (is.na(dur)) return(NULL)
+
+  functional <- .alt_line_functional(alt, label, dur)
+  if (is.null(functional)) return(NULL)
+
+  rec <- .alt_line_recovery(alt)
+  if (!is.null(rec) &&
+      .recovery_cost_rank(run_recovery_cost) >=
+        .recovery_cost_rank(alt$recovery_cost)) {
+    rec <- NULL
+  }
+  paste(c(functional, rec), collapse = " ")
+}
+
+# Weekly alternative-training dose. Hours are what the athlete
+# recognises and the only figure that survives a missing HR reading;
+# the TRIMP share is what decides whether the running-specific numbers
+# still describe the week.
+#
+# health_daily is deliberately NULL in both TRIMP calls — everyday
+# movement must not enter the denominator, or a step-heavy week drowns
+# both running and alternative training.
+.alt_week_stats <- function(summaries, on_date, days = 7, hr_max = NULL,
+                             hr_rest = NULL, min_minutes = 20) {
+  empty <- list(hours = 0, share = NA_real_, hard_count = 0L,
+                nohr_fraction = NA_real_, n = 0L)
+  if (is.null(summaries) || nrow(summaries) == 0) return(empty)
+
+  on_date <- as.Date(on_date)
+  start <- on_date - (days - 1)
+  win <- summaries %>%
+    dplyr::filter(as.Date(.data$sessionStart) >= start,
+                  as.Date(.data$sessionStart) <= on_date)
+  if (nrow(win) == 0) return(empty)
+
+  is_run <- stringr::str_detect(tolower(win$sport), "running")
+  is_run[is.na(is_run)] <- FALSE
+  alt <- win[!is_run, , drop = FALSE]
+  if (nrow(alt) == 0) return(empty)
+
+  mins <- as.numeric(alt$durationMoving, units = "mins")
+  keep <- is.finite(mins) & mins >= min_minutes
+  alt <- alt[keep, , drop = FALSE]
+  mins <- mins[keep]
+  if (nrow(alt) == 0) return(empty)
+
+  if (is.null(hr_max)) {
+    hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
+                       error = function(e) NULL)
+  }
+
+  hr <- as.numeric(alt$avgHeartRateMoving)
+  has_hr <- is.finite(hr) & hr > 0
+  hard_count <- sum(vapply(seq_len(nrow(alt)), function(i) {
+    cls <- classify_alt_session(alt[i, , drop = FALSE], hr_max = hr_max)
+    identical(cls$intensity, "hard")
+  }, logical(1)))
+
+  trimp_sum <- function(df) {
+    res <- tryCatch(
+      compute_trimp(df, hr_max = hr_max, hr_rest = hr_rest,
+                    sport = "all", health_daily = NULL),
+      error = function(e) NULL)
+    if (is.null(res) || nrow(res) == 0) return(NA_real_)
+    sum(res$daily_trimp, na.rm = TRUE)
+  }
+  t_alt <- trimp_sum(alt)
+  t_tot <- trimp_sum(win)
+  share <- if (is.finite(t_alt) && is.finite(t_tot) && t_tot > 0) {
+    t_alt / t_tot
+  } else NA_real_
+
+  list(
+    hours = sum(mins) / 60,
+    share = share,
+    hard_count = as.integer(hard_count),
+    nohr_fraction = sum(mins[!has_hr]) / sum(mins),
+    n = nrow(alt)
+  )
+}
+
+# Format the weekly alternative-dose line. Returns NULL below the
+# mention threshold.
+#
+# The 25% / 3 h gate is pragmatic, not research-backed: 25% is the
+# point where a quarter of the week's load sits outside running and the
+# running-specific numbers stop describing the week, and 3 h is the
+# reserve gate for weeks where HR is missing and the share can't be
+# trusted.
+.alt_week_dose_line <- function(alt_week) {
+  hours <- alt_week$hours
+  share <- alt_week$share
+  if (!is.finite(hours) || hours <= 0) return(NULL)
+  mention <- (is.finite(share) && share >= 0.25) || hours >= 3
+  if (!mention) return(NULL)
+
+  hours_sv <- sub(".", ",", sprintf("%.1f", hours), fixed = TRUE)
+  nohr <- alt_week$nohr_fraction
+  share_trustworthy <- is.finite(share) &&
+    (!is.finite(nohr) || nohr < 0.25)
+  if (!share_trustworthy) {
+    return(sprintf("Alternativt: %s h.", hours_sv))
+  }
+  sprintf("Alternativt: %s h (%d %% av veckans belastning).",
+          hours_sv, round(share * 100))
 }
 
 # Compose the dominant-purpose line: "Tröskelpass dominerade dagens
@@ -113,29 +427,67 @@
 # Compose the week-context line. Combines:
 #   - Z3-count-this-week (Seiler 2010 "two HIT/week" rule)
 #   - rolling 28-day Z2 fraction (Esteve-Lanao 2007 / Stoggl 2014)
+#   - the week's alternative-training dose
 # Returns NULL when nothing notable to say.
 # The 28-day window is the implications-doc default
 # (adaptive-signal-per-zone__implications.md §Open questions #1).
-.day_week_line <- function(summaries, on_date, hr_max = NULL) {
-  z3n <- session_z3_count(summaries, on_date = on_date, days = 7,
-                           hr_max = hr_max)
+#
+# session_z3_count() and session_z2_fraction() are running-only and stay
+# that way — session_prose() uses the former for per-pass text, and
+# quietly widening it would move the meaning of two notifications at
+# once. The lines they feed are therefore labelled "(löpning)" instead:
+# a week with three hard paddling sessions and no running used to
+# produce no week line at all, while the text it did produce claimed to
+# describe the whole week.
+#
+# The overload warning is the exception: Seiler 2010's conclusion is
+# about the number of high-intensity endurance sessions, not the number
+# of runs, so the combined count drives it. Because mean HR
+# underestimates intermittent work, the alternative count can only miss
+# a hard session — it can't invent one, so the warning may fail to fire
+# but will never fire falsely.
+#
+# Two HRmax arguments on purpose: `hr_max` anchors the running metrics
+# (and stays NULL → running anchor when the caller didn't supply one),
+# while `hr_max_alt` is the all-sport anchor the alternative figures and
+# compute_trimp() share. Mixing them would let a session count as hard
+# against one denominator and contribute load against another.
+.day_week_line <- function(summaries, on_date, hr_max = NULL,
+                            hr_rest = NULL, hr_max_alt = NULL) {
+  z3_run <- session_z3_count(summaries, on_date = on_date, days = 7,
+                              hr_max = hr_max)
   z2_28 <- session_z2_fraction(summaries, on_date = on_date, days = 28)
+  alt_week <- .alt_week_stats(summaries, on_date, days = 7,
+                               hr_max = hr_max_alt, hr_rest = hr_rest)
+  z3_alt <- alt_week$hard_count
+  z3_tot <- z3_run + z3_alt
 
   parts <- character()
-  if (z3n >= 3) {
-    parts <- c(parts,
-      sprintf("Veckan: %d hårda pass — håll koll på återhämtningen.", z3n))
-  } else if (z3n == 2) {
-    parts <- c(parts, "Veckan: 2 kvalitetspass, på spåret.")
-  } else if (z3n == 1) {
-    parts <- c(parts, "Veckan: 1 kvalitetspass.")
+  if (z3_tot >= 3) {
+    parts <- c(parts, sprintf(
+      paste("Veckan: %d hårda pass totalt (%d löpning, %d alternativt)",
+            "— håll koll på återhämtningen."),
+      z3_tot, z3_run, z3_alt))
+  } else {
+    if (z3_run == 2) {
+      parts <- c(parts, "Veckan (löpning): 2 kvalitetspass, på spåret.")
+    } else if (z3_run == 1) {
+      parts <- c(parts, "Veckan (löpning): 1 kvalitetspass.")
+    }
+    if (z3_alt >= 1) {
+      parts <- c(parts, sprintf("Plus %d %s alternativpass.", z3_alt,
+                                if (z3_alt == 1) "hårt" else "hårda"))
+    }
   }
 
   if (is.finite(z2_28) && z2_28 > 0.20) {
     parts <- c(parts,
-      sprintf("Mellanzon-andel %d%% senaste 28 dagarna.",
+      sprintf("Mellanzon-andel (löpning) %d%% senaste 28 dagarna.",
               round(z2_28 * 100)))
   }
+
+  dose <- .alt_week_dose_line(alt_week)
+  if (!is.null(dose)) parts <- c(parts, dose)
 
   if (length(parts) == 0) return(NULL)
   paste(parts, collapse = " ")
@@ -268,10 +620,28 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   l_purpose <- .day_purpose_line(cls, n_running)
   if (!is.null(l_purpose)) parts <- c(parts, l_purpose)
 
+  # One all-sport HRmax anchor for every alternative-training figure in
+  # this summary — the same denominator compute_trimp() uses — resolved
+  # once so the day line and the week line can't disagree.
+  hr_max_alt <- hr_max
+  if (is.null(hr_max_alt)) {
+    hr_max_alt <- tryCatch(get_hr_max(summaries, sport = "all"),
+                            error = function(e) NULL)
+  }
+
+  # Alternative training gets its own line, after the running one —
+  # running is the main form, so it speaks first. On a day without
+  # running this line takes the running line's place.
+  alt <- .day_alt_class(todays, summaries, hr_max = hr_max_alt)
+  l_alt <- .day_alt_purpose_line(
+    alt, run_recovery_cost = if (is.null(cls)) NULL else cls$recovery_cost)
+  if (!is.null(l_alt)) parts <- c(parts, l_alt)
+
   l_state <- .day_state_line(summaries, health_daily, date, hr_max, hr_rest)
   if (!is.null(l_state)) parts <- c(parts, l_state)
 
-  l_week <- .day_week_line(summaries, date, hr_max = hr_max)
+  l_week <- .day_week_line(summaries, date, hr_max = hr_max,
+                            hr_rest = hr_rest, hr_max_alt = hr_max_alt)
   if (!is.null(l_week)) parts <- c(parts, l_week)
 
   paste(parts, collapse = " ")

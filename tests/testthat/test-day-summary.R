@@ -37,7 +37,9 @@ test_that("day_summary_prose includes sport mix and dominant type", {
     s("2026-05-08 18:45", "walking", 1.5, 18, hr = 95)
   )
 
-  txt <- day_summary_prose(summaries, date = d)
+  # Anchors passed explicitly: without them the fixture (no garmin_maxHR,
+  # no TRANING_DATA) makes every HRmax and HRrest lookup warn.
+  txt <- day_summary_prose(summaries, date = d, hr_max = 185, hr_rest = 50)
   # Sport mix line present
   expect_match(txt, "Dagens pass")
   expect_match(txt, "löpning 8\\.0 km")
@@ -62,7 +64,9 @@ test_that("day_summary_prose annotates pass-count for repeat sports", {
     mk("2026-05-08 08:00", "cycling", 4.0, 20),
     mk("2026-05-08 17:30", "cycling", 5.5, 30)
   )
-  txt <- day_summary_prose(summaries, date = d)
+  # Anchors passed explicitly: without them the fixture (no garmin_maxHR,
+  # no TRANING_DATA) makes every HRmax and HRrest lookup warn.
+  txt <- day_summary_prose(summaries, date = d, hr_max = 185, hr_rest = 50)
   # "(2 pass)" annotation, total km summed (9.5 km)
   expect_match(txt, "cykling 9\\.5 km \\(2 pass\\)")
 })
