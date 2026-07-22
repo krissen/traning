@@ -137,7 +137,7 @@ ssh kailash 'sudo journalctl -u traning-receiver --since "24h ago" | grep "Avise
 ssh kailash 'sudo journalctl -u traning-garmin --since "24h ago" | grep -iE "new activit|Done"'
 
 # Data repo — what was actually saved?
-ssh kailash 'cd ~/dokument/traning-data && git log --since="24h ago" --format="%ai %s"'
+ssh kailash 'cd ~/dokument/traning-data && git log --since="24 hours ago" --format="%ai %s"'
 
 # Manual Garmin fetch on kailash
 ssh kailash 'TRANING_DATA=~/dokument/traning-data ~/dev/traning/python/.venv/bin/traning fetch garmin -v'
