@@ -28,9 +28,20 @@ test_that(".resolve_sport_bucket expands curated buckets", {
                   c("running", "cycling", "walking", "swimming"))
   expect_setequal(traning:::.resolve_sport_bucket("ballsport"),
                   c("badminton", "bordtennis", "fotboll", "tennis",
-                    "paddelsporter", "hockey", "fitness-spel"))
+                    "hockey", "fitness-spel"))
   expect_setequal(traning:::.resolve_sport_bucket("gym"),
                   c("strength", "karntraning", "ovrigt"))
+})
+
+test_that("ballsport no longer captures paddelsporter", {
+  # Regression: HealthKit's `paddleSports` is canoeing / kayaking /
+  # SUP, not padel — 16 paddling sessions used to be counted as
+  # Bollsport in the sport-mix views.
+  df <- data.frame(sport = c("paddelsporter", "tennis"),
+                   distance = c(4240, 0), stringsAsFactors = FALSE)
+  result <- traning:::.filter_sport(df, "ballsport")
+  expect_equal(nrow(result), 1)
+  expect_equal(result$sport, "tennis")
 })
 
 test_that(".resolve_sport_bucket returns NULL for all/any/NULL", {
@@ -179,7 +190,7 @@ test_that("sport_bucket_members returns curated bucket members", {
                   c("running", "cycling", "walking", "swimming"))
   expect_setequal(sport_bucket_members("ballsport"),
                   c("badminton", "bordtennis", "fotboll", "tennis",
-                    "paddelsporter", "hockey", "fitness-spel"))
+                    "hockey", "fitness-spel"))
   expect_setequal(sport_bucket_members("gym"),
                   c("strength", "karntraning", "ovrigt"))
 })

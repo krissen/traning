@@ -143,8 +143,11 @@ sport_bucket_names <- function() {
 # Curated sport buckets — group several raw sport values under one label.
 .SPORT_BUCKETS <- list(
   endurance = c("running", "cycling", "walking", "swimming"),
+  # "paddelsporter" is NOT padel — HealthKit's `paddleSports` covers
+  # canoeing, kayaking, outrigger and stand-up paddling, so it never
+  # belonged in the racket/ball bucket.
   ballsport = c("badminton", "bordtennis", "fotboll", "tennis",
-                "paddelsporter", "hockey", "fitness-spel"),
+                "hockey", "fitness-spel"),
   wintersport = c("skridskosporter", "snosporter", "utforsakning"),
   gym = c("strength", "karntraning", "ovrigt")
 )
