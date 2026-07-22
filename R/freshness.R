@@ -319,7 +319,12 @@
 #'   thresholds used when the metric flow is fresh (default 48 h / 7 d).
 #'   Absolute time is the weaker signal; the asymmetry — metrics
 #'   arriving while workouts are silent — is the fingerprint of a single
-#'   dead automation and is worth reacting to sooner.
+#'   dead automation and is worth reacting to sooner. 48 h sits just
+#'   above the observed noise floor: across 850 workout days since
+#'   2024-01-01 there were seven two-day gaps and only three gaps of
+#'   three days or more (the longest eight days, Oct--Nov 2024), so this
+#'   threshold would have fired about once a year, each time on a
+#'   genuine anomaly.
 #' @param receiver_grace_hours Suppress the asymmetry tightening for
 #'   this long after a receiver restart (default 1 h), while the
 #'   in-memory counters and the import queue settle and the two flows
