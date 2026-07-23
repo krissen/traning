@@ -204,6 +204,22 @@ test_that("a paddling day gets alternative prose instead of a bare sport line", 
   expect_false(grepl("Vilodag", txt))
 })
 
+test_that("a run plus an NA-sport session still gets a summary", {
+  # Regression (issue-008): str_detect on an NA sport is NA, and the
+  # un-guarded sum made n_running NA, so `n_running > 1` errored and the
+  # whole summary was dropped — a run hidden behind an unmapped session.
+  d <- as.Date("2026-07-21")
+  s <- dplyr::bind_rows(
+    .ms_session("2026-07-21 07:00", "running", km = 8, min = 45, hr = 140,
+                rpe = 30),
+    .ms_session("2026-07-21 18:00", NA_character_, km = 4, min = 40, hr = 120)
+  )
+  txt <- .ms_prose(s, d)
+  expect_false(grepl("Vilodag", txt))
+  expect_match(txt, "löpning 8,0 km")
+  expect_match(txt, "Distanspass")
+})
+
 test_that("a paddling day without HR makes no intensity claim", {
   d <- as.Date("2026-07-21")
   s <- .ms_session("2026-07-21 09:00", "paddelsporter", km = 24, min = 360,

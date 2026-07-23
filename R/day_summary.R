@@ -693,7 +693,13 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   if (!is.null(l_sports)) parts <- c(parts, l_sports)
 
   cls <- .day_running_class(todays, summaries, hr_max = hr_max)
-  n_running <- sum(stringr::str_detect(tolower(todays$sport), "running"))
+  # na.rm: str_detect() returns NA for an NA sport, and without this the
+  # sum is NA and the `n_running > 1` test in .day_purpose_line() errors,
+  # dropping the whole summary. A day with a run plus an unmapped
+  # (NA-sport) session would otherwise get no prose at all — the same
+  # hidden-activity failure as the NANA case, via a different path.
+  n_running <- sum(stringr::str_detect(tolower(todays$sport), "running"),
+                   na.rm = TRUE)
   l_purpose <- .day_purpose_line(cls, n_running)
   if (!is.null(l_purpose)) parts <- c(parts, l_purpose)
 
