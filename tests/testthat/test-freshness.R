@@ -259,6 +259,37 @@ test_that("last_workouts_import (last attempt) is not arrival evidence", {
   expect_equal(fr$flows$workouts$source, "receiver_import_ok")
 })
 
+# A matched pair for the debounce boundary: identical payloads — a
+# pending queue with a stale success stamp — differing ONLY in whether
+# the import timer is armed. Together they prove that an armed timer,
+# not the success stamp's age alone, is what separates a healthy
+# debounce window (first push after a rest) from a wedge.
+
+test_that("a pending queue with a stale success but an armed timer is in progress", {
+  # First workout push after a multi-day rest: success is older than the
+  # stall window, but the debounce timer is armed for an import that will
+  # succeed in ~10 min. Not a wedge. Fails against code that keyed stuck
+  # on the stale success alone.
+  fr <- assess(status_payload = payload(received = 2, import_ok = 24 * 6,
+                                         pending_workouts = 5,
+                                         workouts_timer_armed = TRUE,
+                                         uptime_seconds = 24 * 5 * 3600))
+  expect_equal(fr$flows$workouts$queue_state, "in_progress")
+  expect_equal(fr$flows$workouts$status, "ok")
+})
+
+test_that("the same stale queue with no armed timer is stuck", {
+  # Wedge between pushes: a failed import left the timer at None and
+  # armed no retry, so the same stale success now reads stuck. Only the
+  # timer flag differs from the test above.
+  fr <- assess(status_payload = payload(received = 2, import_ok = 24 * 6,
+                                         pending_workouts = 5,
+                                         workouts_timer_armed = FALSE,
+                                         uptime_seconds = 24 * 5 * 3600))
+  expect_equal(fr$flows$workouts$queue_state, "stuck")
+  expect_equal(fr$flows$workouts$status, "fail")
+})
+
 # The next two tests are a matched pair: identical payloads — null
 # success stamp, no arrival evidence, a pending queue — differing ONLY
 # in uptime. Together they prove that the stuck/in_progress boundary

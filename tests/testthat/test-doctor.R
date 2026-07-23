@@ -190,13 +190,14 @@ freshness_now <- as.POSIXct("2026-07-21 21:30:00", tz = "")
 # `import_ok` defaults to it and is overridden only for a wedge.
 freshness_payload <- function(received = NULL, workouts = NULL,
                                now = freshness_now, pending_workouts = 0,
-                               import_ok = workouts) {
+                               import_ok = workouts, timer_armed = FALSE) {
   iso <- function(h) format(now - as.difftime(h, units = "hours"),
                              "%Y-%m-%dT%H:%M:%S")
   list(last_received = if (is.null(received)) NULL else iso(received),
        last_workouts_import = if (is.null(workouts)) NULL else iso(workouts),
        last_workouts_import_ok = if (is.null(import_ok)) NULL else iso(import_ok),
-       pending_workouts = pending_workouts)
+       pending_workouts = pending_workouts,
+       workouts_timer_armed = timer_armed)
 }
 
 # Pin the inbox directories away from the real data root so the check
@@ -255,6 +256,20 @@ test_that("check_data_freshness fails on a poison-message wedge", {
   expect_equal(res$status, "fail")
   expect_equal(res$details$flows$workouts$queue_state, "stuck")
   expect_equal(res$details$flows$workouts$source, "receiver_import_ok")
+})
+
+test_that("check_data_freshness does not alarm during a healthy debounce window", {
+  # First push after a multi-day rest: stale success but the import timer
+  # is armed, so the import is scheduled and will succeed shortly. Doctor
+  # must not fire a false stuck alarm in that ~10 min window.
+  res <- check_freshness(
+    status_payload = freshness_payload(2, import_ok = 24 * 6,
+                                        pending_workouts = 5,
+                                        timer_armed = TRUE),
+    health_daily = tibble::tibble(),
+    summaries = tibble::tibble())
+  expect_equal(res$details$flows$workouts$queue_state, "in_progress")
+  expect_equal(res$status, "ok")
 })
 
 test_that("check_data_freshness stays ok while a backfill drains", {

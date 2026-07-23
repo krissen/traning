@@ -606,7 +606,26 @@ data_freshness <- function(health_daily = NULL,
   } else {
     Inf
   }
-  import_stalled <- pending && success_age > workout_import_stale_hours
+  # An armed debounce timer means an import is scheduled and about to
+  # run, so a pending queue with a stale success is in_progress, not
+  # stuck — the classic case is the first workout push after a multi-day
+  # rest: pending > 0, success older than the window, but the timer is
+  # armed for an import that will succeed in ~10 min. Stuck therefore
+  # requires the timer to be OFF as well.
+  #
+  # This does not reopen the wedge hole. A failed import sets the timer
+  # to None and arms no retry until the next push
+  # (python/traning_cli/server/app.py), so during a persistent wedge the
+  # timer is armed only in the brief window right after each push and is
+  # None the rest of the time between pushes. Since pushes are sparse
+  # (workouts arrive only when training happens), the timer reads None
+  # for the overwhelming majority of the interval, so a doctor run or the
+  # 21:30 summary still lands on stuck and alarms. The sole miss is a
+  # check firing in the minutes just after a push during a wedge, which
+  # mirrors the restart-grace third-order risk.
+  timer_armed <- isTRUE(status_payload[["workouts_timer_armed"]])
+  import_stalled <- pending && success_age > workout_import_stale_hours &&
+    !timer_armed
   workouts_flow <- .freshness_annotate_queue(
     workouts_flow, pending, import_stalled, last_import_ok, now)
 
