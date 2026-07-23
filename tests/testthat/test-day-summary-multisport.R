@@ -219,6 +219,38 @@ test_that("a run plus an NA-sport session still gets a summary", {
   expect_match(txt, "Distanspass")
 })
 
+test_that("an active day whose rows lack the HR column still gets a summary", {
+  # Regression (issue-006 P2): .day_sport_units() read avgHeartRateMoving
+  # unconditionally, so a legacy/manual summaries frame without that
+  # column crashed day_summary_prose() and the "Tidigare idag" line
+  # before reaching the intended no-HR path. A missing HR column must
+  # degrade like a missing HR value.
+  d <- as.Date("2026-07-21")
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(c("2026-07-21 09:00", "2026-07-21 18:00"),
+                              tz = "UTC"),
+    sport = c("cycling", "walking"),
+    distance = c(20000, 3000),
+    avgPaceMoving = NA_real_,
+    durationMoving = as.difftime(c(60, 30), units = "mins")
+  )
+  expect_false("avgHeartRateMoving" %in% names(s))
+  txt <- .ms_prose(s, d)
+  expect_false(grepl("Vilodag", txt))
+  expect_match(txt, "cykling 20,0 km")
+  # No invented intensity — the no-HR path, reached rather than crashed
+  expect_false(grepl("lugnt|hårt|mellanzon", txt, ignore.case = TRUE))
+
+  # The shared "Tidigare idag" surface takes the same frame
+  ctx <- traning:::.session_today_context_line(s)
+  expect_match(ctx, "Tidigare idag: cykling 20,0 km")
+
+  # Distance column absent too → time-only, still no crash
+  s2 <- s
+  s2$distance <- NULL
+  expect_match(.ms_prose(s2, d), "cykling 60 min")
+})
+
 test_that("a paddling day without HR makes no intensity claim", {
   d <- as.Date("2026-07-21")
   s <- .ms_session("2026-07-21 09:00", "paddelsporter", km = 24, min = 360,

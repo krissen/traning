@@ -58,6 +58,20 @@
     return(empty)
   }
 
+  # avgHeartRateMoving and distance are optional measurement columns: a
+  # legacy or manual summaries frame can carry sessionStart / duration /
+  # sport without them. The classifier already treats a missing HR value
+  # as NA, so a missing HR *column* must degrade the same way rather than
+  # crash the whole summary (same class as the n_running NA guard). Add
+  # them as NA up front so the mutate below never looks up an absent
+  # column.
+  if (!"avgHeartRateMoving" %in% names(sessions)) {
+    sessions$avgHeartRateMoving <- NA_real_
+  }
+  if (!"distance" %in% names(sessions)) {
+    sessions$distance <- NA_real_
+  }
+
   df <- sessions %>%
     dplyr::mutate(
       .date = as.Date(.data$sessionStart),
