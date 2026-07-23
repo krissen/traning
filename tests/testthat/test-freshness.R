@@ -268,14 +268,30 @@ test_that("a queue whose import never succeeded since boot alarms once uptime pa
   expect_equal(fr$flows$workouts$queue_state, "stuck")
 })
 
-test_that("a queue resumed into a just-booted receiver is not yet stuck", {
+test_that("a queue resumed into a just-booted receiver reads ok, not stuck", {
   # After a restart the pending state is resumed but no import has run
-  # yet. With no success timestamp and a small uptime, this is a
-  # backfill about to start, not a wedge.
+  # yet, so there is no success timestamp and no arrival evidence at all
+  # (no inbox in this hermetic payload). The verdict must follow the
+  # queue state — a backfill about to start is a live feed — not the raw
+  # arrival evidence, which is unknown here. This fails against code that
+  # left in_progress carrying the arrival verdict.
   fr <- assess(status_payload = payload(received = 2, import_ok = NULL,
                                          pending_workouts = 40,
                                          uptime_seconds = 300))
   expect_equal(fr$flows$workouts$queue_state, "in_progress")
+  expect_equal(fr$flows$workouts$status, "ok")
+  expect_true(fr$flows$workouts$ok)
+})
+
+test_that("a remote doctor with only /v1/status does not alarm on a working queue", {
+  # No inbox, no summaries — only the receiver's status. A queue being
+  # imported (fresh success) must read ok even though arrival evidence
+  # is otherwise absent.
+  fr <- assess(status_payload = payload(received = 2, import_ok = 1,
+                                         pending_workouts = 40),
+               workouts_dir = tempfile())
+  expect_equal(fr$flows$workouts$queue_state, "in_progress")
+  expect_equal(fr$flows$workouts$status, "ok")
 })
 
 test_that("the import-stall window is a parameter", {

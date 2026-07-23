@@ -267,6 +267,25 @@ test_that("check_data_freshness stays ok while a backfill drains", {
   expect_equal(res$details$flows$workouts$queue_state, "in_progress")
 })
 
+test_that("check_data_freshness does not alarm on a queue resumed after restart", {
+  # The mirror of the wedge: a receiver just restarted with a persisted
+  # queue and no successful import yet, and (as on a remote host) no
+  # inbox to read. The arrival verdict is null, but a queue being worked
+  # is a live feed — doctor must stay green. This fails against code
+  # that left in_progress carrying the raw arrival verdict.
+  res <- check_freshness(
+    status_payload = list(last_received = format(
+                            freshness_now - as.difftime(2, units = "hours"),
+                            "%Y-%m-%dT%H:%M:%S"),
+                          last_workouts_import_ok = NULL,
+                          pending_workouts = 40,
+                          uptime_seconds = 300),
+    health_daily = tibble::tibble(),
+    summaries = tibble::tibble())
+  expect_equal(res$details$flows$workouts$queue_state, "in_progress")
+  expect_equal(res$details$flows$workouts$status, "ok")
+})
+
 test_that("check_data_freshness warns past the metric threshold", {
   res <- check_freshness(status_payload = freshness_payload(48, 3),
                           health_daily = tibble::tibble(),

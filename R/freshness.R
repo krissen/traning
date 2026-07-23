@@ -355,7 +355,25 @@
   if (!pending) return(flow)
   label <- .FRESHNESS_FLOW_SV[[flow$flow]]
 
+  # The verdict follows queue_state, not the raw arrival evidence, so
+  # the two cannot contradict each other. Both branches override status:
+  # in_progress forces ok, stuck forces fail.
   if (!import_stalled) {
+    # Force ok: an imports-are-keeping-up queue is a live-but-incomplete
+    # feed, but the arrival verdict can read unknown/fail when the only
+    # arrival signal is null — a receiver just restarted with a resumed
+    # queue, or a remote doctor that can reach /v1/status but not the
+    # inbox. Doctor must not alarm on a queue that is being worked.
+    #
+    # This cannot mask a wedge. import_stalled is FALSE here, which for a
+    # never-succeeded queue (null success) requires uptime < the stall
+    # window — i.e. only inside the post-restart grace. A wedge that
+    # persists past that window has success_age > the window and is
+    # classified stuck, not in_progress. The sole overlap is a wedge in
+    # the minutes after a restart, which Nagelfar rated third-order
+    # (kailash does not restart at that cadence).
+    flow$status <- "ok"
+    flow$ok <- TRUE
     flow$queue_state <- "in_progress"
     flow$in_flight <- TRUE
     flow$prose_pending <- sprintf(
