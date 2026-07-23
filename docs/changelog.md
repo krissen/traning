@@ -17,9 +17,10 @@ underlaget saknas.
   pass kommer bara när du tränat, och tolereras i fyra dygn. Fortsätter
   hälsodata strömma in medan passen uteblir skärps den gränsen till två
   dygn — det mönstret betyder nästan alltid att en enskild automation
-  har slutat fungera, inte att du vilat. En import som fastnat — data
-  har tagits emot men inte kunnat läsas in — larmar också, i stället
-  för att den väntande kön får det att se ut som om allt flödar.
+  har slutat fungera, inte att du vilat. En import som fastnat — pass
+  tas emot men kan inte läsas in — larmar också, även när nya pass
+  fortsätter komma in, i stället för att den växande kön får det att se
+  ut som om allt flödar.
 - **Kvällssummeringen påstår inte längre vila utan täckning.** En dag
   utan registrerade pass skrivs numera som "Inga registrerade pass" med
   besked om att underlaget saknas, i stället för "Vilodag.", när
