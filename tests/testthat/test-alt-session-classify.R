@@ -155,15 +155,17 @@ test_that("classify_alt_session anchors HRmax on all sports, not running", {
 # --- Modality and HR reliability --------------------------------------------
 
 test_that("modality and HR reliability classify the known sports", {
-  for (s in c("cycling", "walking", "swimming", "paddelsporter", "rodd",
-              "skridskosporter")) {
+  for (s in c("cycling", "walking", "swimming", "paddelsporter", "rodd")) {
     expect_equal(traning:::.sport_modality(s), "aerobic", info = s)
     expect_equal(traning:::.sport_hr_reliability(s), "continuous", info = s)
   }
+  # skridskosporter is deliberately in the cautious branch: HealthKit's
+  # "Skating Sports" mixes long-distance skating with figure/inline
+  # skating, so figure skating must not inherit "bygger aerob bas".
   for (s in c("strength", "karntraning", "yoga", "sinne_&_kropp",
               "badminton", "bordtennis", "tennis", "fotboll", "hockey",
               "fitness-spel", "bagskytte", "ovrigt", "snosporter",
-              "utforsakning")) {
+              "utforsakning", "skridskosporter")) {
     expect_equal(traning:::.sport_modality(s), "other", info = s)
     expect_equal(traning:::.sport_hr_reliability(s), "intermittent", info = s)
   }

@@ -46,9 +46,16 @@
 # endurance modalities, so a strength or yoga session must not inherit
 # "bygger aerob bas". Unknown sports fall in `other`, the more cautious
 # branch.
+#
+# `skridskosporter` is deliberately NOT here: HealthKit's "Skating
+# Sports" mixes long-distance skating (aerobic) with figure and inline
+# skating, and the sessions can't be told apart from the name — the same
+# reason it stays in the `wintersport` bucket rather than `endurance`
+# (R/sport_filter.R). Leaving it in `other` means figure skating never
+# inherits "bygger aerob bas".
 .SPORT_MODALITY <- list(
   aerobic = c("running", "cycling", "walking", "swimming", "paddelsporter",
-              "rodd", "skridskosporter")
+              "rodd")
 )
 
 # Mean-HR reliability per modality. For intermittent work mean HR
@@ -56,9 +63,12 @@
 # `hard` verdict is a lower bound we can trust while a `low` verdict is
 # not something to build prose on. Used by the prose layer, not by the
 # classification itself.
+# `skridskosporter` is intermittent here for the same reason it is
+# `other` above: a low verdict on mixed skating shouldn't be trusted
+# enough to say "lugnt".
 .SPORT_HR_RELIABILITY <- list(
   continuous = c("running", "cycling", "walking", "swimming",
-                 "paddelsporter", "rodd", "skridskosporter")
+                 "paddelsporter", "rodd")
 )
 
 #' Modality family for a sport value
