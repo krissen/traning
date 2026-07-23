@@ -22,6 +22,19 @@
 #   Source: research/_analys/hr-zone-distribution__primer.md §5 (Treff2019)
 #           research/_analys/hr-zone-distribution__implications.md §Q.
 
+# Shared %HRmax anchors for the 3-zone research model. ~82% HRmax
+# approximates VT1, ~88% HRmax approximates VT2 (Seiler 2010 Table 1:
+# zone 3 = 82-87%, zone 4 = 88-92%). Both the running fallback in
+# .classify_from_hr_avg() below and the generic .alt_intensity_band()
+# in R/alt_session_classify.R break on these, so the two taxonomies
+# cannot drift apart.
+#
+# Stanley 2013 puts the high-intensity boundary at >90% HRmax rather
+# than 88%; the discrepancy is real and we keep 88% for internal
+# consistency with the zone-collapse above.
+.HR_PCT_VT1 <- 0.82
+.HR_PCT_VT2 <- 0.88
+
 # ---- Internal: zone-time helpers -------------------------------------------
 
 # Pull seconds-in-zone from a summaries row, returning a length-5 numeric
@@ -222,9 +235,9 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
     if (duration_min > 90)       "long"
     else if (duration_min >= 40) "endurance"
     else                          "recovery"
-  } else if (hr_pct < 0.82) {
+  } else if (hr_pct < .HR_PCT_VT1) {
     if (duration_min >= 90) "long" else "endurance"
-  } else if (hr_pct < 0.88) {
+  } else if (hr_pct < .HR_PCT_VT2) {
     "tempo"
   } else if (hr_pct < 0.92) {
     "threshold_intervals"

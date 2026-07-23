@@ -1850,10 +1850,11 @@ render_taper_plan_prose <- function(plan) {
                      sprintf("Tävling: %s", format(race_date)))
   }
   if (length(distance_km) && !is.na(distance_km)) {
-    header_bits <- c(header_bits, sprintf("%.1f km", distance_km))
+    header_bits <- c(header_bits, sprintf("%s km", fmt_dec_sv(distance_km)))
   }
   header_bits <- c(header_bits,
-                   sprintf("baseline %.1f km/v (4v median)", baseline))
+                   sprintf("baseline %s km/v (4v median)",
+                           fmt_dec_sv(baseline)))
   lines <- paste(header_bits, collapse = " — ")
 
   for (i in seq_len(nrow(plan))) {
@@ -1865,8 +1866,8 @@ render_taper_plan_prose <- function(plan) {
       build = sprintf("Bygg (%s)",      week_iso)
     )
     lines <- c(lines,
-               sprintf("  %s: %.1f km (%.0f %% av baseline)",
-                       label, row$target_km,
+               sprintf("  %s: %s km (%.0f %% av baseline)",
+                       label, fmt_dec_sv(row$target_km),
                        100 * row$relative_to_baseline))
   }
   paste(lines, collapse = "\n")
@@ -2065,15 +2066,17 @@ compute_race_readiness <- function(data, target_date,
     c0 <- components$ctl_trend
     arrow <- if (c0$delta >= 1) "↑" else if (c0$delta <= -1) "↓" else "→"
     lines <- c(lines, sprintf(
-      "  CTL (fitness): %.0f → %.0f %s (delta %+.1f, 28d)",
-      c0$raw_baseline, c0$raw_today, arrow, c0$delta
+      "  CTL (fitness): %.0f → %.0f %s (delta %s, 28d)",
+      c0$raw_baseline, c0$raw_today, arrow,
+      fmt_dec_sv(c0$delta, signed = TRUE)
     ))
   }
   if (!is.null(components$tsb_projection)) {
     c0 <- components$tsb_projection
     lines <- c(lines, sprintf(
-      "  TSB (form): nu %+.1f, projektion på tävlingsdagen %+.1f",
-      c0$raw_today, c0$raw_projected
+      "  TSB (form): nu %s, projektion på tävlingsdagen %s",
+      fmt_dec_sv(c0$raw_today, signed = TRUE),
+      fmt_dec_sv(c0$raw_projected, signed = TRUE)
     ))
   }
   .bdays <- function(c0) {
@@ -2082,15 +2085,18 @@ compute_race_readiness <- function(data, target_date,
   if (!is.null(components$hrv_stability)) {
     c0 <- components$hrv_stability
     lines <- c(lines, sprintf(
-      "  HRV: 7d %.1f vs %dd %.1f (%+.1f ms)",
-      c0$raw_today, .bdays(c0), c0$raw_baseline, c0$delta
+      "  HRV: 7d %s vs %dd %s (%s ms)",
+      fmt_dec_sv(c0$raw_today), .bdays(c0),
+      fmt_dec_sv(c0$raw_baseline),
+      fmt_dec_sv(c0$delta, signed = TRUE)
     ))
   }
   if (!is.null(components$resting_hr_stability)) {
     c0 <- components$resting_hr_stability
     lines <- c(lines, sprintf(
-      "  Vilopuls: 7d %.0f vs %dd %.0f (%+.1f bpm)",
-      c0$raw_today, .bdays(c0), c0$raw_baseline, c0$delta
+      "  Vilopuls: 7d %.0f vs %dd %.0f (%s bpm)",
+      c0$raw_today, .bdays(c0), c0$raw_baseline,
+      fmt_dec_sv(c0$delta, signed = TRUE)
     ))
   }
 

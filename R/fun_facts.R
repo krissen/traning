@@ -103,8 +103,8 @@ compute_fun_facts <- function(summaries) {
       dplyr::slice_max(.data$distance, n = 1, with_ties = FALSE)
     out$longest_run <- list(
       string = sprintf(
-        "Längsta löpningen: %.1f km (%s).",
-        longest$distance / 1000,
+        "Längsta löpningen: %s km (%s).",
+        fmt_dec_sv(longest$distance / 1000),
         format(longest$sessionStart, "%Y-%m-%d")),
       value  = as.numeric(longest$distance) / 1000
     )
@@ -120,9 +120,9 @@ compute_fun_facts <- function(summaries) {
       dplyr::slice_min(.data$avgPaceMoving, n = 1, with_ties = FALSE)
     out$fastest_run <- list(
       string = sprintf(
-        "Snabbaste löpturen (>5 km): %s/km på %.1f km (%s).",
+        "Snabbaste löpturen (>5 km): %s/km på %s km (%s).",
         dec_to_mmss(fastest$avgPaceMoving),
-        fastest$distance / 1000,
+        fmt_dec_sv(fastest$distance / 1000),
         format(fastest$sessionStart, "%Y-%m-%d")),
       value  = as.numeric(fastest$avgPaceMoving)
     )

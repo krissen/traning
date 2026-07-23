@@ -158,8 +158,8 @@ def get_training_load(
         plot: If True, return the corresponding chart (PNG).
         sport: Sport bucket. Default depends on metric (see above).
             Examples: 'running', 'cycling', 'walking', 'strength',
-            'all', 'endurance' (running+cycling+walking+swimming).
-            See vayu://sports.
+            'all', 'endurance' (running+cycling+walking+swimming
+            +paddelsporter+rodd). See vayu://sports.
     """
     metric = metric.lower()
     report_map = {
@@ -1365,17 +1365,21 @@ def resource_sports() -> str:
         "",
         "- löpning / lopning → running",
         "- cykling / cykel → cycling",
-        "- gång / gang / promenad → walking",
+        "- gång / gang / promenad / vandring → walking",
         "- simning → swimming",
         "- styrka / styrketräning → strength",
+        "- paddling / paddel / kajak / kanot → paddelsporter",
+        "- skridsko → skridskosporter",
         "",
         "## Curated buckets",
         "",
         "- **endurance** = running + cycling + walking + swimming",
+        "  + paddelsporter + rodd",
         "- **ballsport** = badminton + bordtennis + fotboll + tennis",
-        "  + paddelsporter + hockey + fitness-spel",
+        "  + hockey + fitness-spel",
         "- **wintersport** = skridskosporter + snosporter + utforsakning",
-        "- **gym** = strength + karntraning + ovrigt",
+        "- **gym** = strength + karntraning + yoga + sinne_&_kropp",
+        "  + ovrigt",
         "",
         "## Special values (no filter)",
         "",

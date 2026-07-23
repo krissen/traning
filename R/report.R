@@ -14,7 +14,8 @@
 #' @param n_imported Number of workouts imported
 #' @export
 report_mostrecent <- function(summaries, n_imported) {
-  tot_km <- round(sum(summaries$distance, na.rm = TRUE) / 1000, 1)
+  tot_km <- fmt_dec_sv(sum(summaries$distance, na.rm = TRUE) / 1000,
+                        trim_zero = TRUE)
   dates <- range(as.Date(summaries$sessionStart))
   date_str <- if (dates[1] == dates[2]) {
     format(dates[1], "%d %b")

@@ -9,17 +9,31 @@
 # user-facing prose (push notifications, headers).  Falls back to a
 # generic "Aktivitet" when an unmapped value is passed.
 .SPORT_LABELS_SV <- list(
-  "running"      = "Löpning",
-  "cycling"      = "Cykling",
-  "walking"      = "Gång",
-  "swimming"     = "Simning",
-  "strength"     = "Styrketräning",
-  "karntraning"  = "Kärnträning",
-  "ovrigt"       = "Aktivitet",
-  "endurance"    = "Konditionspass",
-  "ballsport"    = "Bollsport",
-  "wintersport"  = "Vintersport",
-  "gym"          = "Gymträning"
+  "running"        = "Löpning",
+  "cycling"        = "Cykling",
+  "walking"        = "Gång",
+  "swimming"       = "Simning",
+  "paddelsporter"  = "Paddling",
+  "rodd"           = "Rodd",
+  "skridskosporter" = "Skridsko",
+  "snosporter"     = "Snösport",
+  "utforsakning"   = "Utförsåkning",
+  "strength"       = "Styrketräning",
+  "karntraning"    = "Kärnträning",
+  "yoga"           = "Yoga",
+  "sinne_&_kropp"  = "Sinne & kropp",
+  "badminton"      = "Badminton",
+  "bordtennis"     = "Bordtennis",
+  "tennis"         = "Tennis",
+  "fotboll"        = "Fotboll",
+  "hockey"         = "Hockey",
+  "fitness-spel"   = "Konditionsspel",
+  "bagskytte"      = "Bågskytte",
+  "ovrigt"         = "Aktivitet",
+  "endurance"      = "Konditionspass",
+  "ballsport"      = "Bollsport",
+  "wintersport"    = "Vintersport",
+  "gym"            = "Gymträning"
 )
 
 #' Swedish display label for a sport bucket
@@ -29,6 +43,10 @@
 .sport_label_sv <- function(sport) {
   if (is.null(sport) || length(sport) == 0) return("Aktivitet")
   if (length(sport) > 1) return("Aktivitet")
+  # NA / blank → generic label. Without this guard the title-case
+  # fallback returns "NANA" (paste0(NA, NA)), which the alternative-
+  # training line then renders as a whole sentence.
+  if (is.na(sport) || !nzchar(sport)) return("Aktivitet")
   s_lower <- tolower(sport)
   # "all"/"any" are sentinels — treat them case-insensitively so
   # "All"/"ANY" don't slip through as literal sport names.
@@ -141,12 +159,24 @@ sport_bucket_names <- function() {
 }
 
 # Curated sport buckets — group several raw sport values under one label.
+#
+# Membership criteria for `endurance`: continuous aerobic load, mean HR
+# is a usable intensity proxy, and the session produces a distance.
+# Paddling and rowing qualify; intermittent modalities (ball sports,
+# strength, yoga) and downhill/snow sports do not. "skridskosporter"
+# stays in `wintersport` because HealthKit's "Skating Sports" mixes
+# long-distance skating with figure skating and inline skating, and the
+# sessions can't be told apart from the name alone.
 .SPORT_BUCKETS <- list(
-  endurance = c("running", "cycling", "walking", "swimming"),
+  endurance = c("running", "cycling", "walking", "swimming",
+                "paddelsporter", "rodd"),
+  # "paddelsporter" is NOT padel — HealthKit's `paddleSports` covers
+  # canoeing, kayaking, outrigger and stand-up paddling, so it never
+  # belonged in the racket/ball bucket.
   ballsport = c("badminton", "bordtennis", "fotboll", "tennis",
-                "paddelsporter", "hockey", "fitness-spel"),
+                "hockey", "fitness-spel"),
   wintersport = c("skridskosporter", "snosporter", "utforsakning"),
-  gym = c("strength", "karntraning", "ovrigt")
+  gym = c("strength", "karntraning", "yoga", "sinne_&_kropp", "ovrigt")
 )
 
 # Swedish → canonical English aliases for the sport-column values.
@@ -160,7 +190,16 @@ sport_bucket_names <- function() {
   "promenad" = "walking",
   "simning"  = "swimming",
   "styrka"   = "strength",
-  "styrketräning" = "strength"
+  "styrketräning" = "strength",
+  # Canonical values stay as the HAE slugs (they are persisted in the
+  # RData cache); the aliases only make natural search words work from
+  # the CLI and the Shiny selector.
+  "paddling" = "paddelsporter",
+  "paddel"   = "paddelsporter",
+  "kajak"    = "paddelsporter",
+  "kanot"    = "paddelsporter",
+  "skridsko" = "skridskosporter",
+  "vandring" = "walking"
 )
 
 #' Resolve a sport argument to a vector of raw sport-column values

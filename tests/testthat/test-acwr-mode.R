@@ -85,7 +85,8 @@ test_that("compute_acwr auto-mode handles case variants and aliases", {
 
 test_that("compute_acwr auto-mode picks TRIMP for multi-sport composites", {
   df <- .acwr_summaries()
-  # "endurance" resolves to 4 sports (running+cycling+walking+swimming);
+  # "endurance" resolves to several sports (running+cycling+walking+
+  # swimming+paddelsporter+rodd);
   # km doesn't compose across these, so auto-mode must pick TRIMP.
   r_end <- compute_acwr(df, sport = "endurance",
                          hr_max = 185, hr_rest = 50)
