@@ -194,13 +194,22 @@
   list(ts = .na_time(), source = NA_character_)
 }
 
-# Is the receiver holding workouts it has received but not yet
-# imported? After the phone app is reopened it backfills the whole
-# gap in chronological chunks — 216 files were queued at once on
-# 2026-07-21 — and during that catch-up the last *import* timestamp
-# still points at the old data. Deliveries in flight are the opposite
-# of a dead feed, so this counts as arrival evidence.
-.freshness_backfill_in_flight <- function(status_payload) {
+# Is the receiver holding workouts it has received but not yet imported?
+# After the phone app is reopened it backfills the whole gap in
+# chronological chunks — 216 files were queued at once on 2026-07-21.
+#
+# This is *not* evidence of arrival, only of non-consumption. The two
+# coincide during a live backfill but part ways when an import fails:
+# the receiver leaves pending_workouts non-zero on a failed run
+# (python/traning_cli/server/app.py:348-350) and does not re-arm the
+# timer until the next push, so a stuck backlog reports a non-zero
+# queue with no timer and no new arrivals — indefinitely. An earlier
+# version treated any non-zero queue as freshness, which made a broken
+# importer look healthy forever: the very failure mode this module
+# exists to catch, rebuilt one level in. So the caller reads arrival
+# evidence first and only consults the queue to tell "in progress"
+# apart from "stuck".
+.freshness_queue_pending <- function(status_payload) {
   pending <- suppressWarnings(
     as.numeric(status_payload[["pending_workouts"]] %||% NA_real_))
   armed <- isTRUE(status_payload[["workouts_timer_armed"]])
@@ -244,26 +253,15 @@
 # "unknown" outranks "ok" (we could not measure at all) but not "warn".
 .FRESHNESS_RANK <- c(ok = 0L, unknown = 1L, warn = 2L, fail = 3L)
 
+# Assess a flow on arrival evidence alone. The receiver's queue is
+# deliberately absent here: it measures non-consumption, not arrival,
+# and folding it in is what let a wedged importer read as fresh. The
+# queue is applied afterwards by .freshness_annotate_queue().
 .freshness_assess_flow <- function(flow, tiers, now,
                                     warn_hours, fail_hours,
-                                    tightened = FALSE,
-                                    in_flight = FALSE) {
+                                    tightened = FALSE) {
   label <- .FRESHNESS_FLOW_SV[[flow]]
   newest <- .freshness_newest(tiers)
-
-  # Undelivered work in the receiver's queue answers two different
-  # questions with opposite signs, so the flow reports both. "Is the
-  # feed alive?" — yes, demonstrably, which is what the doctor check
-  # asks and why `status` stays ok. "Is the material complete?" — no,
-  # there is data the summary has not consumed yet, which is what the
-  # evening prose asks before it dares call a day a rest day. A flow
-  # can be healthy and the basis still too thin to claim rest.
-  prose_pending <- if (in_flight) {
-    sprintf("%s håller fortfarande på att läsas in, så underlaget är ofullständigt än.",
-            label)
-  } else {
-    NULL
-  }
 
   if (is.na(newest$ts)) {
     return(list(
@@ -271,13 +269,13 @@
       last_data = .na_time(), age_hours = NA_real_,
       source = NA_character_,
       warn_hours = warn_hours, fail_hours = fail_hours,
-      tightened = tightened, in_flight = in_flight,
+      tightened = tightened, queue_state = "clear", in_flight = FALSE,
       message = sprintf(
         "%s: no signal — receiver silent and nothing on disk.", flow),
       prose = sprintf(
         "%s går inte att verifiera, så underlaget kan vara ofullständigt.",
         label),
-      prose_pending = prose_pending
+      prose_pending = NULL
     ))
   }
 
@@ -325,9 +323,58 @@
     flow = flow, status = status, ok = status == "ok",
     last_data = newest$ts, age_hours = age, source = newest$source,
     warn_hours = warn_hours, fail_hours = fail_hours,
-    tightened = tightened, in_flight = in_flight,
-    message = message, prose = prose, prose_pending = prose_pending
+    tightened = tightened, queue_state = "clear", in_flight = FALSE,
+    message = message, prose = prose, prose_pending = NULL
   )
+}
+
+# Fold the receiver's workout queue into a flow already judged on
+# arrival evidence, yielding one of three explicit states:
+#
+#   in_progress  queue pending AND a recent arrival — the backlog is
+#                draining, the feed is alive. Doctor keeps the ok
+#                status; the evening prose says the basis is not yet
+#                complete rather than calling the day a rest day.
+#   stuck        queue pending but no recent arrival — a push landed
+#                and its import failed, and nothing has arrived since.
+#                The stale verdict stands (doctor alarms), but the
+#                prose must say the data came in and could not be read,
+#                not that it never came.
+#   clear        no queue — leave the verdict exactly as assessed.
+#
+# "Recent arrival" is just the flow already being ok: a queue only
+# becomes non-empty because a push landed and wrote a file, so a truly
+# live backfill always leaves fresh arrival evidence. That means the
+# in_progress/stuck split needs no stored history — "is the queue
+# moving?" is answered by "did anything arrive recently?", which is
+# already measured.
+.freshness_annotate_queue <- function(flow, pending, now) {
+  if (!pending) return(flow)
+  label <- .FRESHNESS_FLOW_SV[[flow$flow]]
+
+  if (isTRUE(flow$ok)) {
+    flow$queue_state <- "in_progress"
+    flow$in_flight <- TRUE
+    flow$prose_pending <- sprintf(
+      "%s håller fortfarande på att läsas in, så underlaget är ofullständigt än.",
+      label)
+    return(flow)
+  }
+
+  flow$queue_state <- "stuck"
+  flow$in_flight <- FALSE
+  when <- .freshness_date_sv(flow$last_data, reference = now)
+  flow$prose <- if (is.na(when)) {
+    sprintf("%s har kommit in men kan inte läsas in, så underlaget är ofullständigt.",
+            label)
+  } else {
+    sprintf(paste("%s har kommit in men inte kunnat läsas in sedan %s,",
+                  "så underlaget är ofullständigt."),
+            label, when)
+  }
+  flow$message <- paste0(flow$message,
+                          " [queue stuck: pending workouts not imported]")
+  flow
 }
 
 # --- Public entry point ------------------------------------------------------
@@ -344,12 +391,12 @@
 #'     \code{last_received}. That field is bumped by \emph{any} inbound
 #'     push, workouts included, so it cannot prove this flow
 #'     specifically and only serves a host with no data root.}
-#'   \item{\code{workouts}}{Apple Health workout pushes. Evidence: a
-#'     backfill in flight (\code{pending_workouts}), the receiver's
-#'     \code{last_workouts_import}, or the newest file in the workouts
-#'     inbox; failing all three, the newest \code{sessionStart} (which
-#'     also covers the separate Garmin pipeline, so it cannot prove
-#'     this flow either).}
+#'   \item{\code{workouts}}{Apple Health workout pushes. Evidence: the
+#'     receiver's \code{last_workouts_import} or the newest file in the
+#'     workouts inbox; failing both, the newest \code{sessionStart}
+#'     (which also covers the separate Garmin pipeline, so it cannot
+#'     prove this flow either). The receiver's pending queue is not
+#'     arrival evidence — see the queue states below.}
 #' }
 #'
 #' Evidence is tiered rather than pooled: a weaker proxy never competes
@@ -360,6 +407,15 @@
 #' of what arrived. After an outage the phone backfills chronologically,
 #' so a file delivered a minute ago may carry a seven-week-old workout;
 #' judged on content that live feed would read as dead.
+#'
+#' The workout flow additionally carries a \code{queue_state} derived
+#' from the receiver's pending count and the arrival verdict:
+#' \code{"in_progress"} (queue draining with fresh arrivals — alive but
+#' incomplete), \code{"stuck"} (queue non-empty with no recent arrival —
+#' an import that failed and never retried, which must alarm), or
+#' \code{"clear"}. The queue is an annotation, not arrival evidence:
+#' treating a non-empty queue as freshness made a wedged importer look
+#' healthy forever.
 #'
 #' Thresholds and Swedish wording live here so the doctor check
 #' (\code{check_data_freshness()}) and the day-summary prose agree.
@@ -467,20 +523,15 @@ data_freshness <- function(health_daily = NULL,
   uptime <- .freshness_uptime(status_payload)
   settled <- is.na(uptime) || uptime >= receiver_grace_hours * 3600
   tightened <- identical(metrics_flow$status, "ok") && settled
-  # Deliveries the receiver has taken in but not yet imported. Note the
-  # tense: this is about undelivered work right now, not about a flush
-  # that recently completed — an emptied queue must leave a genuine rest
-  # day alone.
-  backfilling <- .freshness_backfill_in_flight(status_payload)
   workouts_flow <- .freshness_assess_flow(
     "workouts",
     list(
-      # Strongest evidence, all arrival-based: a queued import proves
-      # deliveries are happening right now, last_workouts_import is
-      # in-memory and resets on every receiver restart, and the inbox
-      # mtime is the durable half of the same evidence.
-      list(pending_import = if (backfilling) now else .na_time(),
-           receiver_import = .parse_iso_time(
+      # Arrival evidence only. last_workouts_import is in-memory and
+      # resets on every receiver restart; the inbox mtime is the durable
+      # half of the same evidence. The receiver's pending queue is NOT
+      # here — it measures non-consumption, not arrival — and is folded
+      # in by .freshness_annotate_queue() below.
+      list(receiver_import = .parse_iso_time(
              status_payload[["last_workouts_import"]]),
            workout_files = .freshness_dir_mtime(workouts_dir)),
       # Weaker tier, and a content date rather than an arrival time:
@@ -493,8 +544,14 @@ data_freshness <- function(health_daily = NULL,
                  else workout_warn_hours,
     fail_hours = if (tightened) workout_asym_fail_hours
                  else workout_fail_hours,
-    tightened = tightened,
-    in_flight = backfilling)
+    tightened = tightened)
+
+  # Deliveries the receiver has taken in but not yet imported. Note the
+  # tense: this is about undelivered work right now, not about a flush
+  # that recently completed — an emptied queue must leave a genuine rest
+  # day alone.
+  pending <- .freshness_queue_pending(status_payload)
+  workouts_flow <- .freshness_annotate_queue(workouts_flow, pending, now)
 
   flows <- list(metrics = metrics_flow, workouts = workouts_flow)
   ranks <- vapply(flows, function(f) .FRESHNESS_RANK[[f$status]], integer(1))

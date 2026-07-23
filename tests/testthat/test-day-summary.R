@@ -287,6 +287,20 @@ test_that("a queued import stops the day being called rest", {
   expect_match(txt, "håller fortfarande på att läsas in")
 })
 
+test_that("a stuck import surfaces as data-came-in-but-unread, not rest", {
+  # Queue non-empty but no recent arrival: the import wedged. The day
+  # is not rest, and the prose must point at the importer rather than
+  # claim nothing arrived.
+  stuck <- day_freshness(received = 2, workouts = 24 * 10,
+                          pending_workouts = 12)
+  expect_equal(stuck$flows$workouts$queue_state, "stuck")
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = stuck)
+  expect_no_match(txt, "^Vilodag\\.")
+  expect_match(txt, "^Inga registrerade pass —")
+  expect_match(txt, "har kommit in men inte kunnat läsas in")
+})
+
 test_that("an emptied queue leaves a genuine rest day alone", {
   # The distinction is undelivered work *now*, not a flush that
   # recently completed — otherwise every rest day after an import

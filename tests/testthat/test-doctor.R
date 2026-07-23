@@ -187,11 +187,12 @@ test_that("check_configs warns when present but digest unpinned (NA)", {
 freshness_now <- as.POSIXct("2026-07-21 21:30:00", tz = "")
 
 freshness_payload <- function(received = NULL, workouts = NULL,
-                               now = freshness_now) {
+                               now = freshness_now, pending_workouts = 0) {
   iso <- function(h) format(now - as.difftime(h, units = "hours"),
                              "%Y-%m-%dT%H:%M:%S")
   list(last_received = if (is.null(received)) NULL else iso(received),
-       last_workouts_import = if (is.null(workouts)) NULL else iso(workouts))
+       last_workouts_import = if (is.null(workouts)) NULL else iso(workouts),
+       pending_workouts = pending_workouts)
 }
 
 # Pin the inbox directories away from the real data root so the check
@@ -225,6 +226,27 @@ test_that("check_data_freshness fails on the workouts-only outage", {
   expect_true(res$details$asymmetric)
   expect_equal(res$details$flows$metrics$status, "ok")
   expect_match(res$message, "workouts: silent for")
+})
+
+test_that("check_data_freshness fails on a stuck workout import", {
+  # A non-empty queue that is not moving must alarm, not read as fresh —
+  # the P1 the queue-as-evidence model reintroduced.
+  res <- check_freshness(
+    status_payload = freshness_payload(2, 24 * 30, pending_workouts = 12),
+    health_daily = tibble::tibble(),
+    summaries = tibble::tibble())
+  expect_equal(res$status, "fail")
+  expect_equal(res$details$flows$workouts$queue_state, "stuck")
+  expect_match(res$message, "queue stuck")
+})
+
+test_that("check_data_freshness stays ok while a backfill drains", {
+  res <- check_freshness(
+    status_payload = freshness_payload(2, 2, pending_workouts = 216),
+    health_daily = tibble::tibble(),
+    summaries = tibble::tibble())
+  expect_equal(res$status, "ok")
+  expect_equal(res$details$flows$workouts$queue_state, "in_progress")
 })
 
 test_that("check_data_freshness warns past the metric threshold", {

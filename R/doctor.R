@@ -351,6 +351,7 @@ check_data_freshness <- function(health_daily = NULL,
     warn_hours = flow$warn_hours,
     fail_hours = flow$fail_hours,
     tightened = flow$tightened,
+    queue_state = flow$queue_state %||% "clear",
     in_flight = isTRUE(flow$in_flight)
   )
 }

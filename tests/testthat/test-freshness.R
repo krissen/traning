@@ -202,39 +202,60 @@ test_that("the 2026-07-21 total outage flags both flows, workouts first", {
 # workouts drained a ~50-day gap chronologically (+210 files in one
 # sweep, 216 queued for import).
 
-test_that("a backfill in flight counts as a live workout feed", {
-  # last_workouts_import still points at the pre-outage import while
-  # the queue drains, but deliveries are demonstrably happening.
-  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
+test_that("a draining queue with fresh arrivals reads as in progress", {
+  # last_workouts_import is recent and the queue is non-empty: the
+  # backfill is actively landing. Alive (doctor keeps ok) but the
+  # material is not yet complete (evening prose says so).
+  fr <- assess(status_payload = payload(received = 2, workouts = 2,
                                          pending_workouts = 216))
   expect_equal(fr$flows$workouts$status, "ok")
-  expect_equal(fr$flows$workouts$source, "pending_import")
-  expect_false(fr$asymmetric)
-})
-
-test_that("an armed import timer also counts as a live workout feed", {
-  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
-                                         pending_workouts = 0,
-                                         workouts_timer_armed = TRUE))
-  expect_equal(fr$flows$workouts$status, "ok")
-  expect_equal(fr$flows$workouts$source, "pending_import")
-})
-
-test_that("a queue in flight is reported as alive but incomplete", {
-  # The same signal answers two questions with opposite signs: the feed
-  # is demonstrably alive (doctor), and the material is demonstrably
-  # incomplete (evening prose). Both readings live on the flow.
-  fr <- assess(status_payload = payload(received = 2, workouts = 2,
-                                         pending_workouts = 12))
-  expect_true(fr$flows$workouts$ok)
+  expect_equal(fr$flows$workouts$queue_state, "in_progress")
   expect_true(fr$flows$workouts$in_flight)
   expect_match(fr$flows$workouts$prose_pending,
                "^Passdata från Apple Health håller fortfarande på att läsas in")
+  expect_false(fr$asymmetric)
 })
 
-test_that("no queue means no incompleteness claim to make", {
+test_that("a queue that is not moving reads as stuck, and still alarms", {
+  # The P1 failure mode: an import failed, so the receiver keeps a
+  # non-zero queue with no re-armed timer, and nothing has arrived
+  # since. A non-empty queue must not paper over that — the stale
+  # verdict has to stand so `traning doctor` fires.
+  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
+                                         pending_workouts = 216,
+                                         workouts_timer_armed = FALSE))
+  expect_equal(fr$flows$workouts$status, "fail")
+  expect_equal(fr$flows$workouts$queue_state, "stuck")
+  expect_false(fr$flows$workouts$in_flight)
+  # The prose must say the data came in and could not be read, not that
+  # it never came — that points a debugger at the importer.
+  expect_match(fr$flows$workouts$prose,
+               "har kommit in men inte kunnat läsas in sedan")
+  expect_match(fr$flows$workouts$message, "queue stuck")
+})
+
+test_that("an armed timer with fresh arrivals reads as in progress", {
+  fr <- assess(status_payload = payload(received = 2, workouts = 2,
+                                         pending_workouts = 0,
+                                         workouts_timer_armed = TRUE))
+  expect_equal(fr$flows$workouts$queue_state, "in_progress")
+  expect_true(fr$flows$workouts$in_flight)
+})
+
+test_that("an armed timer without fresh arrivals is still stuck", {
+  # Belt and braces: the timer flag alone must not resurrect a dead
+  # feed. Only a recent arrival separates in-progress from stuck.
+  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
+                                         pending_workouts = 0,
+                                         workouts_timer_armed = TRUE))
+  expect_equal(fr$flows$workouts$status, "fail")
+  expect_equal(fr$flows$workouts$queue_state, "stuck")
+})
+
+test_that("no queue means clear, and no incompleteness claim to make", {
   fr <- assess(status_payload = payload(received = 2, workouts = 2,
                                          pending_workouts = 0))
+  expect_equal(fr$flows$workouts$queue_state, "clear")
   expect_false(fr$flows$workouts$in_flight)
   expect_null(fr$flows$workouts$prose_pending)
 })
@@ -244,6 +265,7 @@ test_that("an empty queue does not vouch for the workout feed", {
                                          pending_workouts = 0,
                                          workouts_timer_armed = FALSE))
   expect_equal(fr$flows$workouts$status, "fail")
+  expect_equal(fr$flows$workouts$queue_state, "clear")
 })
 
 test_that("the asymmetry is not held against a just-restarted receiver", {
