@@ -139,3 +139,17 @@ def test_receive_workouts_requires_api_key(client):
     body = {"data": {"workouts": [{"name": "Running"}]}}
     resp = client.post("/v1/workouts", json=body)
     assert resp.status_code == 401
+
+
+# --- /v1/status --------------------------------------------------------------
+
+
+def test_status_exposes_workout_import_ok_field(client):
+    # The freshness watchdog reads last_workouts_import_ok to tell a
+    # draining backfill from a wedged import; the field must be present in
+    # the contract even before any import has run (null then).
+    resp = client.get("/v1/status", headers=HEADERS)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "last_workouts_import_ok" in body
+    assert body["last_workouts_import_ok"] is None
