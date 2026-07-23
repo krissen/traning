@@ -249,15 +249,16 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
 #' Intensity resolution (feeds both the day summary and the week stats,
 #' so they cannot diverge):
 #' \enumerate{
-#'   \item Classify every segment of at least \code{seg_floor} minutes
+#'   \item Classify every segment longer than \code{seg_floor} minutes
 #'     that carries a heart rate. The unit's intensity is the hardest of
-#'     those bands. \code{seg_floor} is \code{compute_trimp()}'s own
-#'     10-minute floor, so load and description count the same segments.
-#'   \item When no segment qualifies, fall back to the duration-weighted
-#'     mean HR over the HR-bearing segments — but only when they cover at
-#'     least half the unit's time, otherwise a short measured stretch
-#'     would be extrapolated across an untracked day.
-#'   \item Otherwise no intensity is claimed (\code{nohr_}).
+#'     those bands. \code{seg_floor} mirrors \code{compute_trimp()}'s
+#'     exact \code{> 10} filter, so intensity is read only from segments
+#'     that also contribute load — description and TRIMP count the same
+#'     segments.
+#'   \item Otherwise no intensity is claimed (\code{nohr_}). A unit whose
+#'     only HR-bearing segments are at or below the floor contributes
+#'     zero TRIMP, so claiming any intensity for it would assert a
+#'     hardness the load model records as nothing.
 #' }
 #' Recovery cost is the higher of the intensity cost and the volume rule
 #' on the summed time, so a long easy unit still costs recovery.
@@ -267,8 +268,9 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
 #'   absent. Same length as \code{seg_min}.
 #' @param sport Canonical sport value.
 #' @param hr_max Resolved HRmax (bpm), or NULL.
-#' @param seg_floor Minimum segment minutes to count as an intensity
-#'   reading (default 10, matching \code{compute_trimp()}).
+#' @param seg_floor Segment minutes threshold; a segment must exceed it
+#'   (strictly, like \code{compute_trimp()}'s \code{> 10}) to set
+#'   intensity. Default 10.
 #' @return Same shape as \code{\link{classify_alt_session}}.
 #' @keywords internal
 .classify_alt_unit <- function(seg_min, seg_hr, sport, hr_max = NULL,
@@ -290,8 +292,18 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
     } else NA_real_
   }
 
+  # Only segments compute_trimp() would count may set intensity —
+  # strictly more than seg_floor minutes, its exact `> 10` filter. A
+  # segment at or below the floor contributes zero TRIMP, so letting it
+  # colour the unit would claim a hardness the load model records as
+  # nothing: the week could report a hard alternative pass while the
+  # TRIMP/share path counted zero. When no segment qualifies the unit
+  # makes no intensity claim (nohr_) — which is also what compute_trimp()
+  # gives it, so load and description stay in step. There is no
+  # duration-weighted-mean fallback: it read HR from sub-floor segments
+  # and was exactly the source of that mismatch.
   has_hr <- is.finite(seg_hr) & seg_hr > 0
-  qualifying <- has_hr & seg_min >= seg_floor
+  qualifying <- has_hr & seg_min > seg_floor
 
   intensity <- NA_character_
   mean_hr_pct <- NA_real_
@@ -302,13 +314,6 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
     # Report the pct of the segment that set the verdict.
     mean_hr_pct <- pcts[which.max(vapply(bands, .recovery_cost_rank_intensity,
                                          integer(1)))]
-  } else if (any(has_hr)) {
-    hr_time <- sum(seg_min[has_hr])
-    if (hr_time >= 0.5 * total_min && hr_time > 0) {
-      wmean <- sum(seg_hr[has_hr] * seg_min[has_hr]) / hr_time
-      mean_hr_pct <- pct_of(wmean)
-      intensity <- .alt_intensity_band(mean_hr_pct)
-    }
   }
 
   has_intensity <- !is.na(intensity)

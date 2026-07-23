@@ -64,7 +64,14 @@ D <- as.Date("2026-07-21")
   # hard) never exercised this together.
   f_segmented_hard = .mk_segments("cycling", list(
     list(min = 95, hr = 170), list(min = 95, hr = 170),
-    list(min = 95, hr = 170), list(min = 95, hr = 170)))
+    list(min = 95, hr = 170), list(min = 95, hr = 170))),
+  # issue-006 P2: several hard HR segments, each at or under the 10-min
+  # TRIMP floor, summing past the 20-min unit gate. compute_trimp()
+  # drops every segment (> 10), so the load is zero; the description
+  # must not call it hard.
+  g_subfloor_hard = .mk_segments("cycling", list(
+    list(min = 8, hr = 172), list(min = 8, hr = 172),
+    list(min = 8, hr = 172)))
 )
 
 .units <- function(s) traning:::.day_sport_units(s, hr_max = HR_MAX,
@@ -141,6 +148,22 @@ test_that("I3: a segmented easy day is low everywhere, never hard", {
   wk <- .week(s)
   expect_equal(cls$intensity, "low")
   expect_equal(wk$hard_count, 0L)      # 4 segments != 4 hard passes
+})
+
+test_that("I3: sub-floor hard segments never claim hardness the load ignores", {
+  # issue-006 P2: three 8-min hard segments (24 min unit) clear the
+  # 20-min unit gate but each is under compute_trimp()'s > 10 floor.
+  # The description must agree with the load: no hard verdict, and the
+  # TRIMP the week path sees is zero — the two count the same segments.
+  s <- .form$g_subfloor_hard
+  cls <- .day_class(s)
+  wk <- .week(s)
+  expect_false(identical(cls$intensity, "hard"))
+  expect_true(is.na(cls$intensity))     # nothing above the floor to read
+  expect_equal(wk$hard_count, 0L)
+  # And load really is zero for these rows — the invariant's other side.
+  tr <- compute_trimp(s, hr_max = HR_MAX, hr_rest = HR_REST)
+  expect_equal(nrow(tr), 0L)
 })
 
 # --- I4: a sub-floor unit shows in the inventory, counts for nothing --------

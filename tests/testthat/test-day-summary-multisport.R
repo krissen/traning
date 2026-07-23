@@ -160,31 +160,30 @@ test_that("a qualifying HR segment sets intensity even if most of the day lacks 
   expect_equal(alt$intensity, "moderate")
 })
 
-test_that("no qualifying segment falls back to mean HR only above 50% coverage", {
-  # No segment reaches the 10-min floor with HR, so the fallback path
-  # applies: it uses the duration-weighted mean only when HR covers at
-  # least half the time, otherwise it invents nothing.
-  covered <- dplyr::bind_rows(
+test_that("a unit whose only HR segments are sub-floor claims no intensity", {
+  # No segment exceeds the 10-min TRIMP floor, so none contributes load.
+  # Intensity must not be derived from those rows — otherwise the unit
+  # could read hard while compute_trimp() scored it zero. It reads nohr,
+  # which is what the load model gives it too.
+  all_hr <- dplyr::bind_rows(
     .ms_session("2026-07-21 09:00", "paddelsporter", km = 1, min = 8,
-                hr = 120),
+                hr = 170),
     .ms_session("2026-07-21 10:00", "paddelsporter", km = 1, min = 6,
-                hr = 120)
+                hr = 170)
   )
-  # 14 min total, all with HR → mean applies → low
-  alt_c <- traning:::.day_alt_class(covered, covered, hr_max = 185,
+  # 14 min total, all with HR, but every segment <= 10 min → nohr
+  alt_a <- traning:::.day_alt_class(all_hr, all_hr, hr_max = 185,
                                     min_minutes = 10)
-  expect_equal(alt_c$intensity, "low")
+  expect_true(is.na(alt_a$intensity))
+  expect_true(startsWith(alt_a$class, "nohr_"))
 
-  uncovered <- dplyr::bind_rows(
-    .ms_session("2026-07-21 09:00", "paddelsporter", km = 1, min = 8,
-                hr = 160),
-    .ms_session("2026-07-21 10:00", "paddelsporter", km = 12, min = 160,
-                hr = NA_real_)
-  )
-  # 8 min of HR across 168 min (<50%) → no intensity claimed
-  alt_u <- traning:::.day_alt_class(uncovered, uncovered, hr_max = 185)
-  expect_true(is.na(alt_u$intensity))
-  expect_equal(alt_u$class, "nohr_very_long")
+  # A single segment at exactly the floor (10 min) also does not
+  # qualify — compute_trimp() uses `> 10`, so the two agree at the edge.
+  edge <- .ms_session("2026-07-21 09:00", "paddelsporter", km = 2, min = 10,
+                      hr = 170)
+  alt_e <- traning:::.day_alt_class(edge, edge, hr_max = 185,
+                                    min_minutes = 10)
+  expect_true(is.na(alt_e$intensity))
 })
 
 # --- Alternative-training prose ---------------------------------------------
