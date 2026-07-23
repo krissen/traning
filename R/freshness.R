@@ -331,28 +331,31 @@
 # Fold the receiver's workout queue into a flow already judged on
 # arrival evidence, yielding one of three explicit states:
 #
-#   in_progress  queue pending AND a recent arrival — the backlog is
-#                draining, the feed is alive. Doctor keeps the ok
+#   in_progress  queue pending AND imports are succeeding — the backlog
+#                is draining, the feed is alive. Doctor keeps the ok
 #                status; the evening prose says the basis is not yet
 #                complete rather than calling the day a rest day.
-#   stuck        queue pending but no recent arrival — a push landed
-#                and its import failed, and nothing has arrived since.
-#                The stale verdict stands (doctor alarms), but the
-#                prose must say the data came in and could not be read,
-#                not that it never came.
+#   stuck        queue pending AND imports are NOT succeeding — either a
+#                push whose import failed with nothing since, or the
+#                poison-message wedge where well-formed pushes keep
+#                arriving while one bad file fails every import. Forces
+#                fail so doctor alarms even when arrivals look fresh, and
+#                the prose says the data came in and could not be read.
 #   clear        no queue — leave the verdict exactly as assessed.
 #
-# "Recent arrival" is just the flow already being ok: a queue only
-# becomes non-empty because a push landed and wrote a file, so a truly
-# live backfill always leaves fresh arrival evidence. That means the
-# in_progress/stuck split needs no stored history — "is the queue
-# moving?" is answered by "did anything arrive recently?", which is
-# already measured.
-.freshness_annotate_queue <- function(flow, pending, now) {
+# The split is driven by the receiver's success-only timestamp, not by
+# arrival: under a wedge the arrival evidence is fully fresh (every push
+# writes a file, and last_workouts_import bumps on failed attempts too),
+# so "did anything arrive?" cannot tell a draining backfill from a
+# jammed one. "Are imports succeeding?" can, and it still needs no
+# stored history — the receiver reports the last success directly.
+# `import_stalled` is computed by the caller from that timestamp.
+.freshness_annotate_queue <- function(flow, pending, import_stalled,
+                                       last_import_ok, now) {
   if (!pending) return(flow)
   label <- .FRESHNESS_FLOW_SV[[flow$flow]]
 
-  if (isTRUE(flow$ok)) {
+  if (!import_stalled) {
     flow$queue_state <- "in_progress"
     flow$in_flight <- TRUE
     flow$prose_pending <- sprintf(
@@ -361,19 +364,26 @@
     return(flow)
   }
 
+  # Force fail: a wedge leaves the arrival-based verdict at ok, and the
+  # whole point is that doctor must alarm anyway.
+  flow$status <- "fail"
+  flow$ok <- FALSE
   flow$queue_state <- "stuck"
   flow$in_flight <- FALSE
-  when <- .freshness_date_sv(flow$last_data, reference = now)
+  # Date the failure by the last successful import — when the data last
+  # actually landed in summaries — not by the last arrival, which under
+  # a wedge is today and would read as if nothing were wrong.
+  when <- .freshness_date_sv(last_import_ok, reference = now)
   flow$prose <- if (is.na(when)) {
-    sprintf("%s har kommit in men kan inte läsas in, så underlaget är ofullständigt.",
+    sprintf("%s kommer in men kan inte läsas in, så underlaget är ofullständigt.",
             label)
   } else {
-    sprintf(paste("%s har kommit in men inte kunnat läsas in sedan %s,",
+    sprintf(paste("%s kommer in men har inte kunnat läsas in sedan %s,",
                   "så underlaget är ofullständigt."),
             label, when)
   }
   flow$message <- paste0(flow$message,
-                          " [queue stuck: pending workouts not imported]")
+                          " [queue stuck: pending workouts not importing]")
   flow
 }
 
@@ -441,6 +451,13 @@
 #'   three days or more (the longest eight days, Oct--Nov 2024), so this
 #'   threshold would have fired about once a year, each time on a
 #'   genuine anomaly.
+#' @param workout_import_stale_hours How long the receiver's workout
+#'   queue may sit without a successful import before it counts as stuck
+#'   rather than in progress (default 24 h). A healthy backfill drains
+#'   within minutes, so this tolerates a slow catch-up and a transient
+#'   failure that recovers on the next push, while still catching a
+#'   poison-message wedge — fresh arrivals, a growing queue, no
+#'   successful import — well inside the metric and workout thresholds.
 #' @param receiver_grace_hours Suppress the asymmetry tightening for
 #'   this long after a receiver restart (default 1 h), while the
 #'   in-memory counters and the import queue settle and the two flows
@@ -471,6 +488,7 @@ data_freshness <- function(health_daily = NULL,
                             workout_fail_hours = 24 * 14,
                             workout_asym_warn_hours = 48,
                             workout_asym_fail_hours = 24 * 7,
+                            workout_import_stale_hours = 24,
                             receiver_grace_hours = 1,
                             data_dir = Sys.getenv("TRANING_DATA"),
                             metrics_dir = NULL,
@@ -551,7 +569,24 @@ data_freshness <- function(health_daily = NULL,
   # that recently completed — an emptied queue must leave a genuine rest
   # day alone.
   pending <- .freshness_queue_pending(status_payload)
-  workouts_flow <- .freshness_annotate_queue(workouts_flow, pending, now)
+  # Is the importer actually keeping up? A pending queue only matters if
+  # imports have stopped succeeding. Measured against the last SUCCESS
+  # timestamp, not the last attempt — the two diverge under a wedge.
+  last_import_ok <- .parse_iso_time(
+    status_payload[["last_workouts_import_ok"]])
+  success_age <- if (!is.na(last_import_ok)) {
+    as.numeric(difftime(now, last_import_ok, units = "hours"))
+  } else if (!is.na(uptime)) {
+    # Never succeeded since boot: the longest it can have been failing is
+    # the receiver's uptime. A queue resumed into a fresh process is not
+    # yet a wedge — only one that has failed for the whole stall window.
+    uptime / 3600
+  } else {
+    Inf
+  }
+  import_stalled <- pending && success_age > workout_import_stale_hours
+  workouts_flow <- .freshness_annotate_queue(
+    workouts_flow, pending, import_stalled, last_import_ok, now)
 
   flows <- list(metrics = metrics_flow, workouts = workouts_flow)
   ranks <- vapply(flows, function(f) .FRESHNESS_RANK[[f$status]], integer(1))

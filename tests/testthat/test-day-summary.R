@@ -232,7 +232,7 @@ DAY_NOW <- as.POSIXct(paste(Sys.Date(), "21:30:00"), tz = "")
 # Build a freshness verdict without touching the network or disk, with
 # each flow's last arrival given in hours before DAY_NOW.
 day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW,
-                           pending_workouts = 0) {
+                           pending_workouts = 0, import_ok = NULL) {
   iso <- function(h) {
     if (is.null(h)) return(NULL)
     format(now - as.difftime(h, units = "hours"), "%Y-%m-%dT%H:%M:%S")
@@ -243,6 +243,7 @@ day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW,
     workouts_dir = tempfile(),
     status_payload = list(last_received = iso(received),
                           last_workouts_import = iso(workouts),
+                          last_workouts_import_ok = iso(import_ok),
                           pending_workouts = pending_workouts))
 }
 
@@ -277,7 +278,8 @@ test_that("a queued import stops the day being called rest", {
   # The flow is alive — that is what the queue proves — but the very
   # sessions sitting in it are the ones missing from `summaries`.
   # Health and completeness are different questions.
-  pending <- day_freshness(received = 2, workouts = 2, pending_workouts = 12)
+  pending <- day_freshness(received = 2, workouts = 2, import_ok = 1,
+                            pending_workouts = 12)
   expect_true(pending$flows$workouts$ok)
   expect_true(pending$flows$workouts$in_flight)
   txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
@@ -287,18 +289,18 @@ test_that("a queued import stops the day being called rest", {
   expect_match(txt, "håller fortfarande på att läsas in")
 })
 
-test_that("a stuck import surfaces as data-came-in-but-unread, not rest", {
-  # Queue non-empty but no recent arrival: the import wedged. The day
-  # is not rest, and the prose must point at the importer rather than
-  # claim nothing arrived.
-  stuck <- day_freshness(received = 2, workouts = 24 * 10,
+test_that("a wedged import surfaces as data-came-in-but-unread, not rest", {
+  # The poison-message wedge: fresh arrivals, a growing queue, but no
+  # successful import in days. The day is not rest, and the prose must
+  # point at the importer rather than claim nothing arrived.
+  stuck <- day_freshness(received = 2, workouts = 2, import_ok = 24 * 6,
                           pending_workouts = 12)
   expect_equal(stuck$flows$workouts$queue_state, "stuck")
   txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
                             freshness = stuck)
   expect_no_match(txt, "^Vilodag\\.")
   expect_match(txt, "^Inga registrerade pass —")
-  expect_match(txt, "har kommit in men inte kunnat läsas in")
+  expect_match(txt, "kommer in men har inte kunnat läsas in")
 })
 
 test_that("an emptied queue leaves a genuine rest day alone", {

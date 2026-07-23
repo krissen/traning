@@ -187,11 +187,13 @@ test_that("check_configs warns when present but digest unpinned (NA)", {
 freshness_now <- as.POSIXct("2026-07-21 21:30:00", tz = "")
 
 freshness_payload <- function(received = NULL, workouts = NULL,
-                               now = freshness_now, pending_workouts = 0) {
+                               now = freshness_now, pending_workouts = 0,
+                               import_ok = NULL) {
   iso <- function(h) format(now - as.difftime(h, units = "hours"),
                              "%Y-%m-%dT%H:%M:%S")
   list(last_received = if (is.null(received)) NULL else iso(received),
        last_workouts_import = if (is.null(workouts)) NULL else iso(workouts),
+       last_workouts_import_ok = if (is.null(import_ok)) NULL else iso(import_ok),
        pending_workouts = pending_workouts)
 }
 
@@ -240,9 +242,23 @@ test_that("check_data_freshness fails on a stuck workout import", {
   expect_match(res$message, "queue stuck")
 })
 
+test_that("check_data_freshness fails on a poison-message wedge", {
+  # Fresh arrivals, a growing queue, but no successful import: the feed
+  # looks alive by arrival alone. Doctor must still alarm.
+  res <- check_freshness(
+    status_payload = freshness_payload(2, 2, import_ok = 24 * 6,
+                                        pending_workouts = 40),
+    health_daily = tibble::tibble(),
+    summaries = tibble::tibble())
+  expect_equal(res$status, "fail")
+  expect_equal(res$details$flows$workouts$queue_state, "stuck")
+  expect_equal(res$details$flows$workouts$source, "receiver_import")
+})
+
 test_that("check_data_freshness stays ok while a backfill drains", {
   res <- check_freshness(
-    status_payload = freshness_payload(2, 2, pending_workouts = 216),
+    status_payload = freshness_payload(2, 2, import_ok = 1,
+                                        pending_workouts = 216),
     health_daily = tibble::tibble(),
     summaries = tibble::tibble())
   expect_equal(res$status, "ok")

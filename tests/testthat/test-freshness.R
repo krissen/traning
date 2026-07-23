@@ -15,11 +15,15 @@ iso_before <- function(hours, now = NOW) {
 }
 
 # Receiver payload with per-flow ages in hours; NULL = field absent.
-payload <- function(received = NULL, workouts = NULL, now = NOW, ...) {
+# `import_ok` is the last *successful* workout import, in hours before now.
+payload <- function(received = NULL, workouts = NULL, import_ok = NULL,
+                    now = NOW, ...) {
   c(list(
     last_received = if (is.null(received)) NULL else iso_before(received, now),
     last_workouts_import = if (is.null(workouts)) NULL
-                            else iso_before(workouts, now)
+                            else iso_before(workouts, now),
+    last_workouts_import_ok = if (is.null(import_ok)) NULL
+                              else iso_before(import_ok, now)
   ), list(...))
 }
 
@@ -202,12 +206,12 @@ test_that("the 2026-07-21 total outage flags both flows, workouts first", {
 # workouts drained a ~50-day gap chronologically (+210 files in one
 # sweep, 216 queued for import).
 
-test_that("a draining queue with fresh arrivals reads as in progress", {
-  # last_workouts_import is recent and the queue is non-empty: the
+test_that("a draining queue with recent successful imports reads as in progress", {
+  # Arrivals recent, queue non-empty, and imports still succeeding: the
   # backfill is actively landing. Alive (doctor keeps ok) but the
   # material is not yet complete (evening prose says so).
   fr <- assess(status_payload = payload(received = 2, workouts = 2,
-                                         pending_workouts = 216))
+                                         import_ok = 1, pending_workouts = 216))
   expect_equal(fr$flows$workouts$status, "ok")
   expect_equal(fr$flows$workouts$queue_state, "in_progress")
   expect_true(fr$flows$workouts$in_flight)
@@ -216,45 +220,57 @@ test_that("a draining queue with fresh arrivals reads as in progress", {
   expect_false(fr$asymmetric)
 })
 
-test_that("a queue that is not moving reads as stuck, and still alarms", {
-  # The P1 failure mode: an import failed, so the receiver keeps a
-  # non-zero queue with no re-armed timer, and nothing has arrived
-  # since. A non-empty queue must not paper over that — the stale
-  # verdict has to stand so `traning doctor` fires.
-  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
-                                         pending_workouts = 216,
-                                         workouts_timer_armed = FALSE))
+test_that("a poison-message wedge is caught: fresh arrivals, no successful import", {
+  # The issue-007 failure mode. A single malformed file fails every
+  # import while well-formed pushes keep arriving, so arrival evidence
+  # is fully fresh — last_workouts_import bumps on the failed attempts,
+  # the inbox mtime moves on every push — and the queue only grows.
+  # Judged on arrival this reads healthy; only the stale SUCCESS
+  # timestamp exposes it. This test fails against the arrival-only code.
+  fr <- assess(status_payload = payload(received = 2, workouts = 2,
+                                         import_ok = 24 * 6,
+                                         pending_workouts = 40))
   expect_equal(fr$flows$workouts$status, "fail")
   expect_equal(fr$flows$workouts$queue_state, "stuck")
   expect_false(fr$flows$workouts$in_flight)
-  # The prose must say the data came in and could not be read, not that
-  # it never came — that points a debugger at the importer.
   expect_match(fr$flows$workouts$prose,
-               "har kommit in men inte kunnat läsas in sedan")
+               "kommer in men har inte kunnat läsas in sedan")
   expect_match(fr$flows$workouts$message, "queue stuck")
 })
 
-test_that("an armed timer with fresh arrivals reads as in progress", {
+test_that("a queue whose import never succeeded since boot alarms once uptime passes the window", {
+  # No success timestamp at all, and the receiver has been up long
+  # enough that a healthy backfill would have drained. Stuck.
   fr <- assess(status_payload = payload(received = 2, workouts = 2,
-                                         pending_workouts = 0,
-                                         workouts_timer_armed = TRUE))
-  expect_equal(fr$flows$workouts$queue_state, "in_progress")
-  expect_true(fr$flows$workouts$in_flight)
+                                         pending_workouts = 40,
+                                         uptime_seconds = 24 * 3 * 3600))
+  expect_equal(fr$flows$workouts$queue_state, "stuck")
 })
 
-test_that("an armed timer without fresh arrivals is still stuck", {
-  # Belt and braces: the timer flag alone must not resurrect a dead
-  # feed. Only a recent arrival separates in-progress from stuck.
-  fr <- assess(status_payload = payload(received = 2, workouts = 24 * 50,
-                                         pending_workouts = 0,
-                                         workouts_timer_armed = TRUE))
-  expect_equal(fr$flows$workouts$status, "fail")
-  expect_equal(fr$flows$workouts$queue_state, "stuck")
+test_that("a queue resumed into a just-booted receiver is not yet stuck", {
+  # After a restart the pending state is resumed but no import has run
+  # yet. With no success timestamp and a small uptime, this is a
+  # backfill about to start, not a wedge.
+  fr <- assess(status_payload = payload(received = 2, workouts = 2,
+                                         pending_workouts = 40,
+                                         uptime_seconds = 300))
+  expect_equal(fr$flows$workouts$queue_state, "in_progress")
+})
+
+test_that("the import-stall window is a parameter", {
+  base <- payload(received = 2, workouts = 2, import_ok = 10,
+                  pending_workouts = 40)
+  expect_equal(assess(status_payload = base)$flows$workouts$queue_state,
+               "in_progress")
+  expect_equal(
+    assess(status_payload = base,
+           workout_import_stale_hours = 6)$flows$workouts$queue_state,
+    "stuck")
 })
 
 test_that("no queue means clear, and no incompleteness claim to make", {
   fr <- assess(status_payload = payload(received = 2, workouts = 2,
-                                         pending_workouts = 0))
+                                         import_ok = 2, pending_workouts = 0))
   expect_equal(fr$flows$workouts$queue_state, "clear")
   expect_false(fr$flows$workouts$in_flight)
   expect_null(fr$flows$workouts$prose_pending)
