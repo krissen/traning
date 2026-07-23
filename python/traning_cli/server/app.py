@@ -552,6 +552,15 @@ def create_app() -> FastAPI:
             "pending_workouts": pending_workouts,
             "workouts_timer_armed": workouts_timer_armed,
             "workouts_debounce_seconds": _DEBOUNCE_WORKOUTS_SECS,
+            # Despite the name this is the last import *attempt*, not the
+            # last success: _flush_pending_workouts() bumps the timestamp
+            # on every run and only drains pending_workouts on success
+            # (see there). A consumer using it as arrival evidence is
+            # safe — an attempt only happens after a real push armed the
+            # debounce — but must not read it as "workouts were imported":
+            # a failed run leaves it fresh while pending_workouts stays
+            # non-zero. That pairing (recent attempt, non-empty queue,
+            # no re-armed timer) is a stuck import, not a live feed.
             "last_workouts_import": (
                 _last_workouts_import_ts.isoformat()
                 if _last_workouts_import_ts else None
