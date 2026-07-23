@@ -11,7 +11,9 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import BackgroundTasks, Depends, FastAPI
+from fastapi import BackgroundTasks, Depends, FastAPI, Request
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 
 from ..r_import import parse_import_summary, run_r_import
 from ..settings import get_settings
@@ -503,6 +505,72 @@ def _resume_pending_state() -> None:
         log.info("Resumed %d pending workout(s) after restart", count)
 
 
+# Endpoints whose clients are worth identifying — the HAE pushes only.
+# Leaving /health out keeps the monitoring probes from burying the signal.
+_CLIENT_LOG_PATHS = frozenset({"/v1/health", "/v1/workouts"})
+
+
+def _log_client(request: Request, endpoint: str) -> None:
+    """Log which client sent a push, one line per push.
+
+    The User-Agent carries the HAE app version, which is what lets a
+    silent outage be correlated with an app update afterwards. Only the
+    client host and User-Agent are read — never the API key header.
+
+    Never raises: a push must not fail because its log line could not be
+    written.
+    """
+    try:
+        client = request.client.host if request.client else "unknown"
+        log.info(
+            "%s push from %s (User-Agent: %s)",
+            endpoint,
+            client,
+            request.headers.get("user-agent", "unknown"),
+        )
+    except Exception as err:
+        # The exception itself is never rendered: it may quote the value
+        # that broke, and the values here are health data.
+        log.debug("Could not log client for %s (%s)", endpoint, type(err).__name__)
+
+
+def _describe_validation_error(exc: RequestValidationError) -> str:
+    """Summarise a rejection as field paths and error types.
+
+    Deliberately drops pydantic's ``input`` and ``msg`` fields: both can
+    echo the rejected payload back, and the payload is health data that
+    has no business in the journal.
+
+    Repeated failures collapse into one entry with a count, so a payload
+    where every element is malformed yields ``metrics.*: dict_type
+    (x500)`` rather than five hundred near-identical ones.
+
+    Never raises — a rejection must still get its ordinary 422 response
+    if this summary cannot be built.
+    """
+    try:
+        seen: dict[str, tuple[str, int]] = {}
+        for err in exc.errors():
+            parts = err.get("loc", ())
+            exact = ".".join(str(part) for part in parts)
+            # Collapse list indices so element 0 and element 499 of the
+            # same broken field count as one finding.
+            collapsed = ".".join(
+                "*" if isinstance(part, int) else str(part) for part in parts
+            )
+            err_type = err.get("type", "?")
+            key = f"{collapsed}: {err_type}"
+            first, count = seen.get(key, (f"{exact}: {err_type}", 0))
+            seen[key] = (first, count + 1)
+        return "; ".join(
+            first if count == 1 else f"{key} (x{count})"
+            for key, (first, count) in seen.items()
+        ) or "no field detail"
+    except Exception as err:
+        log.debug("Could not describe validation error (%s)", type(err).__name__)
+        return "undescribable"
+
+
 # Track state for /v1/status endpoint
 _start_time = time.time()
 _last_received: datetime | None = None
@@ -526,6 +594,35 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=_lifespan,
     )
+
+    @application.middleware("http")
+    async def log_push_client(request: Request, call_next):
+        """Log the pushing client before the request is validated.
+
+        Sitting in the handler is not enough: a payload whose shape the
+        app changed is rejected with 422 before the handler runs, and
+        that is precisely the outage the User-Agent is meant to explain.
+        """
+        if request.method == "POST" and request.url.path in _CLIENT_LOG_PATHS:
+            _log_client(request, request.url.path)
+        return await call_next(request)
+
+    @application.exception_handler(RequestValidationError)
+    async def log_validation_error(request: Request, exc: RequestValidationError):
+        """Name the field that failed validation, then answer as usual.
+
+        A 422 means the app changed its payload shape; without this the
+        journal says a push was rejected but not what about it. Only the
+        field path and error type are logged — never the rejected values,
+        which are health samples.
+        """
+        if request.url.path in _CLIENT_LOG_PATHS:
+            log.warning(
+                "%s rejected by validation: %s",
+                request.url.path,
+                _describe_validation_error(exc),
+            )
+        return await request_validation_exception_handler(request, exc)
 
     @application.get("/health")
     async def healthcheck():

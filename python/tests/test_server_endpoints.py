@@ -139,3 +139,110 @@ def test_receive_workouts_requires_api_key(client):
     body = {"data": {"workouts": [{"name": "Running"}]}}
     resp = client.post("/v1/workouts", json=body)
     assert resp.status_code == 401
+
+
+# --- client logging ----------------------------------------------------------
+
+
+def test_receive_health_logs_user_agent(client, caplog):
+    body = {"data": {"metrics": [{"name": "heart_rate", "units": "bpm", "data": [1]}]}}
+    headers = {**HEADERS, "User-Agent": "HealthAutoExport/8.4.1"}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=headers)
+    assert "/v1/health push from" in caplog.text
+    assert "HealthAutoExport/8.4.1" in caplog.text
+
+
+def test_receive_workouts_logs_user_agent(client, caplog):
+    body = {"data": {"workouts": [{"name": "Running"}]}}
+    headers = {**HEADERS, "User-Agent": "HealthAutoExport/8.4.1"}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/workouts", json=body, headers=headers)
+    assert "/v1/workouts push from" in caplog.text
+    assert "HealthAutoExport/8.4.1" in caplog.text
+
+
+def test_client_logging_never_leaks_the_api_key(client, caplog):
+    body = {"data": {"metrics": [{"name": "heart_rate", "units": "bpm", "data": [1]}]}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=HEADERS)
+    assert API_KEY not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "send_key", "expected_status"),
+    [
+        ("/v1/health", {"data": {"metrics": "not-a-list"}}, True, 422),
+        ("/v1/workouts", {"data": {"workouts": []}}, True, 422),
+        ("/v1/health", {"data": {"metrics": [{"name": "hr", "data": []}]}}, False, 401),
+        ("/v1/workouts", {"data": {"workouts": [{"name": "Running"}]}}, False, 401),
+    ],
+)
+def test_rejected_push_still_logs_user_agent(
+    client, caplog, path, body, send_key, expected_status
+):
+    """A rejected push is exactly when the app version matters.
+
+    Both rejections happen before the handler — auth in a dependency,
+    validation in pydantic — so this only holds as long as the logging
+    sits in middleware. 401 covers the "dropped X-API-Key" row of the
+    troubleshooting table, 422 the "app changed payload shape" row.
+    """
+    headers = {"User-Agent": "HealthAutoExport/9.0.0"}
+    if send_key:
+        headers |= HEADERS
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        resp = client.post(path, json=body, headers=headers)
+    assert resp.status_code == expected_status
+    assert f"{path} push from" in caplog.text
+    assert "HealthAutoExport/9.0.0" in caplog.text
+
+
+def test_rejected_payload_logs_the_offending_field(client, caplog):
+    body = {"data": {"metrics": ["not-a-metric-object"]}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        resp = client.post("/v1/health", json=body, headers=HEADERS)
+    assert resp.status_code == 422
+    assert "rejected by validation" in caplog.text
+    assert "body.data.metrics.0" in caplog.text
+
+
+def test_validation_logging_omits_the_rejected_values(client, caplog):
+    """The payload is health data — field names may be logged, values not."""
+    body = {"data": {"metrics": ["resting-hr-42"]}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=HEADERS)
+    assert "resting-hr-42" not in caplog.text
+
+
+def test_repeated_validation_failures_collapse_into_a_count(client, caplog):
+    """500 broken elements are one finding, not 500 near-identical ones."""
+    body = {"data": {"metrics": ["not-a-metric-object"] * 500}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=HEADERS)
+    rejection = next(
+        line for line in caplog.text.splitlines() if "rejected by validation" in line
+    )
+    assert "body.data.metrics.*: dict_type (x500)" in rejection
+    assert len(rejection) < 200
+
+
+def test_validation_logging_leaves_the_422_response_untouched(client):
+    body = {"data": {"metrics": "not-a-list"}}
+    resp = client.post("/v1/health", json=body, headers=HEADERS)
+    assert resp.status_code == 422
+    assert "detail" in resp.json()
+
+
+def test_health_probe_is_not_logged_as_a_push(client, caplog):
+    """The monitoring probe hits /health every day — keep it out."""
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.get("/health")
+    assert "push from" not in caplog.text
+
+
+def test_push_is_logged_once(client, caplog):
+    body = {"data": {"metrics": [{"name": "heart_rate", "units": "bpm", "data": [1]}]}}
+    with caplog.at_level("INFO", logger=app_mod.log.name):
+        client.post("/v1/health", json=body, headers=HEADERS)
+    assert caplog.text.count("/v1/health push from") == 1
