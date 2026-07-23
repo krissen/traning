@@ -57,7 +57,14 @@ D <- as.Date("2026-07-21")
                             km = 0),
   e_nohr = .mk_segments("paddelsporter", list(
     list(min = 90, hr = NA_real_), list(min = 90, hr = NA_real_),
-    list(min = 90, hr = NA_real_), list(min = 90, hr = NA_real_)))
+    list(min = 90, hr = NA_real_), list(min = 90, hr = NA_real_))),
+  # The cell that actually fails against round-1 code: multi-segment AND
+  # each segment individually hard. Old code counted rows (hard_count 4);
+  # the unit counts once. Form a (segmented-easy) and form c (single-
+  # hard) never exercised this together.
+  f_segmented_hard = .mk_segments("cycling", list(
+    list(min = 95, hr = 170), list(min = 95, hr = 170),
+    list(min = 95, hr = 170), list(min = 95, hr = 170)))
 )
 
 .units <- function(s) traning:::.day_sport_units(s, hr_max = HR_MAX,
@@ -112,7 +119,20 @@ test_that("I3: a hard block makes the day hard in every surface", {
   expect_equal(cls$intensity, "hard")
   expect_equal(cls$recovery_cost, "high")
   expect_true(u$hard)
-  expect_equal(wk$hard_count, 1L)      # one unit, counted once — not two
+  expect_equal(wk$hard_count, 1L)
+})
+
+test_that("I3: a segmented hard day counts as one hard session, not four", {
+  # The cell that fails against row-counting (round-1) code: four hard
+  # segments of one sport on one day. hard_count must be 1, not 4 — a
+  # single outing does not fire "four hard passes this week".
+  s <- .form$f_segmented_hard          # 4 x 95 min @170, all hard
+  cls <- .day_class(s)
+  wk <- .week(s)
+  u <- .units(s)
+  expect_equal(nrow(u), 1L)
+  expect_equal(cls$intensity, "hard")
+  expect_equal(wk$hard_count, 1L)
 })
 
 test_that("I3: a segmented easy day is low everywhere, never hard", {
