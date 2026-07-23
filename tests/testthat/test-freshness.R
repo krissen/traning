@@ -259,22 +259,31 @@ test_that("last_workouts_import (last attempt) is not arrival evidence", {
   expect_equal(fr$flows$workouts$source, "receiver_import_ok")
 })
 
+# The next two tests are a matched pair: identical payloads — null
+# success stamp, no arrival evidence, a pending queue — differing ONLY
+# in uptime. Together they prove that the stuck/in_progress boundary
+# turns on `import_stalled` (stale success past the uptime grace), not
+# on whether a success stamp exists. If the ok verdict were ever keyed
+# on "stamp present", the restart case (null stamp) would fall back to
+# fail and one of these would break.
+
 test_that("a queue whose import never succeeded since boot alarms once uptime passes the window", {
-  # No success timestamp at all, and the receiver has been up long
-  # enough that a healthy backfill would have drained. Stuck.
+  # Null stamp, but uptime is well past the stall window: a healthy
+  # backfill would have drained by now, so this is a wedge. Stuck/fail.
   fr <- assess(status_payload = payload(received = 2, import_ok = NULL,
                                          pending_workouts = 40,
                                          uptime_seconds = 24 * 3 * 3600))
   expect_equal(fr$flows$workouts$queue_state, "stuck")
+  expect_equal(fr$flows$workouts$status, "fail")
 })
 
 test_that("a queue resumed into a just-booted receiver reads ok, not stuck", {
-  # After a restart the pending state is resumed but no import has run
-  # yet, so there is no success timestamp and no arrival evidence at all
-  # (no inbox in this hermetic payload). The verdict must follow the
-  # queue state — a backfill about to start is a live feed — not the raw
-  # arrival evidence, which is unknown here. This fails against code that
-  # left in_progress carrying the arrival verdict.
+  # Same null stamp, but uptime is inside the grace: the import has
+  # simply not run yet. The verdict must follow the queue state — a
+  # backfill about to start is a live feed — not the raw arrival
+  # evidence, which is unknown here. Fails against code that left
+  # in_progress carrying the arrival verdict, and against code that
+  # keyed ok on the stamp being present.
   fr <- assess(status_payload = payload(received = 2, import_ok = NULL,
                                          pending_workouts = 40,
                                          uptime_seconds = 300))
