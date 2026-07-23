@@ -231,8 +231,11 @@ DAY_NOW <- as.POSIXct(paste(Sys.Date(), "21:30:00"), tz = "")
 
 # Build a freshness verdict without touching the network or disk, with
 # each flow's last arrival given in hours before DAY_NOW.
+# `workouts` is the last successful workout import (the arrival signal);
+# `import_ok` overrides it when a test needs success and attempt to
+# diverge (a wedge).
 day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW,
-                           pending_workouts = 0, import_ok = NULL) {
+                           pending_workouts = 0, import_ok = workouts) {
   iso <- function(h) {
     if (is.null(h)) return(NULL)
     format(now - as.difftime(h, units = "hours"), "%Y-%m-%dT%H:%M:%S")

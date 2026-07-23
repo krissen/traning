@@ -186,9 +186,11 @@ test_that("check_configs warns when present but digest unpinned (NA)", {
 
 freshness_now <- as.POSIXct("2026-07-21 21:30:00", tz = "")
 
+# `workouts` is the last successful workout import (the arrival signal);
+# `import_ok` defaults to it and is overridden only for a wedge.
 freshness_payload <- function(received = NULL, workouts = NULL,
                                now = freshness_now, pending_workouts = 0,
-                               import_ok = NULL) {
+                               import_ok = workouts) {
   iso <- function(h) format(now - as.difftime(h, units = "hours"),
                              "%Y-%m-%dT%H:%M:%S")
   list(last_received = if (is.null(received)) NULL else iso(received),
@@ -252,7 +254,7 @@ test_that("check_data_freshness fails on a poison-message wedge", {
     summaries = tibble::tibble())
   expect_equal(res$status, "fail")
   expect_equal(res$details$flows$workouts$queue_state, "stuck")
-  expect_equal(res$details$flows$workouts$source, "receiver_import")
+  expect_equal(res$details$flows$workouts$source, "receiver_import_ok")
 })
 
 test_that("check_data_freshness stays ok while a backfill drains", {

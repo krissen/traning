@@ -402,11 +402,14 @@
 #'     push, workouts included, so it cannot prove this flow
 #'     specifically and only serves a host with no data root.}
 #'   \item{\code{workouts}}{Apple Health workout pushes. Evidence: the
-#'     receiver's \code{last_workouts_import} or the newest file in the
-#'     workouts inbox; failing both, the newest \code{sessionStart}
-#'     (which also covers the separate Garmin pipeline, so it cannot
-#'     prove this flow either). The receiver's pending queue is not
-#'     arrival evidence — see the queue states below.}
+#'     receiver's \code{last_workouts_import_ok} (last \emph{successful}
+#'     import) or the newest file in the workouts inbox; failing both,
+#'     the newest \code{sessionStart} (which also covers the separate
+#'     Garmin pipeline, so it cannot prove this flow either).
+#'     \code{last_workouts_import} is deliberately not used: it bumps on
+#'     failed attempts too, so it stays fresh through a wedged import.
+#'     The receiver's pending queue is not arrival evidence — see the
+#'     queue states below.}
 #' }
 #'
 #' Evidence is tiered rather than pooled: a weaker proxy never competes
@@ -541,16 +544,22 @@ data_freshness <- function(health_daily = NULL,
   uptime <- .freshness_uptime(status_payload)
   settled <- is.na(uptime) || uptime >= receiver_grace_hours * 3600
   tightened <- identical(metrics_flow$status, "ok") && settled
+  # The receiver's workout signal is the last SUCCESSFUL import, never
+  # last_workouts_import: that field bumps on failed attempts too, so
+  # using it as arrival evidence is what let a wedged importer read as
+  # fresh. A successful import is honest evidence — it proves data both
+  # arrived and reached summaries — and it also drives the stuck/
+  # in_progress split below, so the one field carries both roles.
+  last_import_ok <- .parse_iso_time(
+    status_payload[["last_workouts_import_ok"]])
   workouts_flow <- .freshness_assess_flow(
     "workouts",
     list(
-      # Arrival evidence only. last_workouts_import is in-memory and
-      # resets on every receiver restart; the inbox mtime is the durable
-      # half of the same evidence. The receiver's pending queue is NOT
-      # here — it measures non-consumption, not arrival — and is folded
-      # in by .freshness_annotate_queue() below.
-      list(receiver_import = .parse_iso_time(
-             status_payload[["last_workouts_import"]]),
+      # Arrival evidence only. The success timestamp resets on receiver
+      # restart; the inbox mtime is the durable half. The receiver's
+      # pending queue is NOT here — it measures non-consumption, not
+      # arrival — and is folded in by .freshness_annotate_queue() below.
+      list(receiver_import_ok = last_import_ok,
            workout_files = .freshness_dir_mtime(workouts_dir)),
       # Weaker tier, and a content date rather than an arrival time:
       # summaries also carries the separate Garmin pipeline, and during
@@ -569,11 +578,6 @@ data_freshness <- function(health_daily = NULL,
   # that recently completed — an emptied queue must leave a genuine rest
   # day alone.
   pending <- .freshness_queue_pending(status_payload)
-  # Is the importer actually keeping up? A pending queue only matters if
-  # imports have stopped succeeding. Measured against the last SUCCESS
-  # timestamp, not the last attempt — the two diverge under a wedge.
-  last_import_ok <- .parse_iso_time(
-    status_payload[["last_workouts_import_ok"]])
   success_age <- if (!is.na(last_import_ok)) {
     as.numeric(difftime(now, last_import_ok, units = "hours"))
   } else if (!is.na(uptime)) {

@@ -15,13 +15,18 @@ iso_before <- function(hours, now = NOW) {
 }
 
 # Receiver payload with per-flow ages in hours; NULL = field absent.
-# `import_ok` is the last *successful* workout import, in hours before now.
-payload <- function(received = NULL, workouts = NULL, import_ok = NULL,
-                    now = NOW, ...) {
+#
+# `workouts` is the workout flow's last *successful* import — the signal
+# the watchdog actually uses as arrival evidence — and defaults
+# `import_ok`. `attempt` sets the raw last_workouts_import (last
+# attempt, bumped on failures too); it exists only to prove that field
+# is ignored as arrival evidence.
+payload <- function(received = NULL, workouts = NULL, import_ok = workouts,
+                    attempt = NULL, now = NOW, ...) {
   c(list(
     last_received = if (is.null(received)) NULL else iso_before(received, now),
-    last_workouts_import = if (is.null(workouts)) NULL
-                            else iso_before(workouts, now),
+    last_workouts_import = if (is.null(attempt)) NULL
+                            else iso_before(attempt, now),
     last_workouts_import_ok = if (is.null(import_ok)) NULL
                               else iso_before(import_ok, now)
   ), list(...))
@@ -222,14 +227,15 @@ test_that("a draining queue with recent successful imports reads as in progress"
 
 test_that("a poison-message wedge is caught: fresh arrivals, no successful import", {
   # The issue-007 failure mode. A single malformed file fails every
-  # import while well-formed pushes keep arriving, so arrival evidence
-  # is fully fresh — last_workouts_import bumps on the failed attempts,
-  # the inbox mtime moves on every push — and the queue only grows.
-  # Judged on arrival this reads healthy; only the stale SUCCESS
-  # timestamp exposes it. This test fails against the arrival-only code.
-  fr <- assess(status_payload = payload(received = 2, workouts = 2,
-                                         import_ok = 24 * 6,
-                                         pending_workouts = 40))
+  # import while well-formed pushes keep arriving, so every arrival
+  # signal is fresh — the inbox mtime moves on each push, and
+  # last_workouts_import bumps on the failed attempts too — while the
+  # queue only grows and nothing reaches summaries. Judged on arrival
+  # this reads healthy; only the stale SUCCESS timestamp exposes it.
+  fr <- assess(
+    status_payload = payload(received = 2, attempt = 1, import_ok = 24 * 6,
+                              pending_workouts = 40),
+    workouts_dir = inbox_at(hours_ago(1)))
   expect_equal(fr$flows$workouts$status, "fail")
   expect_equal(fr$flows$workouts$queue_state, "stuck")
   expect_false(fr$flows$workouts$in_flight)
@@ -238,10 +244,25 @@ test_that("a poison-message wedge is caught: fresh arrivals, no successful impor
   expect_match(fr$flows$workouts$message, "queue stuck")
 })
 
+test_that("last_workouts_import (last attempt) is not arrival evidence", {
+  # Codex's sharpened root cause: the attempt-bumped field must not keep
+  # the flow fresh. A fresh attempt + a stale success + a pending queue,
+  # with no inbox and no sessions, must still fail. Against the code
+  # that used last_workouts_import as arrival evidence this read ok /
+  # in_progress and doctor never fired.
+  fr <- assess(status_payload = payload(received = 2, attempt = 0.5,
+                                         import_ok = 24 * 6,
+                                         pending_workouts = 40))
+  expect_equal(fr$flows$workouts$status, "fail")
+  expect_equal(fr$flows$workouts$queue_state, "stuck")
+  # The verdict rests on the success timestamp, never the attempt.
+  expect_equal(fr$flows$workouts$source, "receiver_import_ok")
+})
+
 test_that("a queue whose import never succeeded since boot alarms once uptime passes the window", {
   # No success timestamp at all, and the receiver has been up long
   # enough that a healthy backfill would have drained. Stuck.
-  fr <- assess(status_payload = payload(received = 2, workouts = 2,
+  fr <- assess(status_payload = payload(received = 2, import_ok = NULL,
                                          pending_workouts = 40,
                                          uptime_seconds = 24 * 3 * 3600))
   expect_equal(fr$flows$workouts$queue_state, "stuck")
@@ -251,7 +272,7 @@ test_that("a queue resumed into a just-booted receiver is not yet stuck", {
   # After a restart the pending state is resumed but no import has run
   # yet. With no success timestamp and a small uptime, this is a
   # backfill about to start, not a wedge.
-  fr <- assess(status_payload = payload(received = 2, workouts = 2,
+  fr <- assess(status_payload = payload(received = 2, import_ok = NULL,
                                          pending_workouts = 40,
                                          uptime_seconds = 300))
   expect_equal(fr$flows$workouts$queue_state, "in_progress")
@@ -333,7 +354,7 @@ test_that("fresh Garmin sessions do not mask a dead HAE workout feed", {
   fr <- assess(status_payload = payload(received = 2, workouts = 24 * 30),
                summaries = sessions_at("2026-07-21 08:00:00"))
   expect_equal(fr$flows$workouts$status, "fail")
-  expect_equal(fr$flows$workouts$source, "receiver_import")
+  expect_equal(fr$flows$workouts$source, "receiver_import_ok")
 })
 
 test_that("fresh workout pushes do not mask a dead metric feed", {
