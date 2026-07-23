@@ -349,11 +349,15 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
 
 # ---- "Tidigare idag" context ---------------------------------------------
 
-# Return sessions that share the date with `latest` but are not the
-# latest session itself. Filters out HAE autopause noise (very short
-# segments) so the context line doesn't list 8 cycling micro-segments.
-.session_other_today <- function(summaries, latest, on_date,
-                                  min_km = 1.0, min_min = 10) {
+# Return the day's sessions minus the one just described. The latest
+# ROW is removed (not the whole sport-day), so a morning run still shows
+# when the described pass is an afternoon run. No per-segment noise
+# filter here — .session_today_context_line() aggregates into sport-day
+# units and applies one unit-level floor, which is what collapses HAE's
+# auto-pause micro-segments (the old <1 km AND <10 min per-row filter
+# was the source of the 5-pass-vs-3-pass mismatch against the day
+# summary).
+.session_other_today <- function(summaries, latest, on_date) {
   empty <- tibble::tibble()
   if (is.null(summaries) || !inherits(summaries, "data.frame") ||
       nrow(summaries) == 0) {
@@ -362,38 +366,24 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
   on_date <- as.Date(on_date)
   latest_ts <- latest$sessionStart[1]
 
-  others <- summaries %>%
+  summaries %>%
     dplyr::filter(as.Date(.data$sessionStart) == on_date,
                   .data$sessionStart != latest_ts)
-  if (nrow(others) == 0) return(others)
-
-  km   <- as.numeric(others$distance) / 1000
-  mins <- as.numeric(others$durationMoving, units = "mins")
-  is_tcx <- if ("source" %in% names(others)) {
-    is.na(others$source) | others$source == "tcx"
-  } else rep(TRUE, nrow(others))
-
-  # Keep all TCX (Garmin) sessions verbatim. For HAE, require either
-  # ≥1 km OR ≥10 min so autopaused micro-segments drop out. NA in
-  # distance/duration → treat the size-check as FALSE so the row is
-  # only kept via the TCX path; without this guard, an NA-only row
-  # leaks an `NA sport` fragment into the "Tidigare idag" line.
-  size_ok <- (is.finite(km)   & km   >= min_km) |
-             (is.finite(mins) & mins >= min_min)
-  keep <- is_tcx | size_ok
-  keep[is.na(keep)] <- FALSE
-  others[keep, , drop = FALSE]
 }
 
-# Format the other-passes-today line. Reuses .day_per_sport() so the
-# sport ordering / wording matches what day_summary_prose() produces.
-.session_today_context_line <- function(other_today) {
+# Format the other-passes-today line. Reads the same sport-day units as
+# the day summary (via .day_sport_units), so a shared outing is counted
+# identically in both notifications. Units below the 20-min floor are
+# omitted — the same floor the dominant-effort and weekly stats use;
+# only the "Dagens pass" inventory shows everything.
+.session_today_context_line <- function(other_today, min_minutes = 20) {
   if (is.null(other_today) || nrow(other_today) == 0) return(NULL)
-  per <- .day_per_sport(other_today)
-  if (nrow(per) == 0) return(NULL)
-  parts <- vapply(seq_len(nrow(per)), function(i) {
-    .per_sport_fragment(.sport_label_sv(per$sport[i]),
-                        per$n[i], per$km[i], per$min[i])
+  u <- .day_sport_units(other_today, classify = FALSE)
+  u <- u[u$min >= min_minutes, , drop = FALSE]
+  if (nrow(u) == 0) return(NULL)
+  parts <- vapply(seq_len(nrow(u)), function(i) {
+    .per_sport_fragment(.sport_label_sv(u$sport[i]),
+                        u$n_segments[i], u$km[i], u$min[i])
   }, character(1))
   paste0("Tidigare idag: ", paste(parts, collapse = " + "), ".")
 }

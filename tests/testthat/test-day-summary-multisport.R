@@ -143,9 +143,12 @@ test_that(".day_alt_class ignores running and sub-20-minute efforts", {
   expect_null(traning:::.day_alt_class(s, s, hr_max = 185))
 })
 
-test_that(".day_alt_class ignores HR that covers less than half the time", {
-  # 20 min of measured HR across a 3-hour outing is not an intensity
-  # reading for the outing.
+test_that("a qualifying HR segment sets intensity even if most of the day lacks HR", {
+  # A measured 20-min block at 160 bpm (160/185 = 0.86 → moderate) is a
+  # real intensity reading for that block, so the unit is moderate — the
+  # approved "overstate hardness, never hide it" rule. The old
+  # coverage-guard behaviour (calling this nohr) is exactly the kind of
+  # smoothing finding 002 objected to.
   s <- dplyr::bind_rows(
     .ms_session("2026-07-21 09:00", "paddelsporter", km = 3, min = 20,
                 hr = 160),
@@ -153,8 +156,35 @@ test_that(".day_alt_class ignores HR that covers less than half the time", {
                 hr = NA_real_)
   )
   alt <- traning:::.day_alt_class(s, s, hr_max = 185)
-  expect_equal(alt$class, "nohr_very_long")
-  expect_true(is.na(alt$intensity))
+  expect_equal(alt$class, "moderate_very_long")
+  expect_equal(alt$intensity, "moderate")
+})
+
+test_that("no qualifying segment falls back to mean HR only above 50% coverage", {
+  # No segment reaches the 10-min floor with HR, so the fallback path
+  # applies: it uses the duration-weighted mean only when HR covers at
+  # least half the time, otherwise it invents nothing.
+  covered <- dplyr::bind_rows(
+    .ms_session("2026-07-21 09:00", "paddelsporter", km = 1, min = 8,
+                hr = 120),
+    .ms_session("2026-07-21 10:00", "paddelsporter", km = 1, min = 6,
+                hr = 120)
+  )
+  # 14 min total, all with HR → mean applies → low
+  alt_c <- traning:::.day_alt_class(covered, covered, hr_max = 185,
+                                    min_minutes = 10)
+  expect_equal(alt_c$intensity, "low")
+
+  uncovered <- dplyr::bind_rows(
+    .ms_session("2026-07-21 09:00", "paddelsporter", km = 1, min = 8,
+                hr = 160),
+    .ms_session("2026-07-21 10:00", "paddelsporter", km = 12, min = 160,
+                hr = NA_real_)
+  )
+  # 8 min of HR across 168 min (<50%) → no intensity claimed
+  alt_u <- traning:::.day_alt_class(uncovered, uncovered, hr_max = 185)
+  expect_true(is.na(alt_u$intensity))
+  expect_equal(alt_u$class, "nohr_very_long")
 })
 
 # --- Alternative-training prose ---------------------------------------------
@@ -314,10 +344,14 @@ test_that("a small alternative dose is not mentioned", {
 
 # --- The 2026-07-21 paddling session, as imported ---------------------------
 #
-# The session that produced "Vilodag." in the 2026-07-21 evening
-# summary, taken from the row that later landed in the cache:
+# A six-hour paddle performed on 2026-07-21. It did not reach the cache
+# until 2026-07-22, seven weeks after the data inflow had stalled, so
+# the evening summary that day said "Vilodag." — because the row was
+# missing, not because of anything in it. Once imported the row reads
+# (verified against the kailash cache):
 #   sessionStart 2026-07-21 12:10:31, sport "paddelsporter",
-#   durationMoving 365 min, distance 25 965 m, avgHeartRate 82.6.
+#   durationMoving 365.0 min, distance 25 965 m, avgHeartRate 82.6.
+# Rounded here to the values a human would read off the summary.
 .paddle_20260721 <- function() {
   tibble::tibble(
     sessionStart = as.POSIXct("2026-07-21 12:10:31", tz = "UTC"),

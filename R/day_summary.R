@@ -23,26 +23,98 @@
 
 # ---- Helpers ---------------------------------------------------------------
 
-# Aggregate today's sessions per sport. Returns a tibble with columns
-# sport, n, km, min.
-.day_per_sport <- function(todays) {
-  if (nrow(todays) == 0) {
-    return(tibble::tibble(sport = character(0), n = integer(0),
-                          km = numeric(0), min = numeric(0)))
+# ---- Canonical sport-day unit ----------------------------------------------
+#
+# The one place that decides what "a session" is: one calendar day of
+# one sport, however many auto-pause segments the source split it into.
+# Every surface — the "Dagens pass" inventory, the dominant-effort
+# class, the weekly stats, and the per-pass "Tidigare idag" line — reads
+# its sessions from here, so n_segments, km and min can never disagree
+# between them (the 5-pass-vs-3-pass and 3x15-min bugs were four
+# aggregations giving four answers).
+#
+# `classify = TRUE` additionally attaches the intensity / duration /
+# recovery-cost verdict from .classify_alt_unit(): intensity comes from
+# the hardest qualifying segment, not a day-average, so a hard block
+# inside an easy day is never smoothed away.
+#
+# Filtering is the caller's job and happens AFTER aggregation (min on
+# the unit total, never on a raw segment), so the same outing counts the
+# same everywhere.
+.day_sport_units <- function(sessions, hr_max = NULL, classify = FALSE,
+                             seg_floor = 10) {
+  empty <- tibble::tibble(
+    date = as.Date(character(0)), sport = character(0),
+    n_segments = integer(0), km = numeric(0), min = numeric(0))
+  if (classify) {
+    empty <- empty %>% dplyr::mutate(
+      intensity = character(0), duration_band = character(0),
+      recovery_cost = character(0), class = character(0),
+      modality = character(0), hr_reliability = character(0),
+      confidence = character(0), hard = logical(0))
   }
-  todays %>%
+  if (is.null(sessions) || !inherits(sessions, "data.frame") ||
+      nrow(sessions) == 0) {
+    return(empty)
+  }
+
+  df <- sessions %>%
     dplyr::mutate(
-      .km  = as.numeric(.data$distance) / 1000,
-      .min = as.numeric(.data$durationMoving, units = "mins")
+      .date = as.Date(.data$sessionStart),
+      .km   = as.numeric(.data$distance) / 1000,
+      .min  = as.numeric(.data$durationMoving, units = "mins"),
+      .hr   = as.numeric(.data$avgHeartRateMoving),
+      # A missing sport is coalesced to "" rather than dropped: the
+      # session still happened, so it belongs in the inventory. The ""
+      # key groups cleanly (unlike NA) and .sport_label_sv("") renders
+      # the honest generic "Aktivitet" — hiding the row behind "Vilodag"
+      # would be the worse error.
+      sport = ifelse(is.na(.data$sport) | !nzchar(.data$sport), "",
+                     .data$sport)
     ) %>%
-    dplyr::group_by(sport = .data$sport) %>%
+    dplyr::filter(is.finite(.data$.min), .data$.min > 0)
+  if (nrow(df) == 0) return(empty)
+
+  agg <- df %>%
+    dplyr::group_by(date = .data$.date, sport = .data$sport) %>%
     dplyr::summarise(
-      n   = dplyr::n(),
+      n_segments = dplyr::n(),
       km  = sum(.data$.km, na.rm = TRUE),
-      min = sum(.data$.min, na.rm = TRUE),
+      min = sum(.data$.min),
       .groups = "drop"
     ) %>%
-    dplyr::arrange(dplyr::desc(.data$km))
+    dplyr::arrange(dplyr::desc(.data$km), dplyr::desc(.data$min))
+
+  if (!classify) return(agg)
+
+  verdicts <- lapply(seq_len(nrow(agg)), function(i) {
+    seg <- df[df$.date == agg$date[i] & df$sport == agg$sport[i], ]
+    .classify_alt_unit(seg$.min, seg$.hr, agg$sport[i], hr_max = hr_max,
+                       seg_floor = seg_floor)
+  })
+  agg %>% dplyr::mutate(
+    intensity     = vapply(verdicts, function(v) v$intensity %||% NA_character_,
+                           character(1)),
+    duration_band = vapply(verdicts, function(v) v$duration_band, character(1)),
+    recovery_cost = vapply(verdicts, function(v) v$recovery_cost %||%
+                             NA_character_, character(1)),
+    class         = vapply(verdicts, function(v) v$class %||% NA_character_,
+                           character(1)),
+    modality      = vapply(verdicts, function(v) v$modality, character(1)),
+    hr_reliability = vapply(verdicts, function(v) v$hr_reliability,
+                            character(1)),
+    confidence    = vapply(verdicts, function(v) v$confidence, character(1)),
+    hard          = vapply(verdicts, function(v) identical(v$intensity, "hard"),
+                           logical(1))
+  )
+}
+
+# Aggregate today's sessions per sport for the "Dagens pass" inventory.
+# Thin wrapper over .day_sport_units() (no classification, no filter):
+# the inventory lists everything the user did, so it never drops a unit.
+.day_per_sport <- function(todays) {
+  u <- .day_sport_units(todays, classify = FALSE)
+  tibble::tibble(sport = u$sport, n = u$n_segments, km = u$km, min = u$min)
 }
 
 # One sport's contribution to a day: "löpning 12.2 km",
@@ -121,71 +193,48 @@
   if (m < 5) sprintf("%d h", h) else sprintf("%d h %d min", h, m)
 }
 
-# Classify the dominant non-running effort of the day, if any. Returns
-# NULL when nothing alternative was done (or nothing long enough).
-#
-# Sessions are aggregated per sport before classification: HAE splits a
-# single outing into auto-pause segments, so a six-hour paddling day
-# arrives as several rows. Classifying them one by one would report the
-# longest segment ("1 h 55 min", duration band `long`) instead of the
-# outing that was actually done.
-#
-# Mean HR for the aggregate is duration-weighted over the segments that
-# carry a reading. When less than half the time has HR, the aggregate is
-# treated as having none rather than extrapolating a short measured
-# stretch across the whole day — a data-quality guard, not a
-# physiological threshold.
-.day_alt_class <- function(todays, summaries, hr_max = NULL,
-                            min_minutes = 20) {
-  if (is.null(todays) || nrow(todays) == 0) return(NULL)
-  is_run <- stringr::str_detect(tolower(todays$sport), "running")
-  is_run[is.na(is_run)] <- FALSE
-  alt <- todays[!is_run, , drop = FALSE]
-  if (nrow(alt) == 0) return(NULL)
-
-  per <- alt %>%
-    dplyr::mutate(
-      .min = as.numeric(.data$durationMoving, units = "mins"),
-      .hr  = as.numeric(.data$avgHeartRateMoving)
-    ) %>%
-    dplyr::filter(is.finite(.data$.min), .data$.min > 0) %>%
-    dplyr::mutate(
-      .has_hr  = is.finite(.data$.hr) & .data$.hr > 0,
-      .hr_min  = ifelse(.data$.has_hr, .data$.min, 0),
-      .hr_load = ifelse(.data$.has_hr, .data$.hr * .data$.min, 0)
-    ) %>%
-    dplyr::group_by(sport = .data$sport) %>%
-    dplyr::summarise(
-      min     = sum(.data$.min),
-      hr_min  = sum(.data$.hr_min),
-      hr_load = sum(.data$.hr_load),
-      .groups = "drop"
-    ) %>%
-    dplyr::filter(.data$min >= min_minutes)
-  if (nrow(per) == 0) return(NULL)
-
-  if (is.null(hr_max) && any(per$hr_min > 0)) {
+# Non-running units of a session set, classified, sorted so the
+# dominant effort is first: highest recovery cost, ties to longest.
+# Shared by .day_alt_class() (today) and .alt_week_stats() (the week) so
+# both count and classify the same units.
+.alt_units <- function(sessions, summaries = NULL, hr_max = NULL,
+                        min_minutes = 20) {
+  if (is.null(hr_max)) {
     hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
                        error = function(e) NULL)
   }
-
-  classes <- lapply(seq_len(nrow(per)), function(i) {
-    hr_pct <- if (per$hr_min[i] >= 0.5 * per$min[i] && !is.null(hr_max) &&
-                  is.finite(hr_max) && hr_max > 0) {
-      max(0, min(1, (per$hr_load[i] / per$hr_min[i]) / hr_max))
-    } else NA_real_
-    .alt_result(per$sport[i], hr_pct, per$min[i])
-  })
-
+  u <- .day_sport_units(sessions, hr_max = hr_max, classify = TRUE)
+  if (nrow(u) == 0) return(u)
+  is_run <- stringr::str_detect(tolower(u$sport), "running")
+  is_run[is.na(is_run)] <- FALSE
+  u <- u[!is_run & u$min >= min_minutes, , drop = FALSE]
+  if (nrow(u) == 0) return(u)
   # Highest recovery cost owns the day; ties go to the longest effort —
   # same rule .day_running_class() applies to running.
-  ranks <- vapply(classes, function(c) .recovery_cost_rank(c$recovery_cost),
-                  integer(1))
-  best <- which(ranks == max(ranks))
-  if (length(best) > 1) {
-    best <- best[which.max(per$min[best])]
-  }
-  classes[[best[1]]]
+  rank <- vapply(u$recovery_cost, .recovery_cost_rank, integer(1))
+  u[order(-rank, -u$min), , drop = FALSE]
+}
+
+# Turn one row of .alt_units() back into the classify_alt_session()-shape
+# list the prose helpers expect.
+.alt_unit_to_class <- function(u_row) {
+  list(
+    class = u_row$class, intensity = u_row$intensity,
+    duration_band = u_row$duration_band, duration_min = u_row$min,
+    recovery_cost = u_row$recovery_cost, confidence = u_row$confidence,
+    modality = u_row$modality, hr_reliability = u_row$hr_reliability,
+    sport = u_row$sport
+  )
+}
+
+# Classify the dominant non-running effort of the day, if any. Returns
+# NULL when nothing alternative was done (or nothing long enough).
+.day_alt_class <- function(todays, summaries, hr_max = NULL,
+                            min_minutes = 20) {
+  u <- .alt_units(todays, summaries = summaries, hr_max = hr_max,
+                  min_minutes = min_minutes)
+  if (nrow(u) == 0) return(NULL)
+  .alt_unit_to_class(u[1, , drop = FALSE])
 }
 
 # ---- Alternative-training prose fragments ----------------------------------
@@ -351,29 +400,28 @@
                   as.Date(.data$sessionStart) <= on_date)
   if (nrow(win) == 0) return(empty)
 
-  is_run <- stringr::str_detect(tolower(win$sport), "running")
-  is_run[is.na(is_run)] <- FALSE
-  alt <- win[!is_run, , drop = FALSE]
-  if (nrow(alt) == 0) return(empty)
-
-  mins <- as.numeric(alt$durationMoving, units = "mins")
-  keep <- is.finite(mins) & mins >= min_minutes
-  alt <- alt[keep, , drop = FALSE]
-  mins <- mins[keep]
-  if (nrow(alt) == 0) return(empty)
-
   if (is.null(hr_max)) {
     hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
                        error = function(e) NULL)
   }
 
-  hr <- as.numeric(alt$avgHeartRateMoving)
-  has_hr <- is.finite(hr) & hr > 0
-  hard_count <- sum(vapply(seq_len(nrow(alt)), function(i) {
-    cls <- classify_alt_session(alt[i, , drop = FALSE], hr_max = hr_max)
-    identical(cls$intensity, "hard")
-  }, logical(1)))
+  # Hours, hard-count and the no-HR share are unit quantities: a sport-
+  # day is one session however many segments it holds, so a segmented
+  # six-hour paddle is one unit (never four hard passes), and a
+  # 3x15-min day is one 45-min unit that clears the 20-min gate (the
+  # gate is applied after aggregation, never per segment).
+  u <- .alt_units(win, summaries = summaries, hr_max = hr_max,
+                  min_minutes = min_minutes)
+  if (nrow(u) == 0) return(empty)
 
+  # The TRIMP share is deliberately row-based: compute_trimp() already
+  # aggregates per day and applies its own 10-min floor, so it is a
+  # separate quantity, not a fifth definition of a session. It answers
+  # "what fraction of the week's load was non-running", which is a load
+  # ratio, not a session count.
+  is_run <- stringr::str_detect(tolower(win$sport), "running")
+  is_run[is.na(is_run)] <- FALSE
+  alt_rows <- win[!is_run, , drop = FALSE]
   trimp_sum <- function(df) {
     res <- tryCatch(
       compute_trimp(df, hr_max = hr_max, hr_rest = hr_rest,
@@ -382,18 +430,20 @@
     if (is.null(res) || nrow(res) == 0) return(NA_real_)
     sum(res$daily_trimp, na.rm = TRUE)
   }
-  t_alt <- trimp_sum(alt)
+  t_alt <- trimp_sum(alt_rows)
   t_tot <- trimp_sum(win)
   share <- if (is.finite(t_alt) && is.finite(t_tot) && t_tot > 0) {
     t_alt / t_tot
   } else NA_real_
 
+  total_min <- sum(u$min)
+  nohr_min <- sum(u$min[u$confidence == "none"])
   list(
-    hours = sum(mins) / 60,
+    hours = total_min / 60,
     share = share,
-    hard_count = as.integer(hard_count),
-    nohr_fraction = sum(mins[!has_hr]) / sum(mins),
-    n = nrow(alt)
+    hard_count = as.integer(sum(u$hard)),
+    nohr_fraction = if (total_min > 0) nohr_min / total_min else NA_real_,
+    n = nrow(u)
   )
 }
 
@@ -470,11 +520,15 @@
 # a hard session — it can't invent one, so the warning may fail to fire
 # but will never fire falsely.
 #
-# Two HRmax arguments on purpose: `hr_max` anchors the running metrics
-# (and stays NULL → running anchor when the caller didn't supply one),
-# while `hr_max_alt` is the all-sport anchor the alternative figures and
-# compute_trimp() share. Mixing them would let a session count as hard
-# against one denominator and contribute load against another.
+# Two HRmax arguments on purpose. When both are NULL each metric
+# auto-detects its own anchor — `hr_max` the running one for the
+# running-only counters, `hr_max_alt` the all-sport one for the
+# alternative figures and compute_trimp() — so an auto-detected run
+# doesn't get scored against an all-sport ceiling or vice versa. An
+# *explicit* hr_max, by contrast, is a global override the caller has
+# chosen for the whole summary (same contract as compute_trimp()'s
+# hr_max), and day_summary_prose() passes it to both; overriding the
+# denominator everywhere at once is the caller's intent, not a mix-up.
 .day_week_line <- function(summaries, on_date, hr_max = NULL,
                             hr_rest = NULL, hr_max_alt = NULL) {
   z3_run <- session_z3_count(summaries, on_date = on_date, days = 7,
