@@ -27,6 +27,13 @@ underlaget saknas.
   passflödet varit tyst. Detsamma gäller när data ligger och väntar på
   att läsas in — då sägs det uttryckligen att inläsningen pågår. En
   äkta vilodag med färsk data ser ut precis som förut.
+- **Vila skiljs från missad synk via dagens energiförbrukning.** När
+  passflödet är tyst men hälsomätvärdena strömmar in avgörs "vila kontra
+  avbrott" av dagens active_energy: ligger den i din översta tiondel för
+  de senaste 30 dagarna hände nästan säkert ett pass som inte synkades,
+  och dagen flaggas i stället för att kallas vilodag. En dag på vilonivå
+  förblir en vilodag. Så en osynkad tung dag (som paddlingen 21 juli)
+  fångas medan en verklig vilodag lämnas i fred.
 - **Dagsform utan täckning presenteras inte som en siffra.** Beredskapen
   räknas fram ur upp till fem komponenter (HRV, sömn, vilopuls,
   belastning, handledstemperatur). Bygger kvällens verdikt på en enda av
