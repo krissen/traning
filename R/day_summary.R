@@ -71,6 +71,16 @@
   if (!"distance" %in% names(sessions)) {
     sessions$distance <- NA_real_
   }
+  # sport may arrive as a factor (read.csv without stringsAsFactors, an
+  # older cache, a hand-built frame). Coerce to character before the
+  # coalesce below: ifelse() on a factor strips the levels and carries
+  # the underlying integer codes for the non-missing rows — so sessions
+  # would group and render as "1"/"2" instead of "running"/"cycling" —
+  # and nzchar() rejects a factor outright. as.character() on a factor
+  # yields the level labels.
+  if ("sport" %in% names(sessions)) {
+    sessions$sport <- as.character(sessions$sport)
+  }
 
   df <- sessions %>%
     dplyr::mutate(

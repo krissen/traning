@@ -251,6 +251,34 @@ test_that("an active day whose rows lack the HR column still gets a summary", {
   expect_match(.ms_prose(s2, d), "cykling 60 min")
 })
 
+test_that("a factor sport column renders names, not integer codes", {
+  # Regression (issue-006 P2): the NA-coalescing ifelse() strips factor
+  # levels and carries the underlying integer codes, so a read.csv/
+  # legacy/hand-built frame would group and render sessions as "1"/"2".
+  # sport is coerced to character before the coalesce.
+  d <- as.Date("2026-07-21")
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(c("2026-07-21 09:00", "2026-07-21 12:00",
+                                "2026-07-21 18:00"), tz = "UTC"),
+    sport = factor(c("cycling", NA, "running")),
+    distance = c(20000, 3000, 8000),
+    avgPaceMoving = NA_real_,
+    avgHeartRateMoving = c(130, 100, 150),
+    durationMoving = as.difftime(c(60, 30, 45), units = "mins"),
+    garmin_directWorkoutRpe = c(NA_real_, NA_real_, 30)
+  )
+  expect_s3_class(s$sport, "factor")
+  txt <- .ms_prose(s, d)
+  expect_match(txt, "cykling 20,0 km")
+  expect_match(txt, "löpning 8,0 km")
+  # The NA level renders as the generic label, not "NA"/an integer
+  expect_match(txt, "aktivitet 3,0 km")
+  expect_false(grepl("\\b[0-9]+,0 km \\(", txt))  # no "1 (…)" style codes
+  # Units carry sport names, never integer codes
+  u <- traning:::.day_sport_units(s, classify = FALSE)
+  expect_setequal(u$sport, c("cycling", "running", ""))
+})
+
 test_that("a paddling day without HR makes no intensity claim", {
   d <- as.Date("2026-07-21")
   s <- .ms_session("2026-07-21 09:00", "paddelsporter", km = 24, min = 360,
