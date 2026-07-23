@@ -1,5 +1,42 @@
 # tRäning — Changelog
 
+## 2026-07-23 — Alternativträning i kvällssummeringen
+
+Kvällssummeringen är inte längre löpcentrisk. En dag med paddling,
+cykling, styrka eller annan träning beskrivs nu kvalitativt och sätts i
+veckans sammanhang, i stället för att bara listas som en rad — eller,
+som tidigare, kallas "Vilodag".
+
+- **Alternativpass får beskrivning och roll i veckan.** Ett icke-löppass
+  klassas på hur länge och hur hårt det var och beskrivs därefter
+  ("Mycket långt lågintensivt pass — stor aerob volym", "Hårt
+  alternativpass — räknas som kvalitet i veckans dos"), med en
+  återhämtningsrad när passet kostar. Saknas puls görs inget
+  intensitetspåstående — passet beskrivs bara med vad det var och hur
+  länge.
+- **Pass räknas per sport och dag.** Ett pass som delats upp i flera
+  segment räknas som ett pass och visas som "(N pass)" med summerad
+  distans och tid, konsekvent i alla notiser.
+- **Ett hårt block färgar dagen.** Om någon del av ett alternativpass
+  låg på hög puls beskrivs hela passet som hårt — belastningen
+  underskattas hellre än överskattas.
+- **Tid visas bredvid distans för långa pass.** Ett pass på 90 minuter
+  eller mer visar både distans och tid ("paddling 26,0 km / 6 h 5 min"),
+  så ett långt pass känns igen på tiden och inte bara på kilometrarna.
+  Gäller även långa löppass.
+- **Veckans löpmått är märkta som löpmått.** Kvalitetspass- och
+  mellanzon-raderna i veckokontexten säger nu "(löpning)", och en dag
+  utan löpning men med hård alternativträning får ändå en veckorad.
+  Veckans alternativa dos redovisas i timmar och som andel av
+  belastningen.
+- **Paddling räknas som kondition.** Kajak, kanot och SUP klassas nu som
+  konditionsträning i stället för bollsport, och paddling går att välja
+  i dashboardens sportväljare. Fler sporter har fått korrekta svenska
+  namn (paddling, rodd, bordtennis, konditionsspel med flera) i stället
+  för råa etiketter.
+- **Svensk decimalkomma i all text.** Siffror i notiser och rapporter
+  skrivs nu med komma ("26,0 km", "6,1 h") i stället för punkt.
+
 ## 2026-07-08 — Snabbare förstasida, förfinad dashboard
 
 Förfining av dashboarden efter moderniseringen. Samma utseende och siffror,
