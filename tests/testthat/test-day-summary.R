@@ -306,6 +306,31 @@ test_that("a wedged import surfaces as data-came-in-but-unread, not rest", {
   expect_match(txt, "kommer in men har inte kunnat läsas in")
 })
 
+test_that("a stale workout flow drops the TSB state line — no advice beside incomplete data", {
+  # The original contradiction, sneaking back one class over: with the
+  # workout flow stale, `summaries` is the incomplete cache, and its TSB
+  # verdict here is literally "Form på topp — bra läge för kvalitet
+  # eller tävling." Appending that put a confident training cue right
+  # after "underlaget är ofullständigt". No state line may follow the
+  # stale prose.
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(
+      paste(Sys.Date() - c(1, 2, 3, 4, 6, 8, 10, 12, 14), "18:00"), tz = ""),
+    sport = "running", distance = 9000,
+    avgPaceMoving = 5.2, avgHeartRateMoving = 155,
+    durationMoving = as.difftime(48, units = "mins"))
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  expect_equal(stale$flows$workouts$status, "fail")
+  txt <- day_summary_prose(s, date = Sys.Date(),
+                            health_daily = tibble::tibble(), freshness = stale)
+  # Exactly the stale line, nothing appended.
+  expect_equal(txt, paste0("Inga registrerade pass — ",
+                            stale$flows$workouts$prose))
+  expect_no_match(txt, "Form på topp")
+  expect_no_match(txt, "kvalitet")
+  expect_no_match(txt, "CTL")
+})
+
 test_that("an emptied queue leaves a genuine rest day alone", {
   # The distinction is undelivered work *now*, not a flush that
   # recently completed — otherwise every rest day after an import
@@ -315,6 +340,24 @@ test_that("an emptied queue leaves a genuine rest day alone", {
   txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
                             freshness = flushed)
   expect_match(txt, "^Vilodag\\.")
+})
+
+test_that("a genuine rest day still keeps its TSB state line", {
+  # The fix must not strip the state line from a real rest day (stale
+  # NULL) — only when the workout flow is stale. Fresh flow, sessions in
+  # recent days but none today: the TSB line stays.
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(
+      paste(Sys.Date() - c(1, 2, 3, 4, 6, 8, 10, 12, 14), "18:00"), tz = ""),
+    sport = "running", distance = 9000,
+    avgPaceMoving = 5.2, avgHeartRateMoving = 155,
+    durationMoving = as.difftime(48, units = "mins"))
+  fresh <- day_freshness(received = 2, workouts = 2)
+  expect_true(fresh$flows$workouts$ok)
+  txt <- day_summary_prose(s, date = Sys.Date(),
+                            health_daily = tibble::tibble(), freshness = fresh)
+  expect_match(txt, "^Vilodag\\.")
+  expect_match(txt, "Form på topp")
 })
 
 test_that("an armed import timer also blocks the rest-day claim", {

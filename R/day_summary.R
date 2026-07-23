@@ -350,11 +350,23 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
 
   if (nrow(todays) == 0 || sum(per_sport$min, na.rm = TRUE) < 1) {
     stale <- .day_freshness_guard(date, summaries, health_daily, freshness)
-    base <- if (is.null(stale)) "Vilodag."
-            else paste0("Inga registrerade pass — ", stale$prose)
+    if (!is.null(stale)) {
+      # No state line when the workout flow is stale. .day_state_line()'s
+      # TSB half is derived from `summaries`, which here is the
+      # incomplete cache missing today's — and possibly the last several
+      # days' — sessions, so the TSB number is itself wrong, not merely
+      # unsuited to advise from. Appending it revived the original
+      # contradiction one class over: "underlaget är ofullständigt. Form
+      # på topp — bra läge för kvalitet eller tävling.", a confident
+      # training cue built on the very data we just called incomplete
+      # (cf. the 2026-05-09 note on .day_state_line). The readiness half
+      # can be fresh, but it travels with the corrupted TSB half through
+      # one function, so the honest move is to drop the whole line.
+      return(paste0("Inga registrerade pass — ", stale$prose))
+    }
     state <- .day_state_line(summaries, health_daily, date, hr_max, hr_rest)
-    if (!is.null(state)) return(paste(base, state))
-    return(base)
+    if (!is.null(state)) return(paste("Vilodag.", state))
+    return("Vilodag.")
   }
 
   parts <- character()
