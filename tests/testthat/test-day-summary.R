@@ -258,6 +258,22 @@ rest_day_summaries <- function() {
     durationMoving = as.difftime(28, units = "mins"))
 }
 
+# Synthetic active_energy history ending `end`, encoding the real shape:
+# a low rest baseline against a higher workout distribution, so the
+# trailing q90 sits at workout level. `today` sets the day under test.
+# `n` days of history (set < 14 to exercise the insufficient branch).
+energy_series <- function(today, n = 40, rest = 1900, workout = 4000,
+                           end = Sys.Date()) {
+  hist <- tibble::tibble(
+    date = end - (n:1),
+    metric = "active_energy",
+    value = rep(c(rest, workout, workout, workout), length.out = n),
+    source = "hae")
+  if (is.null(today)) return(hist)
+  dplyr::bind_rows(hist, tibble::tibble(
+    date = end, metric = "active_energy", value = today, source = "hae"))
+}
+
 test_that("day_summary_prose keeps 'Vilodag.' when the workout feed is fresh", {
   fresh <- day_freshness(received = 2, workouts = 3)
   expect_true(fresh$ok)
@@ -285,7 +301,10 @@ test_that("a queued import stops the day being called rest", {
                             pending_workouts = 12)
   expect_true(pending$flows$workouts$ok)
   expect_true(pending$flows$workouts$in_flight)
+  # Rest-level energy: the in_flight branch must hedge before the energy
+  # check even gets a chance — positive evidence outranks the tie-break.
   txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            health_daily = energy_series(today = 1900),
                             freshness = pending)
   expect_no_match(txt, "^Vilodag\\.")
   expect_match(txt, "^Inga registrerade pass —")
@@ -299,7 +318,10 @@ test_that("a wedged import surfaces as data-came-in-but-unread, not rest", {
   stuck <- day_freshness(received = 2, workouts = 2, import_ok = 24 * 6,
                           pending_workouts = 12)
   expect_equal(stuck$flows$workouts$queue_state, "stuck")
+  # Rest-level energy: stuck is positive evidence and must hedge before
+  # the energy tie-break.
   txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            health_daily = energy_series(today = 1900),
                             freshness = stuck)
   expect_no_match(txt, "^Vilodag\\.")
   expect_match(txt, "^Inga registrerade pass —")
@@ -370,10 +392,13 @@ test_that("an armed import timer also blocks the rest-day claim", {
 })
 
 test_that("day_summary_prose flags a dead workout feed instead of claiming rest", {
-  # The real outage: metrics still arriving, workouts silent for weeks.
+  # The real 2026-07-21 outage: metrics still arriving, workouts silent
+  # for weeks, and the session-less day carries a workout-sized energy
+  # spike (the unsynced paddling). The energy imprint breaks the tie.
   stale <- day_freshness(received = 2, workouts = 24 * 49)
   expect_equal(stale$flows$workouts$status, "fail")
   txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            health_daily = energy_series(today = 7800),
                             freshness = stale)
   expect_no_match(txt, "^Vilodag\\.")
   expect_match(txt, "^Inga registrerade pass —")
@@ -382,7 +407,9 @@ test_that("day_summary_prose flags a dead workout feed instead of claiming rest"
 
 test_that("day_summary_prose flags a dead workout feed on empty summaries too", {
   stale <- day_freshness(received = 2, workouts = 24 * 49)
-  txt <- day_summary_prose(NULL, date = Sys.Date(), freshness = stale)
+  txt <- day_summary_prose(NULL, date = Sys.Date(),
+                            health_daily = energy_series(today = 7800),
+                            freshness = stale)
   expect_match(txt, "^Inga registrerade pass —")
 })
 
@@ -398,6 +425,76 @@ test_that("day_summary_prose leaves an actual training day untouched", {
   txt <- day_summary_prose(s, date = Sys.Date(), freshness = stale)
   expect_match(txt, "Dagens pass")
   expect_no_match(txt, "Inga registrerade pass")
+})
+
+# --- active_energy discriminator (issue-010) ---------------------------------
+# When metrics are fresh but the workout flow is stale, the day's energy
+# breaks the "rest vs missed sync" tie: a session-less day above the
+# personal trailing-30d q90 almost certainly means a workout that never
+# synced. Validated on the live cache (21 Jul 7804 → hedge; 14 Jun / 16
+# Jul rest → Vilodag); these mirror that shape hermetically.
+
+test_that("high energy on a session-less day hedges (a workout went unsynced)", {
+  stale <- day_freshness(received = 2, workouts = 24 * 49)  # metrics ok, workouts stale
+  expect_true(stale$flows$metrics$ok)
+  expect_false(stale$flows$workouts$ok)
+  guard <- .day_freshness_guard(Sys.Date(), NULL,
+                                 energy_series(today = 7800), freshness = stale)
+  expect_false(is.null(guard))
+})
+
+test_that("rest-level energy on a session-less day is a genuine rest day", {
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  guard <- .day_freshness_guard(Sys.Date(), NULL,
+                                 energy_series(today = 1900), freshness = stale)
+  expect_null(guard)
+})
+
+test_that("too little energy history hedges (cannot rule out a missed sync)", {
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  guard <- .day_freshness_guard(Sys.Date(), NULL,
+                                 energy_series(today = 1900, n = 8),
+                                 freshness = stale)
+  expect_false(is.null(guard))
+})
+
+test_that("a stale metric feed hedges regardless of energy", {
+  # Both flows silent is an unambiguous outage; even rest-level energy
+  # must not produce a confident Vilodag.
+  both <- day_freshness(received = 24 * 10, workouts = 24 * 49)
+  expect_false(both$flows$metrics$ok)
+  guard <- .day_freshness_guard(Sys.Date(), NULL,
+                                 energy_series(today = 1900), freshness = both)
+  expect_false(is.null(guard))
+})
+
+test_that("in_flight and stuck hedge even when energy is at rest level", {
+  # Positive evidence outranks the energy tie-break: the cache is
+  # provably incomplete, so rest-level energy cannot argue it away.
+  in_flight <- day_freshness(received = 2, workouts = 2, import_ok = 1,
+                              pending_workouts = 12)
+  stuck <- day_freshness(received = 2, workouts = 2, import_ok = 24 * 6,
+                          pending_workouts = 12)
+  rest_energy <- energy_series(today = 1900)
+  expect_false(is.null(.day_freshness_guard(Sys.Date(), NULL, rest_energy,
+                                             freshness = in_flight)))
+  expect_false(is.null(.day_freshness_guard(Sys.Date(), NULL, rest_energy,
+                                             freshness = stuck)))
+})
+
+test_that(".day_energy_verdict classifies high, rest and insufficient", {
+  expect_equal(.day_energy_verdict(energy_series(today = 7800), Sys.Date()),
+               "high")
+  expect_equal(.day_energy_verdict(energy_series(today = 1900), Sys.Date()),
+               "rest")
+  expect_equal(.day_energy_verdict(energy_series(today = 1900, n = 8),
+                                    Sys.Date()),
+               "insufficient")
+  # No reading for the day itself → cannot tell.
+  expect_equal(.day_energy_verdict(energy_series(today = NULL), Sys.Date()),
+               "insufficient")
+  expect_equal(.day_energy_verdict(tibble::tibble(), Sys.Date()),
+               "insufficient")
 })
 
 test_that("an injected verdict does not escape the historical date gate", {
