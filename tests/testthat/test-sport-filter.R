@@ -202,6 +202,22 @@ test_that("sport_label (exported) returns Swedish display labels", {
   expect_equal(sport_label("klattring"), "Klattring")
   expect_equal(sport_label(NULL), "Aktivitet")
   expect_equal(sport_label("all"), "Aktivitet")
+  # NA / blank → generic label, never "NANA" (regression: the title-case
+  # fallback used to paste0(NA, NA) and leak "NANA" into the day summary)
+  expect_equal(sport_label(NA_character_), "Aktivitet")
+  expect_equal(sport_label(NA), "Aktivitet")
+  expect_equal(sport_label(""), "Aktivitet")
+})
+
+test_that("bagskytte resolves to itself with no bucket, on purpose", {
+  # Curated buckets are not a partition — archery is neither endurance,
+  # gym, ball sport nor winter sport, so it deliberately has no bucket
+  # and still participates in sport = "all".
+  expect_equal(sport_bucket_members("bagskytte"), "bagskytte")
+  for (b in names(traning:::.SPORT_BUCKETS)) {
+    expect_false("bagskytte" %in% traning:::.SPORT_BUCKETS[[b]],
+                 info = b)
+  }
 })
 
 test_that("sport_bucket_members returns curated bucket members", {

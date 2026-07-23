@@ -43,6 +43,10 @@
 .sport_label_sv <- function(sport) {
   if (is.null(sport) || length(sport) == 0) return("Aktivitet")
   if (length(sport) > 1) return("Aktivitet")
+  # NA / blank → generic label. Without this guard the title-case
+  # fallback returns "NANA" (paste0(NA, NA)), which the alternative-
+  # training line then renders as a whole sentence.
+  if (is.na(sport) || !nzchar(sport)) return("Aktivitet")
   s_lower <- tolower(sport)
   # "all"/"any" are sentinels — treat them case-insensitively so
   # "All"/"ANY" don't slip through as literal sport names.
