@@ -73,10 +73,28 @@ hours_ago <- function(h, now = NOW) now - as.difftime(h, units = "hours")
 
 # Assess with no receiver and no inboxes unless explicitly given, so
 # every test states its own evidence and none reads the real data root.
+#
+# `last_received` is no longer metric arrival evidence, but in these
+# tests `received=` is a convenient proxy for "a metric push arrived N
+# hours ago". Production sees that push as a canonical write, so model it
+# as one: build a canonical inbox at the last_received time. Skip when
+# the test states its own metric evidence (health_daily / canonical_dir
+# / metrics_dir) — which is how the masking tests set last_received while
+# leaving the metric flow with no local evidence at all.
 assess <- function(..., now = NOW) {
   args <- list(...)
+  explicit_metric <- !is.null(args$health_daily) ||
+    !is.null(args$canonical_dir) || !is.null(args$metrics_dir)
+  lr <- if (!is.null(args$status_payload)) args$status_payload$last_received
+        else NULL
+  if (is.null(args$canonical_dir)) {
+    args$canonical_dir <- if (!explicit_metric && !is.null(lr)) {
+      inbox_at(as.POSIXct(sub("T", " ", lr), tz = ""))
+    } else {
+      tempfile()
+    }
+  }
   if (is.null(args$metrics_dir))   args$metrics_dir   <- tempfile()
-  if (is.null(args$canonical_dir)) args$canonical_dir <- tempfile()
   if (is.null(args$workouts_dir))  args$workouts_dir  <- tempfile()
   if (is.null(args$status_payload)) args$status_fetch <- function() NULL
   do.call(data_freshness, c(args, list(now = now, data_dir = "")))
@@ -422,10 +440,28 @@ test_that("fresh workout pushes do not mask a dead metric feed", {
   expect_equal(fr$flows$metrics$source, "health_cache")
 })
 
-test_that("last_received serves metrics only when nothing local exists", {
-  fr <- assess(status_payload = payload(received = 2))
-  expect_equal(fr$flows$metrics$status, "ok")
-  expect_equal(fr$flows$metrics$source, "receiver_push")
+test_that("last_received is not metric arrival evidence — masking is closed", {
+  # A host with no cache or inbox and only /v1/status: workout pushes
+  # bump last_received, but that must not hold the metric flow green.
+  # The empty health_daily says "no local metric evidence"; last_received
+  # is fresh yet the flow is unknown, not ok. Fails against code that
+  # used last_received as a fallback.
+  fr <- assess(status_payload = payload(received = 2),
+               health_daily = tibble::tibble())
+  expect_equal(fr$flows$metrics$status, "unknown")
+  expect_false(fr$flows$metrics$ok)
+})
+
+test_that("ongoing workout pushes cannot mask a metric outage on a cache-less host", {
+  # The concrete masking: metrics silent, but workouts still pushing, so
+  # last_received stays fresh. No cache/inbox to fall back on (empty
+  # health_daily). The metric flow must not read ok off that shared
+  # signal.
+  fr <- assess(status_payload = payload(received = 0.5, workouts = 0.5,
+                                         import_ok = 0.5, pending_workouts = 0),
+               health_daily = tibble::tibble())
+  expect_equal(fr$flows$workouts$status, "ok")   # workouts genuinely fresh
+  expect_equal(fr$flows$metrics$status, "unknown")
 })
 
 test_that("sessions serve workouts only when nothing local exists", {

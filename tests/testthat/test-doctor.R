@@ -200,15 +200,36 @@ freshness_payload <- function(received = NULL, workouts = NULL,
        workouts_timer_armed = timer_armed)
 }
 
-# Pin the inbox directories away from the real data root so the check
-# is hermetic on a dev box that has one.
+# A canonical inbox whose newest write is at the given ISO time — models
+# a metric push landing on disk (last_received is no longer metric
+# arrival evidence, so tests express metric freshness the way production
+# sees it).
+canon_dir_at <- function(iso_ts) {
+  dir <- tempfile()
+  dir.create(dir)
+  f <- file.path(dir, "m.json")
+  writeLines("{}", f)
+  ts <- as.POSIXct(sub("T", " ", iso_ts), tz = "")
+  Sys.setFileTime(f, ts)
+  Sys.setFileTime(dir, ts)
+  dir
+}
+
+# Pin the inbox directories away from the real data root so the check is
+# hermetic on a dev box that has one. Model the payload's last_received
+# as a canonical write, unless the caller supplied its own canonical_dir
+# (e.g. a stale-metric test driving the flow off health_daily instead).
 check_freshness <- function(...) {
   args <- list(...)
   if (is.null(args$receiver_configured)) args$receiver_configured <- TRUE
+  lr <- if (!is.null(args$status_payload)) args$status_payload$last_received
+        else NULL
+  if (is.null(args$canonical_dir)) {
+    args$canonical_dir <- if (!is.null(lr)) canon_dir_at(lr) else tempfile()
+  }
   do.call(check_data_freshness,
           c(list(now = freshness_now, data_dir = "",
-                 metrics_dir = tempfile(), canonical_dir = tempfile(),
-                 workouts_dir = tempfile()),
+                 metrics_dir = tempfile(), workouts_dir = tempfile()),
             args))
 }
 
@@ -453,6 +474,8 @@ test_that("doctor_run runs the freshness check and reports ok=FALSE when stale",
     now = freshness_now,
     freshness_status_payload = freshness_payload(240, 240),
     freshness_args = list(data_dir = "", metrics_dir = tempfile(),
+                          canonical_dir = canon_dir_at(
+                            freshness_payload(240)$last_received),
                           workouts_dir = tempfile(),
                           health_daily = tibble::tibble(),
                           summaries = tibble::tibble())
@@ -471,6 +494,8 @@ test_that("doctor_run passes freshness_args through to the check", {
     now = freshness_now,
     freshness_status_payload = freshness_payload(1, 1),
     freshness_args = list(data_dir = "", metrics_dir = tempfile(),
+                          canonical_dir = canon_dir_at(
+                            freshness_payload(1)$last_received),
                           workouts_dir = tempfile(),
                           health_daily = tibble::tibble(),
                           summaries = tibble::tibble())

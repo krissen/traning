@@ -422,10 +422,11 @@
 #' \describe{
 #'   \item{\code{metrics}}{Apple Health metric pushes. Evidence: the
 #'     newest day in \code{health_daily} or the newest write into the
-#'     canonical / legacy metric inboxes; failing those, the receiver's
-#'     \code{last_received}. That field is bumped by \emph{any} inbound
-#'     push, workouts included, so it cannot prove this flow
-#'     specifically and only serves a host with no data root.}
+#'     canonical / legacy metric inboxes — local only. The receiver's
+#'     \code{last_received} is deliberately not a fallback: it bumps on
+#'     \emph{any} inbound push, workouts included, so it would hold this
+#'     flow green through a metric outage on a host with no cache or
+#'     inbox. Such a host reports \code{unknown} instead.}
 #'   \item{\code{workouts}}{Apple Health workout pushes. Evidence: the
 #'     receiver's \code{last_workouts_import_ok} (last \emph{successful}
 #'     import) or the newest file in the workouts inbox; failing both,
@@ -542,19 +543,26 @@ data_freshness <- function(health_daily = NULL,
 
   metrics_flow <- .freshness_assess_flow(
     "metrics",
+    # Metric arrival evidence is local only: the newest health-cache day
+    # and the canonical / legacy inbox mtimes. canonical/ is where
+    # save_health_push() writes every non-sleep metric and what
+    # import_health_export() prefers; metrics/ now carries only legacy
+    # sleep files. Without canonical the check would miss live arrivals
+    # whenever the cache import is the thing that is stuck.
+    #
+    # /v1/status.last_received is deliberately NOT a fallback here. It
+    # bumps on any inbound push, workouts included, so on a host with no
+    # cache or inbox a stream of workout pushes would hold the metric
+    # flow green straight through a health-metric outage — the same
+    # shared-signal masking removed from the workout side. A cache-less
+    # host therefore cannot verify metric freshness and reports unknown
+    # (→ warn), which is the honest "can't assess from here" rather than
+    # a false green. On kailash the local tiers are always present, so
+    # this never changes the production verdict.
     list(
-      # canonical/ is where save_health_push() writes every non-sleep
-      # metric and what import_health_export() prefers; metrics/ now
-      # carries only legacy sleep files. Without canonical the check
-      # would miss live arrivals whenever the cache import is the thing
-      # that is stuck — which is precisely when this evidence matters.
       list(health_cache = .freshness_health_ts(health_daily),
            canonical_files = .freshness_dir_mtime(canonical_dir),
-           metric_files = .freshness_dir_mtime(metrics_dir)),
-      # Weaker tier: /v1/status's last_received is bumped by any inbound
-      # push, workouts included, so it would mask a metric outage. Used
-      # only on a host with neither cache nor inbox.
-      list(receiver_push = .parse_iso_time(status_payload[["last_received"]]))
+           metric_files = .freshness_dir_mtime(metrics_dir))
     ),
     now = now,
     warn_hours = metrics_warn_hours, fail_hours = metrics_fail_hours)

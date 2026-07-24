@@ -229,20 +229,37 @@ test_that(".readiness_quality_note grades trustworthiness by quality alone", {
 # that day_summary_prose reaches for the workout flow's verdict.
 DAY_NOW <- as.POSIXct(paste(Sys.Date(), "21:30:00"), tz = "")
 
+# A canonical inbox whose newest write is `hours` before `now` — models
+# a metric push landing on disk, the metric evidence the guard reads
+# (last_received is no longer metric arrival evidence).
+canon_at_hours <- function(hours, now = DAY_NOW) {
+  dir <- tempfile()
+  dir.create(dir)
+  f <- file.path(dir, "m.json")
+  writeLines("{}", f)
+  ts <- now - as.difftime(hours, units = "hours")
+  Sys.setFileTime(f, ts)
+  Sys.setFileTime(dir, ts)
+  dir
+}
+
 # Build a freshness verdict without touching the network or disk, with
-# each flow's last arrival given in hours before DAY_NOW.
-# `workouts` is the last successful workout import (the arrival signal);
-# `import_ok` overrides it when a test needs success and attempt to
-# diverge (a wedge).
+# each flow's last arrival given in hours before DAY_NOW. `received`
+# (metric freshness) is modelled as a canonical write on disk, since the
+# guard reads metric evidence there, not from last_received. `workouts`
+# is the last successful workout import; `import_ok` overrides it when a
+# test needs success and attempt to diverge (a wedge).
 day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW,
                            pending_workouts = 0, import_ok = workouts) {
   iso <- function(h) {
     if (is.null(h)) return(NULL)
     format(now - as.difftime(h, units = "hours"), "%Y-%m-%dT%H:%M:%S")
   }
+  canonical_dir <- if (is.null(received)) tempfile()
+                   else canon_at_hours(received, now)
   data_freshness(
     now = now, data_dir = "",
-    metrics_dir = tempfile(), canonical_dir = tempfile(),
+    metrics_dir = tempfile(), canonical_dir = canonical_dir,
     workouts_dir = tempfile(),
     status_payload = list(last_received = iso(received),
                           last_workouts_import = iso(workouts),
