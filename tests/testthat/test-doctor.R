@@ -270,6 +270,11 @@ test_that("check_data_freshness does not alarm during a healthy debounce window"
     summaries = tibble::tibble())
   expect_equal(res$details$flows$workouts$queue_state, "in_progress")
   expect_equal(res$status, "ok")
+  # The ops message must agree with the ok verdict — not the pre-override
+  # "silent" text. A doctor line reading "ok" beside "silent" is the
+  # verdict/text contradiction this module removes everywhere.
+  expect_match(res$message, "import in progress")
+  expect_no_match(res$message, "silent")
 })
 
 test_that("check_data_freshness stays ok while a backfill drains", {

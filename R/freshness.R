@@ -379,6 +379,13 @@
     flow$prose_pending <- sprintf(
       "%s håller fortfarande på att läsas in, så underlaget är ofullständigt än.",
       label)
+    # The ops message must follow the flipped status too, or doctor's
+    # human/JSON output reads "ok" beside the pre-override "…: silent…"
+    # message — the same verdict/text contradiction this module exists to
+    # remove. (source/last_data keep reporting the last real arrival,
+    # which is coherent with an import in progress.)
+    flow$message <- sprintf("%s: import in progress, queue not yet drained.",
+                            flow$flow)
     return(flow)
   }
 
