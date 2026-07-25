@@ -1793,6 +1793,51 @@ health_insight_delta <- function(before, after) {
   !v %in% c("false", "0", "no", "off")
 }
 
+# How much of the readiness verdict is actually backed by data?
+#
+# compute_readiness() grades every day as full / partial / minimal from
+# the number of components present (R/readiness.R:312), but a verdict
+# built on one component used to be presented with exactly the same
+# confidence as one built on five. This is the single place that turns
+# that grade into words, so the morning push and the evening summary
+# cannot drift into two readings of the same field.
+#
+# Returns:
+#   quality      the grade, or NA when unknown
+#   missing      Swedish names of the absent headline components
+#   suffix       parenthetical for a header, "" at full quality
+#   trustworthy  FALSE only at minimal — one component is too thin a
+#                basis for a confident verdict, let alone advice
+.readiness_quality_note <- function(kvalitet, comps) {
+  # A component can be absent either as NA (measured, no value) or by
+  # not being in the list at all — callers that inject a readiness list
+  # in tests pass components = list(). is.na(NULL) is logical(0), which
+  # would abort an if-clause, so normalise both to "absent".
+  absent <- function(x) is.null(x) || length(x) == 0L || is.na(x)
+
+  missing <- character()
+  if (absent(comps$hrv$value))   missing <- c(missing, "HRV")
+  if (absent(comps$sleep$value)) missing <- c(missing, "sömn")
+  if (absent(comps$rhr$value))   missing <- c(missing, "vilopuls")
+
+  suffix <- ""
+  if (isTRUE(kvalitet %in% c("partial", "minimal"))) {
+    suffix <- if (length(missing) > 0) {
+      paste0(" (", kvalitet, ", ", paste(missing, collapse = "/"),
+             " saknas än)")
+    } else {
+      paste0(" (", kvalitet, ")")
+    }
+  }
+
+  list(
+    quality     = kvalitet,
+    missing     = missing,
+    suffix      = suffix,
+    trustworthy = !isTRUE(kvalitet == "minimal")
+  )
+}
+
 #' Generate state-based health insight notification
 #'
 #' Produces Swedish prose describing today's readiness state and the components
@@ -1838,18 +1883,7 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   if (!is.na(status) && !is.na(score)) {
     header <- paste0("Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
                       status, " ", score)
-    if (isTRUE(kvalitet %in% c("partial", "minimal"))) {
-      missing <- character()
-      if (is.na(comps$hrv$value))   missing <- c(missing, "HRV")
-      if (is.na(comps$sleep$value)) missing <- c(missing, "s\u00f6mn")
-      if (is.na(comps$rhr$value))   missing <- c(missing, "vilopuls")
-      if (length(missing) > 0) {
-        header <- paste0(header, " (", kvalitet, ", ",
-                          paste(missing, collapse = "/"), " saknas \u00e4n)")
-      } else {
-        header <- paste0(header, " (", kvalitet, ")")
-      }
-    }
+    header <- paste0(header, .readiness_quality_note(kvalitet, comps)$suffix)
     header <- paste0(header, ".")
   } else {
     # No score computable; degrade gracefully

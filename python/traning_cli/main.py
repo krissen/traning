@@ -900,7 +900,7 @@ def doctor(ctx):
         ctx.invoke(doctor_run)
 
 
-_DOCTOR_CHECKS = ("all", "packages", "services", "configs")
+_DOCTOR_CHECKS = ("all", "packages", "services", "configs", "freshness")
 
 
 @doctor.command(name="run")

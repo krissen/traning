@@ -18,6 +18,16 @@ GARMIN_PASSWORD=
 #HAE_HOST=
 #HAE_PORT=9000
 
+# Receiver (used by `traning doctor run --check freshness`).
+# Without these the freshness check cannot query the receiver and can
+# only judge the age of this machine's copy of the data — which on a
+# dev box is the age of the last `git pull`, not the health of the
+# pipeline. Point them at the receiver over Tailscale and copy the key
+# from /etc/traning/env on kailash to get the real verdict.
+#TRANING_RECEIVER_HOST=100.93.126.68
+#TRANING_RECEIVER_PORT=8421
+#TRANING_API_KEY=
+
 # Output defaults (all optional).
 # TRANING_OUTPUT_DIR — base directory for saved plots/tables (default: $TRANING_DATA/output)
 # TRANING_PLOT_FORMAT — default plot format: pdf, png (default: pdf)

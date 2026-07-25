@@ -327,6 +327,14 @@ _workouts_flushing: bool = False
 
 _last_workouts_import_ts: datetime | None = None
 _last_workouts_import_count: int = 0
+# Distinct from _last_workouts_import_ts, which bumps on every attempt:
+# this one is set ONLY after an import actually succeeds. The two diverge
+# under a poison-message wedge — a single malformed file fails every
+# import while well-formed pushes keep arriving — where the attempt
+# timestamp and the inbox mtime both stay fresh but nothing reaches
+# summaries.RData. A freshness check that leans on arrival alone reads
+# that as healthy; a stale success timestamp is what exposes it.
+_last_workouts_import_ok_ts: datetime | None = None
 
 # Re-arm delay used when a flush is skipped because a prior one is still
 # in flight (see _flush_pending_workouts). Short relative to
@@ -371,6 +379,7 @@ def _flush_pending_workouts() -> None:
     """
     global _workouts_timer, _pending_workouts_count, _workouts_flushing
     global _last_workouts_import_ts, _last_workouts_import_count
+    global _last_workouts_import_ok_ts
     with _workouts_lock:
         if _workouts_flushing:
             # A prior flush is still running (only reachable if the
@@ -438,6 +447,13 @@ def _flush_pending_workouts() -> None:
         # it surfaced for the next push to retry.
         _last_workouts_import_ts = datetime.now()
         _last_workouts_import_count = n
+        # Success-only timestamp: set here, inside `if ok`, and nowhere
+        # else. A freshness check uses it to tell a draining backfill from
+        # a wedged import — both keep the attempt timestamp and the inbox
+        # fresh, but only a real success moves this. Bumping it on an
+        # attempt would recreate the exact lie it exists to expose.
+        if ok:
+            _last_workouts_import_ok_ts = datetime.now()
     finally:
         # Always reset the guard and persist the resulting state, even if
         # something above raised. On the normal path ok reflects whether
@@ -649,11 +665,28 @@ def create_app() -> FastAPI:
             "pending_workouts": pending_workouts,
             "workouts_timer_armed": workouts_timer_armed,
             "workouts_debounce_seconds": _DEBOUNCE_WORKOUTS_SECS,
+            # Despite the name this is the last import *attempt*, not the
+            # last success: _flush_pending_workouts() bumps the timestamp
+            # on every run and only drains pending_workouts on success
+            # (see there). A consumer using it as arrival evidence is
+            # safe — an attempt only happens after a real push armed the
+            # debounce — but must not read it as "workouts were imported":
+            # a failed run leaves it fresh while pending_workouts stays
+            # non-zero. That pairing (recent attempt, non-empty queue,
+            # no re-armed timer) is a stuck import, not a live feed.
             "last_workouts_import": (
                 _last_workouts_import_ts.isoformat()
                 if _last_workouts_import_ts else None
             ),
             "last_workouts_import_count": _last_workouts_import_count,
+            # Last import that actually succeeded (drained the queue), as
+            # opposed to last attempt above. A freshness check reads this
+            # to catch a poison-message wedge: fresh arrivals + a growing
+            # queue + a stale success = a broken import, not a live feed.
+            "last_workouts_import_ok": (
+                _last_workouts_import_ok_ts.isoformat()
+                if _last_workouts_import_ok_ts else None
+            ),
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])

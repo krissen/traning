@@ -88,7 +88,11 @@ test_that("short efforts keep the distance-only wording", {
                    hr = 140)
   txt <- .ms_prose(s, d)
   expect_match(txt, "löpning 10,0 km\\.")
-  expect_false(grepl("/", txt, fixed = TRUE))
+  # Distance-only means no "km / <time>" in the sport line. Target that
+  # pattern specifically — a bare "/" now also appears in the readiness
+  # state line ("HRV/sömn/vilopuls saknas"), which is unrelated to the
+  # sport wording this test guards.
+  expect_false(grepl("km /", txt, fixed = TRUE))
 })
 
 test_that("sports without a distance are described by time alone", {

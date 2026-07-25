@@ -638,6 +638,47 @@
     return(tsb_text)
   }
 
+  quality <- .readiness_quality_note(readiness$kvalitet,
+                                      readiness$components %||% list())
+
+  # At minimal quality the verdict is withheld entirely, and this is
+  # deliberately *not* what the morning push does with the same field.
+  # Do not "fix" the inconsistency: the two differ because they do
+  # different things with the number.
+  #
+  # The morning states the figure and stops — nothing in
+  # health_insight_readiness() derives an instruction from status or
+  # score; it lists the components behind the verdict and names the
+  # missing ones inline. (The one imperative that can appear in that
+  # notification, the HRV-downtrend line, is computed from HRV history
+  # and not from the verdict at all.) The evening attaches an
+  # instruction to the same figure: the Röd branch below tells the
+  # reader to rest or go easy tomorrow.
+  #
+  # So the morning at worst shows a wrong number, while the evening
+  # turns that wrong number into a wrong instruction. On 2026-07-21 the
+  # verdict was not merely thin but inverted — Röd 21 against an actual
+  # 85 Grön once the gap was backfilled — and it carried advice. A
+  # parenthesis does not rescue a figure read in passing, still less
+  # one with an imperative attached.
+  #
+  # (An earlier version of this comment argued that the morning may be
+  # qualified because it re-renders as components land. That is not a
+  # reliable basis: health_insight_update()'s re-render trigger fires
+  # only when a previously absent component becomes present, so a dead
+  # feed produces no correction and the morning verdict stands all day
+  # — this branch's own scenario.)
+  if (!quality$trustworthy) {
+    thin <- if (length(quality$missing) > 0) {
+      sprintf("Dagsformen kan inte bedömas — %s saknas för dagen.",
+              paste(quality$missing, collapse = "/"))
+    } else {
+      "Dagsformen kan inte bedömas — underlaget är för tunt."
+    }
+    if (is.null(tsb_text)) return(thin)
+    return(paste(thin, tsb_text))
+  }
+
   score <- readiness$score
   ball <- switch(status,
                  "Grön" = "\U0001F7E2",
@@ -646,7 +687,7 @@
                  "")
   score_str <- if (is.finite(score)) sprintf(" %.0f", score) else ""
   prefix <- paste0("Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
-                   status, score_str)
+                   status, score_str, quality$suffix)
 
   if (status == "Röd") {
     # Hard override — TSB form claim could actively mislead
@@ -659,6 +700,123 @@
     # Grön — readiness and TSB concur; keep TSB phrasing.
     tsb_text
   }
+}
+
+# Does the day's active_energy look like a workout happened, even though
+# none was logged? Metrics carry a shadow of training: a substantial
+# session that never synced still leaves an unmistakable energy imprint.
+# Measured 2026-05..07: rest days median ~1900 kJ (max 2589), workout
+# days ~4000, and 2026-07-21 (the paddling that never synced) 7804 — four
+# times the rest baseline.
+#
+# The test is personal and self-calibrating: today's active_energy above
+# the 90th percentile of the trailing 30 days — the top tenth of one's
+# own recent daily energy. A fixed multiple of a rest baseline drifts
+# with season and fitness and needs a hand-picked number; the percentile
+# does not. Validated on the live cache: 21 Jul (7804) is above its
+# window q90 → "high"; 14 Jun (1248) and 16 Jul (2589) are not → "rest";
+# zero false positives on real rest days.
+#
+# Returns "high", "rest", or "insufficient" (too little history, or no
+# reading for the day). Callers hedge on "high" and "insufficient" and
+# only trust a genuine rest day on "rest".
+#
+# Deliberate blind spot: a light missed session (~2100 kJ) is
+# indistinguishable from an active rest day (~2600) and reads "rest".
+# That is the accepted small harm — a quiet degradation, not a false
+# claim — and walks are logged as workouts (Utomhus_Gang), so a big walk
+# arrives as a session rather than only as energy, which caps the NEAT
+# false-positive rate.
+.day_energy_verdict <- function(health_daily, date,
+                                 window_days = 30, min_days = 14) {
+  if (is.null(health_daily) || !inherits(health_daily, "data.frame") ||
+      nrow(health_daily) == 0 ||
+      !all(c("date", "metric", "value") %in% names(health_daily))) {
+    return("insufficient")
+  }
+  ae <- health_daily[health_daily$metric == "active_energy",
+                     c("date", "value")]
+  ae <- ae[!is.na(ae$value), ]
+  if (nrow(ae) == 0) return("insufficient")
+  ae$date <- as.Date(ae$date)
+  today <- ae$value[ae$date == date]
+  if (length(today) == 0) return("insufficient")
+  today <- max(today)
+  win <- ae$value[ae$date < date & ae$date >= date - window_days]
+  if (length(win) < min_days) return("insufficient")
+  q90 <- as.numeric(stats::quantile(win, 0.90, names = FALSE))
+  if (today > q90) "high" else "rest"
+}
+
+# Rest-day guard: zero sessions can mean "rested" or "the workout feed
+# died". Returns the workout flow from data_freshness() when the day's
+# emptiness is not trustworthy, NULL when "Vilodag." stands.
+#
+# Decision tree, in order:
+#   1. Positive evidence the cache is incomplete — a queue in flight, or
+#      a stuck import — hedges regardless of energy: the data provably
+#      has not landed.
+#   2. Otherwise, if the workout flow is fresh, nothing to hedge.
+#   3. Workout flow stale. If metrics are ALSO stale (or there is too
+#      little energy history to judge), both sources are silent — an
+#      unambiguous outage — so hedge.
+#   4. Metrics fresh but workouts stale: the ambiguous case. Let the
+#      day's active_energy break the tie — a session-less day carrying a
+#      workout-sized energy imprint almost certainly means a session
+#      that did not sync (hedge); rest-level energy means genuine rest
+#      (NULL).
+#
+# A stale metric feed on its own never turns a genuine rest day into a
+# data-missing claim — it only escalates the ambiguous case to "can't
+# rule out a missed sync".
+#
+# Only current-day summaries are guarded. A summary for a day well in
+# the past is computed from an archive that has long since been
+# completed, so a feed that is quiet *today* says nothing about it —
+# and measuring against Sys.time() there would retro-flag every
+# historical rest day.
+#
+# The check must never delay or break the 21:30 notification: the whole
+# probe is wrapped in tryCatch and the HTTP timeout is short.
+.day_freshness_guard <- function(date, summaries, health_daily,
+                                  freshness = NULL) {
+  # The date gate is unconditional. Conjoining it with `is.null(freshness)`
+  # would let an injected verdict reach a historical day, which is the
+  # one case the gate exists to prevent — an injection seam must not
+  # double as an escape hatch from an invariant.
+  if (date < Sys.Date() - 1) return(NULL)
+  fresh <- freshness %||% tryCatch(
+    data_freshness(health_daily = health_daily, summaries = summaries,
+                   status_fetch = function() .receiver_status(timeout = 3L)),
+    error = function(e) NULL)
+  workouts <- fresh$flows$workouts
+  if (is.null(workouts)) return(NULL)
+
+  # 1a. A queue the receiver has taken in but not yet imported makes the
+  # flow demonstrably alive — and the day's material demonstrably
+  # incomplete. The doctor check reads the first meaning; here we need
+  # the second, because sessions sitting in that queue are exactly the
+  # ones missing from `summaries` when we would otherwise say "Vilodag."
+  if (isTRUE(workouts$in_flight)) {
+    workouts$prose <- workouts$prose_pending
+    return(workouts)
+  }
+  # 1b. A stuck import is positive proof the cache is incomplete.
+  if (identical(workouts$queue_state, "stuck")) return(workouts)
+
+  # 2. Workout flow fresh — a genuine rest day.
+  if (isTRUE(workouts$ok)) return(NULL)
+
+  # 3. Both flows silent — an unambiguous outage, or too little energy
+  # history to judge. Hedge.
+  metrics <- fresh$flows$metrics
+  if (is.null(metrics) || !isTRUE(metrics$ok)) return(workouts)
+  verdict <- .day_energy_verdict(health_daily, date)
+  if (verdict == "insufficient") return(workouts)
+
+  # 4. Metrics fresh: the energy imprint breaks the tie.
+  if (verdict == "high") return(workouts)
+  NULL
 }
 
 # ---- Main entry ------------------------------------------------------------
@@ -684,21 +842,33 @@
 #'   this to align its form-narrative with the morning readiness
 #'   verdict (Grön / Gul / Röd) — without it, TSB-only phrasing can
 #'   contradict the day's autonomic/sleep state.
+#' @param freshness Optional pre-computed \code{data_freshness()} list.
+#'   NULL = probe the receiver (current-day summaries only). Supply
+#'   this in tests to avoid network access.
 #' @return Character string. Always non-empty; "Vilodag." on full
-#'   rest days when no PMC context is computable.
+#'   rest days when no PMC context is computable, or a
+#'   data-is-missing line when the feed has gone quiet.
 #' @export
 day_summary_prose <- function(summaries, date = Sys.Date(),
                                hr_max = NULL, hr_rest = NULL,
-                               health_daily = NULL) {
+                               health_daily = NULL,
+                               freshness = NULL) {
   date <- as.Date(date)
 
-  if (is.null(summaries) || nrow(summaries) == 0) {
-    return("Vilodag.")
-  }
-
+  # Loaded before the empty-summaries branch: the freshness guard uses
+  # the newest health-metric day as fallback when the receiver does not
+  # answer, and that branch is exactly where the guard matters most.
   if (is.null(health_daily)) {
     health_daily <- tryCatch(load_health_data(),
                               error = function(e) NULL)
+  }
+
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    stale <- .day_freshness_guard(date, summaries, health_daily, freshness)
+    if (!is.null(stale)) {
+      return(paste0("Inga registrerade pass — ", stale$prose))
+    }
+    return("Vilodag.")
   }
 
   todays <- summaries %>%
@@ -706,10 +876,27 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   per_sport <- .day_per_sport(todays)
 
   if (nrow(todays) == 0 || sum(per_sport$min, na.rm = TRUE) < 1) {
-    base <- "Vilodag."
+    stale <- .day_freshness_guard(date, summaries, health_daily, freshness)
+    if (!is.null(stale)) {
+      # No state line in the hedge case. The guard fires here only when
+      # the cache is missing sessions — a stuck/interrupted sync, or a
+      # session-less day whose energy imprint says a workout went
+      # unsynced — so .day_state_line()'s TSB half, computed from that
+      # incomplete `summaries`, is unreliable *here specifically*. (On a
+      # genuine rest day the guard returns NULL, the cache is complete,
+      # and TSB is correct — that path keeps its state line below.)
+      # Appending it in the hedge case revived the original contradiction
+      # one class over: "underlaget är ofullständigt. Form på topp — bra
+      # läge för kvalitet eller tävling.", a confident training cue built
+      # on data we just called incomplete (cf. the 2026-05-09 note on
+      # .day_state_line). The readiness half can be fresh, but it travels
+      # with the unreliable TSB half through one function, so the honest
+      # move is to drop the whole line.
+      return(paste0("Inga registrerade pass — ", stale$prose))
+    }
     state <- .day_state_line(summaries, health_daily, date, hr_max, hr_rest)
-    if (!is.null(state)) return(paste(base, state))
-    return(base)
+    if (!is.null(state)) return(paste("Vilodag.", state))
+    return("Vilodag.")
   }
 
   parts <- character()

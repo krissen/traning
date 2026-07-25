@@ -127,6 +127,423 @@ test_that(".day_state_line: Grön readiness keeps TSB phrasing", {
   expect_false(grepl("Dagsform", txt %||% ""))
 })
 
+# --- Readiness data quality --------------------------------------------------
+# Regression: the evening push on 2026-07-21 read "Dagsform 🔴 Röd 21 —
+# återhämtningssignaler dominerar. Vila eller lugnt imorgon." on a
+# one-component verdict. Once the health gap was backfilled the same
+# day's actual readiness was 85 Grön — the verdict was inverted, and it
+# carried training advice.
+
+readiness_at <- function(status, score, kvalitet, present = character()) {
+  comp <- function(name) {
+    list(value = if (name %in% present) 1 else NA_real_,
+         delta = NA_real_, flag = FALSE, score = NA_real_)
+  }
+  list(status = status, score = score, kvalitet = kvalitet,
+       components = list(hrv = comp("hrv"), sleep = comp("sleep"),
+                          rhr = comp("rhr"), load = comp("load")),
+       components_present = list())
+}
+
+quality_summaries <- function() {
+  tibble::tibble(
+    sessionStart = as.POSIXct("2026-05-06 18:00", tz = "UTC"),
+    sport = "running", distance = 8000,
+    avgPaceMoving = 5.5, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(45, units = "mins"))
+}
+
+test_that("full quality leaves the verdict phrased exactly as before", {
+  d <- as.Date("2026-05-08")
+  full <- readiness_at("Röd", 40, "full",
+                        present = c("hrv", "sleep", "rhr", "load"))
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = full)
+  expect_equal(
+    txt,
+    paste("Dagsform \U0001F534 Röd 40 — återhämtningssignaler dominerar.",
+          "Vila eller lugnt imorgon."))
+})
+
+test_that("partial quality keeps the verdict but says what is missing", {
+  d <- as.Date("2026-05-08")
+  partial <- readiness_at("Gul", 55, "partial",
+                           present = c("hrv", "rhr", "load"))
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = partial)
+  expect_match(txt, "Dagsform \U0001F7E1 Gul 55 \\(partial, sömn saknas än\\)")
+})
+
+test_that("partial quality still carries the Röd advice", {
+  # Partial is thin, not untrustworthy — the advice stands.
+  d <- as.Date("2026-05-08")
+  partial <- readiness_at("Röd", 35, "partial",
+                           present = c("hrv", "rhr", "load"))
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = partial)
+  expect_match(txt, "\\(partial, sömn saknas än\\)")
+  expect_match(txt, "Vila eller lugnt imorgon")
+})
+
+test_that("minimal quality withholds the verdict, the score and the advice", {
+  d <- as.Date("2026-05-08")
+  minimal <- readiness_at("Röd", 21, "minimal", present = "load")
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = minimal)
+  expect_match(txt, "^Dagsformen kan inte bedömas")
+  expect_match(txt, "HRV/sömn/vilopuls saknas")
+  expect_no_match(txt, "Röd")
+  expect_no_match(txt, "21")
+  expect_no_match(txt, "Vila eller lugnt imorgon")
+})
+
+test_that("minimal quality keeps the TSB narrative it falls back on", {
+  d <- as.Date("2026-05-08")
+  minimal <- readiness_at("Röd", 21, "minimal", present = "load")
+  txt <- .day_state_line(quality_summaries(), health_daily = NULL,
+                          on_date = d, readiness = minimal)
+  # A TSB line is computable from these summaries, so the state line
+  # keeps saying something useful rather than going silent.
+  expect_gt(nchar(txt), nchar("Dagsformen kan inte bedömas — "))
+})
+
+test_that(".readiness_quality_note tolerates an empty component list", {
+  # is.na(NULL) is logical(0), which would abort an if-clause.
+  note <- .readiness_quality_note("full", list())
+  expect_equal(note$suffix, "")
+  expect_true(note$trustworthy)
+  expect_setequal(note$missing, c("HRV", "sömn", "vilopuls"))
+})
+
+test_that(".readiness_quality_note grades trustworthiness by quality alone", {
+  expect_true(.readiness_quality_note("full", list())$trustworthy)
+  expect_true(.readiness_quality_note("partial", list())$trustworthy)
+  expect_false(.readiness_quality_note("minimal", list())$trustworthy)
+  expect_true(.readiness_quality_note(NA_character_, list())$trustworthy)
+})
+
+# --- Freshness guard ---------------------------------------------------------
+# Regression: 2026-07-21 said "Vilodag. Dagsform 🔴 Röd 21 …" on a day
+# with a six-hour paddling session, because the HAE workout feed had
+# been dead since 2026-06-02 and nothing checked data age.
+
+# The guard only fires for the current day, so these cases have to be
+# anchored to today rather than to a fixed calendar date. The exact
+# Swedish wording is locked in test-freshness.R; what matters here is
+# that day_summary_prose reaches for the workout flow's verdict.
+DAY_NOW <- as.POSIXct(paste(Sys.Date(), "21:30:00"), tz = "")
+
+# A canonical inbox whose newest write is `hours` before `now` — models
+# a metric push landing on disk, the metric evidence the guard reads
+# (last_received is no longer metric arrival evidence).
+canon_at_hours <- function(hours, now = DAY_NOW) {
+  dir <- tempfile()
+  dir.create(dir)
+  f <- file.path(dir, "m.json")
+  writeLines("{}", f)
+  ts <- now - as.difftime(hours, units = "hours")
+  Sys.setFileTime(f, ts)
+  Sys.setFileTime(dir, ts)
+  dir
+}
+
+# Build a freshness verdict without touching the network or disk, with
+# each flow's last arrival given in hours before DAY_NOW. `received`
+# (metric freshness) is modelled as a canonical write on disk, since the
+# guard reads metric evidence there, not from last_received. `workouts`
+# is the last successful workout import; `import_ok` overrides it when a
+# test needs success and attempt to diverge (a wedge).
+day_freshness <- function(received = NULL, workouts = NULL, now = DAY_NOW,
+                           pending_workouts = 0, import_ok = workouts) {
+  iso <- function(h) {
+    if (is.null(h)) return(NULL)
+    format(now - as.difftime(h, units = "hours"), "%Y-%m-%dT%H:%M:%S")
+  }
+  canonical_dir <- if (is.null(received)) tempfile()
+                   else canon_at_hours(received, now)
+  data_freshness(
+    now = now, data_dir = "",
+    metrics_dir = tempfile(), canonical_dir = canonical_dir,
+    workouts_dir = tempfile(),
+    status_payload = list(last_received = iso(received),
+                          last_workouts_import = iso(workouts),
+                          last_workouts_import_ok = iso(import_ok),
+                          pending_workouts = pending_workouts))
+}
+
+rest_day_summaries <- function() {
+  tibble::tibble(
+    sessionStart = as.POSIXct(paste(Sys.Date() - 15, "10:00"), tz = ""),
+    sport = "running", distance = 5000,
+    avgPaceMoving = 5.0, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(28, units = "mins"))
+}
+
+# Synthetic active_energy history ending `end`, encoding the real shape:
+# a low rest baseline against a higher workout distribution, so the
+# trailing q90 sits at workout level. `today` sets the day under test.
+# `n` days of history (set < 14 to exercise the insufficient branch).
+energy_series <- function(today, n = 40, rest = 1900, workout = 4000,
+                           end = Sys.Date()) {
+  hist <- tibble::tibble(
+    date = end - (n:1),
+    metric = "active_energy",
+    value = rep(c(rest, workout, workout, workout), length.out = n),
+    source = "hae")
+  if (is.null(today)) return(hist)
+  dplyr::bind_rows(hist, tibble::tibble(
+    date = end, metric = "active_energy", value = today, source = "hae"))
+}
+
+test_that("day_summary_prose keeps 'Vilodag.' when the workout feed is fresh", {
+  fresh <- day_freshness(received = 2, workouts = 3)
+  expect_true(fresh$ok)
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = fresh)
+  expect_match(txt, "^Vilodag\\.")
+})
+
+test_that("a stale metric feed alone does not rewrite a genuine rest day", {
+  # Metrics degrade the readiness half of the summary, but they say
+  # nothing about whether a session happened.
+  fr <- day_freshness(received = 24 * 10, workouts = 3)
+  expect_equal(fr$flows$metrics$status, "fail")
+  expect_equal(fr$flows$workouts$status, "ok")
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = fr)
+  expect_match(txt, "^Vilodag\\.")
+})
+
+test_that("a queued import stops the day being called rest", {
+  # The flow is alive — that is what the queue proves — but the very
+  # sessions sitting in it are the ones missing from `summaries`.
+  # Health and completeness are different questions.
+  pending <- day_freshness(received = 2, workouts = 2, import_ok = 1,
+                            pending_workouts = 12)
+  expect_true(pending$flows$workouts$ok)
+  expect_true(pending$flows$workouts$in_flight)
+  # Rest-level energy: the in_flight branch must hedge before the energy
+  # check even gets a chance — positive evidence outranks the tie-break.
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            health_daily = energy_series(today = 1900),
+                            freshness = pending)
+  expect_no_match(txt, "^Vilodag\\.")
+  expect_match(txt, "^Inga registrerade pass —")
+  expect_match(txt, "håller fortfarande på att läsas in")
+})
+
+test_that("a wedged import surfaces as data-came-in-but-unread, not rest", {
+  # The poison-message wedge: fresh arrivals, a growing queue, but no
+  # successful import in days. The day is not rest, and the prose must
+  # point at the importer rather than claim nothing arrived.
+  stuck <- day_freshness(received = 2, workouts = 2, import_ok = 24 * 6,
+                          pending_workouts = 12)
+  expect_equal(stuck$flows$workouts$queue_state, "stuck")
+  # Rest-level energy: stuck is positive evidence and must hedge before
+  # the energy tie-break.
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            health_daily = energy_series(today = 1900),
+                            freshness = stuck)
+  expect_no_match(txt, "^Vilodag\\.")
+  expect_match(txt, "^Inga registrerade pass —")
+  expect_match(txt, "kommer in men har inte kunnat läsas in")
+})
+
+test_that("a stale workout flow drops the TSB state line — no advice beside incomplete data", {
+  # The original contradiction, sneaking back one class over: with the
+  # workout flow stale, `summaries` is the incomplete cache, and its TSB
+  # verdict here is literally "Form på topp — bra läge för kvalitet
+  # eller tävling." Appending that put a confident training cue right
+  # after "underlaget är ofullständigt". No state line may follow the
+  # stale prose.
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(
+      paste(Sys.Date() - c(1, 2, 3, 4, 6, 8, 10, 12, 14), "18:00"), tz = ""),
+    sport = "running", distance = 9000,
+    avgPaceMoving = 5.2, avgHeartRateMoving = 155,
+    durationMoving = as.difftime(48, units = "mins"))
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  expect_equal(stale$flows$workouts$status, "fail")
+  txt <- day_summary_prose(s, date = Sys.Date(),
+                            health_daily = tibble::tibble(), freshness = stale)
+  # Exactly the stale line, nothing appended.
+  expect_equal(txt, paste0("Inga registrerade pass — ",
+                            stale$flows$workouts$prose))
+  expect_no_match(txt, "Form på topp")
+  expect_no_match(txt, "kvalitet")
+  expect_no_match(txt, "CTL")
+})
+
+test_that("an emptied queue leaves a genuine rest day alone", {
+  # The distinction is undelivered work *now*, not a flush that
+  # recently completed — otherwise every rest day after an import
+  # would read as suspect.
+  flushed <- day_freshness(received = 2, workouts = 2, pending_workouts = 0)
+  expect_false(flushed$flows$workouts$in_flight)
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            freshness = flushed)
+  expect_match(txt, "^Vilodag\\.")
+})
+
+test_that("a genuine rest day still keeps its TSB state line", {
+  # The fix must not strip the state line from a real rest day (stale
+  # NULL) — only when the workout flow is stale. Fresh flow, sessions in
+  # recent days but none today: the TSB line stays.
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(
+      paste(Sys.Date() - c(1, 2, 3, 4, 6, 8, 10, 12, 14), "18:00"), tz = ""),
+    sport = "running", distance = 9000,
+    avgPaceMoving = 5.2, avgHeartRateMoving = 155,
+    durationMoving = as.difftime(48, units = "mins"))
+  fresh <- day_freshness(received = 2, workouts = 2)
+  expect_true(fresh$flows$workouts$ok)
+  txt <- day_summary_prose(s, date = Sys.Date(),
+                            health_daily = tibble::tibble(), freshness = fresh)
+  expect_match(txt, "^Vilodag\\.")
+  expect_match(txt, "Form på topp")
+})
+
+test_that("an armed import timer also blocks the rest-day claim", {
+  pending <- day_freshness(received = 2, workouts = 2)
+  pending$flows$workouts$in_flight <- TRUE
+  pending$flows$workouts$prose_pending <- "test-vokabulär"
+  guard <- .day_freshness_guard(Sys.Date(), NULL, NULL, freshness = pending)
+  expect_false(is.null(guard))
+  expect_equal(guard$prose, "test-vokabulär")
+})
+
+test_that("day_summary_prose flags a dead workout feed instead of claiming rest", {
+  # The real 2026-07-21 outage: metrics still arriving, workouts silent
+  # for weeks, and the session-less day carries a workout-sized energy
+  # spike (the unsynced paddling). The energy imprint breaks the tie.
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  expect_equal(stale$flows$workouts$status, "fail")
+  txt <- day_summary_prose(rest_day_summaries(), date = Sys.Date(),
+                            health_daily = energy_series(today = 7800),
+                            freshness = stale)
+  expect_no_match(txt, "^Vilodag\\.")
+  expect_match(txt, "^Inga registrerade pass —")
+  expect_true(grepl(stale$flows$workouts$prose, txt, fixed = TRUE))
+})
+
+test_that("day_summary_prose flags a dead workout feed on empty summaries too", {
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  txt <- day_summary_prose(NULL, date = Sys.Date(),
+                            health_daily = energy_series(today = 7800),
+                            freshness = stale)
+  expect_match(txt, "^Inga registrerade pass —")
+})
+
+test_that("day_summary_prose leaves an actual training day untouched", {
+  # The guard only applies to zero-session days — a stale feed must
+  # not rewrite a day that does have sessions.
+  s <- tibble::tibble(
+    sessionStart = as.POSIXct(paste(Sys.Date(), "08:00"), tz = ""),
+    sport = "running", distance = 8000,
+    avgPaceMoving = 5.5, avgHeartRateMoving = 140,
+    durationMoving = as.difftime(45, units = "mins"))
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  txt <- day_summary_prose(s, date = Sys.Date(), freshness = stale)
+  expect_match(txt, "Dagens pass")
+  expect_no_match(txt, "Inga registrerade pass")
+})
+
+# --- active_energy discriminator (issue-010) ---------------------------------
+# When metrics are fresh but the workout flow is stale, the day's energy
+# breaks the "rest vs missed sync" tie: a session-less day above the
+# personal trailing-30d q90 almost certainly means a workout that never
+# synced. Validated on the live cache (21 Jul 7804 → hedge; 14 Jun / 16
+# Jul rest → Vilodag); these mirror that shape hermetically.
+
+test_that("high energy on a session-less day hedges (a workout went unsynced)", {
+  stale <- day_freshness(received = 2, workouts = 24 * 49)  # metrics ok, workouts stale
+  expect_true(stale$flows$metrics$ok)
+  expect_false(stale$flows$workouts$ok)
+  guard <- .day_freshness_guard(Sys.Date(), NULL,
+                                 energy_series(today = 7800), freshness = stale)
+  expect_false(is.null(guard))
+})
+
+test_that("rest-level energy on a session-less day is a genuine rest day", {
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  guard <- .day_freshness_guard(Sys.Date(), NULL,
+                                 energy_series(today = 1900), freshness = stale)
+  expect_null(guard)
+})
+
+test_that("too little energy history hedges (cannot rule out a missed sync)", {
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  guard <- .day_freshness_guard(Sys.Date(), NULL,
+                                 energy_series(today = 1900, n = 8),
+                                 freshness = stale)
+  expect_false(is.null(guard))
+})
+
+test_that("a stale metric feed hedges regardless of energy", {
+  # Both flows silent is an unambiguous outage; even rest-level energy
+  # must not produce a confident Vilodag.
+  both <- day_freshness(received = 24 * 10, workouts = 24 * 49)
+  expect_false(both$flows$metrics$ok)
+  guard <- .day_freshness_guard(Sys.Date(), NULL,
+                                 energy_series(today = 1900), freshness = both)
+  expect_false(is.null(guard))
+})
+
+test_that("in_flight and stuck hedge even when energy is at rest level", {
+  # Positive evidence outranks the energy tie-break: the cache is
+  # provably incomplete, so rest-level energy cannot argue it away.
+  in_flight <- day_freshness(received = 2, workouts = 2, import_ok = 1,
+                              pending_workouts = 12)
+  stuck <- day_freshness(received = 2, workouts = 2, import_ok = 24 * 6,
+                          pending_workouts = 12)
+  rest_energy <- energy_series(today = 1900)
+  expect_false(is.null(.day_freshness_guard(Sys.Date(), NULL, rest_energy,
+                                             freshness = in_flight)))
+  expect_false(is.null(.day_freshness_guard(Sys.Date(), NULL, rest_energy,
+                                             freshness = stuck)))
+})
+
+test_that(".day_energy_verdict classifies high, rest and insufficient", {
+  expect_equal(.day_energy_verdict(energy_series(today = 7800), Sys.Date()),
+               "high")
+  expect_equal(.day_energy_verdict(energy_series(today = 1900), Sys.Date()),
+               "rest")
+  expect_equal(.day_energy_verdict(energy_series(today = 1900, n = 8),
+                                    Sys.Date()),
+               "insufficient")
+  # No reading for the day itself → cannot tell.
+  expect_equal(.day_energy_verdict(energy_series(today = NULL), Sys.Date()),
+               "insufficient")
+  expect_equal(.day_energy_verdict(tibble::tibble(), Sys.Date()),
+               "insufficient")
+})
+
+test_that("an injected verdict does not escape the historical date gate", {
+  # The gate is unconditional: a supplied freshness list is a test
+  # seam, not a way past the invariant that only today is guarded.
+  stale <- day_freshness(received = 2, workouts = 24 * 49)
+  expect_null(.day_freshness_guard(Sys.Date() - 30, NULL, NULL,
+                                    freshness = stale))
+  txt <- day_summary_prose(rest_day_summaries(), date = "2026-05-08",
+                            freshness = stale)
+  expect_match(txt, "^Vilodag\\.")
+})
+
+test_that(".day_freshness_guard leaves historical rest days alone", {
+  # Without the date gate, today's dead feed would retro-flag every
+  # rest day in the archive.
+  expect_null(.day_freshness_guard(Sys.Date() - 30, NULL, NULL))
+})
+
+test_that(".day_freshness_guard never signals when the probe blows up", {
+  # The 21:30 notification matters more than the watchdog.
+  local_mocked_bindings(
+    data_freshness = function(...) stop("boom"),
+    .package = "traning"
+  )
+  expect_null(.day_freshness_guard(Sys.Date(), NULL, NULL))
+})
+
 test_that("day_summary_prose returns 'Vilodag.' when no sessions on the date", {
   # Sessions exist on other days but not on the requested date.
   s <- tibble::tibble(

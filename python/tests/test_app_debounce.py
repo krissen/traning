@@ -27,6 +27,8 @@ def _reset_debounce_globals(monkeypatch):
     monkeypatch.setattr(app_mod, "_pending_workouts_count", 0)
     monkeypatch.setattr(app_mod, "_workouts_timer", None)
     monkeypatch.setattr(app_mod, "_workouts_flushing", False)
+    monkeypatch.setattr(app_mod, "_last_workouts_import_ts", None)
+    monkeypatch.setattr(app_mod, "_last_workouts_import_ok_ts", None)
     yield
     if app_mod._pending_timer is not None:
         app_mod._pending_timer.cancel()
@@ -101,6 +103,46 @@ def test_flush_pending_workouts_failure_keeps_full_batch_pending(
 
     assert app_mod._pending_workouts_count == 5
     assert app_mod._workouts_flushing is False
+
+
+def test_flush_pending_workouts_success_stamps_the_ok_timestamp(
+    traning_data_dir, monkeypatch
+):
+    app_mod._pending_workouts_count = 5
+
+    class FakeResult:
+        returncode = 0
+        stdout = "Import: 1 pass klart"
+        stderr = ""
+
+    monkeypatch.setattr(app_mod.subprocess, "run", lambda *a, **kw: FakeResult())
+
+    app_mod._flush_pending_workouts()
+
+    assert app_mod._last_workouts_import_ok_ts is not None
+
+
+def test_flush_pending_workouts_failure_leaves_ok_timestamp_untouched(
+    traning_data_dir, monkeypatch
+):
+    # The whole point of the success-only stamp: a failed import must not
+    # move it, even though the attempt stamp does. A poison-message wedge
+    # keeps failing while pushes keep arriving, and only this staying put
+    # lets a freshness check tell the wedge from a live backfill.
+    app_mod._pending_workouts_count = 5
+
+    class FailingResult:
+        returncode = 1
+        stdout = ""
+        stderr = "boom"
+
+    monkeypatch.setattr(app_mod.subprocess, "run", lambda *a, **kw: FailingResult())
+
+    app_mod._flush_pending_workouts()
+
+    # The attempt stamp moved; the success stamp did not.
+    assert app_mod._last_workouts_import_ts is not None
+    assert app_mod._last_workouts_import_ok_ts is None
 
 
 def test_flush_pending_workouts_skips_when_already_in_progress(monkeypatch):
