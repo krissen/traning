@@ -162,7 +162,8 @@ test_that("compute_pmc default aggregates across all sports", {
 test_that("compute_efficiency_factor with curated bucket sums sports", {
   df <- .metrics_summaries()
   result <- compute_efficiency_factor(df, sport = "endurance")
-  # endurance = running + cycling + walking + swimming
+  # endurance = running + cycling + walking + swimming + paddelsporter
+  # + rodd; the fixture only contains the first four.
   # > 5 km: 5 running + 4 cycling + 1 walking (5.5 km) + 0 swimming = 10
   expect_equal(nrow(result), 10)
 })

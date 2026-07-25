@@ -347,6 +347,14 @@ if (do_import) {
                   sep = "=", collapse = ", "),
             "\n", sep = "")
       }
+      # New Apple activity types get neither a Swedish label nor a
+      # bucket until they are added to .HAE_SPORT_NAMES — say so on the
+      # first import instead of letting them show up as raw slugs later.
+      if (hae_res$n_unmapped_sports > 0) {
+        cat("  okänd aktivitetstyp: ",
+            paste(hae_res$unmapped_names, collapse = ", "),
+            " (saknar etikett och bucket)\n", sep = "")
+      }
     }
   }
 
@@ -478,8 +486,10 @@ if (do_month_this) {
                                                     sport = do_sport)
     emit_table(month_summaries_this, "month-this")
     if (is.null(do_output) && is.null(do_format)) {
-      my_month_km <- round(sum(month_summaries_this$Km), digits = 2)
-      my_month_pace <- round(mean(month_summaries_this$Pace), digits = 2)
+      my_month_km <- fmt_dec_sv(sum(month_summaries_this$Km), digits = 2,
+                                trim_zero = TRUE)
+      my_month_pace <- fmt_dec_sv(mean(month_summaries_this$Pace), digits = 2,
+                                  trim_zero = TRUE)
       cat(sprintf("Totalt %d springturer under %s %s; %s km, %s min/km.\n",
           nrow(month_summaries_this), format(Sys.time(), "%b"),
           format(Sys.time(), "%Y"), my_month_km, my_month_pace))

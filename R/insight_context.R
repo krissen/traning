@@ -83,16 +83,16 @@
   if (!is.finite(acwr) || acwr <= 0) return(NULL)
 
   if (acwr < 0.8) {
-    return(sprintf("ACWR %.2f — låg belastning, bra återhämtning.",
-                   acwr))
+    return(sprintf("ACWR %s — låg belastning, bra återhämtning.",
+                   fmt_dec_sv(acwr, digits = 2)))
   }
   if (acwr > 1.5) {
-    return(sprintf("ACWR %.2f — hög belastning, skadetröskeln i sikte.",
-                   acwr))
+    return(sprintf("ACWR %s — hög belastning, skadetröskeln i sikte.",
+                   fmt_dec_sv(acwr, digits = 2)))
   }
   if (acwr > 1.3) {
-    return(sprintf("ACWR %.2f — något hög belastning, försiktigt framåt.",
-                   acwr))
+    return(sprintf("ACWR %s — något hög belastning, försiktigt framåt.",
+                   fmt_dec_sv(acwr, digits = 2)))
   }
   NULL
 }

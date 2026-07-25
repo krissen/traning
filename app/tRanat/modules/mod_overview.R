@@ -174,7 +174,7 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
       if (nrow(latest) == 0L) {
         return(.vb_placeholder("Vecka km", "\u2014", "neutral", kpi_type = "weekly_km"))
       }
-      km <- round(latest$weekly_km[1], 1)
+      km <- traning::fmt_dec_sv(latest$weekly_km[1], trim_zero = TRUE)
       .vb("Vecka km", paste0(km, " km"), "neutral",
         bsicons::bs_icon("speedometer2"),
         kpi_type = "weekly_km")
@@ -226,7 +226,8 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
       }
       ratio <- round(latest$acwr[1], 2)
       cls <- if (ratio >= 0.8 && ratio <= 1.3) "green" else if (ratio < 0.8) "yellow" else "red"
-      .vb("ACWR", ratio, cls,
+      # Compare on the number, display with a Swedish decimal comma.
+      .vb("ACWR", traning::fmt_dec_sv(ratio, digits = 2), cls,
         bsicons::bs_icon("activity"),
         kpi_type = "acwr")
     })

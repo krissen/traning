@@ -1,6 +1,6 @@
 # tRäning — Changelog
 
-## 2026-07-22 — Tystnad räknas inte längre som vila
+## 2026-07-24 — Tystnad räknas inte längre som vila
 
 Systemet kunde tidigare inte skilja "du tränade inte" från "ingen data kom
 in". När passflödet från Apple Health tystnade fortsatte kvällssummeringen
@@ -55,6 +55,71 @@ underlaget saknas.
   `docs/user/pipeline-setup.md` beskriver hur en utvecklingsmaskin
   konfigureras för att göra den riktiga kontrollen.
 
+## 2026-07-23 — Alternativträning i kvällssummeringen
+
+Kvällssummeringen är inte längre löpcentrisk. En dag med paddling,
+cykling, styrka eller annan träning beskrivs nu kvalitativt och sätts i
+veckans sammanhang, i stället för att bara listas som en rad — eller,
+som tidigare, kallas "Vilodag".
+
+- **Alternativpass får beskrivning och roll i veckan.** Ett icke-löppass
+  klassas på hur länge och hur hårt det var och beskrivs därefter
+  ("Mycket långt lågintensivt pass — stor aerob volym", "Hårt
+  alternativpass — räknas som kvalitet i veckans dos"), med en
+  återhämtningsrad när passet kostar. Saknas puls görs inget
+  intensitetspåstående — passet beskrivs bara med vad det var och hur
+  länge.
+- **Pass räknas per sport och dag.** Ett pass som delats upp i flera
+  segment räknas som ett pass och visas som "(N pass)" med summerad
+  distans och tid, konsekvent i alla notiser.
+- **Ett hårt block färgar dagen.** Om någon del av ett alternativpass
+  låg på hög puls beskrivs hela passet som hårt — belastningen
+  underskattas hellre än överskattas.
+- **Tid visas bredvid distans för långa pass.** Ett pass på 90 minuter
+  eller mer visar både distans och tid ("paddling 26,0 km / 6 h 5 min"),
+  så ett långt pass känns igen på tiden och inte bara på kilometrarna.
+  Gäller även långa löppass.
+- **Veckans löpmått är märkta som löpmått.** Kvalitetspass- och
+  mellanzon-raderna i veckokontexten säger nu "(löpning)", och en dag
+  utan löpning men med hård alternativträning får ändå en veckorad.
+  Veckans alternativa dos redovisas i timmar och som andel av
+  belastningen.
+- **Paddling räknas som kondition.** Kajak, kanot och SUP klassas nu som
+  konditionsträning i stället för bollsport, och paddling går att välja
+  i dashboardens sportväljare. Fler sporter har fått korrekta svenska
+  namn (paddling, rodd, bordtennis, konditionsspel med flera) i stället
+  för råa etiketter.
+- **Svensk decimalkomma i all text.** Siffror i notiser och rapporter
+  skrivs nu med komma ("26,0 km", "6,1 h") i stället för punkt.
+
+## 2026-07-22 — Felsökningsguide för uteblivet HAE-inflöde
+
+Hälsodata från telefonen kan sluta komma utan att något syns som trasigt:
+mottagaren svarar friskt, inget felmeddelande visas i appen, och den enda
+signalen är att inget nytt landar. Den här ändringen gör det läget läsbart.
+
+- **Felsökningsguide när HAE-data uteblir.** `docs/user/pipeline-setup.md`
+  har ett nytt avsnitt som går från serverns bild av läget till telefonen i
+  fyra steg: vad mottagaren senast såg, hur utfallet ska tolkas (avvisad
+  nyckel, avvisad payload, nätverksfel eller total tystnad), vad som
+  kontrolleras på telefonen, och hur man bekräftar att flödet lever igen.
+  Avsnittet dokumenterar också att metrik- och passflödena är oberoende och
+  kan sluta var för sig, att de vaknar i olika takt efter en appstart, och
+  att filerna på disk är det varaktiga beviset — statusräknarna nollställs
+  vid omstart och är nollskilda bara fram till importen.
+- **Känt felläge: tyst stopp efter appuppdatering.** Efter att Health Auto
+  Export uppdaterats kan automationerna ligga vilande tills appen startats
+  manuellt en gång. Guiden beskriver hur läget känns igen och åtgärdas.
+- **Mottagaren loggar vem som pushar.** Varje push mot `/v1/health` och
+  `/v1/workouts` loggar nu klientadress och User-Agent på en egen rad,
+  skriven innan payloaden valideras — så även en avvisad push lämnar spår.
+  User-Agent bär normalt appens version, vilket gör att ett avbrott i
+  efterhand kan jämföras mot en appuppdatering. Övervakningens
+  `/health`-anrop loggas inte.
+- **Avvisade pushar namnger fältet.** En push som avvisas som felformad
+  loggar vilket fält som fällde valideringen och varför, så en ändrad
+  payload-form kan läsas direkt ur journalen. Värdena utelämnas medvetet —
+  de är hälsodata.
 ## 2026-07-08 — Snabbare förstasida, förfinad dashboard
 
 Förfining av dashboarden efter moderniseringen. Samma utseende och siffror,

@@ -6,29 +6,124 @@
 
 # --- Parser -------------------------------------------------------------------
 
+# Every HAE workout name observed in the data, mapped to its canonical
+# sport value. Enumerated rather than left to the slug fallback below so
+# that a name whose Swedish spelling doesn't slugify to the value we
+# already have in the cache can't silently create a second sport for the
+# same activity.
+#
+# Canonical values are the existing cache values — "paddelsporter",
+# "karntraning", "sinne_&_kropp" and friends stay slugs on purpose;
+# renaming them would split the persisted `sport` column in two until a
+# full re-import has run. Swedish display names live in
+# .SPORT_LABELS_SV (R/sport_filter.R).
+#
+# "Vandring" deliberately maps to "walking": a separate "hiking" value
+# would not match the c("running", "walking") deduction in
+# compute_background_trimp(), so hiking kilometres would be counted both
+# as session TRIMP and as background TRIMP.
+.HAE_SPORT_NAMES <- list(
+  "löpning"                 = "running",
+  "kör"                     = "running",
+  "utomhus kör"             = "running",
+  "inomhus kör"             = "running",
+  "cykling"                 = "cycling",
+  "utomhus cykling"         = "cycling",
+  "inomhus cykling"         = "cycling",
+  "gång"                    = "walking",
+  "utomhus gång"            = "walking",
+  "inomhus gång"            = "walking",
+  "vandring"                = "walking",
+  "simning"                 = "swimming",
+  "öppet vatten-simning"    = "swimming",
+  "poolsimning"             = "swimming",
+  "paddelsporter"           = "paddelsporter",
+  "rodd"                    = "rodd",
+  "skridskosporter"         = "skridskosporter",
+  "snösporter"              = "snosporter",
+  "utförsåkning"            = "utforsakning",
+  "funktionell styrketräning" = "strength",
+  "traditionell styrketräning" = "strength",
+  "kärnträning"             = "karntraning",
+  "yoga"                    = "yoga",
+  "sinne & kropp"           = "sinne_&_kropp",
+  "badminton"               = "badminton",
+  "bordtennis"              = "bordtennis",
+  "tennis"                  = "tennis",
+  "fotboll"                 = "fotboll",
+  "hockey"                  = "hockey",
+  "fitness-spel"            = "fitness-spel",
+  "bågskytte"               = "bagskytte",
+  "övrigt"                  = "ovrigt"
+)
+
+# Normalise an HAE name for table lookup: lowercase, collapse runs of
+# whitespace, trim. Keeps diacritics — the table is keyed on the Swedish
+# spelling HAE actually writes.
+.hae_name_key <- function(name) {
+  n <- tolower(trimws(name))
+  gsub("\\s+", " ", n)
+}
+
 #' Map an HAE workout name to a sport bucket
 #'
 #' Matches Garmin's `sport` strings ("running", "cycling") so that downstream
 #' filtering (e.g. PMC's `str_detect(sport, "running")`) works without changes.
-#' Anything not matched returns a sanitised version of the input name.
+#' Resolution order: the enumerated \code{.HAE_SPORT_NAMES} table, then
+#' substring rules for name variants Apple may add ("Utomhus Löpning"),
+#' then a slug fallback.
 #'
 #' @param name HAE workout `name` string (Swedish UI labels like
 #'   "Utomhus Kör", "Utomhus Cykling", "Utomhus Gång").
 #' @return Character sport bucket (e.g. "running", "cycling", "walking").
 #' @keywords internal
 .hae_sport_from_name <- function(name) {
-  if (is.null(name) || is.na(name) || !nzchar(name)) return("unknown")
-  n <- tolower(name)
-  if (grepl("kör|löpning|löp", n)) return("running")
-  if (grepl("cykling|cykel", n)) return("cycling")
-  if (grepl("gång|promenad|vandring|walking", n)) return("walking")
-  if (grepl("simning|simma|swimming", n)) return("swimming")
-  if (grepl("styrk|gym|strength", n)) return("strength")
+  .hae_sport_lookup(name)$sport
+}
+
+#' Whether an HAE workout name is covered by a known mapping
+#'
+#' Names that fall through to the slug fallback get no Swedish label and
+#' no bucket, so the importer counts them and reports them rather than
+#' letting a new Apple activity type appear silently.
+#'
+#' @param name HAE workout `name` string.
+#' @return TRUE when the name resolved via table or substring rule.
+#' @keywords internal
+.hae_sport_is_mapped <- function(name) {
+  .hae_sport_lookup(name)$mapped
+}
+
+# Shared resolution used by both helpers above.
+.hae_sport_lookup <- function(name) {
+  if (is.null(name) || length(name) == 0 || is.na(name) || !nzchar(name)) {
+    return(list(sport = "unknown", mapped = FALSE))
+  }
+  key <- .hae_name_key(name)
+
+  exact <- .HAE_SPORT_NAMES[[key]]
+  if (!is.null(exact)) return(list(sport = exact, mapped = TRUE))
+
+  # Substring rules — cover "Utomhus X" / "Inomhus X" variants of names
+  # Apple may introduce without us having seen them yet.
+  if (grepl("kör|löpning|löp", key)) return(list(sport = "running", mapped = TRUE))
+  if (grepl("cykling|cykel", key)) return(list(sport = "cycling", mapped = TRUE))
+  if (grepl("gång|promenad|vandring|walking", key)) {
+    return(list(sport = "walking", mapped = TRUE))
+  }
+  if (grepl("simning|simma|swimming", key)) {
+    return(list(sport = "swimming", mapped = TRUE))
+  }
+  if (grepl("styrk|gym|strength", key)) {
+    return(list(sport = "strength", mapped = TRUE))
+  }
+  if (grepl("paddel", key)) return(list(sport = "paddelsporter", mapped = TRUE))
+
   # Fallback: lowercase, strip diacritics, replace spaces
   out <- tolower(name)
   out <- chartr("åäö", "aao", out)
   out <- gsub("\\s+", "_", out)
-  out
+  list(sport = out, mapped = FALSE)
 }
 
 # Pick a numeric quantity from an HAE field that's either {qty, units} or NA/NULL
@@ -90,7 +185,7 @@ parse_hae_workout <- function(path) {
   # as.numeric(durationMoving, units = "mins") gets minutes, not seconds.
   dur_dt <- as.difftime(duration, units = "secs")
 
-  data.frame(
+  row <- data.frame(
     sessionStart = start,
     sessionEnd = end,
     duration = dur_dt,
@@ -114,6 +209,11 @@ parse_hae_workout <- function(path) {
     source = "hae",
     stringsAsFactors = FALSE
   )
+  # Carry the raw HAE name as an attribute rather than a column: the
+  # importer needs it to report unmapped activity types, but `summaries`
+  # is persisted and must not grow a column for it.
+  attr(row, "hae_name") <- w[["name"]]
+  row
 }
 
 # --- Importer -----------------------------------------------------------------
@@ -140,7 +240,12 @@ parse_hae_workout <- function(path) {
 #' @param verbose Logical. Print per-file progress.
 #' @param tolerance_seconds Integer. ±window for Garmin dedup (default 90).
 #' @return List with `summaries`, `myruns`, `n_imported`, `n_skipped_dup`,
-#'   `n_skipped_invalid`, `by_sport`.
+#'   `n_skipped_invalid`, `by_sport`, `n_unmapped_sports` and
+#'   `unmapped_names`. The last two surface activity types that fell
+#'   through to the slug fallback in `.hae_sport_from_name()` — they get
+#'   neither a Swedish label nor a bucket, so they should be added to
+#'   `.HAE_SPORT_NAMES` the first time they appear rather than be
+#'   discovered months later in a report.
 #' @export
 import_hae_workouts <- function(workouts_dir, summaries, myruns,
                                 verbose = FALSE, tolerance_seconds = 90L) {
@@ -150,7 +255,9 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     n_imported = 0L,
     n_skipped_dup = 0L,
     n_skipped_invalid = 0L,
-    by_sport = integer(0)
+    by_sport = integer(0),
+    n_unmapped_sports = 0L,
+    unmapped_names = character(0)
   )
 
   if (!dir.exists(workouts_dir)) {
@@ -181,6 +288,7 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
   }
 
   by_sport <- integer(0)
+  unmapped <- character(0)
   new_rows <- list()
 
   for (f in files) {
@@ -215,7 +323,19 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     new_rows[[length(new_rows) + 1L]] <- row
     by_sport[row$sport] <- (if (is.na(by_sport[row$sport])) 0L else
                             by_sport[row$sport]) + 1L
+    hae_name <- attr(row, "hae_name")
+    if (!is.null(hae_name) && !.hae_sport_is_mapped(hae_name)) {
+      unmapped <- c(unmapped, as.character(hae_name))
+    }
     if (verbose) cat("HAE ny: ", bn, " [", row$sport, "]\n", sep = "")
+  }
+
+  unmapped <- sort(unique(unmapped))
+  result$unmapped_names <- unmapped
+  result$n_unmapped_sports <- length(unmapped)
+  if (length(unmapped) > 0 && verbose) {
+    cat("Okänd aktivitetstyp (ingen etikett, ingen bucket): ",
+        paste(unmapped, collapse = ", "), "\n", sep = "")
   }
 
   if (length(new_rows) > 0) {

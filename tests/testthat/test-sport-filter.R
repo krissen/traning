@@ -16,6 +16,9 @@ test_that(".resolve_sport_bucket handles direct sport names", {
 })
 
 test_that(".resolve_sport_bucket handles Swedish aliases", {
+  expect_equal(traning:::.resolve_sport_bucket("paddling"), "paddelsporter")
+  expect_equal(traning:::.resolve_sport_bucket("kajak"), "paddelsporter")
+  expect_equal(traning:::.resolve_sport_bucket("vandring"), "walking")
   expect_equal(traning:::.resolve_sport_bucket("löpning"), "running")
   expect_equal(traning:::.resolve_sport_bucket("lopning"), "running")
   expect_equal(traning:::.resolve_sport_bucket("cykling"), "cycling")
@@ -25,12 +28,33 @@ test_that(".resolve_sport_bucket handles Swedish aliases", {
 
 test_that(".resolve_sport_bucket expands curated buckets", {
   expect_setequal(traning:::.resolve_sport_bucket("endurance"),
-                  c("running", "cycling", "walking", "swimming"))
+                  c("running", "cycling", "walking", "swimming",
+                    "paddelsporter", "rodd"))
   expect_setequal(traning:::.resolve_sport_bucket("ballsport"),
                   c("badminton", "bordtennis", "fotboll", "tennis",
-                    "paddelsporter", "hockey", "fitness-spel"))
+                    "hockey", "fitness-spel"))
   expect_setequal(traning:::.resolve_sport_bucket("gym"),
-                  c("strength", "karntraning", "ovrigt"))
+                  c("strength", "karntraning", "yoga", "sinne_&_kropp",
+                    "ovrigt"))
+})
+
+test_that("endurance captures paddling and rowing", {
+  df <- data.frame(sport = c("paddelsporter", "rodd", "tennis"),
+                   distance = c(4240, 6000, 0), stringsAsFactors = FALSE)
+  result <- traning:::.filter_sport(df, "endurance")
+  expect_equal(nrow(result), 2)
+  expect_setequal(result$sport, c("paddelsporter", "rodd"))
+})
+
+test_that("ballsport no longer captures paddelsporter", {
+  # Regression: HealthKit's `paddleSports` is canoeing / kayaking /
+  # SUP, not padel — 16 paddling sessions used to be counted as
+  # Bollsport in the sport-mix views.
+  df <- data.frame(sport = c("paddelsporter", "tennis"),
+                   distance = c(4240, 0), stringsAsFactors = FALSE)
+  result <- traning:::.filter_sport(df, "ballsport")
+  expect_equal(nrow(result), 1)
+  expect_equal(result$sport, "tennis")
 })
 
 test_that(".resolve_sport_bucket returns NULL for all/any/NULL", {
@@ -46,7 +70,8 @@ test_that(".resolve_sport_bucket combines vector inputs", {
   expect_setequal(traning:::.resolve_sport_bucket(c("löpning", "cykling")),
                   c("running", "cycling"))
   expect_setequal(traning:::.resolve_sport_bucket(c("endurance", "strength")),
-                  c("running", "cycling", "walking", "swimming", "strength"))
+                  c("running", "cycling", "walking", "swimming",
+                    "paddelsporter", "rodd", "strength"))
 })
 
 test_that(".filter_sport keeps only matching rows", {
@@ -169,19 +194,42 @@ test_that("filter_sport (exported) matches .filter_sport (internal)", {
 test_that("sport_label (exported) returns Swedish display labels", {
   expect_equal(sport_label("running"), "Löpning")
   expect_equal(sport_label("cycling"), "Cykling")
-  expect_equal(sport_label("yoga"), "Yoga")  # title-case fallback
+  expect_equal(sport_label("yoga"), "Yoga")
+  expect_equal(sport_label("paddelsporter"), "Paddling")
+  expect_equal(sport_label("sinne_&_kropp"), "Sinne & kropp")
+  expect_equal(sport_label("fitness-spel"), "Konditionsspel")
+  # Unmapped values still fall back to title case
+  expect_equal(sport_label("klattring"), "Klattring")
   expect_equal(sport_label(NULL), "Aktivitet")
   expect_equal(sport_label("all"), "Aktivitet")
+  # NA / blank → generic label, never "NANA" (regression: the title-case
+  # fallback used to paste0(NA, NA) and leak "NANA" into the day summary)
+  expect_equal(sport_label(NA_character_), "Aktivitet")
+  expect_equal(sport_label(NA), "Aktivitet")
+  expect_equal(sport_label(""), "Aktivitet")
+})
+
+test_that("bagskytte resolves to itself with no bucket, on purpose", {
+  # Curated buckets are not a partition — archery is neither endurance,
+  # gym, ball sport nor winter sport, so it deliberately has no bucket
+  # and still participates in sport = "all".
+  expect_equal(sport_bucket_members("bagskytte"), "bagskytte")
+  for (b in names(traning:::.SPORT_BUCKETS)) {
+    expect_false("bagskytte" %in% traning:::.SPORT_BUCKETS[[b]],
+                 info = b)
+  }
 })
 
 test_that("sport_bucket_members returns curated bucket members", {
   expect_setequal(sport_bucket_members("endurance"),
-                  c("running", "cycling", "walking", "swimming"))
+                  c("running", "cycling", "walking", "swimming",
+                    "paddelsporter", "rodd"))
   expect_setequal(sport_bucket_members("ballsport"),
                   c("badminton", "bordtennis", "fotboll", "tennis",
-                    "paddelsporter", "hockey", "fitness-spel"))
+                    "hockey", "fitness-spel"))
   expect_setequal(sport_bucket_members("gym"),
-                  c("strength", "karntraning", "ovrigt"))
+                  c("strength", "karntraning", "yoga", "sinne_&_kropp",
+                    "ovrigt"))
 })
 
 test_that("sport_bucket_members handles direct sports + 'all' + NULL", {

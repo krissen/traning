@@ -331,7 +331,7 @@ test_that(".format_weekly_summary_line keeps decimal mode when rounded sum reach
                                     km = c(4.95, 4.95),
                                     stringsAsFactors = FALSE))
   out <- traning:::.format_weekly_summary_line(w)
-  expect_match(out, "^Förra veckan: 10\\.0 km \\(löpning 5\\.0, cykling 5\\.0\\)")
+  expect_match(out, "^Förra veckan: 10,0 km \\(löpning 5,0, cykling 5,0\\)")
 })
 
 test_that(".format_weekly_summary_line keeps sub-1 km readable in integer mode", {
@@ -345,10 +345,10 @@ test_that(".format_weekly_summary_line keeps sub-1 km readable in integer mode",
                                     km = c(50, 0.3),
                                     stringsAsFactors = FALSE))
   out <- traning:::.format_weekly_summary_line(w)
-  expect_match(out, "^Förra veckan: 50\\.3 km \\(löpning 50, styrketräning 0\\.3\\)")
+  expect_match(out, "^Förra veckan: 50,3 km \\(löpning 50, styrketräning 0,3\\)")
   # Guard against the regression that motivated the fix: rendering as
   # plain "0" (no decimal) would read as no activity.
-  expect_false(grepl("styrketräning 0(?![.\\d])", out, perl = TRUE))
+  expect_false(grepl("styrketräning 0(?![,.\\d])", out, perl = TRUE))
 })
 
 test_that(".format_weekly_summary_line km delta tracks displayed totals", {
@@ -515,7 +515,7 @@ test_that(".render_component sleep: 'kort sömn' only when delta is negative", {
   out_over <- traning:::.render_component("sleep", comp_over, kind = "neg")
   expect_false(grepl("^kort sömn", out_over))
   expect_match(out_over, "^sömn ")
-  expect_match(out_over, "\\+1\\.0 vs normalt")
+  expect_match(out_over, "\\+1,0 vs normalt")
 })
 
 test_that("TRANING_NOTIFY_SPORT=false suppresses the new lines", {

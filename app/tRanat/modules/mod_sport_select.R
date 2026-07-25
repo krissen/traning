@@ -8,18 +8,41 @@
 # in R/sport_filter.R that we haven't given a Swedish name yet falls
 # back to a capitalised version of the bucket name itself.
 .bucket_labels_sv <- list(
-  endurance   = "Konditionspass (löp+cyk+gång+sim)",
   ballsport   = "Bollsport",
   gym         = "Gymträning",
   wintersport = "Vintersport",
   all         = "Alla sporter"
 )
 
+# Short forms used in the endurance parenthetical. A member without a
+# short form falls back to its Swedish label, so extending
+# .SPORT_BUCKETS$endurance widens the label instead of quietly making
+# it lie (which is what "löp+cyk+gång+sim" did once paddling and
+# rowing joined the bucket).
+.sport_short_sv <- list(
+  running       = "löp",
+  cycling       = "cyk",
+  walking       = "gång",
+  swimming      = "sim",
+  paddelsporter = "paddel",
+  rodd          = "rodd"
+)
+
+.endurance_label <- function() {
+  members <- traning::sport_bucket_members("endurance")
+  short <- vapply(members, function(m) {
+    s <- .sport_short_sv[[m]]
+    if (is.null(s)) tolower(traning::sport_label(m)) else s
+  }, character(1))
+  paste0("Konditionspass (", paste(short, collapse = "+"), ")")
+}
+
 # Build the "Sammansatta" choices from the package's bucket helper so
 # the selector stays in sync with .SPORT_BUCKETS automatically.
 .composite_choices <- function() {
   vals <- traning::sport_bucket_names()
   labels <- vapply(vals, function(v) {
+    if (identical(v, "endurance")) return(.endurance_label())
     lab <- .bucket_labels_sv[[v]]
     if (is.null(lab)) tools::toTitleCase(v) else lab
   }, character(1))
@@ -39,6 +62,7 @@ sport_select_ui <- function(id) {
         "Cykling"        = "cycling",
         "Gång"           = "walking",
         "Simning"        = "swimming",
+        "Paddling"       = "paddelsporter",
         "Styrketräning"  = "strength",
         "Bordtennis"     = "bordtennis",
         "Badminton"      = "badminton",
