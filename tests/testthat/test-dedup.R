@@ -219,18 +219,19 @@ test_that("dedup_summaries keeps Garmin when a second row covers the session", {
 })
 
 test_that("dedup_summaries removes every fragment of a session in one pass", {
-  # 2019-12-23 in the real cache: the Garmin watch was stopped and
-  # restarted, leaving two short rows against one 6.4 km Apple Watch
-  # session. Removing only the nearest leaves the other orphaned and
-  # 3 km double-counted until someone runs the cleanup again.
+  # Two false starts, 300 m and 400 m, against a 10 km session on the
+  # wrist: together they are 7 % of it, so the Apple Watch row wins and
+  # both Garmin rows must go. Removing only the nearest leaves the other
+  # orphaned and its distance double-counted until someone happens to run
+  # the cleanup again.
   tmp <- withr::local_tempdir()
   start <- as.POSIXct("2019-12-23 10:18:27", tz = "UTC")
   summaries <- data.frame(
     sessionStart = c(start, start + 5, start + 1560),
-    sessionEnd = c(start + 2700, start + 1500, start + 2700),
+    sessionEnd = c(start + 2700, start + 200, start + 1800),
     sport = "running",
-    distance = c(6387, 2286, 3031),
-    duration = as.difftime(c(2700, 1495, 1140), units = "secs"),
+    distance = c(10000, 300, 400),
+    duration = as.difftime(c(2700, 195, 240), units = "secs"),
     file = c("hae:Utomhus_Kor-20191223.json",
              "/data/tcx/20191223-091822.tcx",
              "/data/tcx/20191223-094423.tcx"),
@@ -252,7 +253,7 @@ test_that("dedup_summaries removes every fragment of a session in one pass", {
   # session plus a leftover fragment.
   expect_equal(nrow(after$summaries), 1)
   expect_equal(after$summaries$source, "hae")
-  expect_equal(sum(after$summaries$distance), 6387)
+  expect_equal(sum(after$summaries$distance), 10000)
   expect_equal(length(after$myruns), 1)
 
   # A second pass has nothing left to do.
@@ -291,4 +292,50 @@ test_that("dedup_summaries keeps one Apple Watch copy when a fragment loses to t
   expect_equal(after$summaries$source, "hae")
   expect_equal(after$summaries$distance, 10274)
   expect_equal(length(after$myruns), 1)
+})
+
+# --- aggregated fragment rule -------------------------------------------------
+
+# One Apple Watch session plus the Garmin legs given, as a cache.
+.split_session_cache <- function(dir, aw_distance, leg_distances) {
+  start <- as.POSIXct("2024-11-18 16:42:05", tz = "UTC")
+  n <- length(leg_distances)
+  leg_starts <- start + seq(5, by = 900, length.out = n)
+  summaries <- data.frame(
+    sessionStart = c(start, leg_starts),
+    sessionEnd = c(start + 3600, leg_starts + 850),
+    sport = "running",
+    distance = c(aw_distance, leg_distances),
+    duration = as.difftime(c(3600, rep(850, n)), units = "secs"),
+    file = c("hae:Utomhus_Kor.json",
+             sprintf("/data/tcx/leg%d.tcx", seq_len(n))),
+    source = c("hae", rep("tcx", n)),
+    stringsAsFactors = FALSE
+  )
+  .write_fixture_cache(dir, summaries, c(list(NULL), as.list(seq_len(n))))
+}
+
+.winner_for <- function(aw_distance, leg_distances) {
+  tmp <- withr::local_tempdir()
+  paths <- .split_session_cache(tmp, aw_distance, leg_distances)
+  dups <- dedup_summaries(paths$summaries, paths$myruns,
+                          dry_run = TRUE, verbose = FALSE)
+  if (nrow(dups) == 0) "none" else dups$winner[1]
+}
+
+test_that("a split Garmin session is judged on the sum of its legs", {
+  # (a) three legs of a third each: no leg reaches half the session, but
+  # together they are the session, so Garmin keeps it.
+  expect_equal(.winner_for(9000, c(3000, 3000, 2900)), "garmin")
+
+  # (b) a genuine fragment: one leg, 6 % of what the watch recorded.
+  expect_equal(.winner_for(10000, 600), "aw")
+
+  # (c) an even two-way split, the shape that used to be dismissed a leg
+  # at a time even though the legs cover the session.
+  expect_equal(.winner_for(10000, c(4500, 4500)), "garmin")
+
+  # (d) the boundary sits on the total, not on any one leg.
+  expect_equal(.winner_for(10000, c(2500, 2400)), "aw")     # 49 %
+  expect_equal(.winner_for(10000, c(2500, 2500)), "garmin") # 50 %
 })

@@ -38,9 +38,10 @@
     end_gap <- if ("sessionEnd" %in% names(summaries))
       abs(as.numeric(difftime(tcx$sessionEnd[best], row$sessionEnd,
                               units = "secs"))) else NA_real_
-    # Garmin keeps the session unless every row it matches is a fragment;
-    # the same test the two import paths apply.
-    garmin <- any(.garmin_wins(row$distance, tcx$distance[m]))
+    # Garmin keeps the session unless everything it recorded for it adds
+    # up to less than half the Apple Watch distance — the same test the
+    # two import paths apply, against the same total.
+    garmin <- .garmin_wins(row$distance, .garmin_total(tcx$distance[m]))
     # When the watch wins, *every* fragment goes. A Garmin watch stopped
     # and restarted leaves two of them against one session, and removing
     # only the nearest would leave the other orphaned — a few kilometres

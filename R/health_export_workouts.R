@@ -567,6 +567,24 @@ parse_hae_workout <- function(path) {
 #'   Garmin row counts as a fragment.
 #' @return Logical vector; TRUE where the Garmin row wins.
 #' @keywords internal
+#' Total distance Garmin holds for one session
+#'
+#' A watch stopped and restarted writes one file per leg, so the session
+#' Garmin recorded is the sum of the matching rows, not the longest of
+#' them. Weighing the legs one at a time called a session split three
+#' ways — or evenly in two — a fragment and discarded the whole Garmin
+#' recording. All NA gives NA rather than zero, so an unknown distance
+#' stays unknown instead of becoming "nothing".
+#'
+#' @param distances Distances of the matching Garmin rows, in metres.
+#' @return Single numeric total, or NA when nothing is known.
+#' @keywords internal
+.garmin_total <- function(distances) {
+  d <- as.numeric(distances)
+  if (length(d) == 0 || all(is.na(d))) return(NA_real_)
+  sum(d, na.rm = TRUE)
+}
+
 .garmin_wins <- function(hae_distance, tcx_distance,
                          fragment_ratio = .WORKOUT_FRAGMENT_RATIO) {
   hd <- as.numeric(hae_distance)
@@ -730,7 +748,8 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
                                window_seconds = tolerance_seconds,
                                time_only_seconds = time_only_seconds)
     if (length(hit) > 0) {
-      if (any(.garmin_wins(row$distance, tcx_rows$distance[hit]))) {
+      # Against everything Garmin holds for this session, not leg by leg.
+      if (.garmin_wins(row$distance, .garmin_total(tcx_rows$distance[hit]))) {
         result$n_skipped_dup <- result$n_skipped_dup + 1L
         if (verbose) {
           dt <- abs(as.numeric(difftime(tcx_rows$sessionStart[hit],
