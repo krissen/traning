@@ -71,6 +71,37 @@
   do.call(rbind, hits)
 }
 
+# Rows to drop when several Apple Watch copies of one session all beat
+# the same Garmin fragment.
+#
+# HAE delivers two JSON files per session — the watch recording and the
+# Garmin-Connect-mirrored copy — and caches written before the HAE-to-HAE
+# dedup existed can hold both. When a Garmin fragment loses to that pair,
+# removing the fragment alone leaves two rows for one session, which is
+# the double count this whole cleanup exists to remove.
+#
+# The copy with the longest distance survives. The two copies describe
+# the same session, so the difference between them is what each recording
+# managed to capture, and the longer one is the more complete. Ties keep
+# the earlier row, so the outcome does not depend on scan order.
+.surplus_aw_copies <- function(dups) {
+  aw <- which(dups$winner == "aw")
+  if (length(aw) < 2) return(integer(0))
+
+  # Positions within `dups` throughout; translated to summaries rows on
+  # the way out.
+  surplus <- integer(0)
+  for (fragment in unique(unlist(dups$tcx_drop[aw]))) {
+    contenders <- aw[vapply(dups$tcx_drop[aw],
+                            function(x) fragment %in% x, logical(1))]
+    contenders <- setdiff(contenders, surplus)
+    if (length(contenders) < 2) next
+    best <- contenders[which.max(dups$distance_hae[contenders])]
+    surplus <- c(surplus, setdiff(contenders, best))
+  }
+  dups$idx[unique(surplus)]
+}
+
 #' Remove Apple Watch rows that duplicate a Garmin session
 #'
 #' Scans the whole summaries cache for `source == "hae"` rows that
@@ -171,6 +202,7 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   # about to disappear.
   drop_tcx <- sort(unique(unlist(dups$tcx_drop)))
   drop_hae <- dups$idx[dups$winner == "garmin"]
+  drop_hae <- c(drop_hae, .surplus_aw_copies(dups))
   drop <- sort(unique(c(drop_hae, drop_tcx)))
 
   summaries <- .restore_df_attrs(summaries[-drop, , drop = FALSE], summaries)

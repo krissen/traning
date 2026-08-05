@@ -260,3 +260,35 @@ test_that("dedup_summaries removes every fragment of a session in one pass", {
                            dry_run = TRUE, verbose = FALSE)
   expect_equal(nrow(again), 0)
 })
+
+test_that("dedup_summaries keeps one Apple Watch copy when a fragment loses to two", {
+  # Caches written before the HAE-to-HAE dedup existed can hold both
+  # copies HAE delivers for a session. When a Garmin fragment loses to
+  # the pair, removing only the fragment leaves two rows for one
+  # session — the very double count this cleanup exists to remove.
+  tmp <- withr::local_tempdir()
+  start <- as.POSIXct("2023-04-10 15:41:41", tz = "UTC")
+  summaries <- data.frame(
+    sessionStart = c(start, start + 3, start + 1),
+    sessionEnd = c(start + 3180, start + 3179, start + 180),
+    sport = "running",
+    # The mirrored copy caught slightly less; the richer one survives.
+    distance = c(10274, 10101, 460),
+    duration = as.difftime(c(3180, 3176, 180), units = "secs"),
+    file = c("hae:Utomhus_Kor-20230410.json",
+             "hae:Utomhus_Kor-20230410-connect.json",
+             "/data/tcx/20230410-154142.tcx"),
+    source = c("hae", "hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  paths <- .write_fixture_cache(tmp, summaries, list(NULL, NULL, "garmin-run"))
+
+  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
+                  verbose = FALSE)
+  after <- my_dbs_load(paths$summaries, paths$myruns)
+
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$source, "hae")
+  expect_equal(after$summaries$distance, 10274)
+  expect_equal(length(after$myruns), 1)
+})
