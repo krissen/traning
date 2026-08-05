@@ -187,7 +187,11 @@ test_that("get_new_workouts skips a file within 2s of an existing sessionStart, 
   expect_equal(nrow(res$summaries), 1) # not appended, filename swapped instead
   expect_equal(res$summaries$file[1], new_file)
   expect_equal(res$n_updated, 1)
-  expect_length(res$myruns, 0) # nothing added to myruns
+  # No run object was parsed, but myruns still comes back matching
+  # summaries row for row — the placeholder is what keeps the positional
+  # coupling intact for the next import.
+  expect_length(res$myruns, 1)
+  expect_null(res$myruns[[1]])
 })
 
 test_that("get_new_workouts skips a file within 2s of an existing sessionStart, old file present", {

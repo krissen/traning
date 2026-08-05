@@ -200,6 +200,15 @@ get_my_files <- function(mytcxpath) {
 get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
                              batch_size = 500,
                              db_summaries = NULL, db_myruns = NULL) {
+  # Every myruns index used below — the slot the new session lands on, the
+  # slots evicted HAE rows vacate — assumes the two objects already line
+  # up. Correct the length on the way in rather than on the way out: a
+  # myruns list longer than summaries would otherwise have a real run
+  # object overwritten by the first import of the batch.
+  aligned <- .align_myruns(summaries, myruns)
+  summaries <- aligned$summaries
+  myruns <- aligned$myruns
+
   # Match on basename to handle relative vs absolute path mismatches
   existing_basenames <- if ("file" %in% names(summaries))
     basename(summaries$file[!is.na(summaries$file)]) else character(0)

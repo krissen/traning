@@ -376,6 +376,13 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
                                 verbose = FALSE,
                                 tolerance_seconds = .WORKOUT_MATCH_WINDOW,
                                 time_only_seconds = .WORKOUT_MATCH_TIME_ONLY_WINDOW) {
+  # The NULL placeholders appended below only line up with the new rows if
+  # the incoming pair already lines up; correct the length first so an
+  # already-skewed cache doesn't carry the skew into the new rows.
+  aligned <- .align_myruns(summaries, myruns)
+  summaries <- aligned$summaries
+  myruns <- aligned$myruns
+
   result <- list(
     summaries = summaries,
     myruns = myruns,
