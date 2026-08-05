@@ -271,10 +271,13 @@ parse_hae_workout <- function(path) {
 # pairs, and labelled by that row's own sport (the slowest running
 # figure below is a Garmin row whose Apple Watch twin is labelled
 # walking, which is why a per-row reading and a per-pair one disagree).
-# Slowest genuine row per family, against its floor:
-#   cycling 2.31 m/s vs. 0.50 — 4.6x, and the broken row sits 1.9x below
-#   running 0.21 m/s vs. 0.10 — 2.1x
-#   walking 0.50 m/s vs. 0.10 — 5.0x
+# Slowest genuine row per family, against the floor that family is held
+# to (only cycling has its own; the other two share the 0.10 default —
+# the 0.499 below is a walking measurement, not a walking floor):
+#   cycling 2.313 m/s vs. its 0.50 floor — 4.6x, and the broken row
+#           sits 1.9x below that floor
+#   running 0.211 m/s vs. the 0.10 default — 2.1x
+#   walking 0.499 m/s vs. the 0.10 default — 5.0x
 # 0.50 m/s is 1.8 km/h, slower than a stroll, so impossible as cycling
 # rather than merely unusual; 0.10 m/s is in practice a guard against
 # rows with no distance at all. Across the whole cache 114 of the 13832
