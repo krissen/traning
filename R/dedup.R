@@ -115,6 +115,45 @@
   sort(unique(surplus))
 }
 
+# Apple Watch rows that duplicate another Apple Watch row, with no
+# Garmin recording of the session at all.
+#
+# The importer has deduplicated HAE against HAE since this work began,
+# but rows imported before that stayed, and the Garmin sweep never sees
+# them: it starts from a Garmin row, and these sessions have none.
+#
+# Same rule as everywhere else — rows that match each other are one
+# session, the fullest is kept — with one addition of its own: the
+# comparison is bucketed by time first. Copies of a session are seconds
+# apart, so rows more than a few hours apart cannot be copies, and
+# comparing every wrist row with every other one would be several
+# million comparisons for nothing.
+.surplus_hae_copies <- function(summaries, window_hours = 6) {
+  if (!is.data.frame(summaries) || !"source" %in% names(summaries)) {
+    return(integer(0))
+  }
+  idx <- which(!is.na(summaries$source) & summaries$source == "hae")
+  if (length(idx) < 2) return(integer(0))
+
+  idx <- idx[order(summaries$sessionStart[idx])]
+  starts <- as.numeric(summaries$sessionStart[idx])
+  gap <- c(Inf, diff(starts))
+  bucket <- cumsum(gap > window_hours * 3600)
+
+  surplus <- integer(0)
+  for (b in unique(bucket)) {
+    rows_idx <- idx[bucket == b]
+    if (length(rows_idx) < 2) next
+    rows <- summaries[rows_idx, , drop = FALSE]
+    for (g in .session_groups(rows)) {
+      if (length(g) < 2) next
+      best <- g[.best_copy(rows$distance[g], rows$duration[g])]
+      surplus <- c(surplus, rows_idx[setdiff(g, best)])
+    }
+  }
+  sort(unique(surplus))
+}
+
 #' Remove Apple Watch rows that duplicate a Garmin session
 #'
 #' Scans the whole summaries cache for `source == "hae"` rows that
@@ -164,6 +203,12 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   myruns <- loaded$myruns
 
   dups <- .find_hae_duplicates(summaries)
+  # Sessions the watch recorded twice and Garmin not at all: invisible to
+  # the sweep above, which starts from a Garmin row.
+  hae_copies <- setdiff(.surplus_hae_copies(summaries), dups$idx)
+  # Carried on every return path, dry run included, so a caller can see
+  # what the second sweep found without re-running it.
+  attr(dups, "hae_copies") <- hae_copies
 
   n_aw <- sum(dups$winner == "aw")
   if (verbose) {
@@ -172,6 +217,10 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
         if (n_aw > 0) paste0(" (", n_aw, " där Garmin bara fångade ",
                              "ett fragment — AW-raden behålls)") else "",
         ".\n", sep = "")
+    if (length(hae_copies) > 0) {
+      cat("HAE-kopior utan Garmin-tvilling: ", length(hae_copies),
+          " rader att ta bort.\n", sep = "")
+    }
     if (nrow(dups) > 0) {
       shown <- if (is.null(limit)) dups else utils::head(dups, limit)
       out <- data.frame(
@@ -193,7 +242,7 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
     }
   }
 
-  if (nrow(dups) == 0) {
+  if (nrow(dups) == 0 && length(hae_copies) == 0) {
     if (verbose) cat("Inget att rensa.\n")
     return(invisible(dups))
   }
@@ -289,7 +338,7 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   # about to disappear.
   drop_tcx <- sort(unique(unlist(dups$tcx_drop)))
   drop_hae <- dups$idx[dups$winner == "garmin"]
-  drop_hae <- c(drop_hae, .surplus_aw_copies(dups, summaries))
+  drop_hae <- c(drop_hae, .surplus_aw_copies(dups, summaries), hae_copies)
   drop <- sort(unique(c(drop_hae, drop_tcx)))
 
   summaries <- .restore_df_attrs(summaries[-drop, , drop = FALSE], summaries)
@@ -304,7 +353,8 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
 
   my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   if (verbose) {
-    cat("Borttaget: ", length(drop_hae), " Apple Watch-rader och ",
+    cat("Borttaget: ", length(drop_hae), " Apple Watch-rader (varav ",
+        length(hae_copies), " kopior utan Garmin-tvilling) och ",
         length(drop_tcx), " Garmin-fragment (från ", n_aw,
         " pass). Kvar: ", nrow(summaries), " rader, ", length(myruns),
         " run-objekt.\n", sep = "")

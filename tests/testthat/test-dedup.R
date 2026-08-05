@@ -390,3 +390,43 @@ test_that("which Apple Watch copy survives does not depend on scan order", {
   expect_equal(survivors[[1]]$distance, survivors[[2]]$distance)
 })
 
+# --- copies of a session Garmin never recorded -------------------------------
+
+test_that("dedup_summaries collapses Apple Watch copies with no Garmin row", {
+  # The Garmin sweep starts from a Garmin row, so a session the watch
+  # recorded twice and Garmin not at all was invisible to it. Rows
+  # imported before the HAE-to-HAE dedup existed are still there.
+  tmp <- withr::local_tempdir()
+  day <- function(hms) as.POSIXct(paste("2017-09-15", hms), tz = "UTC")
+  summaries <- data.frame(
+    sessionStart = c(day("18:00:00"), day("18:00:03"), day("20:00:00")),
+    sessionEnd = c(day("18:45:00"), day("18:45:02"), day("20:30:00")),
+    sport = "running",
+    distance = c(640, 649, 5000),
+    duration = as.difftime(c(2700, 2699, 1800), units = "secs"),
+    file = c("hae:native.json", "hae:connect.json", "hae:evening.json"),
+    source = "hae", stringsAsFactors = FALSE
+  )
+  paths <- .write_fixture_cache(tmp, summaries, list("a", "b", "c"))
+
+  dups <- dedup_summaries(paths$summaries, paths$myruns, dry_run = TRUE,
+                          verbose = FALSE)
+  # No Garmin row anywhere, so nothing for the Garmin sweep to report.
+  expect_equal(nrow(dups), 0)
+  expect_length(attr(dups, "hae_copies"), 1)
+
+  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
+                  verbose = FALSE)
+  after <- my_dbs_load(paths$summaries, paths$myruns)
+
+  # The fuller copy of the pair survives; the unrelated evening session
+  # is untouched.
+  expect_equal(nrow(after$summaries), 2)
+  expect_setequal(round(as.numeric(after$summaries$distance)), c(649, 5000))
+  expect_equal(length(after$myruns), 2)
+
+  # And a second pass has nothing left to do.
+  again <- dedup_summaries(paths$summaries, paths$myruns, dry_run = TRUE,
+                           verbose = FALSE)
+  expect_length(attr(again, "hae_copies"), 0)
+})
