@@ -1,5 +1,63 @@
 # tRäning — Changelog
 
+## 2026-08-06 — Ett pass, en rad
+
+Apple Watch och Garmin spelar in samma pass var för sig, och båda
+inspelningarna hamnade i statistiken. Ett lördagspass i augusti syntes
+som två — 5,3 km enligt Garmin och 5,2 km enligt klockan — och samma sak
+hade hänt systematiskt i tio år: månadssummor, veckodistanser och
+träningsbelastning räknade dubbelt varje gång båda klockorna varit
+igång. Nu avgörs det vid inläsningen vilken inspelning som är passet, och
+historiken är rensad.
+
+- **Samma pass känns igen även när klockorna inte startades samtidigt.**
+  Tidigare krävdes att inspelningarna började inom nittio sekunder från
+  varandra, vilket missade det vanligaste fallet: klockorna startas ett
+  par minuter isär, eller den ena mitt under passet. Två inspelningar
+  räknas nu som samma pass antingen när de börjar nära varandra och
+  distans eller tid stämmer, eller när deras klockslag överlappar
+  varandra — det senare fångar en handledsklocka som startats en och en
+  halv timme in i en löprunda och stoppats i samma sekund som den andra.
+  Överlappet gäller bara pass som faktiskt förflyttat dig; ett styrkepass
+  som pågått parallellt med en löprunda är två pass, inte ett. En
+  inspelning som påstår sig ha tagit fjorton timmar i gånghastighet tros
+  inte alls, medan ett verkligt halvdygnslopp gör det.
+- **Dubbletten löses oavsett vilken klocka som hinner först.** Apple
+  Watch-data kommer via telefonen och Garmin via en hämtning var femtonde
+  minut, i praktiken i slumpmässig ordning. Förut städades bara det ena
+  fallet, så hälften av dubbletterna blev kvar. Nu avgörs det likadant
+  åt båda hållen. Levererar Apple Health två filer för samma pass — den
+  egna inspelningen och en spegling via Garmin Connect — behålls den
+  fylligaste av dem, oavsett vilken som kom först.
+- **Garmin har företräde, utom när Garmin bara fångat en bit.** Normalt
+  är det Garmins siffror som gäller. Men när klockan startats sent eller
+  stoppats tidigt och bara fått med en bråkdel av passet behålls
+  handledsinspelningen i stället — annars hade en tio kilometer lång
+  runda krympt till de fyrahundrasextio meter Garmin hann med. Har
+  Garmin spelat in passet i flera delar räknas delarna ihop, så en runda
+  som delats på mitten fortfarande tillhör Garmin.
+- **Oklara fall lämnas i fred.** När en inspelning saknar distans, eller
+  när en fil verkar höra till två olika pass, går det inte att avgöra
+  vilken rad som är dubbletten. Då rörs ingenting, i stället för att
+  gissa bort ett pass.
+- **`traning dedup` städar historiken.** Kommandot listar vad det skulle
+  ta bort och skriver ingenting; `traning dedup --apply` gör
+  borttagningen. Det städar både dubbletter mot Garmin och pass som
+  klockan råkat spela in två gånger utan att Garmin varit med alls. På
+  utvecklingsdatorn försvann 314 Apple Watch-dubbletter och nio
+  Garmin-fragment, plus ett tjugotal rena kopior.
+- **Sessionerna pekar på rätt inspelning igen.** Den detaljerade
+  pulskurvan för ett pass låg i en lista som sorterades separat från
+  passlistan, så kopplingen mellan dem gled isär vid varje sparning.
+  Listorna hålls nu ihop, och en cache som redan hunnit glida rättas vid
+  nästa inläsning.
+- **Importen berättar vad den faktiskt gjorde.** Ett pass som ersätter
+  sin dubblett lämnar radantalet oförändrat, och sådana byten sparades
+  förut inte alls utan levde bara till nästa körning. Nu sparas de, och
+  sammanfattningen räknar de pass som verkligen tillkommit i stället för
+  att gissa utifrån hur mycket listan växte — en import med enbart
+  Apple Watch-pass rapporterade tidigare ingenting alls.
+
 ## 2026-07-24 — Tystnad räknas inte längre som vila
 
 Systemet kunde tidigare inte skilja "du tränade inte" från "ingen data kom
