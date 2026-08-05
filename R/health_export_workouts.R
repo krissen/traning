@@ -237,6 +237,54 @@ parse_hae_workout <- function(path) {
 # 12 km one.
 .WORKOUT_MATCH_TOLERANCE <- 0.20
 
+# --- Overlap criterion --------------------------------------------------------
+# The start-based rule above misses the case where the Apple Watch is
+# started partway into a session already being recorded by the Garmin
+# watch: the starts are 11–105 minutes apart, but the wall-clock
+# intervals overlap and both watches are stopped within seconds of each
+# other. Roughly two thirds of the real duplicates in the cache are of
+# this shape.
+
+# Minimum wall-clock overlap (seconds). Below a minute the "overlap" is
+# just two adjacent sessions touching at the edges.
+.WORKOUT_OVERLAP_MIN <- 60
+
+# The overlap must cover at least this fraction of the shorter session,
+# i.e. the short recording is genuinely *inside* the long one rather
+# than merely brushing against it.
+.WORKOUT_OVERLAP_COVERAGE <- 0.50
+
+# ... or the two sessions end within this many seconds of each other.
+# Stopping both watches at the same moment is the strongest available
+# signal that they recorded one session; observed offsets in the data
+# are 1–28 s.
+.WORKOUT_OVERLAP_END_WINDOW <- 60
+
+# ... or the distances agree within .WORKOUT_MATCH_TOLERANCE. Eighteen
+# pairs in the cache overlap without satisfying either gate above — the
+# two clocks disagree by half an hour or more — yet record the same
+# distance to the metre (8707 m vs. 8702 m, 12304 m vs. 12303 m). A
+# skewed clock explains those; two different runs at overlapping times
+# do not. Distance is the discriminating quantity here, not duration:
+# duration agreement is common between unrelated sessions of similar
+# length, whereas metre-level distance agreement is not.
+
+# Sports exempt from the overlap criterion. A strength session logged on
+# one watch while the other records a run is a legitimate pair of
+# sessions, not a duplicate — the same is true of anything landing in
+# the catch-all buckets, where the label says nothing about what was
+# done. Distance-bearing movement sports are not exempt: two of those
+# can't genuinely occupy the same wall-clock window.
+#
+# The list stays narrow on purpose. Every sport added here is a sport
+# whose duplicates can only be caught by the start rule, so it is
+# restricted to the categories actually observed overlapping a real,
+# separate session.
+.WORKOUT_OVERLAP_EXEMPT_SPORTS <- c(
+  "strength", "styrka", "styrketraning", "karntraning",
+  "ovrigt", "other", "unknown"
+)
+
 # Pull a field out of a data frame, list or bare vector holder.
 .workout_field <- function(x, name) {
   if (is.data.frame(x) || is.list(x)) {
@@ -265,33 +313,63 @@ parse_hae_workout <- function(path) {
 
 #' Whether two workout records describe the same session
 #'
-#' The shared rule behind every cross-source dedup in the package
-#' (HAE import, TCX import, \code{dedup_summaries()}): two sessions are
-#' the same workout when they start within
-#' \code{window_seconds} of each other **and** either their distances or
-#' their durations agree within \code{tolerance}. When neither quantity
-#' can be compared — one side lacks both — the decision falls back to
-#' time alone, with the narrower \code{time_only_seconds} window.
+#' The shared rule behind every cross-source dedup in the package (HAE
+#' import, TCX import, \code{dedup_summaries()}). Two records are the
+#' same workout when **either** criterion below holds.
 #'
-#' Sport is deliberately not part of the rule: Apple Watch sometimes
-#' labels a slow jog "Utomhus Gång" while Garmin records it as running.
+#' \strong{Start criterion.} They start within \code{window_seconds} of
+#' each other **and** either their distances or their durations agree
+#' within \code{tolerance}. When neither quantity can be compared — one
+#' side lacks both — the decision falls back to time alone, with the
+#' narrower \code{time_only_seconds} window. This catches the ordinary
+#' case of two watches started a minute or two apart.
+#'
+#' \strong{Overlap criterion.} Their wall-clock intervals overlap by at
+#' least \code{overlap_min_seconds}, and that overlap either covers
+#' \code{overlap_coverage} of the shorter session, or the two sessions
+#' end within \code{overlap_end_seconds} of each other, or their
+#' distances agree within \code{tolerance}. This catches the second watch
+#' being started partway into a session the first one is already
+#' recording — starts up to an hour and a half apart, but both stopped
+#' within seconds — as well as pairs whose clocks disagree by half an
+#' hour while the recorded distance matches to the metre. Coverage is
+#' measured against the shorter
+#' session's wall-clock span rather than its recorded `duration`, so that
+#' it stays on the same footing as the overlap itself when a session was
+#' paused. The criterion is skipped when either sessionEnd is missing
+#' (nothing to intersect) and for the sports in
+#' \code{.WORKOUT_OVERLAP_EXEMPT_SPORTS}, where a genuinely separate
+#' session can share the wall clock with another one.
+#'
+#' Sport is otherwise deliberately not part of the rule: Apple Watch
+#' sometimes labels a slow jog "Utomhus Gång" while Garmin records it as
+#' running.
 #'
 #' Vectorised over \code{b} (and over \code{a}, if given more than one
 #' row); the usual recycling rules apply.
 #'
 #' @param a,b Data frames or lists with `sessionStart` and, optionally,
-#'   `distance` (metres) and `duration` (difftime or seconds).
+#'   `sessionEnd`, `distance` (metres), `duration` (difftime or seconds)
+#'   and `sport`.
 #' @param window_seconds Δstart window when a sanity quantity is
 #'   comparable.
 #' @param time_only_seconds Δstart window when neither distance nor
 #'   duration is comparable on both sides.
 #' @param tolerance Relative tolerance for the distance/duration check.
+#' @param overlap_min_seconds Minimum wall-clock overlap.
+#' @param overlap_coverage Fraction of the shorter session the overlap
+#'   must cover.
+#' @param overlap_end_seconds Δend window accepted in place of the
+#'   coverage requirement.
 #' @return Logical vector, one element per compared pair.
 #' @keywords internal
 .is_same_workout <- function(a, b,
                              window_seconds = .WORKOUT_MATCH_WINDOW,
                              time_only_seconds = .WORKOUT_MATCH_TIME_ONLY_WINDOW,
-                             tolerance = .WORKOUT_MATCH_TOLERANCE) {
+                             tolerance = .WORKOUT_MATCH_TOLERANCE,
+                             overlap_min_seconds = .WORKOUT_OVERLAP_MIN,
+                             overlap_coverage = .WORKOUT_OVERLAP_COVERAGE,
+                             overlap_end_seconds = .WORKOUT_OVERLAP_END_WINDOW) {
   sa <- .workout_field(a, "sessionStart")
   sb <- .workout_field(b, "sessionStart")
   if (is.null(sa) || is.null(sb) || length(sa) == 0 || length(sb) == 0) {
@@ -319,9 +397,69 @@ parse_hae_workout <- function(path) {
   comparable <- (!is.na(da) & !is.na(db) & da > 0 & db > 0) |
                 (!is.na(ta) & !is.na(tb) & ta > 0 & tb > 0)
 
-  ifelse(comparable,
-         dt <= window_seconds & (dist_ok | dur_ok),
-         dt <= time_only_seconds)
+  by_start <- ifelse(comparable,
+                     dt <= window_seconds & (dist_ok | dur_ok),
+                     dt <= time_only_seconds)
+
+  by_start | .overlaps_same_workout(
+    a, b, n,
+    dist_ok = dist_ok,
+    overlap_min_seconds = overlap_min_seconds,
+    overlap_coverage = overlap_coverage,
+    overlap_end_seconds = overlap_end_seconds
+  )
+}
+
+# The overlap criterion, split out to keep .is_same_workout() readable.
+# `n` is the recycled length already established by the caller, and
+# `dist_ok` the distance comparison it has already made.
+.overlaps_same_workout <- function(a, b, n, dist_ok = rep(FALSE, n),
+                                   overlap_min_seconds = .WORKOUT_OVERLAP_MIN,
+                                   overlap_coverage = .WORKOUT_OVERLAP_COVERAGE,
+                                   overlap_end_seconds = .WORKOUT_OVERLAP_END_WINDOW) {
+  no <- rep(FALSE, n)
+
+  ea <- .workout_field(a, "sessionEnd")
+  eb <- .workout_field(b, "sessionEnd")
+  if (is.null(ea) || is.null(eb) || length(ea) == 0 || length(eb) == 0) {
+    return(no)
+  }
+
+  num <- function(x) rep(as.numeric(as.POSIXct(x)), length.out = n)
+  start_a <- num(.workout_field(a, "sessionStart"))
+  start_b <- num(.workout_field(b, "sessionStart"))
+  end_a <- num(ea)
+  end_b <- num(eb)
+
+  exempt <- .is_overlap_exempt(.workout_field(a, "sport"), n) |
+            .is_overlap_exempt(.workout_field(b, "sport"), n)
+
+  span_a <- end_a - start_a
+  span_b <- end_b - start_b
+  usable <- !is.na(start_a) & !is.na(start_b) & !is.na(end_a) & !is.na(end_b) &
+            span_a > 0 & span_b > 0 & !exempt
+  if (!any(usable)) return(no)
+
+  overlap <- pmin(end_a, end_b) - pmax(start_a, start_b)
+  shorter <- pmin(span_a, span_b)
+  end_gap <- abs(end_a - end_b)
+
+  out <- no
+  out[usable] <-
+    overlap[usable] >= overlap_min_seconds &
+    (overlap[usable] >= overlap_coverage * shorter[usable] |
+     end_gap[usable] <= overlap_end_seconds |
+     dist_ok[usable])
+  out
+}
+
+# TRUE where the sport is one the overlap criterion must not touch.
+# A missing sport counts as exempt: without a label we can't tell a
+# parallel strength session from a duplicate recording.
+.is_overlap_exempt <- function(sport, n) {
+  if (is.null(sport) || length(sport) == 0) return(rep(TRUE, n))
+  s <- rep(tolower(trimws(as.character(sport))), length.out = n)
+  is.na(s) | !nzchar(s) | s %in% .WORKOUT_OVERLAP_EXEMPT_SPORTS
 }
 
 # Rows of `candidates` that are the same workout as the single row `row`.
@@ -340,16 +478,18 @@ parse_hae_workout <- function(path) {
 #' \enumerate{
 #'   \item filename already imported (matched via `file = "hae:<basename>"`)
 #'   \item a Garmin (`source == "tcx"`) row describes the same workout per
-#'     \code{.is_same_workout()} — Garmin wins, the HAE row is skipped.
-#'     Sport is **not** required to match, since two different activities
-#'     at the same instant aren't a realistic case and the sport label
-#'     sometimes disagrees between Garmin and AW (e.g. a slow jog logged
-#'     as "walking" by AW).
+#'     \code{.is_same_workout()} — either because the two start close
+#'     together or because their wall-clock intervals overlap — in which
+#'     case Garmin wins and the HAE row is skipped. Sport is **not**
+#'     required to match, since two different activities at the same
+#'     instant aren't a realistic case and the sport label sometimes
+#'     disagrees between Garmin and AW (e.g. a slow jog logged as
+#'     "walking" by AW).
 #'   \item another HAE row — already cached or accepted earlier in this
-#'     same run — describes the same workout. HAE frequently delivers two
-#'     JSON files per session (the Apple Watch recording and the
-#'     Garmin-Connect-mirrored copy, typically 0–5 s apart); the first one
-#'     seen wins.
+#'     same run — describes the same workout, by the same rule. HAE
+#'     frequently delivers two JSON files per session (the Apple Watch
+#'     recording and the Garmin-Connect-mirrored copy, typically 0–5 s
+#'     apart); the first one seen wins.
 #' }
 #' `myruns` receives `NULL` placeholders so positional alignment with
 #' `summaries` is preserved.
@@ -426,6 +566,12 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     if (!any(keep)) return(NULL)
     data.frame(
       sessionStart = summaries$sessionStart[keep],
+      # sessionEnd and sport feed the overlap criterion; both are absent
+      # from very old caches, which simply falls back to the start rule.
+      sessionEnd = if ("sessionEnd" %in% names(summaries))
+        summaries$sessionEnd[keep] else as.POSIXct(NA),
+      sport = if ("sport" %in% names(summaries))
+        as.character(summaries$sport[keep]) else NA_character_,
       distance = if ("distance" %in% names(summaries))
         as.numeric(summaries$distance[keep]) else NA_real_,
       duration = if ("duration" %in% names(summaries))
@@ -491,6 +637,8 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     new_rows[[length(new_rows) + 1L]] <- row
     hae_rows <- rbind(hae_rows, data.frame(
       sessionStart = row$sessionStart,
+      sessionEnd = row$sessionEnd,
+      sport = as.character(row$sport),
       distance = as.numeric(row$distance),
       duration = .workout_secs(row$duration),
       stringsAsFactors = FALSE
