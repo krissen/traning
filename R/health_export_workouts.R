@@ -257,16 +257,27 @@ parse_hae_workout <- function(path) {
 # away. Refusing to trust an implausible interval kills that at the
 # source, which is cheaper than recognising its victims afterwards.
 #
-# Length alone cannot be the test — a backyard ultra genuinely spans
-# 12–13 hours. What separates the two is the pace the interval implies:
-# the broken row averages 0.27 m/s, while an ultra stays around or above
-# 1 m/s even counting the rest between laps. So a session longer than
-# .WORKOUT_OVERLAP_LONG_SPAN has to show it actually went somewhere;
-# shorter ones are taken at face value, since an interval that short can
-# only swallow sessions the corroborating evidence below would reject
-# anyway. A distrusted pair is still eligible under the start criterion.
-.WORKOUT_OVERLAP_LONG_SPAN <- 6 * 3600
-.WORKOUT_OVERLAP_LONG_MIN_SPEED <- 1.0
+# Length cannot be the test — a backyard ultra genuinely spans 12–15
+# hours and a 24-hour race is not out of the question, so any span cap
+# would disqualify exactly the sessions where both watches run longest
+# and a duplicate is most likely. The test is instead the pace the
+# interval implies, distance / (sessionEnd - sessionStart), and it has
+# to be per sport family: the broken row is cycling at 0.27 m/s while
+# the slowest verified duplicate is a walk at 0.21 m/s, so no single
+# floor can separate them.
+#
+# Margins against the 323 verified pairs, slowest genuine side per
+# family: cycling 1.60 m/s against a 0.50 floor (3.2x, and the broken
+# row sits 1.9x below it), running 0.44 against 0.10 (4.4x), walking
+# 0.21 against 0.10 (2.1x). 0.50 m/s is 1.8 km/h — slower than a
+# stroll, so impossible as cycling rather than merely unusual; 0.10 m/s
+# is in practice a guard against rows with no distance at all. 114 of
+# the 13832 cache rows that carry both fields fall below their floor,
+# nearly all zero-distance sports, and none of them is a verified
+# duplicate. A distrusted pair is still eligible under the start
+# criterion.
+.WORKOUT_OVERLAP_MIN_SPEED_CYCLING <- 0.50
+.WORKOUT_OVERLAP_MIN_SPEED_DEFAULT <- 0.10
 
 # One of three pieces of corroborating evidence is then required. Each
 # distinguishes one session recorded twice from two that merely share
@@ -347,12 +358,12 @@ parse_hae_workout <- function(path) {
 #' early, and pairs whose clocks disagree outright — all shapes the start
 #' criterion cannot see.
 #'
-#' "Believable" means a session longer than
-#' \code{overlap_long_span} must imply a speed of at least
-#' \code{overlap_long_min_speed}; see the constant definitions for why the
-#' test is pace rather than length. The criterion is skipped entirely
-#' when either sessionEnd or either distance is missing, and for the
-#' sports in \code{.WORKOUT_OVERLAP_EXEMPT_SPORTS}, where a genuinely
+#' "Believable" means the interval implies at least
+#' \code{.workout_min_speed()} for the session's sport — there is no
+#' length limit, since a backyard ultra genuinely spans half a day; see
+#' the constant definitions for the calibration. The criterion is skipped
+#' entirely when either sessionEnd or either distance is missing, and for
+#' the sports in \code{.WORKOUT_OVERLAP_EXEMPT_SPORTS}, where a genuinely
 #' separate session can share the wall clock with another one.
 #'
 #' All three overlap thresholds are measured against wall-clock spans
@@ -376,11 +387,6 @@ parse_hae_workout <- function(path) {
 #'   duration is comparable on both sides.
 #' @param tolerance Relative tolerance for the distance/duration check.
 #' @param overlap_min_seconds Minimum wall-clock overlap.
-#' @param overlap_long_span Span above which a session must justify
-#'   itself with \code{overlap_long_min_speed}, the guard against a
-#'   corrupt sessionEnd.
-#' @param overlap_long_min_speed Minimum implied speed (m/s) for a
-#'   session longer than \code{overlap_long_span}.
 #' @param overlap_coverage Fraction of the shorter session the overlap
 #'   may cover as evidence.
 #' @param overlap_end_seconds Δend window accepted as evidence.
@@ -391,8 +397,6 @@ parse_hae_workout <- function(path) {
                              time_only_seconds = .WORKOUT_MATCH_TIME_ONLY_WINDOW,
                              tolerance = .WORKOUT_MATCH_TOLERANCE,
                              overlap_min_seconds = .WORKOUT_OVERLAP_MIN,
-                             overlap_long_span = .WORKOUT_OVERLAP_LONG_SPAN,
-                             overlap_long_min_speed = .WORKOUT_OVERLAP_LONG_MIN_SPEED,
                              overlap_coverage = .WORKOUT_OVERLAP_COVERAGE,
                              overlap_end_seconds = .WORKOUT_OVERLAP_END_WINDOW) {
   sa <- .workout_field(a, "sessionStart")
@@ -429,8 +433,6 @@ parse_hae_workout <- function(path) {
   by_start | .overlaps_same_workout(
     a, b, n, da, db, dist_ok,
     overlap_min_seconds = overlap_min_seconds,
-    overlap_long_span = overlap_long_span,
-    overlap_long_min_speed = overlap_long_min_speed,
     overlap_coverage = overlap_coverage,
     overlap_end_seconds = overlap_end_seconds
   )
@@ -442,8 +444,6 @@ parse_hae_workout <- function(path) {
 # already made.
 .overlaps_same_workout <- function(a, b, n, da, db, dist_ok,
                                    overlap_min_seconds = .WORKOUT_OVERLAP_MIN,
-                                   overlap_long_span = .WORKOUT_OVERLAP_LONG_SPAN,
-                                   overlap_long_min_speed = .WORKOUT_OVERLAP_LONG_MIN_SPEED,
                                    overlap_coverage = .WORKOUT_OVERLAP_COVERAGE,
                                    overlap_end_seconds = .WORKOUT_OVERLAP_END_WINDOW) {
   no <- rep(FALSE, n)
@@ -473,14 +473,14 @@ parse_hae_workout <- function(path) {
 
   span_a <- end_a - start_a
   span_b <- end_b - start_b
-  # A half-day session is believable only if it went somewhere.
-  believable <- function(span, dist) {
-    span <= overlap_long_span |
-      (!is.na(dist) & dist / span >= overlap_long_min_speed)
+  # An interval is believable if it implies the session actually moved.
+  believable <- function(span, dist, sport) {
+    !is.na(dist) & span > 0 & dist / span >= .workout_min_speed(sport, n)
   }
   usable <- !is.na(start_a) & !is.na(start_b) & !is.na(end_a) & !is.na(end_b) &
             span_a > 0 & span_b > 0 & movement &
-            believable(span_a, da) & believable(span_b, db)
+            believable(span_a, da, .workout_field(a, "sport")) &
+            believable(span_b, db, .workout_field(b, "sport"))
   if (!any(usable)) return(no)
 
   overlap <- pmin(end_a, end_b) - pmax(start_a, start_b)
@@ -496,6 +496,19 @@ parse_hae_workout <- function(path) {
   out
 }
 
+# Speed floor (m/s) below which a session's interval is not believed.
+# Cycling gets its own floor because it is the only family where the
+# observed corruption is faster than a genuine slow session in another.
+.workout_min_speed <- function(sport, n) {
+  if (is.null(sport) || length(sport) == 0) {
+    return(rep(.WORKOUT_OVERLAP_MIN_SPEED_DEFAULT, n))
+  }
+  s <- rep(tolower(trimws(as.character(sport))), length.out = n)
+  ifelse(!is.na(s) & grepl("cycling|cykl", s),
+         .WORKOUT_OVERLAP_MIN_SPEED_CYCLING,
+         .WORKOUT_OVERLAP_MIN_SPEED_DEFAULT)
+}
+
 # TRUE where the sport is one the overlap criterion must not touch.
 # A missing sport counts as exempt: without a label we can't tell a
 # parallel strength session from a duplicate recording.
@@ -503,6 +516,46 @@ parse_hae_workout <- function(path) {
   if (is.null(sport) || length(sport) == 0) return(rep(TRUE, n))
   s <- rep(tolower(trimws(as.character(sport))), length.out = n)
   is.na(s) | !nzchar(s) | s %in% .WORKOUT_OVERLAP_EXEMPT_SPORTS
+}
+
+# --- Winner selection ---------------------------------------------------------
+
+# Garmin normally wins a duplicate: it is the purpose-built device and
+# its numbers are the ones the reports are calibrated on. The exception
+# is the session Garmin barely caught — a watch started late or stopped
+# after a few hundred metres — where the Apple Watch holds the real
+# workout and deferring to Garmin would delete most of the distance.
+# 2023-04-10 is the clearest: Garmin 460 m over three minutes against
+# 10 274 m over 53 minutes on the wrist.
+#
+# The threshold is a ratio rather than an absolute distance so it scales
+# from a 5 km run to a 40 km ride. Ratios between 1.2 and 2.0 are the
+# ordinary GPS-versus-wrist disagreement and stay with Garmin.
+.WORKOUT_FRAGMENT_RATIO <- 0.5
+
+#' Whether the Garmin row wins a duplicate pair
+#'
+#' Vectorised over either side. Garmin wins unless its distance is below
+#' \code{fragment_ratio} of the Apple Watch distance, in which case the
+#' Garmin row is only a fragment of the session and the HAE row is kept.
+#' A missing distance on either side leaves Garmin the winner, since
+#' nothing contradicts the default.
+#'
+#' The decision depends only on the two distances, so the same pair
+#' always resolves the same way whichever import path meets it — the
+#' property that keeps repeated imports from oscillating.
+#'
+#' @param hae_distance,tcx_distance Distances in metres.
+#' @param fragment_ratio Below this fraction of the HAE distance, the
+#'   Garmin row counts as a fragment.
+#' @return Logical vector; TRUE where the Garmin row wins.
+#' @keywords internal
+.garmin_wins <- function(hae_distance, tcx_distance,
+                         fragment_ratio = .WORKOUT_FRAGMENT_RATIO) {
+  hd <- as.numeric(hae_distance)
+  td <- as.numeric(tcx_distance)
+  fragment <- !is.na(hd) & !is.na(td) & hd > 0 & td < fragment_ratio * hd
+  !fragment
 }
 
 # Rows of `candidates` that are the same workout as the single row `row`.
@@ -573,6 +626,7 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     n_skipped_dup = 0L,
     n_skipped_dup_hae = 0L,
     n_skipped_invalid = 0L,
+    n_garmin_fragments = 0L,
     by_sport = integer(0),
     n_unmapped_sports = 0L,
     unmapped_names = character(0)
@@ -608,6 +662,9 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     keep <- !is.na(summaries$source) & summaries$source == which_source
     if (!any(keep)) return(NULL)
     data.frame(
+      # Original row position, so a losing Garmin row can be found again
+      # in `summaries` when the fragment rule sends the win to HAE.
+      idx = which(keep),
       sessionStart = summaries$sessionStart[keep],
       # sessionEnd and sport feed the overlap criterion; both are absent
       # from very old caches, which simply falls back to the start rule.
@@ -631,6 +688,9 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
   by_sport <- integer(0)
   unmapped <- character(0)
   new_rows <- list()
+  # Positions of Garmin rows displaced by the fragment rule, removed
+  # once the whole batch has been read.
+  superseded <- integer(0)
 
   for (f in files) {
     bn <- basename(f)
@@ -646,19 +706,36 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       next
     }
 
-    # Cross-source dedup: Garmin wins (sport label may disagree).
+    # Cross-source dedup: Garmin normally wins (sport label may disagree),
+    # unless every Garmin row it matches is only a fragment of the
+    # session — then the richer HAE row is imported and the fragments go.
     hit <- .which_same_workout(row, tcx_rows,
                                window_seconds = tolerance_seconds,
                                time_only_seconds = time_only_seconds)
     if (length(hit) > 0) {
-      result$n_skipped_dup <- result$n_skipped_dup + 1L
-      if (verbose) {
-        dt <- abs(as.numeric(difftime(tcx_rows$sessionStart[hit],
-                                      row$sessionStart, units = "secs")))
-        cat("Dedupp mot Garmin: ", bn,
-            " (Δt = ", round(min(dt)), "s)\n", sep = "")
+      if (any(.garmin_wins(row$distance, tcx_rows$distance[hit]))) {
+        result$n_skipped_dup <- result$n_skipped_dup + 1L
+        if (verbose) {
+          dt <- abs(as.numeric(difftime(tcx_rows$sessionStart[hit],
+                                        row$sessionStart, units = "secs")))
+          cat("Dedupp mot Garmin: ", bn,
+              " (Δt = ", round(min(dt)), "s)\n", sep = "")
+        }
+        next
       }
-      next
+      superseded <- c(superseded, tcx_rows$idx[hit])
+      row$superseded_file <- paste(
+        basename(as.character(summaries$file[tcx_rows$idx[hit]])),
+        collapse = ";")
+      result$n_garmin_fragments <- result$n_garmin_fragments + length(hit)
+      if (verbose) {
+        cat("Garmin-fragment ersatt av AW: ", bn, " (",
+            round(min(tcx_rows$distance[hit])), " m mot ",
+            round(as.numeric(row$distance)), " m)\n", sep = "")
+      }
+      # The Garmin rows stay in `tcx_rows` for the remaining files: they
+      # are dropped from `summaries` at the end, and re-testing against
+      # them costs nothing since this file already won.
     }
 
     # HAE↔HAE dedup: the AW recording and the Connect-mirrored copy of
@@ -679,6 +756,7 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
 
     new_rows[[length(new_rows) + 1L]] <- row
     hae_rows <- rbind(hae_rows, data.frame(
+      idx = NA_integer_,
       sessionStart = row$sessionStart,
       sessionEnd = row$sessionEnd,
       sport = as.character(row$sport),
@@ -704,7 +782,9 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
   }
 
   if (length(new_rows) > 0) {
-    new_df <- do.call(rbind, new_rows)
+    # Reduce() rather than do.call(rbind): only the rows that displaced a
+    # Garmin fragment carry `superseded_file`, so the columns differ.
+    new_df <- Reduce(.rbind_align, new_rows)
     # Align columns: pad missing in summaries or new_df with NA
     summaries <- .rbind_align(summaries, new_df)
     # Add NULL placeholders to myruns
@@ -715,6 +795,21 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     result$myruns <- myruns
     result$n_imported <- n_new
     result$by_sport <- by_sport
+  }
+
+  # Drop the Garmin fragments last: their positions were taken before any
+  # rows were appended, and appending only adds to the end, so they are
+  # still valid here.
+  if (length(superseded) > 0) {
+    drop <- sort(unique(superseded))
+    summaries <- .restore_df_attrs(
+      result$summaries[-drop, , drop = FALSE], result$summaries)
+    rownames(summaries) <- NULL
+    myruns <- result$myruns
+    keep_runs <- drop[drop <= length(myruns)]
+    if (length(keep_runs) > 0) myruns <- myruns[-keep_runs]
+    result$summaries <- summaries
+    result$myruns <- myruns
   }
 
   result

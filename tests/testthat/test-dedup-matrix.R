@@ -408,9 +408,9 @@ test_that("a thin overlap needs corroboration to count", {
 test_that("a half-day interval is trusted only if it went somewhere", {
   # A corrupt sessionEnd swallows everything inside it; a backyard ultra
   # legitimately spans half a day. Pace, not length, separates them.
-  broken <- .span(0, 52180, distance = 13948)          # 0.27 m/s
-  ultra <- .span(0, 45000, distance = 84000)           # 1.87 m/s
-  inside <- .span(13337, 2056, distance = 6506)
+  broken <- .span(0, 52180, distance = 13948, sport = "cycling")  # 0.27 m/s
+  ultra <- .span(0, 45000, distance = 84000)                      # 1.87 m/s
+  inside <- .span(13337, 2056, distance = 6506, sport = "cycling")
 
   expect_false(.is_same_workout(broken, inside))
   expect_true(.is_same_workout(ultra, inside))
@@ -464,18 +464,27 @@ test_that("stopping together implies the coverage evidence as well", {
                                .span(6300, 1681, distance = 5006)))
 })
 
-test_that("the believability threshold is pinned at six hours and 1 m/s", {
-  inside <- .span(600, 2700, distance = 4000)
-  half_day <- function(speed, span = 12 * 3600) {
-    .span(0, span, distance = speed * span)
+test_that("the believability floor is a pace, per sport, at any length", {
+  # There is no span threshold: a session is judged on the pace its
+  # interval implies, so a half-day ultra and a 20-minute run are held to
+  # the same standard and only the sport changes it.
+  ride <- function(speed, span = 12 * 3600) {
+    .span(0, span, distance = speed * span, sport = "cycling")
   }
-  expect_false(.is_same_workout(half_day(0.99), inside))
-  expect_true(.is_same_workout(half_day(1.00), inside))
+  run <- function(speed, span = 12 * 3600) .span(0, span, distance = speed * span)
+  inside_ride <- .span(600, 2700, distance = 4000, sport = "cycling")
+  inside_run <- .span(600, 2700, distance = 4000)
 
-  # Below the span threshold the pace is not consulted at all: a slow
-  # six-hour session is still a believable interval.
-  expect_true(.is_same_workout(half_day(0.27, span = 6 * 3600), inside))
-  expect_false(.is_same_workout(half_day(0.27, span = 6 * 3600 + 1), inside))
+  # Cycling floor: 0.50 m/s.
+  expect_false(.is_same_workout(ride(0.49), inside_ride))
+  expect_true(.is_same_workout(ride(0.50), inside_ride))
+  # Running floor: 0.10 m/s. A twelve-hour backyard ultra at any
+  # believable pace is matchable, which a span cap would have prevented.
+  expect_false(.is_same_workout(run(0.09), inside_run))
+  expect_true(.is_same_workout(run(0.10), inside_run))
+  expect_true(.is_same_workout(run(0.96), inside_run))
+  expect_true(.is_same_workout(run(1.30, span = 15 * 3600),
+                               .span(600, 2700, distance = 4000)))
 })
 
 test_that("a bike ride stopped late is not the run that followed it", {
