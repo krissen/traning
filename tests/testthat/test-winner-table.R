@@ -316,10 +316,16 @@ test_that("a partly unmeasured Garmin set does not count as a fragment", {
   # fragment of a 10 km session and evicts both legs — on the strength
   # of a number that was never the total. Unknown stays unknown, and an
   # unknown total leaves Garmin the winner, as the rule says.
-  expect_true(is.na(.garmin_total(c(400, NA_real_))))
-  expect_true(is.na(.garmin_total(c(NA_real_, NA_real_))))
-  expect_equal(.garmin_total(c(400, 600)), 1000)
-  expect_true(.garmin_wins(10000, .garmin_total(c(400, NA_real_))))
+  # The verdict has three answers, and this is the third: what is known
+  # falls short, what is unknown could go either way.
+  expect_true(is.na(.garmin_verdict(10000, c(400, NA_real_))))
+  # A lower bound that already clears the threshold settles it.
+  expect_true(.garmin_verdict(10000, c(6000, NA_real_)))
+  # Everything known and short is a fragment, as before.
+  expect_false(.garmin_verdict(10000, c(400, 600)))
+  # No distances at all is not the same as unknown ones: a cache with no
+  # distance column keeps the old default.
+  expect_true(.garmin_verdict(10000, numeric(0)))
 
   # The unmeasured row has to reach the session some other way, since
   # the overlap criterion needs a distance on both sides: it starts with
@@ -343,14 +349,47 @@ test_that("a partly unmeasured Garmin set does not count as a fragment", {
   save(summaries, file = db_s)
   save(myruns, file = db_m)
 
+  # Undecidable, so the cleanup does not offer the pair at all: neither
+  # row is deleted on a total nobody can compute.
   dups <- dedup_summaries(db_s, db_m, dry_run = TRUE, verbose = FALSE)
-  expect_equal(dups$winner, "garmin")
+  expect_equal(nrow(dups), 0)
 
-  # Nothing of Garmin's is removed; the Apple Watch row is the duplicate.
   dedup_summaries(db_s, db_m, dry_run = FALSE, verbose = FALSE)
   after <- my_dbs_load(db_s, db_m)
-  expect_equal(nrow(after$summaries), 2)
-  expect_setequal(after$summaries$source, "tcx")
+  expect_equal(nrow(after$summaries), 3)
+  expect_setequal(after$summaries$source, c("hae", "tcx"))
+})
+
+test_that("an unmeasured Garmin leg does not shrink a known session", {
+  # The import side of the same rule: a cached Garmin leg with no
+  # distance, plus a 460 m leg arriving now, against a 10 km wrist
+  # recording. The total cannot be computed, so the known 10 km must not
+  # be evicted on the strength of it.
+  start <- .SESSION_START
+  cache <- data.frame(
+    sessionStart = c(start, start + 10),
+    sessionEnd = c(start + 3600, start + 3410),
+    sport = "running",
+    distance = c(10000, NA_real_),
+    duration = as.difftime(c(3600, 3400), units = "secs"),
+    file = c("hae:native.json", "/tcx/unmeasured.tcx"),
+    source = c("hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  path <- file.path(tempdir(), "short-leg.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      .fake_parsed(start + 5, 460, file, span = 900)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(path, cache, list(NULL, "unmeasured"),
+                          verbose = FALSE)
+
+  expect_true("hae" %in% res$summaries$source)
+  expect_equal(max(as.numeric(res$summaries$distance), na.rm = TRUE), 10000)
+  expect_equal(res$n_hae_removed, 0)
 })
 
 test_that("a fragment of one session says nothing about another", {
@@ -390,4 +429,44 @@ test_that("a fragment of one session says nothing about another", {
   expect_equal(res$n_garmin_fragments, 2)
   expect_equal(res$n_imported, 0)
   expect_equal(res$n_hae_removed, 0)
+})
+
+test_that("one Garmin file cannot evict two different sessions at once", {
+  # A file can match two Apple Watch rows that do not match each other —
+  # one session through the clock, another through the corroboration
+  # gates. Gathering legs across both then builds a total from one
+  # session's recordings and applies it to the other: here 3000 m of its
+  # own plus 4000 m belonging to the later session reads as covering a
+  # 10 km morning run that neither of them was part of.
+  day <- function(hms) as.POSIXct(paste("2024-03-02", hms), tz = "UTC")
+  cache <- data.frame(
+    sessionStart = c(day("09:00:00"), day("09:58:00"), day("10:30:00")),
+    sessionEnd = c(day("10:00:00"), day("11:00:00"), day("10:50:00")),
+    sport = "running",
+    distance = c(10000, 6000, 4000),
+    duration = as.difftime(c(3600, 3720, 1200), units = "secs"),
+    file = c("hae:morning.json", "hae:midday.json", "/tcx/midday-leg.tcx"),
+    source = c("hae", "hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  path <- file.path(tempdir(), "spanning.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      .fake_parsed(day("09:50:00"), 3000, file, span = 1200)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(path, cache, list(NULL, NULL, "leg"),
+                          verbose = FALSE)
+
+  # The midday session is covered — 3000 m arriving plus its own cached
+  # 4000 m leg against 6000 m — so its wrist row goes. The morning
+  # session is not: 3000 m against 10 km, with nothing else of its own.
+  expect_true("hae" %in% res$summaries$source)
+  expect_equal(as.numeric(res$summaries$distance[res$summaries$source == "hae"]),
+               10000)
+  expect_setequal(round(as.numeric(res$summaries$distance)),
+                  c(10000, 4000, 3000))
+  expect_equal(res$n_hae_removed, 1)
 })

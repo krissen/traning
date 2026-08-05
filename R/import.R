@@ -394,24 +394,22 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       # right outcome is not to write its row at all.
       dup <- matching_hae(run_summary)
 
-      # A cache without a distance column leaves the default in place:
-      # .garmin_wins() on a zero-length vector would otherwise answer
-      # "no row says Garmin wins" and hand the session to the watch.
-      dup_distance <- if ("distance" %in% names(summaries))
-        summaries$distance[dup] else NA_real_
-      # Weigh this file against every Garmin row already cached for the
-      # same session: the watch may have been stopped and restarted, and
-      # a single leg loses to a session it only partly covers.
-      garmin_total <- .garmin_total(
-        c(as.numeric(run_summary$distance), cached_garmin_distances(dup)))
+      # One file can match two different sessions — one on the clock, the
+      # other through the distance gate — and they have to be judged
+      # apart. A total built from one session's legs says nothing about
+      # the other, and evicting on it would delete a session this file
+      # never covered. Rows that match each other are one session.
+      groups <- lapply(.session_groups(summaries[dup, , drop = FALSE]),
+                       function(g) dup[g])
+      won <- vapply(groups, function(g) {
+        garmin <- c(as.numeric(run_summary$distance),
+                    cached_garmin_distances(g))
+        all(.garmin_verdict(summaries$distance[g], garmin) %in% TRUE)
+      }, logical(1))
+      evict <- unlist(groups[won])
+      if (is.null(evict)) evict <- integer(0)
 
-      # Against the *best* Apple Watch copy, not any of them. A cache can
-      # hold both copies HAE delivers, the full recording and a shorter
-      # mirrored one, and eviction takes every matching row — so beating
-      # only the short copy would let a partial Garmin file delete the
-      # complete session along with it.
-      if (length(dup) > 0 &&
-          !all(.garmin_wins(dup_distance, garmin_total))) {
+      if (length(dup) > 0 && length(evict) == 0) {
         # Not enough on its own — but the remaining legs may be in this
         # same batch, so park it and decide once the batch is known.
         deferred[[length(deferred) + 1L]] <- list(
@@ -423,6 +421,7 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
         }
         next
       }
+      dup <- evict
 
       if (verbose) {
         cat("OK\n")
@@ -509,23 +508,26 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
     #
     # Unrelated legs are left out of the collection entirely rather than
     # entered as NA. An NA means "this session has a leg of unknown
-    # length", which makes the whole total unknown and hands Garmin the
-    # win; a fragment of some *other* session must not be able to say
-    # that about this one.
+    # length", which makes the whole total unknown; a fragment of some
+    # *other* session must not be able to say that about this one.
     others <- setdiff(which(pending), k)
-    related <- others[vapply(others, function(j) {
-      length(intersect(dup, matching_hae(deferred[[j]]$row))) > 0
-    }, logical(1))]
-    other_legs <- vapply(related, function(j) {
-      as.numeric(deferred[[j]]$row$distance)
-    }, numeric(1))
-    total <- .garmin_total(c(as.numeric(entry$row$distance),
-                             cached_garmin_distances(dup),
-                             other_legs))
-    dup_distance <- if ("distance" %in% names(summaries))
-      summaries$distance[dup] else NA_real_
+    groups <- lapply(.session_groups(summaries[dup, , drop = FALSE]),
+                     function(g) dup[g])
+    won <- vapply(groups, function(g) {
+      related <- others[vapply(others, function(j) {
+        length(intersect(g, matching_hae(deferred[[j]]$row))) > 0
+      }, logical(1))]
+      garmin <- c(as.numeric(entry$row$distance),
+                  cached_garmin_distances(g),
+                  vapply(related, function(j) {
+                    as.numeric(deferred[[j]]$row$distance)
+                  }, numeric(1)))
+      all(.garmin_verdict(summaries$distance[g], garmin) %in% TRUE)
+    }, logical(1))
+    evict <- unlist(groups[won])
+    if (is.null(evict)) evict <- integer(0)
 
-    if (!all(.garmin_wins(dup_distance, total))) {
+    if (length(evict) == 0) {
       # Garmin really did catch only a fragment. Its row is not written
       # at all, and nothing on disk records that, so the file is read and
       # declined again on every import — wasted work, but the outcome is
@@ -539,6 +541,9 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       }
       next
     }
+    dup <- evict
+    total <- .garmin_total(c(as.numeric(entry$row$distance),
+                             cached_garmin_distances(dup)))
 
     if (verbose) {
       cat("delpass (", round(as.numeric(entry$row$distance)),
