@@ -357,29 +357,55 @@ test_that(".is_same_workout matches a session recorded inside another", {
                end = "2026-06-12 10:03:01")
   expect_true(.is_same_workout(garmin, watch))
 
-  # Same shape, but the short recording ends half an hour before the
-  # long one and covers well under half of itself... it still lies
-  # entirely inside, so coverage of the *shorter* session carries it.
+  # Same shape, but the short recording also stops half an hour before
+  # the long one — it still lies inside it.
   inside <- .wk("2026-06-12 08:30:00", distance = 4196, duration = 1800,
                 end = "2026-06-12 09:00:00")
   expect_true(.is_same_workout(garmin, inside))
 })
 
-test_that(".is_same_workout matches overlapping sessions with equal distance", {
-  # 2023-10-23: the two clocks disagree by more than an hour, so neither
-  # the coverage nor the end-gap gate fires — but the recorded distance
-  # matches to the metre, which two different runs would not.
+test_that(".is_same_workout matches an overlap without any other agreement", {
+  # 2023-10-23: the clocks disagree by an hour, so the sessions overlap
+  # only briefly relative to their length and stop far apart. The overlap
+  # alone decides it — two runs cannot share a wall-clock window.
   garmin <- .wk("2023-10-23 07:05:00", distance = 12303, duration = 4320,
                 end = "2023-10-23 08:17:00")
   watch <- .wk("2023-10-23 08:13:00", distance = 12304, duration = 4020,
                end = "2023-10-23 09:20:00")
   expect_true(.is_same_workout(garmin, watch))
 
-  # The same geometry with genuinely different distances stays two
-  # sessions.
-  other <- watch
-  other$distance <- 4798
-  expect_false(.is_same_workout(garmin, other))
+  # Disagreeing distances do not rescue the pair: the watch stopped
+  # early, which is exactly why the start rule missed it.
+  partial <- watch
+  partial$distance <- 4798
+  expect_true(.is_same_workout(garmin, partial))
+})
+
+test_that(".is_same_workout distrusts an implausibly long interval", {
+  # The 2019-12-09 cache row claims a 14.5-hour bike ride. Every session
+  # recorded that afternoon falls inside it, so honouring that interval
+  # would delete real data.
+  broken <- .wk("2019-12-09 08:20:25", distance = 13948, duration = 52180,
+                sport = "cycling", end = "2019-12-09 22:50:05")
+  real <- .wk("2019-12-09 12:02:42", distance = 6506, duration = 2056,
+              sport = "cycling", end = "2019-12-09 12:36:58")
+  expect_false(.is_same_workout(broken, real))
+
+  # The same pair with a believable end on the first session is a match.
+  plausible <- broken
+  plausible$sessionEnd <- as.POSIXct("2019-12-09 12:40:00", tz = "UTC")
+  expect_true(.is_same_workout(plausible, real))
+})
+
+test_that(".is_same_workout requires a distance on both sides to overlap-match", {
+  # Without a distance we cannot argue that the session moved the person
+  # anywhere, so a parallel recording stays its own session even when the
+  # sport label looks like movement.
+  garmin <- .wk("2026-06-12 07:50:00", distance = 24000, duration = 7980,
+                end = "2026-06-12 10:03:00")
+  nodist <- .wk("2026-06-12 09:35:00", distance = NA_real_, duration = 1681,
+                end = "2026-06-12 10:03:01")
+  expect_false(.is_same_workout(garmin, nodist))
 })
 
 test_that(".is_same_workout ignores a brief brush between two sessions", {
