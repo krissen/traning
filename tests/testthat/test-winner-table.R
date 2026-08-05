@@ -528,9 +528,15 @@ test_that("a copy that recorded a distance beats one that did not", {
   expect_true(.copy_is_richer(5000, 1800, NA_real_, 3600))
   expect_false(.copy_is_richer(NA_real_, 3600, 5000, 1800))
 
+  # Same sport on both sides: between two files from the watch the
+  # labels are compared, so the pair has to be the same activity before
+  # the fuller-copy rule applies at all.
+  cached <- .strength_row(0, 3600)
+  cached$sport <- "walking"
   dir <- withr::local_tempdir()
-  .write_session_json(dir, "incoming", 5, duration = 3400)
-  res <- import_hae_workouts(dir, .strength_row(0, 3600), list(NULL))
+  .write_session_json(dir, "incoming", 5, duration = 3400,
+                      workout = "Utomhus Gång")
+  res <- import_hae_workouts(dir, cached, list(NULL))
   expect_equal(nrow(res$summaries), 1)
   expect_equal(as.numeric(res$summaries$distance), 5000)
 })
@@ -577,4 +583,81 @@ test_that("an ambiguous HAE file is turned away untouched", {
   expect_equal(nrow(res$summaries), 2)
   expect_setequal(res$summaries$source, "tcx")
   expect_setequal(round(as.numeric(res$summaries$distance)), c(10000, 3000))
+})
+
+# --- a commute is three sessions, not one ------------------------------------
+
+test_that("a ride and a run that touch at the edges are two sessions", {
+  # Cycling to the trail, running, cycling home: three recordings from
+  # the same watch whose edges overlap by a few minutes while the bike is
+  # stopped and the run started. Between two devices the sport labels are
+  # useless — a slow jog comes back as "Utomhus Gång" from one of them —
+  # but between two files from the *same* watch they are the only thing
+  # saying these are different activities.
+  day <- function(hms) as.POSIXct(paste("2022-10-25", hms), tz = "UTC")
+  commute <- data.frame(
+    sessionStart = c(day("08:19:00"), day("08:20:00"), day("09:05:00")),
+    sessionEnd = c(day("08:45:00"), day("09:00:00"), day("09:35:00")),
+    sport = c("cycling", "running", "cycling"),
+    distance = c(5638, 6550, 5600),
+    duration = as.difftime(c(1560, 2400, 1800), units = "secs"),
+    file = c("hae:ride-out.json", "hae:run.json", "hae:ride-home.json"),
+    source = "hae", stringsAsFactors = FALSE
+  )
+
+  # None of the three is a copy of another.
+  expect_length(.session_groups(commute, same_sport = TRUE), 3)
+  expect_false(.is_same_workout(commute[1, ], commute[2, ], same_sport = TRUE))
+
+  tmp <- withr::local_tempdir()
+  db_s <- file.path(tmp, "summaries.RData")
+  db_m <- file.path(tmp, "myruns.RData")
+  summaries <- commute
+  myruns <- list("a", "b", "c")
+  save(summaries, file = db_s)
+  save(myruns, file = db_m)
+
+  dedup_summaries(db_s, db_m, dry_run = FALSE, verbose = FALSE)
+  after <- my_dbs_load(db_s, db_m)
+  expect_equal(nrow(after$summaries), 3)
+  expect_setequal(after$summaries$sport, c("cycling", "running"))
+
+  # The importer says the same: the ride home arriving as a new file is
+  # not a copy of the run it overlaps.
+  dir <- withr::local_tempdir()
+  payload <- list(data = list(workouts = list(list(
+    id = "ride-home", name = "Utomhus Cykling",
+    start = "2022-10-25 09:05:00 +0000", end = "2022-10-25 09:35:00 +0000",
+    duration = 1800, distance = list(qty = 5.6, units = "km"),
+    avgHeartRate = list(qty = 130, units = "count/min")
+  ))))
+  jsonlite::write_json(payload, file.path(dir, "ride-home.json"),
+                       auto_unbox = TRUE, null = "null")
+  res <- import_hae_workouts(dir, commute[2, ], list("run"))
+  expect_equal(res$n_imported, 1)
+  expect_equal(res$n_skipped_dup_hae, 0)
+  expect_setequal(res$summaries$sport, c("running", "cycling"))
+})
+
+test_that("two recordings of one session still collapse", {
+  # The guard is on the sport, not on the pairing: same activity, same
+  # label, seconds apart — the shape the sweep exists for.
+  day <- function(hms) as.POSIXct(paste("2017-09-15", hms), tz = "UTC")
+  pair <- data.frame(
+    sessionStart = c(day("17:36:00"), day("17:36:03")),
+    sessionEnd = c(day("17:48:00"), day("17:48:02")),
+    sport = "running",
+    distance = c(640, 649),
+    duration = as.difftime(c(720, 719), units = "secs"),
+    file = c("hae:native.json", "hae:connect.json"),
+    source = "hae", stringsAsFactors = FALSE
+  )
+  expect_length(.session_groups(pair, same_sport = TRUE), 1)
+
+  # And a session with no distance at all, where only the label and the
+  # clock are left to go on.
+  strength <- pair
+  strength$sport <- "strength"
+  strength$distance <- NA_real_
+  expect_length(.session_groups(strength, same_sport = TRUE), 1)
 })

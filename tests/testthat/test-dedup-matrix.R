@@ -197,10 +197,15 @@ registerS3method("summary", "matrixtrack", summary.matrixtrack,
 )
 
 .SPORTS <- list(
-  list(hae_name = "Utomhus Kör", cached_sport = "running"),
+  list(hae_name = "Utomhus Kör", cached_sport = "running",
+       hae_family = "running"),
   # Apple Watch labels a slow jog "Utomhus Gång" while Garmin records the
-  # same session as running: the sport must not gate the match.
-  list(hae_name = "Utomhus Gång", cached_sport = "walking")
+  # same session as running: between the two devices the sport must not
+  # gate the match. Between two Apple Watch files it must — they carry
+  # comparable labels, and a walk and a run are two sessions — so the
+  # HAE-to-HAE directions expect this row not to collapse.
+  list(hae_name = "Utomhus Gång", cached_sport = "walking",
+       hae_family = "walking")
 )
 
 test_that("cross-source dedup collapses the same session in every direction", {
@@ -209,6 +214,9 @@ test_that("cross-source dedup collapses the same session in every direction", {
       for (nm in names(.SANITY)) {
         san <- .SANITY[[nm]]
         expected <- dtc$inside && san$expect
+        # The other file in the HAE-to-HAE directions is always written
+        # as a run, so a walking row is a different session there.
+        expected_hae <- expected && identical(sp$hae_family, "running")
         cell <- sprintf("dt=%ds, %s, %s", dtc$dt, san$label, sp$hae_name)
 
         r1 <- .dir_hae_into_cached_tcx(dtc$dt, san$dist_km, san$dur,
@@ -234,12 +242,14 @@ test_that("cross-source dedup collapses the same session in every direction", {
 
         r3 <- .dir_hae_vs_hae_same_batch(dtc$dt, san$dist_km, san$dur,
                                          sp$hae_name)
-        expect_equal(r3$collapsed, expected, info = paste("HAE<->HAE batch:", cell))
+        expect_equal(r3$collapsed, expected_hae,
+                     info = paste("HAE<->HAE batch:", cell))
         expect_equal(length(r3$myruns), nrow(r3$summaries),
                      info = paste("HAE<->HAE batch myruns:", cell))
 
         r4 <- .dir_hae_vs_cached_hae(dtc$dt, san$dist_km, san$dur, sp$hae_name)
-        expect_equal(r4$collapsed, expected, info = paste("HAE<->HAE cached:", cell))
+        expect_equal(r4$collapsed, expected_hae,
+                     info = paste("HAE<->HAE cached:", cell))
         expect_equal(length(r4$myruns), nrow(r4$summaries),
                      info = paste("HAE<->HAE cached myruns:", cell))
       }

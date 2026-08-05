@@ -105,7 +105,8 @@
   aw <- which(dups$winner == "aw")
   if (length(aw) < 2) return(integer(0))
 
-  groups <- .session_groups(summaries[dups$idx[aw], , drop = FALSE])
+  groups <- .session_groups(summaries[dups$idx[aw], , drop = FALSE],
+                            same_sport = TRUE)
   surplus <- integer(0)
   for (g in groups) {
     if (length(g) < 2) next
@@ -145,7 +146,11 @@
     rows_idx <- idx[bucket == b]
     if (length(rows_idx) < 2) next
     rows <- summaries[rows_idx, , drop = FALSE]
-    for (g in .session_groups(rows)) {
+    # Same device on both sides, so the labels mean something: a ride
+    # and a run whose edges overlap are two sessions, not one recorded
+    # twice. Commuting by bike with a run in the middle produces exactly
+    # that shape.
+    for (g in .session_groups(rows, same_sport = TRUE)) {
       if (length(g) < 2) next
       best <- g[.best_copy(rows$distance[g], rows$duration[g])]
       surplus <- c(surplus, rows_idx[setdiff(g, best)])
