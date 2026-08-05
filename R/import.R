@@ -44,8 +44,15 @@
 #' Row positions are not a usable identity across an import: rows are
 #' appended by two importers in turn and removed in between, so "the
 #' last n rows" answers a different question than "the rows that were
-#' added". The session start, source and file together are unique per
-#' row, and all three are set on any row an importer appends.
+#' added".
+#'
+#' The key is the session start and the source, and deliberately not the
+#' file. A rename — the same session found again under a new path, with
+#' the old one gone from disk — rewrites `file` in place without adding
+#' anything, and including it would make that row look new. The pair is
+#' unique in any saved cache, since `my_dbs_save()` deduplicates on
+#' exactly those two columns, and neither importer appends a row whose
+#' pair already exists.
 #'
 #' @param summaries Summaries data frame.
 #' @return Character vector, one key per row.
@@ -56,7 +63,7 @@
     if (name %in% names(summaries)) as.character(summaries[[name]])
     else rep(NA_character_, nrow(summaries))
   }
-  paste(col("sessionStart"), col("source"), col("file"), sep = "\u001f")
+  paste(col("sessionStart"), col("source"), sep = "\u001f")
 }
 
 #' Bring `myruns` back to the same length as `summaries`

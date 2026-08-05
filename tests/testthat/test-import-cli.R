@@ -303,3 +303,45 @@ test_that("--import reports every session of a mixed import", {
                          trim_zero = TRUE)
   expect_match(out, paste0(total_km, " km totalt"), fixed = TRUE, info = out)
 })
+
+test_that("--import reports a rename as a rename, not as an import", {
+  # The same session found again under a new path rewrites `file` in
+  # place. Nothing is added, so the closing summary must say so rather
+  # than announcing an import of a session that was already there.
+  tmp <- withr::local_tempdir()
+  cache_dir <- file.path(tmp, "cache")
+  tcx_dir <- file.path(tmp, "kristian", "filer", "tcx")
+  dir.create(cache_dir, recursive = TRUE)
+  dir.create(tcx_dir, recursive = TRUE)
+  file.copy(testthat::test_path("fixtures", "sample1.tcx"),
+            file.path(tcx_dir, "renamed.tcx"))
+
+  parsed <- trackeR::read_container(file.path(tcx_dir, "renamed.tcx"))
+  s <- summary(parsed)
+  class(s) <- "data.frame"
+
+  summaries <- data.frame(
+    sessionStart = s$sessionStart,
+    sessionEnd = s$sessionEnd,
+    sport = "running",
+    distance = as.numeric(s$distance),
+    duration = s$duration,
+    # The path it was imported under, no longer on disk.
+    file = file.path(tmp, "gone", "original.tcx"),
+    source = "tcx",
+    stringsAsFactors = FALSE
+  )
+  myruns <- list("run")
+  save(summaries, file = file.path(cache_dir, "summaries.RData"))
+  save(myruns, file = file.path(cache_dir, "myruns.RData"))
+
+  out <- run_cli_import(tmp)
+
+  expect_match(out, "filnamn uppdaterade", info = out)
+  expect_no_match(out, "Import: ", info = out)
+
+  after <- my_dbs_load(file.path(cache_dir, "summaries.RData"),
+                       file.path(cache_dir, "myruns.RData"))
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(basename(after$summaries$file), "renamed.tcx")
+})
