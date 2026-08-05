@@ -187,7 +187,11 @@ test_that("get_new_workouts skips a file within 2s of an existing sessionStart, 
   expect_equal(nrow(res$summaries), 1) # not appended, filename swapped instead
   expect_equal(res$summaries$file[1], new_file)
   expect_equal(res$n_updated, 1)
-  expect_length(res$myruns, 0) # nothing added to myruns
+  # No run object was parsed, but myruns still comes back matching
+  # summaries row for row — the placeholder is what keeps the positional
+  # coupling intact for the next import.
+  expect_length(res$myruns, 1)
+  expect_null(res$myruns[[1]])
 })
 
 test_that("get_new_workouts skips a file within 2s of an existing sessionStart, old file present", {
@@ -230,6 +234,68 @@ test_that("get_new_workouts does not dedup files >= 2s apart", {
   expect_equal(nrow(res$summaries), 2) # appended as a new row
   expect_length(res$myruns, 2)
   expect_equal(res$summaries$file[2], new_file)
+})
+
+# --- get_new_workouts(): reverse cross-source dedup -------------------------
+
+test_that("get_new_workouts evicts the Apple Watch row for the same session", {
+  # The HAE push normally beats the Garmin fetch, so the duplicate has to
+  # be resolved when the TCX arrives — not only the other way round.
+  base_time <- as.POSIXct("2026-08-01 11:02:36", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time - 107,
+    sport = "running",
+    distance = 5234,
+    duration = as.difftime(1391, units = "secs"),
+    file = "hae:Utomhus_Kor-20260801_130049.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  new_file <- file.path(tempdir(), "20260801-110236.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time, tag = file, distance = 5292)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(new_file, existing, list(NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "tcx")
+  expect_equal(res$n_hae_removed, 1)
+  expect_length(res$myruns, 1)
+  expect_false(is.null(res$myruns[[1]]))
+})
+
+test_that("get_new_workouts keeps an Apple-Watch-only session", {
+  # Same day, different workout: the HAE row has no Garmin twin and must
+  # survive the import untouched.
+  base_time <- as.POSIXct("2026-08-01 11:02:36", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time - 7200,
+    sport = "walking",
+    distance = 2000,
+    duration = as.difftime(1800, units = "secs"),
+    file = "hae:Utomhus_Gang-20260801.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  new_file <- file.path(tempdir(), "20260801-110236b.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time, tag = file, distance = 5292)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(new_file, existing, list(NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 2)
+  expect_equal(res$n_hae_removed, 0)
+  expect_setequal(res$summaries$source, c("hae", "tcx"))
 })
 
 # --- get_new_workouts(): batch checkpointing --------------------------------
@@ -474,4 +540,315 @@ test_that(".onLoad copies trackeR's unit-conversion helpers into the package nam
   # Copied functions are callable and behave like the trackeR originals.
   expect_equal(get("km2mi", envir = pkg_ns)(1),
               get("km2mi", envir = trackeR_ns)(1))
+})
+
+# --- get_new_workouts(): the Garmin-fragment exception ----------------------
+
+test_that("get_new_workouts keeps the Apple Watch row when the TCX is a fragment", {
+  # Garmin was started late and caught 460 m of a 10 km run the watch
+  # recorded in full. Importing it would replace the real session.
+  base_time <- as.POSIXct("2023-04-10 15:41:42", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time - 1,
+    sessionEnd = base_time + 3179,
+    sport = "running",
+    distance = 10274,
+    duration = as.difftime(3180, units = "secs"),
+    file = "hae:Utomhus_Kor-20230410.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  new_file <- file.path(tempdir(), "20230410-154142.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time, tag = file, distance = 460)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(new_file, existing, list(NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+  expect_equal(res$n_garmin_fragments, 1)
+  expect_equal(res$n_hae_removed, 0)
+})
+
+test_that("a cleaned-up fragment does not come back on the next fetch", {
+  # The path that matters, end to end: dedup_summaries() drops the Garmin
+  # fragment, which takes its filename out of the cache, so the next
+  # `traning fetch garmin` sees the .tcx as new. Nothing on disk records
+  # the earlier decision — only the fragment rule in the reverse dedup
+  # stops the import from handing the session back to the 460 m row and
+  # deleting the real one.
+  tmp <- withr::local_tempdir()
+  db_s <- file.path(tmp, "summaries.RData")
+  db_m <- file.path(tmp, "myruns.RData")
+  tcx_path <- file.path(tmp, "20230410-154142.tcx")
+  start <- as.POSIXct("2023-04-10 15:41:41", tz = "UTC")
+
+  summaries <- data.frame(
+    sessionStart = c(start, start + 1),
+    sessionEnd = c(start + 3180, start + 180),
+    sport = "running",
+    distance = c(10274, 460),
+    duration = as.difftime(c(3180, 180), units = "secs"),
+    file = c("hae:Utomhus_Kor-20230410.json", tcx_path),
+    source = c("hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  myruns <- list(NULL, "garmin-run")
+  save(summaries, file = db_s)
+  save(myruns, file = db_m)
+
+  dedup_summaries(db_s, db_m, dry_run = FALSE, verbose = FALSE)
+  cleaned <- my_dbs_load(db_s, db_m)
+  expect_equal(nrow(cleaned$summaries), 1)
+  expect_equal(cleaned$summaries$distance, 10274)
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(start + 1, tag = file, distance = 460)
+    },
+    .package = "trackeR"
+  )
+
+  after <- get_new_workouts(tcx_path, cleaned$summaries, cleaned$myruns,
+                            verbose = FALSE)
+
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$source, "hae")
+  expect_equal(after$summaries$distance, 10274)
+  expect_equal(after$n_garmin_fragments, 1)
+  expect_equal(after$n_hae_removed, 0)
+
+  # And again, to show the outcome is stable rather than alternating.
+  third <- get_new_workouts(tcx_path, after$summaries, after$myruns,
+                            verbose = FALSE)
+  expect_equal(third$summaries, after$summaries)
+})
+
+test_that("repeated imports of the same files leave the cache unchanged", {
+  # Idempotence across the whole import path: fragment eviction, reverse
+  # dedup and the plain append must all settle after the first pass.
+  base <- as.POSIXct("2024-05-01 06:00:00", tz = "UTC")
+  files <- file.path(tempdir(), c("idem_full.tcx", "idem_fragment.tcx"))
+  existing <- data.frame(
+    sessionStart = c(base + 7200, base + 10),
+    sessionEnd = c(base + 10800, base + 3600),
+    sport = "running",
+    distance = c(12000, 9000),
+    duration = as.difftime(c(3600, 3590), units = "secs"),
+    file = c("hae:fragment_twin.json", "hae:full_twin.json"),
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      if (grepl("fragment", file)) {
+        # 800 m against the watch's 12 km -> Garmin loses.
+        make_fake_parsed(base + 7201, tag = file, distance = 800)
+      } else {
+        # 8.9 km against the watch's 9 km -> Garmin wins.
+        make_fake_parsed(base + 11, tag = file, distance = 8900)
+      }
+    },
+    .package = "trackeR"
+  )
+
+  first <- get_new_workouts(files, existing, list(NULL, NULL), verbose = FALSE)
+  second <- get_new_workouts(files, first$summaries, first$myruns,
+                             verbose = FALSE)
+
+  expect_equal(nrow(first$summaries), 2)
+  expect_equal(second$summaries, first$summaries)
+  expect_equal(length(second$myruns), length(first$myruns))
+  expect_equal(second$n_hae_removed, 0)
+  # The fragment file is parsed and rejected again every run — nothing on
+  # disk remembers the decision. The cost is the re-parse, not a change
+  # to the cache, which is why the counter repeats while the rows do not.
+  expect_equal(second$n_garmin_fragments, 1)
+})
+
+# --- importing a split Garmin session ----------------------------------------
+
+test_that("legs of one session imported together take it back from the watch", {
+  # (e) The recovery case. A cache cleaned under the older per-leg rule
+  # holds the Apple Watch row while both Garmin legs were removed and
+  # their files left on disk. The next import re-reads them, and each leg
+  # on its own is under half the session — so unless the legs are weighed
+  # together the cache can never reach the decision that was made.
+  base_time <- as.POSIXct("2024-11-18 16:42:05", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time,
+    sessionEnd = base_time + 3600,
+    sport = "running",
+    distance = 4968,
+    duration = as.difftime(3600, units = "secs"),
+    file = "hae:Utomhus_Kor-20241118.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+  legs <- file.path(tempdir(), c("20241118-leg1.tcx", "20241118-leg2.tcx"))
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      if (grepl("leg1", file)) {
+        make_fake_parsed(base_time + 5, tag = file, distance = 2351)
+      } else {
+        make_fake_parsed(base_time + 1800, tag = file, distance = 2296)
+      }
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(legs, existing, list(NULL), verbose = FALSE)
+
+  # Both legs in, the Apple Watch row out, and the myruns list still
+  # lines up with the rows.
+  expect_equal(nrow(res$summaries), 2)
+  expect_setequal(res$summaries$source, "tcx")
+  expect_setequal(basename(res$summaries$file), basename(legs))
+  expect_equal(res$n_hae_removed, 1)
+  expect_equal(res$n_garmin_fragments, 0)
+  expect_length(res$myruns, 2)
+
+  # Running it again changes nothing.
+  second <- get_new_workouts(legs, res$summaries, res$myruns, verbose = FALSE)
+  expect_equal(second$summaries, res$summaries)
+})
+
+test_that("a lone leg arriving without its siblings is still declined", {
+  # The same session, but only one leg on disk: 47 % of what the watch
+  # recorded, and nothing else to add to it. The Apple Watch row stays.
+  base_time <- as.POSIXct("2024-11-18 16:42:05", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time,
+    sessionEnd = base_time + 3600,
+    sport = "running",
+    distance = 4968,
+    duration = as.difftime(3600, units = "secs"),
+    file = "hae:Utomhus_Kor-20241118.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+  leg <- file.path(tempdir(), "20241118-lonely.tcx")
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time + 5, tag = file, distance = 2351)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(leg, existing, list(NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+  expect_equal(res$n_garmin_fragments, 1)
+})
+
+test_that("a second leg arriving later joins the one already cached", {
+  # If the legs do arrive in separate runs, the first is declined and the
+  # second finds it in the cache — so the pair still wins, one run late.
+  base_time <- as.POSIXct("2024-11-18 16:42:05", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = c(base_time, base_time + 5),
+    sessionEnd = c(base_time + 3600, base_time + 855),
+    sport = "running",
+    distance = c(4968, 2351),
+    duration = as.difftime(c(3600, 850), units = "secs"),
+    file = c("hae:Utomhus_Kor-20241118.json", "/data/tcx/20241118-leg1.tcx"),
+    source = c("hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  leg2 <- file.path(tempdir(), "20241118-leg2b.tcx")
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time + 1800, tag = file, distance = 2296)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(leg2, existing, list(NULL, "leg1"), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 2)
+  expect_setequal(res$summaries$source, "tcx")
+  expect_equal(res$n_hae_removed, 1)
+})
+
+test_that("two copies of one fragment count as one recording", {
+  # The same Garmin recording under two names — a re-export, a stale copy
+  # — parks twice, since parking does not record the start the main loop
+  # checks against. Summed as two legs they would hand Garmin a session
+  # it recorded once, and the second copy would then be appended beside
+  # the first.
+  base_time <- as.POSIXct("2023-04-10 15:41:41", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time,
+    sessionEnd = base_time + 3180,
+    sport = "running",
+    distance = 10274,
+    duration = as.difftime(3180, units = "secs"),
+    file = "hae:Utomhus_Kor-20230410.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+  copies <- file.path(tempdir(),
+                      c("20230410-154142.tcx", "20230410-154142-copy.tcx"))
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      # Same session, same second, 6 % of what the watch recorded.
+      make_fake_parsed(base_time + 1, tag = file, distance = 620)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(copies, existing, list(NULL), verbose = FALSE)
+
+  # One recording, counted once, and it is still only 6 % of the
+  # session — so the Apple Watch row survives and nothing is appended.
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+  expect_equal(res$n_garmin_fragments, 1)
+  expect_equal(res$n_imported, 0)
+  expect_length(res$myruns, 1)
+})
+
+test_that("a duplicate copy is not appended once the first has won", {
+  # Two copies of a recording that does cover its session: the first
+  # takes the session, and the second must not be added beside it just
+  # because the Apple Watch row it would have matched is now gone.
+  base_time <- as.POSIXct("2024-11-18 16:42:05", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time,
+    sessionEnd = base_time + 3600,
+    sport = "running",
+    distance = 4968,
+    duration = as.difftime(3600, units = "secs"),
+    file = "hae:Utomhus_Kor-20241118.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+  copies <- file.path(tempdir(), c("20241118-a.tcx", "20241118-a-copy.tcx"))
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time + 5, tag = file, distance = 2400)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(copies, existing, list(NULL), verbose = FALSE)
+
+  # 2400 m is under half of 4968, so one copy alone loses and the Apple
+  # Watch row stays. What matters is that the second copy did not make
+  # it look like 4800 m.
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+  expect_equal(res$n_imported, 0)
 })

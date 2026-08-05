@@ -46,6 +46,7 @@ Rscript inst/cli.R --year-running --plot --after=2022
 | `traning import all` | — | Import everything (Garmin + Health) |
 | `traning backfill <zip>` | — | Backfill canonical metrics from export archive (Withings, etc.) |
 | `traning update` | — | Fetch + import in one step |
+| `traning dedup` | `--dedup` | List Apple Watch sessions that duplicate a Garmin recording. Reports only; add `--apply` to remove them |
 | `traning shiny` | — | Launch the tRanat Shiny app |
 
 ## Date range filtering

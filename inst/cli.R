@@ -29,6 +29,18 @@ my_options <- list(
   make_option("--repair",
     type = "logical", action = "store_true", default = FALSE,
     help = "Repair myruns entries with NULL data (re-parse TCX files)"),
+  make_option("--dedup",
+    type = "logical", action = "store_true", default = FALSE,
+    help = paste0("List Apple Watch rows that duplicate a Garmin session. ",
+                  "Reports only; add --apply to remove them")),
+  make_option("--apply",
+    type = "logical", action = "store_true", default = FALSE,
+    help = paste0("With --dedup: actually remove the rows listed. ",
+                  "Ignored when --dry-run is also given")),
+  make_option("--dry-run",
+    type = "logical", action = "store_true", default = FALSE,
+    help = paste0("Report only. This is already the default; passing it ",
+                  "alongside --apply keeps the run harmless")),
   make_option("--repair-hr",
     type = "logical", action = "store_true", default = FALSE,
     help = "Repair myruns entries with missing per-second HR (re-parse TCX)"),
@@ -246,6 +258,24 @@ db_myruns    <- file.path(traning_data, "cache", "myruns.RData")
 mytcxpath    <- file.path(traning_data, "kristian", "filer", "tcx")
 gc_json_dir  <- file.path(traning_data, "kristian", "filer", "gconnect")
 
+# --- Retroactive dedup -------------------------------------------------------
+# Handled before the shared load below so the Garmin auto-augment block
+# doesn't rewrite the cache underneath a maintenance run.
+if (isTRUE(options$dedup)) {
+  # Reporting is the default and removal is opt-in: this command deletes
+  # rows from the only copy of the cache, so the safe outcome is the one
+  # you get by forgetting a flag. `--dry-run` is still accepted and means
+  # what it says, it is simply no longer needed.
+  # --dry-run wins over --apply, matching the Python layer. Between two
+  # contradictory flags the harmless reading is the right one, and a
+  # command with no undo should not be talked into writing by an
+  # ambiguous invocation.
+  dedup_summaries(db_summaries, db_myruns,
+                  dry_run = isTRUE(options$`dry-run`) || !isTRUE(options$apply),
+                  verbose = TRUE)
+  quit(status = 0L, save = "no")
+}
+
 # --- Load data ---
 my_templist <- my_dbs_load(db_summaries, db_myruns)
 summaries <- my_templist[["summaries"]]
@@ -276,6 +306,9 @@ json_cache_newer <-
   file.exists(gc_json_cache) &&
   file.mtime(gc_json_cache) > augmented_at
 
+# This block runs before any import, so the import counters that gate the
+# equivalent decisions further down do not exist yet and cannot apply
+# here. See the --import block for the enumeration.
 if ((!("garmin_matched" %in% names(summaries)) || json_cache_newer) &&
     dir.exists(gc_json_dir)) {
   # Presence of `garmin_matched` is the canonical "this cache has been
@@ -320,12 +353,22 @@ if (do_import) {
   # happened to coerce cleanly via as.numeric() because of dplyr's
   # tibble subtraction behaviour. Plain nrow() is the right primitive.
   summaries_oldlength <- nrow(summaries)
+  # Identities, not positions: both importers append, the dedup removes
+  # rows in between, and the closing report needs to name exactly the
+  # rows that arrived.
+  keys_before_import <- .summary_row_keys(summaries)
   my_templist <- get_new_workouts(files, summaries, myruns, verbose = do_verbose,
                                   db_summaries = db_summaries, db_myruns = db_myruns)
   summaries <- my_templist[["summaries"]]
   myruns <- my_templist[["myruns"]]
   n_updated <- my_templist[["n_updated"]]
+  n_hae_removed <- my_templist[["n_hae_removed"]] %||% 0
+  n_hae_fragment_swaps <- 0L
   rm(my_templist)
+  if (n_hae_removed > 0) {
+    cat("Ersatte ", n_hae_removed,
+        " Apple Watch-rad(er) med Garmin-inläsningen.\n", sep = "")
+  }
 
   # Then import HAE workouts (Apple Watch via Health Auto Export)
   hae_workouts_dir <- file.path(Sys.getenv("TRANING_DATA"),
@@ -335,9 +378,29 @@ if (do_import) {
                                    verbose = do_verbose)
     summaries <- hae_res$summaries
     myruns <- hae_res$myruns
-    if (hae_res$n_imported > 0 || hae_res$n_skipped_dup > 0) {
+    # A Garmin fragment replaced by the Apple Watch row: one row out, one
+    # row in, so the row count alone cannot tell that the cache changed.
+    n_garmin_fragments_hae <- hae_res$n_garmin_fragments %||% 0L
+    n_replaced_hae <- hae_res$n_replaced_hae %||% 0L
+    # One counter for the save decision, two sentences for the reader:
+    # a Garmin fragment giving way to the watch and a thinner Apple Watch
+    # copy giving way to a fuller one are both one row out and one in,
+    # but they are not the same event.
+    n_hae_fragment_swaps <- n_garmin_fragments_hae + n_replaced_hae
+    if (n_garmin_fragments_hae > 0) {
+      cat("Ersatte ", n_garmin_fragments_hae,
+          " Garmin-fragment med Apple Watch-raden.\n", sep = "")
+    }
+    if (n_replaced_hae > 0) {
+      cat("Ersatte ", n_replaced_hae,
+          " Apple Watch-rad(er) med en fylligare kopia.\n", sep = "")
+    }
+    if (hae_res$n_imported > 0 || hae_res$n_skipped_dup > 0 ||
+        hae_res$n_skipped_dup_hae > 0) {
       cat("HAE-workouts: ", hae_res$n_imported, " importerade, ",
           hae_res$n_skipped_dup, " deduppade mot Garmin",
+          if (hae_res$n_skipped_dup_hae > 0)
+            paste0(", ", hae_res$n_skipped_dup_hae, " dubbla HAE-filer") else "",
           if (hae_res$n_skipped_invalid > 0)
             paste0(", ", hae_res$n_skipped_invalid, " ogiltiga") else "",
           "\n", sep = "")
@@ -368,12 +431,29 @@ if (do_import) {
   # augment_summaries() is incremental, so the (a)-only path stays
   # cheap; (b) triggers force=TRUE further down so previously
   # unmatched rows get a fresh look.
+  #
+  # (a) cannot be read off the row count. The three import counters,
+  # and whether each belongs in this gate:
+  #   n_hae_removed        yes — a Garmin row was appended and an Apple
+  #                        Watch row dropped, so the count stands still
+  #                        while a brand-new row needs its garmin_*
+  #                        columns filled in.
+  #   n_hae_fragment_swaps yes — same shape from the other side: an HAE
+  #                        row replaced a Garmin fragment.
+  #   n_garmin_fragments   no  — that branch declines to add a row, so
+  #   (from get_new_workouts)   there is nothing new to augment. It is
+  #                        also non-zero on every import, which would
+  #                        make this block run forever for nothing.
+  # Without the first two the swapped-in row was saved with garmin_* =
+  # NA until some later run happened to backfill it, and a combined
+  # invocation such as `--import --pmc` read the stale values.
   augmented_at <- attr(summaries, "garmin_augmented_at")
   if (is.null(augmented_at)) augmented_at <- as.POSIXct("1970-01-01", tz = "UTC")
   json_cache_newer <-
     file.exists(gc_json_cache) &&
     file.mtime(gc_json_cache) > augmented_at
-  if ((summaries_lengthdiff > 0 || json_cache_newer) &&
+  if ((summaries_lengthdiff > 0 || json_cache_newer ||
+       n_hae_removed > 0 || n_hae_fragment_swaps > 0) &&
       dir.exists(gc_json_dir)) {
     garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
                              error = function(e) {
@@ -397,12 +477,38 @@ if (do_import) {
 
   # Save when anything changed: new rows, filename corrections, or a
   # backfill-driven re-augment refreshed the garmin_* / matched state.
-  if (summaries_lengthdiff > 0 || n_updated > 0 || json_cache_newer) {
+  #
+  # Row *count* is not enough on its own. Two of the dedup outcomes swap
+  # one row for another and leave the total untouched: a Garmin import
+  # that evicts the Apple Watch row for the same session, and an HAE
+  # import that replaces a Garmin fragment. Without the counters below
+  # those edits lived only in memory and the duplicate returned on the
+  # next run.
+  #
+  # get_new_workouts()'s own fragment counter is deliberately *not* here.
+  # That branch declines to add a row and changes nothing, and the seven
+  # fragment files are re-read on every import, so keying the save on it
+  # would rewrite the whole cache — myruns included — every single run
+  # with nothing to show for it.
+  if (summaries_lengthdiff > 0 || n_updated > 0 || json_cache_newer ||
+      n_hae_removed > 0 || n_hae_fragment_swaps > 0) {
     my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   }
-  if (summaries_lengthdiff > 0) {
-    summaries_mostrecent <- utils::tail(summaries, n = summaries_lengthdiff)
-    report_mostrecent(summaries_mostrecent, summaries_lengthdiff)
+  # What to print is a fourth decision in the same family, and it needs
+  # yet another quantity: the rows that were actually added. That is
+  # neither the change in row count nor any of the dedup counters — a
+  # session that evicted its Apple Watch twin is a new session worth
+  # reporting even though the cache is the same size.
+  #
+  # Both importers append, so neither counter alone covers the run and
+  # tail() cannot select by position: the HAE rows land after the TCX
+  # ones, so counting TCX rows and taking that many from the end
+  # reported the wrong sessions on a mixed import and printed nothing at
+  # all when only HAE rows arrived. Compare identities instead.
+  imported_rows <- summaries[
+    !(.summary_row_keys(summaries) %in% keys_before_import), , drop = FALSE]
+  if (nrow(imported_rows) > 0) {
+    report_mostrecent(imported_rows, nrow(imported_rows))
   } else if (n_updated > 0) {
     cat("Inget att importera (", n_updated, " filnamn uppdaterade).\n", sep = "")
   }

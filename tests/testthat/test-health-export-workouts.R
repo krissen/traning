@@ -225,7 +225,7 @@ test_that("import_hae_workouts keeps HAE row if Garmin is far away in time", {
   .write_hae(tmp, "run1", "2026-04-06 15:44:06 +0200",
              "Utomhus Kör", distance_km = 8.0, duration_s = 2400)
 
-  # Garmin row 5 minutes off -> beyond default 90s tolerance
+  # Garmin row 306 s off -> beyond the 300 s match window
   summaries <- data.frame(
     sessionStart = as.POSIXct("2026-04-06 15:39:00 +0200",
                               format = "%Y-%m-%d %H:%M:%S %z", tz = "UTC"),
@@ -239,6 +239,306 @@ test_that("import_hae_workouts keeps HAE row if Garmin is far away in time", {
   res <- import_hae_workouts(tmp, summaries, list())
   expect_equal(res$n_imported, 1)
   expect_equal(res$n_skipped_dup, 0)
+})
+
+test_that("import_hae_workouts dedups the 2026-08-01 case (107 s apart)", {
+  # Apple Watch started ~2 minutes before the Garmin watch. The old
+  # ±90 s window let this through and the session showed up twice.
+  tmp <- withr::local_tempdir()
+  .write_hae(tmp, "run1", "2026-08-01 11:00:49 +0000",
+             "Utomhus Kör", distance_km = 5.234, duration_s = 1391)
+
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2026-08-01 11:02:36 +0000",
+                              format = "%Y-%m-%d %H:%M:%S %z", tz = "UTC"),
+    sport = "running",
+    distance = 5292,
+    duration = as.difftime(1376, units = "secs"),
+    file = "/data/tcx/20260801-110236.tcx",
+    source = "tcx",
+    stringsAsFactors = FALSE
+  )
+
+  res <- import_hae_workouts(tmp, summaries, list())
+  expect_equal(res$n_imported, 0)
+  expect_equal(res$n_skipped_dup, 1)
+})
+
+test_that("import_hae_workouts keeps a different workout inside the window", {
+  # Same start minute, but a 3 km walk is not the 12 km run — the
+  # distance/duration sanity check must keep both rows.
+  tmp <- withr::local_tempdir()
+  .write_hae(tmp, "gng1", "2026-04-06 15:44:30 +0200",
+             "Utomhus Gång", distance_km = 3.0, duration_s = 1800)
+
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2026-04-06 15:44:06 +0200",
+                              format = "%Y-%m-%d %H:%M:%S %z", tz = "UTC"),
+    sport = "running",
+    distance = 12000,
+    duration = as.difftime(3600, units = "secs"),
+    file = "20260406-running.tcx",
+    source = "tcx",
+    stringsAsFactors = FALSE
+  )
+
+  res <- import_hae_workouts(tmp, summaries, list())
+  expect_equal(res$n_imported, 1)
+  expect_equal(res$n_skipped_dup, 0)
+})
+
+test_that("import_hae_workouts dedups two HAE files for the same session", {
+  # HAE delivers both the Apple Watch recording and the
+  # Garmin-Connect-mirrored copy; they land in the same batch. One row
+  # survives, and it is the fuller recording regardless of which file
+  # was read first.
+  tmp <- withr::local_tempdir()
+  .write_hae(tmp, "a-native", "2026-04-06 15:44:06 +0200",
+             "Utomhus Kör", distance_km = 8.0, duration_s = 2400)
+  .write_hae(tmp, "b-mirror", "2026-04-06 15:44:09 +0200",
+             "Utomhus Kör", distance_km = 8.02, duration_s = 2398)
+
+  res <- import_hae_workouts(tmp, data.frame(), list())
+  expect_equal(res$n_imported, 1)
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$distance, 8020)
+  expect_equal(length(res$myruns), 1)
+
+  # And the other way round in file order: the shorter copy is read
+  # first here, so the fuller one has to displace it.
+  tmp2 <- withr::local_tempdir()
+  .write_hae(tmp2, "a-short", "2026-04-06 15:44:06 +0200",
+             "Utomhus Kör", distance_km = 8.0, duration_s = 2400)
+  .write_hae(tmp2, "b-full", "2026-04-06 15:44:09 +0200",
+             "Utomhus Kör", distance_km = 9.5, duration_s = 2398)
+  res2 <- import_hae_workouts(tmp2, data.frame(), list())
+  expect_equal(nrow(res2$summaries), 1)
+  expect_equal(res2$summaries$distance, 9500)
+})
+
+# --- .is_same_workout ---------------------------------------------------------
+
+.wk <- function(start, distance = NA_real_, duration = NA_real_,
+                end = NA_character_, sport = "running") {
+  data.frame(
+    sessionStart = as.POSIXct(start, tz = "UTC"),
+    sessionEnd = as.POSIXct(end, tz = "UTC"),
+    sport = sport,
+    distance = distance,
+    duration = duration,
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that(".is_same_workout requires a sanity check inside the wide window", {
+  a <- .wk("2026-08-01 11:00:49", distance = 5234, duration = 1391)
+  expect_true(.is_same_workout(
+    a, .wk("2026-08-01 11:02:36", distance = 5292, duration = 1376)))
+  # 40 % shorter and 40 % quicker: same clock, different workout
+  expect_false(.is_same_workout(
+    a, .wk("2026-08-01 11:02:36", distance = 3140, duration = 830)))
+  # Distance disagrees but duration matches -> still the same workout
+  # (a lost GPS fix shortens distance, not elapsed time)
+  expect_true(.is_same_workout(
+    a, .wk("2026-08-01 11:02:36", distance = 3140, duration = 1376)))
+})
+
+test_that(".is_same_workout falls back to a narrow time-only window", {
+  a <- .wk("2026-08-01 11:00:49")
+  expect_true(.is_same_workout(a, .wk("2026-08-01 11:02:36")))   # 107 s
+  expect_false(.is_same_workout(a, .wk("2026-08-01 11:04:00")))  # 191 s
+})
+
+test_that(".is_same_workout is vectorised over the candidate table", {
+  a <- .wk("2026-08-01 11:00:49", distance = 5234, duration = 1391)
+  cands <- rbind(
+    .wk("2026-08-01 09:00:00", distance = 5200, duration = 1380),
+    .wk("2026-08-01 11:02:36", distance = 5292, duration = 1376),
+    .wk("2026-08-01 11:02:36", distance = 500, duration = 200)
+  )
+  expect_equal(.is_same_workout(a, cands), c(FALSE, TRUE, FALSE))
+})
+
+test_that(".is_same_workout matches a session recorded inside another", {
+  # 2026-06-12: the Garmin watch ran 07:50–10:03, the Apple Watch was
+  # started 105 minutes in and both were stopped 1 s apart. Starts are
+  # far too distant for the start rule; the intervals say it is one
+  # session.
+  garmin <- .wk("2026-06-12 07:50:00", distance = 24000, duration = 7980,
+                end = "2026-06-12 10:03:00")
+  watch <- .wk("2026-06-12 09:35:00", distance = 5006, duration = 1679,
+               end = "2026-06-12 10:03:01")
+  expect_true(.is_same_workout(garmin, watch))
+
+  # Same shape, but the short recording also stops half an hour before
+  # the long one — it still lies inside it.
+  inside <- .wk("2026-06-12 08:30:00", distance = 4196, duration = 1800,
+                end = "2026-06-12 09:00:00")
+  expect_true(.is_same_workout(garmin, inside))
+})
+
+test_that(".is_same_workout accepts a thin overlap when the distances agree", {
+  # 2023-10-23: the clocks disagree by an hour, so the sessions overlap
+  # only briefly relative to their length and stop far apart. Neither the
+  # coverage nor the stop-time evidence fires — but the distance matches
+  # to the metre, which two different runs do not.
+  garmin <- .wk("2023-10-23 07:05:00", distance = 12303, duration = 4320,
+                end = "2023-10-23 08:17:00")
+  watch <- .wk("2023-10-23 08:13:00", distance = 12304, duration = 4020,
+               end = "2023-10-23 09:20:00")
+  expect_true(.is_same_workout(garmin, watch))
+
+  # The same thin overlap with a distance 60 % off has nothing left to
+  # stand on — this is the shape of the one verified false positive, a
+  # 2554 m and a 4798 m ride sharing part of an afternoon.
+  different <- watch
+  different$distance <- 4798
+  expect_false(.is_same_workout(garmin, different))
+})
+
+test_that(".is_same_workout distrusts a half-day interval that went nowhere", {
+  # The 2019-12-09 cache row claims a 14.5-hour bike ride at 0.27 m/s.
+  # Every session recorded that afternoon falls inside it, so honouring
+  # that interval would delete real data.
+  broken <- .wk("2019-12-09 08:20:25", distance = 13948, duration = 52180,
+                sport = "cycling", end = "2019-12-09 22:50:05")
+  real <- .wk("2019-12-09 12:02:42", distance = 6506, duration = 2056,
+              sport = "cycling", end = "2019-12-09 12:36:58")
+  expect_false(.is_same_workout(broken, real))
+
+  # The same pair with a believable end on the first session is a match.
+  plausible <- broken
+  plausible$sessionEnd <- as.POSIXct("2019-12-09 12:40:00", tz = "UTC")
+  expect_true(.is_same_workout(plausible, real))
+})
+
+test_that(".is_same_workout trusts a half-day session that covered ground", {
+  # A backyard ultra really does span half a day. The guard above must
+  # key on the pace the interval implies, not on its length, or every
+  # ultra becomes undeduplicatable.
+  ultra <- .wk("2026-09-05 09:00:00", distance = 84000, duration = 45000,
+               sport = "running", end = "2026-09-05 21:30:00")
+  watch <- .wk("2026-09-05 15:00:00", distance = 41000, duration = 23400,
+               sport = "running", end = "2026-09-05 21:30:20")
+  expect_true(.is_same_workout(ultra, watch))
+})
+
+test_that("import_hae_workouts does not let a broken row swallow the evening", {
+  # The same 14.5-hour row, this time as an already-cached HAE session
+  # meeting a new HAE file for a genuinely separate evening ride: the
+  # short session sits entirely inside the broken interval, so the
+  # coverage evidence fires and only the plausibility guard stands
+  # between it and deletion.
+  tmp <- withr::local_tempdir()
+  path <- .write_hae(tmp, "kvall", "2019-12-09 17:18:00 +0000",
+                     "Utomhus Cykling", distance_km = 8.4, duration_s = 2280)
+  raw <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+  raw$data$workouts[[1]]$end <- "2019-12-09 17:56:00 +0000"
+  jsonlite::write_json(raw, path, auto_unbox = TRUE, null = "null")
+
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2019-12-09 08:20:25", tz = "UTC"),
+    sessionEnd = as.POSIXct("2019-12-09 22:50:05", tz = "UTC"),
+    sport = "cycling",
+    distance = 13948,
+    duration = as.difftime(52180, units = "secs"),
+    file = "hae:Cykling-20191209_082025.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  res <- import_hae_workouts(tmp, summaries, list(NULL))
+  expect_equal(res$n_imported, 1)
+  expect_equal(res$n_skipped_dup_hae, 0)
+})
+
+test_that(".is_same_workout requires a distance on both sides to overlap-match", {
+  # Without a distance we cannot argue that the session moved the person
+  # anywhere, so a parallel recording stays its own session even when the
+  # sport label looks like movement.
+  garmin <- .wk("2026-06-12 07:50:00", distance = 24000, duration = 7980,
+                end = "2026-06-12 10:03:00")
+  nodist <- .wk("2026-06-12 09:35:00", distance = NA_real_, duration = 1681,
+                end = "2026-06-12 10:03:01")
+  expect_false(.is_same_workout(garmin, nodist))
+})
+
+test_that(".is_same_workout ignores a brief brush between two sessions", {
+  # A walk that ends 30 s after the run starts is not the run.
+  run <- .wk("2026-06-12 07:50:00", distance = 10000, duration = 3000,
+             end = "2026-06-12 08:40:00")
+  walk <- .wk("2026-06-12 07:20:00", distance = 2000, duration = 1800,
+              sport = "walking", end = "2026-06-12 07:50:30")
+  expect_false(.is_same_workout(run, walk))
+})
+
+test_that(".is_same_workout exempts strength and unclassified sports from overlap", {
+  # A strength session logged on one watch while the other records a run
+  # is a genuine pair of sessions.
+  run <- .wk("2026-06-12 07:50:00", distance = 24000, duration = 7980,
+             end = "2026-06-12 10:03:00")
+  gym <- .wk("2026-06-12 09:35:00", distance = NA_real_, duration = 1679,
+             sport = "strength", end = "2026-06-12 10:03:01")
+  expect_false(.is_same_workout(run, gym))
+
+  misc <- gym
+  misc$sport <- "ovrigt"
+  expect_false(.is_same_workout(run, misc))
+
+  # An unlabelled session is treated the same way — without a sport we
+  # cannot tell a parallel activity from a duplicate.
+  unlabelled <- gym
+  unlabelled$sport <- NA_character_
+  expect_false(.is_same_workout(run, unlabelled))
+})
+
+test_that(".is_same_workout falls back to the start rule without sessionEnd", {
+  garmin <- .wk("2026-06-12 07:50:00", distance = 24000, duration = 7980)
+  watch <- .wk("2026-06-12 09:35:00", distance = 5006, duration = 1679)
+  expect_false(.is_same_workout(garmin, watch))
+
+  # Missing end on one side only is equally unusable.
+  half <- watch
+  half$sessionEnd <- as.POSIXct(NA)
+  garmin$sessionEnd <- as.POSIXct("2026-06-12 10:03:00", tz = "UTC")
+  expect_false(.is_same_workout(garmin, half))
+})
+
+test_that("import_hae_workouts dedups a mid-session Apple Watch recording", {
+  tmp <- withr::local_tempdir()
+  path <- .write_hae(tmp, "mid", "2026-06-12 09:35:00 +0000",
+                     "Utomhus Kör", distance_km = 5.006, duration_s = 1679)
+  # .write_hae writes end == start; patch in the real end so the
+  # interval has a span.
+  raw <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+  raw$data$workouts[[1]]$end <- "2026-06-12 10:03:01 +0000"
+  jsonlite::write_json(raw, path, auto_unbox = TRUE, null = "null")
+
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2026-06-12 07:50:00", tz = "UTC"),
+    sessionEnd = as.POSIXct("2026-06-12 10:03:00", tz = "UTC"),
+    sport = "running",
+    distance = 24000,
+    duration = as.difftime(7980, units = "secs"),
+    file = "/data/tcx/20260612-075000.tcx",
+    source = "tcx",
+    stringsAsFactors = FALSE
+  )
+
+  res <- import_hae_workouts(tmp, summaries, list(NULL))
+  expect_equal(res$n_imported, 0)
+  expect_equal(res$n_skipped_dup, 1)
+})
+
+test_that(".is_same_workout handles difftime durations and NA starts", {
+  a <- .wk("2026-08-01 11:00:49", distance = NA_real_)
+  a$duration <- as.difftime(1391 / 60, units = "mins")
+  b <- .wk("2026-08-01 11:02:36", distance = NA_real_)
+  b$duration <- as.difftime(1376, units = "secs")
+  expect_true(.is_same_workout(a, b))
+
+  na_start <- .wk(NA_character_, distance = 5234, duration = 1391)
+  expect_false(.is_same_workout(a, na_start))
 })
 
 test_that("import_hae_workouts skips already-imported HAE files", {
