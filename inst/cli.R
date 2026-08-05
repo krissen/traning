@@ -29,6 +29,12 @@ my_options <- list(
   make_option("--repair",
     type = "logical", action = "store_true", default = FALSE,
     help = "Repair myruns entries with NULL data (re-parse TCX files)"),
+  make_option("--dedup",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "Remove Apple Watch rows that duplicate a Garmin session"),
+  make_option("--dry-run",
+    type = "logical", action = "store_true", default = FALSE,
+    help = "With --dedup: list candidates without writing"),
   make_option("--repair-hr",
     type = "logical", action = "store_true", default = FALSE,
     help = "Repair myruns entries with missing per-second HR (re-parse TCX)"),
@@ -246,6 +252,15 @@ db_myruns    <- file.path(traning_data, "cache", "myruns.RData")
 mytcxpath    <- file.path(traning_data, "kristian", "filer", "tcx")
 gc_json_dir  <- file.path(traning_data, "kristian", "filer", "gconnect")
 
+# --- Retroactive dedup -------------------------------------------------------
+# Handled before the shared load below so the Garmin auto-augment block
+# doesn't rewrite the cache underneath a maintenance run.
+if (isTRUE(options$dedup)) {
+  dedup_summaries(db_summaries, db_myruns,
+                  dry_run = isTRUE(options$`dry-run`), verbose = TRUE)
+  quit(status = 0L, save = "no")
+}
+
 # --- Load data ---
 my_templist <- my_dbs_load(db_summaries, db_myruns)
 summaries <- my_templist[["summaries"]]
@@ -325,7 +340,12 @@ if (do_import) {
   summaries <- my_templist[["summaries"]]
   myruns <- my_templist[["myruns"]]
   n_updated <- my_templist[["n_updated"]]
+  n_hae_removed <- my_templist[["n_hae_removed"]] %||% 0
   rm(my_templist)
+  if (n_hae_removed > 0) {
+    cat("Ersatte ", n_hae_removed,
+        " Apple Watch-rad(er) med Garmin-inläsningen.\n", sep = "")
+  }
 
   # Then import HAE workouts (Apple Watch via Health Auto Export)
   hae_workouts_dir <- file.path(Sys.getenv("TRANING_DATA"),
@@ -335,9 +355,12 @@ if (do_import) {
                                    verbose = do_verbose)
     summaries <- hae_res$summaries
     myruns <- hae_res$myruns
-    if (hae_res$n_imported > 0 || hae_res$n_skipped_dup > 0) {
+    if (hae_res$n_imported > 0 || hae_res$n_skipped_dup > 0 ||
+        hae_res$n_skipped_dup_hae > 0) {
       cat("HAE-workouts: ", hae_res$n_imported, " importerade, ",
           hae_res$n_skipped_dup, " deduppade mot Garmin",
+          if (hae_res$n_skipped_dup_hae > 0)
+            paste0(", ", hae_res$n_skipped_dup_hae, " dubbla HAE-filer") else "",
           if (hae_res$n_skipped_invalid > 0)
             paste0(", ", hae_res$n_skipped_invalid, " ogiltiga") else "",
           "\n", sep = "")

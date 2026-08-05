@@ -890,6 +890,19 @@ def insight_day(ref_date, push, force):
     click.echo(msg)
 
 
+# -- dedup ------------------------------------------------------------------
+
+@cli.command()
+@click.option("--dry-run", is_flag=True,
+              help="List duplicate candidates without changing the cache")
+def dedup(dry_run):
+    """Remove Apple Watch sessions that duplicate a Garmin recording."""
+    cmd = ["Rscript", str(CLI_R), "--dedup"]
+    if dry_run:
+        cmd.append("--dry-run")
+    _exec(cmd)
+
+
 # -- doctor -----------------------------------------------------------------
 
 @cli.group(invoke_without_command=True)
