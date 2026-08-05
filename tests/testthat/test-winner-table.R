@@ -352,3 +352,42 @@ test_that("a partly unmeasured Garmin set does not count as a fragment", {
   expect_equal(nrow(after$summaries), 2)
   expect_setequal(after$summaries$source, "tcx")
 })
+
+test_that("a fragment of one session says nothing about another", {
+  # Two sessions in one batch, each with a Garmin fragment far too short
+  # to take it. Weighed against its own session each is a fragment and
+  # both Apple Watch rows survive — but if the other session's fragment
+  # is drawn into the sum as an unknown quantity, the total reads as
+  # unknown, which hands Garmin the win and deletes the wrist recording.
+  day <- function(hms) as.POSIXct(paste("2024-03-02", hms), tz = "UTC")
+  cache <- data.frame(
+    sessionStart = c(day("09:00:00"), day("14:00:00")),
+    sessionEnd = c(day("10:00:00"), day("15:00:00")),
+    sport = "running",
+    distance = c(10000, 12000),
+    duration = as.difftime(c(3600, 3600), units = "secs"),
+    file = c("hae:morning.json", "hae:afternoon.json"),
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+  files <- file.path(tempdir(), c("morning-frag.tcx", "afternoon-frag.tcx"))
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      if (grepl("morning", file)) {
+        .fake_parsed(day("09:05:00"), 500, file, span = 600)
+      } else {
+        .fake_parsed(day("14:05:00"), 600, file, span = 600)
+      }
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(files, cache, list(NULL, NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 2)
+  expect_setequal(res$summaries$source, "hae")
+  expect_setequal(round(as.numeric(res$summaries$distance)), c(10000, 12000))
+  expect_equal(res$n_garmin_fragments, 2)
+  expect_equal(res$n_imported, 0)
+  expect_equal(res$n_hae_removed, 0)
+})

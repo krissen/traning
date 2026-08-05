@@ -506,10 +506,18 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
 
     # Legs of one session are siblings by way of the wrist recording they
     # both match, not by matching each other — see cached_garmin_distances().
+    #
+    # Unrelated legs are left out of the collection entirely rather than
+    # entered as NA. An NA means "this session has a leg of unknown
+    # length", which makes the whole total unknown and hands Garmin the
+    # win; a fragment of some *other* session must not be able to say
+    # that about this one.
     others <- setdiff(which(pending), k)
-    other_legs <- vapply(others, function(j) {
-      shared <- intersect(dup, matching_hae(deferred[[j]]$row))
-      if (length(shared) > 0) as.numeric(deferred[[j]]$row$distance) else NA_real_
+    related <- others[vapply(others, function(j) {
+      length(intersect(dup, matching_hae(deferred[[j]]$row))) > 0
+    }, logical(1))]
+    other_legs <- vapply(related, function(j) {
+      as.numeric(deferred[[j]]$row$distance)
     }, numeric(1))
     total <- .garmin_total(c(as.numeric(entry$row$distance),
                              cached_garmin_distances(dup),
