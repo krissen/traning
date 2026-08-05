@@ -310,8 +310,19 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
     }
     idx <- which(!is.na(summaries$source) & summaries$source == "tcx")
     if (length(idx) == 0) return(numeric(0))
-    hae_row <- summaries[dup[1], , drop = FALSE]
-    legs <- idx[.is_same_workout(hae_row, summaries[idx, , drop = FALSE])]
+    # Every Apple Watch row this session matched, not just the first of
+    # them. The two copies HAE writes do not span quite the same window,
+    # so an early leg can belong to one copy and a late leg to the other;
+    # anchoring on one copy then hides the leg that belongs to the other,
+    # and the arriving leg is dismissed as a fragment for good. The
+    # eviction already takes every matched copy, so the session is what
+    # any of them recognises.
+    legs <- integer(0)
+    for (h in dup) {
+      legs <- union(legs, idx[.is_same_workout(
+        summaries[h, , drop = FALSE], summaries[idx, , drop = FALSE])])
+    }
+    legs <- sort(as.integer(legs))
     # One recording cached under two names counts once.
     legs <- legs[.distinct_recordings(summaries$sessionStart[legs])]
     as.numeric(summaries$distance[legs])

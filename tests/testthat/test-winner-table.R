@@ -19,12 +19,12 @@
 # helper from elsewhere is simply missing, read_container() fails, and
 # every file is skipped — which looks like "the cache was left alone"
 # and would let most of the table below pass without testing anything.
-.fake_summary <- function(start, distance, file) {
+.fake_summary <- function(start, distance, file, span = 3600) {
   data.frame(
-    session = 1L, sessionStart = start, sessionEnd = start + 3600,
+    session = 1L, sessionStart = start, sessionEnd = start + span,
     distance = distance,
-    duration = as.difftime(3600, units = "secs"),
-    durationMoving = as.difftime(3600, units = "secs"),
+    duration = as.difftime(span, units = "secs"),
+    durationMoving = as.difftime(span, units = "secs"),
     avgSpeed = 2.5, avgSpeedMoving = 2.8, avgPace = 6.5, avgPaceMoving = 5.9,
     avgCadenceRunning = 85, avgCadenceRunningMoving = 87,
     avgHeartRate = 135, avgHeartRateMoving = 140,
@@ -34,8 +34,8 @@
 summary.winnertable <- function(object, ...) object$the_summary
 registerS3method("summary", "winnertable", summary.winnertable,
                  envir = environment())
-.fake_parsed <- function(start, distance, file) {
-  structure(list(the_summary = .fake_summary(start, distance, file)),
+.fake_parsed <- function(start, distance, file, span = 3600) {
+  structure(list(the_summary = .fake_summary(start, distance, file, span)),
             class = "winnertable")
 }
 
@@ -265,4 +265,45 @@ test_that("the HAE import counts two cached copies of a fragment once", {
   expect_equal(res$n_imported, 1)
   expect_equal(nrow(res$summaries), 1)
   expect_equal(res$summaries$source, "hae")
+})
+
+test_that("a cached leg is found through whichever copy recognises it", {
+  # The two copies HAE writes do not span quite the same window: the
+  # mirrored one here starts half an hour into the session. An early
+  # Garmin leg therefore belongs to the full copy alone, while the leg
+  # arriving now matches both. Looking for siblings through only the
+  # first matched copy hides the early leg, and the arriving leg is
+  # dismissed as a fragment on every import — the split session can
+  # never take itself back.
+  day <- function(hms) as.POSIXct(paste("2024-03-02", hms), tz = "UTC")
+  cache <- data.frame(
+    # The short copy first, so it is the one a single-anchor lookup
+    # would pick.
+    sessionStart = c(day("09:30:00"), day("09:00:00"), day("09:00:00")),
+    sessionEnd = c(day("10:00:00"), day("10:00:00"), day("09:20:00")),
+    sport = "running",
+    distance = c(6000, 10000, 2600),
+    duration = as.difftime(c(1800, 3600, 1200), units = "secs"),
+    file = c("hae:connect.json", "hae:native.json", "/tcx/leg1.tcx"),
+    source = c("hae", "hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  path <- file.path(tempdir(), "leg2.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      .fake_parsed(day("09:35:00"), 2700, file, span = 1200)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(path, cache, list(NULL, NULL, "leg1"),
+                          verbose = FALSE)
+
+  # 2600 + 2700 is 53 % of the fuller copy, so the legs take the
+  # session and both Apple Watch rows go.
+  expect_equal(nrow(res$summaries), 2)
+  expect_setequal(res$summaries$source, "tcx")
+  expect_setequal(round(as.numeric(res$summaries$distance)), c(2600, 2700))
+  expect_equal(res$n_hae_removed, 2)
+  expect_length(res$myruns, 2)
 })
