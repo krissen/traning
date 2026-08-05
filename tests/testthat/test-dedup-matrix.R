@@ -418,6 +418,79 @@ test_that("a half-day interval is trusted only if it went somewhere", {
   expect_false(.is_same_workout(inside, broken))
 })
 
+test_that("each corroboration threshold is pinned at its edge", {
+  long <- .span(0, 7980, distance = 24000)
+
+  # Coverage, with the other two pieces of evidence held out: the ends are
+  # far apart and the distances 79 % apart, so only the fraction decides.
+  coverage <- function(frac) {
+    span <- 3000
+    .span(-span + round(frac * span), span, distance = 4000)
+  }
+  expect_false(.is_same_workout(long, coverage(0.49)))
+  expect_true(.is_same_workout(long, coverage(0.50)))
+  expect_true(.is_same_workout(long, coverage(0.51)))
+
+  # Distance, with coverage below half and the ends far apart.
+  by_distance <- function(frac) .span(-9000 + 1200, 9000, distance = 24000 * frac)
+  expect_false(.is_same_workout(long, by_distance(0.79)))
+  expect_true(.is_same_workout(long, by_distance(0.80)))
+  expect_true(.is_same_workout(long, by_distance(0.81)))
+})
+
+test_that("stopping together implies the coverage evidence as well", {
+  # Two sessions that stop within the window of each other overlap along
+  # the whole of the later-starting one, so the coverage fraction is
+  # necessarily high too: the stop-time evidence is not an independent
+  # third route into a match, it is a restatement of the second for every
+  # session longer than twice the stop window. Recorded here because a
+  # future simplification of the rule may drop it, and this says what
+  # would and would not be lost.
+  for (span_a in c(600, 1800, 3600, 7200)) {
+    for (span_b in c(600, 1800, 3600, 7200)) {
+      for (gap in c(0, 30, 60)) {
+        start_b <- span_a + gap - span_b
+        overlap <- min(span_a, start_b + span_b) - max(0, start_b)
+        if (overlap < 60) next
+        coverage <- overlap / min(span_a, span_b)
+        expect_gte(coverage, 0.50)
+      }
+    }
+  }
+
+  # The shape itself still matches, which is what the data actually
+  # contains: both watches stopped within seconds of one another.
+  expect_true(.is_same_workout(.span(0, 7980, distance = 24000),
+                               .span(6300, 1681, distance = 5006)))
+})
+
+test_that("the believability threshold is pinned at six hours and 1 m/s", {
+  inside <- .span(600, 2700, distance = 4000)
+  half_day <- function(speed, span = 12 * 3600) {
+    .span(0, span, distance = speed * span)
+  }
+  expect_false(.is_same_workout(half_day(0.99), inside))
+  expect_true(.is_same_workout(half_day(1.00), inside))
+
+  # Below the span threshold the pace is not consulted at all: a slow
+  # six-hour session is still a believable interval.
+  expect_true(.is_same_workout(half_day(0.27, span = 6 * 3600), inside))
+  expect_false(.is_same_workout(half_day(0.27, span = 6 * 3600 + 1), inside))
+})
+
+test_that("a bike ride stopped late is not the run that followed it", {
+  # 2022-05-07 in the real cache, and the one candidate the corroboration
+  # gates removed: the Apple Watch kept recording a 2.5 km ride for seven
+  # minutes after the Garmin run had started. Overlapping, but 35 %
+  # coverage, stops 13 minutes apart and distances 47 % apart — every
+  # piece of evidence says two sessions, and removing the ride would have
+  # deleted a session Garmin never recorded.
+  ride <- .span(0, 1601, distance = 2554, sport = "cycling")
+  run <- .span(1169, 1223, distance = 4798, sport = "running")
+  expect_false(.is_same_workout(ride, run))
+  expect_false(.is_same_workout(run, ride))
+})
+
 test_that("the overlap criterion needs an end and a distance on both sides", {
   long <- .span(0, 7980, distance = 24000)
   nested <- .span(2400, 1800, distance = 4196)
