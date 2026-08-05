@@ -424,6 +424,31 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       }
     }
   }
+  # Parking a file does not record its start, so the main loop's
+  # same-source duplicate check never saw it: two copies of one recording
+  # under different names both ended up here. Left alone they would be
+  # summed as two legs — enough to hand Garmin a session it only recorded
+  # once — and the second copy would then be appended beside the first.
+  # Collapse them before anything is weighed. Everything parked is a
+  # Garmin row, so matching starts is the whole test, and the window is
+  # the one the main loop uses.
+  if (length(deferred) > 1) {
+    starts <- vapply(deferred, function(e) as.numeric(e$row$sessionStart),
+                     numeric(1))
+    keep <- rep(TRUE, length(deferred))
+    for (k in seq_along(deferred)[-1]) {
+      earlier <- which(keep[seq_len(k - 1L)])
+      if (any(abs(starts[earlier] - starts[k]) < 2)) {
+        keep[k] <- FALSE
+        if (verbose) {
+          cat("dublett av parkerad del: ", basename(deferred[[k]]$file),
+              ", hoppar över\n", sep = "")
+        }
+      }
+    }
+    deferred <- deferred[keep]
+  }
+
   # Second pass over the parked legs. Each is weighed against everything
   # Garmin holds for its session — the legs still parked here plus any
   # already cached — so a session that arrives split across several files
@@ -435,6 +460,28 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   pending <- rep(TRUE, length(deferred))
   for (k in seq_along(deferred)) {
     entry <- deferred[[k]]
+    # The same guard the main loop applies before parsing, repeated here
+    # because this pass appends too: without it a second copy of a
+    # recording would be added beside the first, the Apple Watch row
+    # having already been taken by the first. Same-source only, for the
+    # same reason as in the loop — an Apple Watch row starting in the
+    # same second is the duplicate this pass exists to resolve, not a
+    # copy of the file.
+    near <- which(abs(as.numeric(existing_starts) -
+                      as.numeric(entry$row$sessionStart)) < 2)
+    if (length(near) > 0 && "source" %in% names(summaries)) {
+      near <- near[near <= nrow(summaries)]
+      near <- near[!is.na(summaries$source[near]) &
+                   summaries$source[near] == "tcx"]
+    }
+    if (length(near) > 0) {
+      if (verbose) {
+        cat("redan inläst under annat namn: ", basename(entry$file),
+            "\n", sep = "")
+      }
+      pending[k] <- FALSE
+      next
+    }
     dup <- matching_hae(entry$row)
     if (length(dup) == 0) {
       # The Apple Watch row is already gone — an earlier leg took the
