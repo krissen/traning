@@ -217,3 +217,46 @@ test_that("dedup_summaries keeps Garmin when a second row covers the session", {
   expect_equal(nrow(after$summaries), 2)
   expect_setequal(after$summaries$source, "tcx")
 })
+
+test_that("dedup_summaries removes every fragment of a session in one pass", {
+  # 2019-12-23 in the real cache: the Garmin watch was stopped and
+  # restarted, leaving two short rows against one 6.4 km Apple Watch
+  # session. Removing only the nearest leaves the other orphaned and
+  # 3 km double-counted until someone runs the cleanup again.
+  tmp <- withr::local_tempdir()
+  start <- as.POSIXct("2019-12-23 10:18:27", tz = "UTC")
+  summaries <- data.frame(
+    sessionStart = c(start, start + 5, start + 1560),
+    sessionEnd = c(start + 2700, start + 1500, start + 2700),
+    sport = "running",
+    distance = c(6387, 2286, 3031),
+    duration = as.difftime(c(2700, 1495, 1140), units = "secs"),
+    file = c("hae:Utomhus_Kor-20191223.json",
+             "/data/tcx/20191223-091822.tcx",
+             "/data/tcx/20191223-094423.tcx"),
+    source = c("hae", "tcx", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  paths <- .write_fixture_cache(tmp, summaries, list(NULL, "frag-a", "frag-b"))
+
+  dups <- dedup_summaries(paths$summaries, paths$myruns,
+                          dry_run = TRUE, verbose = FALSE)
+  expect_equal(dups$winner, "aw")
+  expect_equal(length(dups$tcx_drop[[1]]), 2)
+
+  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
+                  verbose = FALSE)
+  after <- my_dbs_load(paths$summaries, paths$myruns)
+
+  # One pass, one row left, and the total is the session — not the
+  # session plus a leftover fragment.
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$source, "hae")
+  expect_equal(sum(after$summaries$distance), 6387)
+  expect_equal(length(after$myruns), 1)
+
+  # A second pass has nothing left to do.
+  again <- dedup_summaries(paths$summaries, paths$myruns,
+                           dry_run = TRUE, verbose = FALSE)
+  expect_equal(nrow(again), 0)
+})

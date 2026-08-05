@@ -12,7 +12,7 @@
     distance_tcx = numeric(0), dt_seconds = numeric(0),
     end_gap_seconds = numeric(0),
     file = character(0), tcx_file = character(0),
-    winner = character(0), tcx_idx = integer(0),
+    winner = character(0), tcx_drop = I(list()),
     stringsAsFactors = FALSE
   )
   if (!is.data.frame(summaries) || nrow(summaries) == 0 ||
@@ -30,7 +30,8 @@
     row <- summaries[i, , drop = FALSE]
     m <- .which_same_workout(row, tcx, ...)
     if (length(m) == 0) return(NULL)
-    # Several Garmin rows can match (rare); report the closest one.
+    # Several Garmin rows can match; the closest one is what the report
+    # quotes, but the removal below uses all of them.
     dt <- abs(as.numeric(difftime(tcx$sessionStart[m], row$sessionStart,
                                   units = "secs")))
     best <- m[which.min(dt)]
@@ -40,6 +41,11 @@
     # Garmin keeps the session unless every row it matches is a fragment;
     # the same test the two import paths apply.
     garmin <- any(.garmin_wins(row$distance, tcx$distance[m]))
+    # When the watch wins, *every* fragment goes. A Garmin watch stopped
+    # and restarted leaves two of them against one session, and removing
+    # only the nearest would leave the other orphaned — a few kilometres
+    # double-counted until someone ran the cleanup a second time.
+    fragments <- if (garmin) integer(0) else tcx_idx[m]
     data.frame(
       idx = i,
       sessionStart = row$sessionStart,
@@ -49,11 +55,14 @@
       dt_seconds = min(dt),
       end_gap_seconds = end_gap,
       file = as.character(row$file),
-      tcx_file = basename(as.character(tcx$file[best])),
+      tcx_file = if (garmin) basename(as.character(tcx$file[best]))
+                 else paste(basename(as.character(tcx$file[m])),
+                            collapse = ";"),
       winner = if (garmin) "garmin" else "aw",
-      # Position in `summaries` of the Garmin row that loses when the
-      # Apple Watch row wins; NA otherwise.
-      tcx_idx = if (garmin) NA_integer_ else tcx_idx[best],
+      # Positions in `summaries` of every Garmin row that loses when the
+      # Apple Watch row wins; empty otherwise. A list column so one
+      # candidate can carry several fragments.
+      tcx_drop = I(list(fragments)),
       stringsAsFactors = FALSE
     )
   })
@@ -160,7 +169,7 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   # Garmin fragments go first, so an Apple Watch row that lost to a
   # fragment elsewhere isn't dropped on account of a row that is itself
   # about to disappear.
-  drop_tcx <- sort(unique(dups$tcx_idx[!is.na(dups$tcx_idx)]))
+  drop_tcx <- sort(unique(unlist(dups$tcx_drop)))
   drop_hae <- dups$idx[dups$winner == "garmin"]
   drop <- sort(unique(c(drop_hae, drop_tcx)))
 
@@ -177,8 +186,9 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   if (verbose) {
     cat("Borttaget: ", length(drop_hae), " Apple Watch-rader och ",
-        length(drop_tcx), " Garmin-fragment. Kvar: ", nrow(summaries),
-        " rader, ", length(myruns), " run-objekt.\n", sep = "")
+        length(drop_tcx), " Garmin-fragment (från ", n_aw,
+        " pass). Kvar: ", nrow(summaries), " rader, ", length(myruns),
+        " run-objekt.\n", sep = "")
   }
   invisible(dups)
 }
