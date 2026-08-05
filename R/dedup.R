@@ -100,7 +100,7 @@
                             function(x) fragment %in% x, logical(1))]
     contenders <- setdiff(contenders, surplus)
     if (length(contenders) < 2) next
-    best <- contenders[which.max(dups$distance_hae[contenders])]
+    best <- contenders[.best_copy(dups$distance_hae[contenders])]
     surplus <- c(surplus, setdiff(contenders, best))
   }
   dups$idx[unique(surplus)]

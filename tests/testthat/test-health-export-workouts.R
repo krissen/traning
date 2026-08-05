@@ -289,7 +289,9 @@ test_that("import_hae_workouts keeps a different workout inside the window", {
 
 test_that("import_hae_workouts dedups two HAE files for the same session", {
   # HAE delivers both the Apple Watch recording and the
-  # Garmin-Connect-mirrored copy; they land in the same batch.
+  # Garmin-Connect-mirrored copy; they land in the same batch. One row
+  # survives, and it is the fuller recording regardless of which file
+  # was read first.
   tmp <- withr::local_tempdir()
   .write_hae(tmp, "a-native", "2026-04-06 15:44:06 +0200",
              "Utomhus Kör", distance_km = 8.0, duration_s = 2400)
@@ -298,9 +300,20 @@ test_that("import_hae_workouts dedups two HAE files for the same session", {
 
   res <- import_hae_workouts(tmp, data.frame(), list())
   expect_equal(res$n_imported, 1)
-  expect_equal(res$n_skipped_dup_hae, 1)
   expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$distance, 8020)
   expect_equal(length(res$myruns), 1)
+
+  # And the other way round in file order: the shorter copy is read
+  # first here, so the fuller one has to displace it.
+  tmp2 <- withr::local_tempdir()
+  .write_hae(tmp2, "a-short", "2026-04-06 15:44:06 +0200",
+             "Utomhus Kör", distance_km = 8.0, duration_s = 2400)
+  .write_hae(tmp2, "b-full", "2026-04-06 15:44:09 +0200",
+             "Utomhus Kör", distance_km = 9.5, duration_s = 2398)
+  res2 <- import_hae_workouts(tmp2, data.frame(), list())
+  expect_equal(nrow(res2$summaries), 1)
+  expect_equal(res2$summaries$distance, 9500)
 })
 
 # --- .is_same_workout ---------------------------------------------------------

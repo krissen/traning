@@ -602,6 +602,26 @@ parse_hae_workout <- function(path) {
   keep
 }
 
+#' Which of several copies of one session to keep
+#'
+#' The copies describe the same session, so what separates them is how
+#' much each recording captured: the longest is the most complete. Ties
+#' keep the earlier entry, so the outcome never depends on the order the
+#' files happen to be read in. When no copy has a distance at all the
+#' first is kept, there being nothing to choose on.
+#'
+#' Used both when the cleanup finds several Apple Watch rows for one
+#' session and when the importer meets a copy of a row already cached.
+#'
+#' @param distances Distances of the copies, in metres.
+#' @return Index of the copy to keep.
+#' @keywords internal
+.best_copy <- function(distances) {
+  d <- as.numeric(distances)
+  if (length(d) == 0 || all(is.na(d))) return(1L)
+  which.max(d)
+}
+
 #' Total distance Garmin holds for one session
 #'
 #' A watch stopped and restarted writes one file per leg, so the session
@@ -697,6 +717,7 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     n_skipped_dup_hae = 0L,
     n_skipped_invalid = 0L,
     n_garmin_fragments = 0L,
+    n_replaced_hae = 0L,
     by_sport = integer(0),
     n_unmapped_sports = 0L,
     unmapped_names = character(0)
@@ -735,6 +756,10 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       # Original row position, so a losing Garmin row can be found again
       # in `summaries` when the fragment rule sends the win to HAE.
       idx = which(keep),
+      # Position in `new_rows` for copies accepted during this run, so a
+      # fuller copy arriving later can strike them before anything is
+      # written. Cached rows have none.
+      new_pos = NA_integer_,
       sessionStart = summaries$sessionStart[keep],
       # sessionEnd and sport feed the overlap criterion; both are absent
       # from very old caches, which simply falls back to the start rule.
@@ -807,20 +832,51 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       pending_supersede_from <- round(min(tcx_rows$distance[hit]))
     }
 
-    # HAE↔HAE dedup: the AW recording and the Connect-mirrored copy of
-    # one session arrive as two JSON files. Keep the first one seen.
+    # HAE↔HAE dedup: the watch's own recording and the
+    # Garmin-Connect-mirrored copy of one session arrive as two JSON
+    # files. The fuller one wins, whichever order they are read in and
+    # whichever of them is already cached — keeping the first seen meant
+    # that if the short copy sorted first, or was already in the cache,
+    # the complete recording was turned away on every import and the
+    # reports read the short distance for good.
     hit <- .which_same_workout(row, hae_rows,
                                window_seconds = tolerance_seconds,
                                time_only_seconds = time_only_seconds)
     if (length(hit) > 0) {
-      result$n_skipped_dup_hae <- result$n_skipped_dup_hae + 1L
-      if (verbose) {
-        dt <- abs(as.numeric(difftime(hae_rows$sessionStart[hit],
-                                      row$sessionStart, units = "secs")))
-        cat("Dedupp mot HAE: ", bn,
-            " (Δt = ", round(min(dt)), "s)\n", sep = "")
+      best <- hit[.best_copy(hae_rows$distance[hit])]
+      incoming_is_richer <-
+        !is.na(as.numeric(row$distance)) &&
+        (is.na(hae_rows$distance[best]) ||
+         as.numeric(row$distance) > hae_rows$distance[best])
+
+      if (!incoming_is_richer) {
+        result$n_skipped_dup_hae <- result$n_skipped_dup_hae + 1L
+        if (verbose) {
+          dt <- abs(as.numeric(difftime(hae_rows$sessionStart[hit],
+                                        row$sessionStart, units = "secs")))
+          cat("Dedupp mot HAE: ", bn,
+              " (Δt = ", round(min(dt)), "s)\n", sep = "")
+        }
+        next
       }
-      next
+
+      # This file is the fuller copy. Displace the ones it beats: those
+      # already in the cache are removed with the Garmin fragments at the
+      # end, and those accepted earlier in this same run are struck from
+      # the pending rows.
+      for (h in hit) {
+        if (!is.na(hae_rows$idx[h])) {
+          superseded <- c(superseded, hae_rows$idx[h])
+          result$n_replaced_hae <- result$n_replaced_hae + 1L
+        }
+        if (!is.na(hae_rows$new_pos[h])) new_rows[hae_rows$new_pos[h]] <- list(NULL)
+      }
+      if (verbose) {
+        cat("Fylligare HAE-kopia: ", bn, " (",
+            round(as.numeric(row$distance)), " m mot ",
+            round(as.numeric(hae_rows$distance[best])), " m)\n", sep = "")
+      }
+      hae_rows <- hae_rows[-hit, , drop = FALSE]
     }
 
     if (length(pending_supersede) > 0) {
@@ -837,6 +893,7 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     new_rows[[length(new_rows) + 1L]] <- row
     hae_rows <- rbind(hae_rows, data.frame(
       idx = NA_integer_,
+      new_pos = length(new_rows),
       sessionStart = row$sessionStart,
       sessionEnd = row$sessionEnd,
       sport = as.character(row$sport),
@@ -844,8 +901,6 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       duration = .workout_secs(row$duration),
       stringsAsFactors = FALSE
     ))
-    by_sport[row$sport] <- (if (is.na(by_sport[row$sport])) 0L else
-                            by_sport[row$sport]) + 1L
     hae_name <- attr(row, "hae_name")
     if (!is.null(hae_name) && !.hae_sport_is_mapped(hae_name)) {
       unmapped <- c(unmapped, as.character(hae_name))
@@ -861,6 +916,14 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
         paste(unmapped, collapse = ", "), "\n", sep = "")
   }
 
+  # Copies struck by a fuller one leave holes; the per-sport tally is
+  # taken from what actually survived rather than counted along the way.
+  new_rows <- Filter(Negate(is.null), new_rows)
+  if (length(new_rows) > 0) {
+    sports <- vapply(new_rows, function(r) as.character(r$sport), character(1))
+    by_sport <- table(sports)
+    by_sport <- stats::setNames(as.integer(by_sport), names(by_sport))
+  }
   if (length(new_rows) > 0) {
     # Reduce() rather than do.call(rbind): only the rows that displaced a
     # Garmin fragment carry `superseded_file`, so the columns differ.

@@ -132,13 +132,46 @@ test_that("an empty cache takes whatever arrives", {
 }
 
 test_that("an HAE file turned away leaves the Garmin row where it was", {
-  # Cache: the short copy plus a Garmin fragment. The incoming full copy
-  # matches both. It is turned away as a duplicate of the cached copy —
-  # and the fragment it would have replaced must still be there, since
-  # nothing was imported to replace it with.
-  out <- .after_hae(c("short", "fragment"), incoming_km = 10)
+  # Cache: the short copy plus a Garmin fragment. The incoming copy is
+  # shorter still, so it is turned away as a duplicate — and the
+  # fragment it would have replaced must still be there, since nothing
+  # was imported to replace it with.
+  out <- .after_hae(c("short", "fragment"), incoming_km = 4)
   expect_equal(out$distances, c(620, 6000))
   expect_equal(out$sources, c("hae", "tcx"))
+})
+
+test_that("a fuller HAE copy replaces the one already cached", {
+  # (a) The short copy is cached and the full recording arrives: it
+  # takes the session, and the Garmin fragment goes with it since the
+  # row that displaces it is actually written this time.
+  out <- .after_hae(c("short", "fragment"), incoming_km = 10)
+  expect_equal(out$distances, 10000)
+  expect_equal(out$sources, "hae")
+
+  # ... and the replacement holds when there is no Garmin row involved.
+  out <- .after_hae("short", incoming_km = 10)
+  expect_equal(out$distances, 10000)
+})
+
+test_that("a shorter HAE copy does not displace the fuller cached one", {
+  # (b) The mirror arriving after the real recording changes nothing.
+  out <- .after_hae("full", incoming_km = 6)
+  expect_equal(out$distances, 10000)
+  expect_equal(out$sources, "hae")
+})
+
+test_that("file order does not decide which HAE copy survives", {
+  # (c) Both copies in one batch, the short one read first. list.files()
+  # sorts by name, so "a-" comes before "b-".
+  dir <- withr::local_tempdir()
+  .write_session_json(dir, "a-short", 6)
+  .write_session_json(dir, "b-full", 10, offset = 3)
+  res <- import_hae_workouts(dir, data.frame(), list())
+
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$distance, 10000)
+  expect_equal(length(res$myruns), 1)
 })
 
 test_that("an HAE file that is imported does replace the Garmin fragment", {
