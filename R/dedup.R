@@ -42,9 +42,15 @@
     # up to less than half the Apple Watch distance — the same test the
     # two import paths apply, against the same total.
     # Copies of one recording count once towards the total; every copy
-    # is still removed below when the Apple Watch row wins.
+    # is still removed below when the Apple Watch row wins. The set the
+    # total is built from and the set that gets removed are the same
+    # rows here, so a verdict cannot be applied to something it was
+    # never weighed against — an NA verdict means the answer depends on
+    # a distance nobody recorded, and the pair is then left alone.
     distinct <- m[.distinct_recordings(tcx$sessionStart[m])]
-    garmin <- .garmin_wins(row$distance, .garmin_total(tcx$distance[distinct]))
+    verdict <- .garmin_verdict(row$distance, tcx$distance[distinct])
+    if (is.na(verdict)) return(NULL)
+    garmin <- verdict
     # When the watch wins, *every* fragment goes. A Garmin watch stopped
     # and restarted leaves two of them against one session, and removing
     # only the nearest would leave the other orphaned — a few kilometres

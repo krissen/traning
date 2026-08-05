@@ -655,6 +655,76 @@ parse_hae_workout <- function(path) {
   !fragment
 }
 
+#' Who keeps a session, when some distances may be unknown
+#'
+#' Answers the same question as \code{.garmin_wins()} but from the raw
+#' set of Garmin distances rather than a total, so that an unknown one
+#' can be told apart from a short one. Three answers, and the third is
+#' the point:
+#' \describe{
+#'   \item{TRUE}{Garmin keeps the session. What is known already reaches
+#'     the threshold, so what is unknown cannot change it — a lower bound
+#'     is enough to win.}
+#'   \item{FALSE}{The Apple Watch row keeps it: every Garmin distance is
+#'     known and together they are under half of it.}
+#'   \item{NA}{Nobody can tell. Something Garmin recorded has no distance
+#'     and the rest falls short, so the total could land either side.}
+#' }
+#' An NA must never be settled by deleting a row whose distance is known.
+#' Each caller reads it as "leave this pair alone", in whichever
+#' direction that means for it. Passing no distances at all is a
+#' different thing from passing unknown ones: a cache with no distance
+#' column anywhere keeps the old default that Garmin wins.
+#'
+#' @param hae_distance Distances of the Apple Watch rows, in metres.
+#' @param garmin_distances Distances of the Garmin rows for the same
+#'   session, in metres, NA where nothing was recorded.
+#' @param fragment_ratio Below this fraction of the Apple Watch distance,
+#'   what Garmin holds counts as a fragment.
+#' @return Logical vector, one per `hae_distance`, NA where the answer
+#'   depends on a distance nobody recorded.
+#' @keywords internal
+.garmin_verdict <- function(hae_distance, garmin_distances,
+                            fragment_ratio = .WORKOUT_FRAGMENT_RATIO) {
+  gd <- as.numeric(garmin_distances)
+  if (length(gd) == 0) return(rep(TRUE, length(hae_distance)))
+  known <- sum(gd[!is.na(gd)])
+  complete <- !anyNA(gd)
+  vapply(as.numeric(hae_distance), function(h) {
+    if (is.na(h) || h <= 0) return(TRUE)
+    if (known >= fragment_ratio * h) return(TRUE)
+    if (!complete) return(NA)
+    FALSE
+  }, logical(1))
+}
+
+#' Split rows into the sessions they describe
+#'
+#' Rows that match each other are one session; rows that do not are
+#' different ones. A single Garmin file can match two Apple Watch
+#' sessions — one on the clock, the other through the distance gate — and
+#' a total built for one of them must not decide the fate of the other.
+#'
+#' @param rows Data frame of summaries rows.
+#' @return List of integer vectors, positions within `rows`.
+#' @keywords internal
+.session_groups <- function(rows) {
+  n <- nrow(rows)
+  if (n == 0) return(list())
+  if (n == 1) return(list(1L))
+  label <- seq_len(n)
+  for (i in seq_len(n - 1L)) {
+    for (j in (i + 1L):n) {
+      if (isTRUE(.is_same_workout(rows[i, , drop = FALSE],
+                                  rows[j, , drop = FALSE])[1])) {
+        merged <- min(label[i], label[j])
+        label[label == label[i] | label == label[j]] <- merged
+      }
+    }
+  }
+  unname(split(seq_len(n), label))
+}
+
 # Rows of `candidates` that are the same workout as the single row `row`.
 # Returns an integer vector of positions (empty when nothing matches).
 .which_same_workout <- function(row, candidates, ...) {
@@ -818,10 +888,14 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
                                time_only_seconds = time_only_seconds)
     if (length(hit) > 0) {
       # Against everything Garmin holds for this session, not leg by leg.
-      # Copies of one recording count once; legs count separately.
+      # Copies of one recording count once; legs count separately. The
+      # rows weighed and the rows displaced are the same set. An NA
+      # verdict — a Garmin row with no distance, and the rest falling
+      # short — leaves the cached rows alone and turns this file away
+      # rather than deleting on a total nobody can compute.
       distinct <- hit[.distinct_recordings(tcx_rows$sessionStart[hit])]
-      if (.garmin_wins(row$distance,
-                       .garmin_total(tcx_rows$distance[distinct]))) {
+      verdict <- .garmin_verdict(row$distance, tcx_rows$distance[distinct])
+      if (!isTRUE(verdict %in% FALSE)) {
         result$n_skipped_dup <- result$n_skipped_dup + 1L
         if (verbose) {
           dt <- abs(as.numeric(difftime(tcx_rows$sessionStart[hit],
