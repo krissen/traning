@@ -1157,3 +1157,132 @@ test_that("a fragment of one session is not weighed into another", {
     expect_equal(res$n_hae_removed, 1, info = label)
   }
 })
+
+# --- an undecidable pair is left alone ----------------------------------------
+#
+# When something Garmin recorded carries no distance and what is known
+# falls short, the verdict is NA: the total could land either side of the
+# threshold. Four places act on that verdict, and none of them may settle
+# it by deleting a row — in either direction. The cases below walk all
+# four, since a helper returning NA is only half the guarantee.
+
+.undecidable_cache <- function(start) {
+  # A 10 km wrist session, a 400 m Garmin leg, and a Garmin leg whose
+  # distance never made it into the cache. Known total is 400 m, which
+  # reads as a fragment; the unmeasured leg could carry the rest.
+  # The unmeasured row reaches the session on duration alone, the
+  # overlap criterion needing a distance on both sides.
+  data.frame(
+    sessionStart = c(start, start + 5, start + 10),
+    sessionEnd = c(start + 3600, start + 900, start + 3410),
+    sport = "running",
+    distance = c(10000, 400, NA_real_),
+    duration = as.difftime(c(3600, 900, 3400), units = "secs"),
+    file = c("hae:session.json", "/tcx/short-leg.tcx", "/tcx/unmeasured.tcx"),
+    source = c("hae", "tcx", "tcx"),
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that("the cleanup does not list an undecidable pair", {
+  tmp <- withr::local_tempdir()
+  start <- as.POSIXct("2026-05-04 07:00:00", tz = "UTC")
+  summaries <- .undecidable_cache(start)
+  paths <- .matrix_cache(tmp, summaries, list(NULL, "short", "unmeasured"))
+  before <- file.mtime(unlist(paths))
+
+  dups <- dedup_summaries(paths$summaries, paths$myruns, dry_run = TRUE,
+                          verbose = FALSE)
+
+  expect_equal(nrow(dups), 0)
+  expect_identical(file.mtime(unlist(paths)), before)
+
+  # ... and applying it changes nothing either.
+  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
+                  verbose = FALSE)
+  after <- my_dbs_load(paths$summaries, paths$myruns)
+  expect_equal(nrow(after$summaries), 3)
+  expect_setequal(after$summaries$source, c("hae", "tcx"))
+  expect_equal(as.numeric(after$summaries$distance[
+    after$summaries$source == "hae"]), 10000)
+})
+
+test_that("the Apple Watch import declines an undecidable file untouched", {
+  dir <- withr::local_tempdir()
+  start <- as.POSIXct("2026-05-04 07:00:00", tz = "UTC")
+  # The arriving wrist file describes the same session as the cached
+  # Garmin legs, one of which has no distance.
+  .write_hae_workout(dir, "arriving", start, "Utomhus Kör", 10.0, 3600,
+                     end_s = 3600)
+  cached <- .undecidable_cache(start)[-1, ]   # the two Garmin legs only
+
+  res <- import_hae_workouts(dir, cached, list("short", "unmeasured"))
+
+  # Not imported, and nothing already in the cache was disturbed.
+  expect_equal(res$n_imported, 0)
+  expect_equal(nrow(res$summaries), 2)
+  expect_true(all(res$summaries$source == "tcx"))
+  expect_equal(length(res$myruns), nrow(res$summaries))
+})
+
+test_that("the Garmin import abstains on an undecidable session", {
+  start <- as.POSIXct("2026-05-04 07:00:00", tz = "UTC")
+  cache <- .undecidable_cache(start)[c(1, 3), ]   # wrist row + unmeasured leg
+  arriving <- .batch_file("undecidable-leg.tcx", start + 5, 400, 900)
+
+  res <- .import_batch(arriving, cache)
+
+  # The wrist row keeps its distance and the arriving leg is not written:
+  # neither side may be settled on a number nobody recorded.
+  expect_equal(res$n_hae_removed, 0)
+  expect_true("hae" %in% res$summaries$source)
+  expect_equal(as.numeric(res$summaries$distance[
+    res$summaries$source == "hae"]), 10000)
+  expect_false("undecidable-leg.tcx" %in%
+                 basename(as.character(res$summaries$file)))
+  expect_equal(length(res$myruns), nrow(res$summaries))
+})
+
+test_that("a second leg in the batch does not settle an undecidable session", {
+  # The same abstention has to survive the second pass, where a parked
+  # leg is re-weighed with the rest of the batch in hand.
+  start <- as.POSIXct("2026-05-04 07:00:00", tz = "UTC")
+  cache <- .undecidable_cache(start)[c(1, 3), ]
+  legs <- c(.batch_file("undecidable-a.tcx", start + 5, 400, 900),
+            .batch_file("undecidable-b.tcx", start + 1200, 300, 600))
+
+  for (order in list(c(1, 2), c(2, 1))) {
+    res <- .import_batch(legs[order], cache)
+    label <- paste(order, collapse = ">")
+    expect_equal(res$n_hae_removed, 0, info = label)
+    expect_equal(as.numeric(res$summaries$distance[
+      res$summaries$source == "hae"]), 10000, info = label)
+    expect_equal(length(res$myruns), nrow(res$summaries), info = label)
+  }
+})
+
+test_that("a file that covers one session leaves the other alone", {
+  # Two sessions that are not each other's copies, and one arriving file
+  # matching both. It covers the second — its own distance plus that
+  # session's cached leg — and falls far short of the first, so exactly
+  # one wrist row goes, whichever order the cache holds them in.
+  day <- function(hms) as.POSIXct(paste("2026-05-04", hms), tz = "UTC")
+  cache <- data.frame(
+    sessionStart = c(day("09:00:00"), day("09:58:00"), day("10:30:00")),
+    sessionEnd = c(day("10:00:00"), day("11:00:00"), day("10:50:00")),
+    sport = "running", distance = c(10000, 6000, 4000),
+    duration = as.difftime(c(3600, 3720, 1200), units = "secs"),
+    file = c("hae:morning.json", "hae:midday.json", "/tcx/midday-leg.tcx"),
+    source = c("hae", "hae", "tcx"), stringsAsFactors = FALSE
+  )
+  expect_length(.session_groups(cache[cache$source == "hae", ]), 2)
+
+  arriving <- .batch_file("spanning.tcx", day("09:50:00"), 3000, 1200)
+  res <- .import_batch(arriving, cache)
+
+  expect_equal(res$n_hae_removed, 1)
+  surviving <- res$summaries[res$summaries$source == "hae", ]
+  expect_equal(nrow(surviving), 1)
+  expect_equal(as.numeric(surviving$distance), 10000)
+  expect_equal(length(res$myruns), nrow(res$summaries))
+})
