@@ -251,28 +251,37 @@ parse_hae_workout <- function(path) {
 # duplicate overlaps by 79 s, which is the margin this floor works with.
 .WORKOUT_OVERLAP_MIN <- 60
 
-# Longest wall-clock span (seconds) the overlap criterion will trust. A
-# corrupt sessionEnd is the one way this criterion can destroy data: the
-# 2019-12-09 cache row claims a 14.5-hour bike ride (0.27 m/s), and
-# anything recorded that afternoon falls "inside" it. Refusing to use an
-# implausible interval kills that case at the source, which is cheaper
-# than trying to recognise its victims: the row is the only movement
-# session in twelve years longer than four hours, the 99th percentile
-# being 2 h 44 m, so no genuine session is affected. Note that the pair
-# is still eligible under the start criterion.
-.WORKOUT_OVERLAP_MAX_SPAN <- 6 * 3600
+# A corrupt sessionEnd is the one way the overlap criterion can destroy
+# data: the 2019-12-09 cache row claims a 14.5-hour bike ride, so every
+# session recorded that afternoon falls "inside" it and is deduplicated
+# away. Refusing to trust an implausible interval kills that at the
+# source, which is cheaper than recognising its victims afterwards.
+#
+# Length alone cannot be the test — a backyard ultra genuinely spans
+# 12–13 hours. What separates the two is the pace the interval implies:
+# the broken row averages 0.27 m/s, while an ultra stays around or above
+# 1 m/s even counting the rest between laps. So a session longer than
+# .WORKOUT_OVERLAP_LONG_SPAN has to show it actually went somewhere;
+# shorter ones are taken at face value, since an interval that short can
+# only swallow sessions the corroborating evidence below would reject
+# anyway. A distrusted pair is still eligible under the start criterion.
+.WORKOUT_OVERLAP_LONG_SPAN <- 6 * 3600
+.WORKOUT_OVERLAP_LONG_MIN_SPEED <- 1.0
 
-# Nothing further is required. Earlier versions also demanded that the
-# overlap cover half the shorter session, or that the two stop within a
-# minute of each other, or that their distances agree — all of which
-# look reasonable and cost real duplicates: of the 326 overlapping pairs
-# in the cache, 323 are verified duplicates whose coverage runs as low
-# as 4 % with stop offsets of an hour and distances 47 % apart. The
-# argument for needing no corroboration is physical: two
-# distance-bearing sessions cannot occupy the same wall-clock window
-# unless they are the same activity. That leaves an implausible interval
-# as the only way the criterion can go wrong, which is what
-# .WORKOUT_OVERLAP_MAX_SPAN handles.
+# One of three pieces of corroborating evidence is then required. Each
+# distinguishes one session recorded twice from two that merely share
+# wall clock:
+#   - the overlap covers half the shorter session (one recording sits
+#     inside the other),
+#   - the two stop within a minute of each other (both watches stopped
+#     by hand at the same moment; observed offsets are 1–28 s),
+#   - the distances agree within .WORKOUT_MATCH_TOLERANCE (a skewed
+#     clock explains the timing; 8707 m vs. 8702 m does not happen
+#     twice by chance).
+# The one verified false positive among the overlapping pairs — a 2554 m
+# and a 4798 m bike ride sharing seven minutes in 2022 — fails all three.
+.WORKOUT_OVERLAP_COVERAGE <- 0.50
+.WORKOUT_OVERLAP_END_WINDOW <- 60
 
 # Sports exempt from the overlap criterion. A strength session logged on
 # one watch while the other records a run is a legitimate pair of
@@ -328,17 +337,28 @@ parse_hae_workout <- function(path) {
 #' case of two watches started a minute or two apart.
 #'
 #' \strong{Overlap criterion.} Their wall-clock intervals overlap by at
-#' least \code{overlap_min_seconds} and neither interval is longer than
-#' \code{overlap_max_span}. No distance or duration agreement is required
-#' on top: two distance-bearing sessions cannot occupy the same
-#' wall-clock window unless they are the same activity. This catches the
-#' second watch being started partway into a session the first one is
-#' already recording (starts up to an hour and a half apart), a watch
-#' stopped an hour early, and pairs whose clocks disagree outright — all
-#' shapes the start criterion cannot see. The criterion is skipped when
-#' either sessionEnd or either distance is missing, and for the sports in
-#' \code{.WORKOUT_OVERLAP_EXEMPT_SPORTS}, where a genuinely separate
-#' session can share the wall clock with another one.
+#' least \code{overlap_min_seconds}, both intervals are believable, and
+#' one of three pieces of corroborating evidence holds: the overlap
+#' covers \code{overlap_coverage} of the shorter session, the two stop
+#' within \code{overlap_end_seconds} of each other, or their distances
+#' agree within \code{tolerance}. This catches the second watch being
+#' started partway into a session the first one is already recording
+#' (starts up to an hour and a half apart), a watch stopped an hour
+#' early, and pairs whose clocks disagree outright — all shapes the start
+#' criterion cannot see.
+#'
+#' "Believable" means a session longer than
+#' \code{overlap_long_span} must imply a speed of at least
+#' \code{overlap_long_min_speed}; see the constant definitions for why the
+#' test is pace rather than length. The criterion is skipped entirely
+#' when either sessionEnd or either distance is missing, and for the
+#' sports in \code{.WORKOUT_OVERLAP_EXEMPT_SPORTS}, where a genuinely
+#' separate session can share the wall clock with another one.
+#'
+#' All three overlap thresholds are measured against wall-clock spans
+#' (`sessionEnd - sessionStart`), never the `duration` column: the
+#' overlap itself is wall clock, and the two quantities diverge for a
+#' paused session, so mixing them would drift silently.
 #'
 #' Sport is otherwise deliberately not part of the rule: Apple Watch
 #' sometimes labels a slow jog "Utomhus Gång" while Garmin records it as
@@ -356,8 +376,14 @@ parse_hae_workout <- function(path) {
 #'   duration is comparable on both sides.
 #' @param tolerance Relative tolerance for the distance/duration check.
 #' @param overlap_min_seconds Minimum wall-clock overlap.
-#' @param overlap_max_span Longest interval the criterion will trust,
-#'   the guard against a corrupt sessionEnd.
+#' @param overlap_long_span Span above which a session must justify
+#'   itself with \code{overlap_long_min_speed}, the guard against a
+#'   corrupt sessionEnd.
+#' @param overlap_long_min_speed Minimum implied speed (m/s) for a
+#'   session longer than \code{overlap_long_span}.
+#' @param overlap_coverage Fraction of the shorter session the overlap
+#'   may cover as evidence.
+#' @param overlap_end_seconds Δend window accepted as evidence.
 #' @return Logical vector, one element per compared pair.
 #' @keywords internal
 .is_same_workout <- function(a, b,
@@ -365,7 +391,10 @@ parse_hae_workout <- function(path) {
                              time_only_seconds = .WORKOUT_MATCH_TIME_ONLY_WINDOW,
                              tolerance = .WORKOUT_MATCH_TOLERANCE,
                              overlap_min_seconds = .WORKOUT_OVERLAP_MIN,
-                             overlap_max_span = .WORKOUT_OVERLAP_MAX_SPAN) {
+                             overlap_long_span = .WORKOUT_OVERLAP_LONG_SPAN,
+                             overlap_long_min_speed = .WORKOUT_OVERLAP_LONG_MIN_SPEED,
+                             overlap_coverage = .WORKOUT_OVERLAP_COVERAGE,
+                             overlap_end_seconds = .WORKOUT_OVERLAP_END_WINDOW) {
   sa <- .workout_field(a, "sessionStart")
   sb <- .workout_field(b, "sessionStart")
   if (is.null(sa) || is.null(sb) || length(sa) == 0 || length(sb) == 0) {
@@ -398,18 +427,25 @@ parse_hae_workout <- function(path) {
                      dt <= time_only_seconds)
 
   by_start | .overlaps_same_workout(
-    a, b, n, da, db,
+    a, b, n, da, db, dist_ok,
     overlap_min_seconds = overlap_min_seconds,
-    overlap_max_span = overlap_max_span
+    overlap_long_span = overlap_long_span,
+    overlap_long_min_speed = overlap_long_min_speed,
+    overlap_coverage = overlap_coverage,
+    overlap_end_seconds = overlap_end_seconds
   )
 }
 
 # The overlap criterion, split out to keep .is_same_workout() readable.
-# `n` is the recycled length already established by the caller and
-# `da`/`db` the recycled distances.
-.overlaps_same_workout <- function(a, b, n, da, db,
+# `n` is the recycled length already established by the caller, `da`/`db`
+# the recycled distances and `dist_ok` the distance comparison it has
+# already made.
+.overlaps_same_workout <- function(a, b, n, da, db, dist_ok,
                                    overlap_min_seconds = .WORKOUT_OVERLAP_MIN,
-                                   overlap_max_span = .WORKOUT_OVERLAP_MAX_SPAN) {
+                                   overlap_long_span = .WORKOUT_OVERLAP_LONG_SPAN,
+                                   overlap_long_min_speed = .WORKOUT_OVERLAP_LONG_MIN_SPEED,
+                                   overlap_coverage = .WORKOUT_OVERLAP_COVERAGE,
+                                   overlap_end_seconds = .WORKOUT_OVERLAP_END_WINDOW) {
   no <- rep(FALSE, n)
 
   ea <- .workout_field(a, "sessionEnd")
@@ -437,15 +473,26 @@ parse_hae_workout <- function(path) {
 
   span_a <- end_a - start_a
   span_b <- end_b - start_b
+  # A half-day session is believable only if it went somewhere.
+  believable <- function(span, dist) {
+    span <= overlap_long_span |
+      (!is.na(dist) & dist / span >= overlap_long_min_speed)
+  }
   usable <- !is.na(start_a) & !is.na(start_b) & !is.na(end_a) & !is.na(end_b) &
             span_a > 0 & span_b > 0 & movement &
-            span_a <= overlap_max_span & span_b <= overlap_max_span
+            believable(span_a, da) & believable(span_b, db)
   if (!any(usable)) return(no)
 
   overlap <- pmin(end_a, end_b) - pmax(start_a, start_b)
+  shorter <- pmin(span_a, span_b)
+  end_gap <- abs(end_a - end_b)
 
   out <- no
-  out[usable] <- overlap[usable] >= overlap_min_seconds
+  out[usable] <-
+    overlap[usable] >= overlap_min_seconds &
+    (overlap[usable] >= overlap_coverage * shorter[usable] |
+     end_gap[usable] <= overlap_end_seconds |
+     dist_ok[usable])
   out
 }
 

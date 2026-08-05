@@ -364,27 +364,29 @@ test_that(".is_same_workout matches a session recorded inside another", {
   expect_true(.is_same_workout(garmin, inside))
 })
 
-test_that(".is_same_workout matches an overlap without any other agreement", {
+test_that(".is_same_workout accepts a thin overlap when the distances agree", {
   # 2023-10-23: the clocks disagree by an hour, so the sessions overlap
-  # only briefly relative to their length and stop far apart. The overlap
-  # alone decides it — two runs cannot share a wall-clock window.
+  # only briefly relative to their length and stop far apart. Neither the
+  # coverage nor the stop-time evidence fires — but the distance matches
+  # to the metre, which two different runs do not.
   garmin <- .wk("2023-10-23 07:05:00", distance = 12303, duration = 4320,
                 end = "2023-10-23 08:17:00")
   watch <- .wk("2023-10-23 08:13:00", distance = 12304, duration = 4020,
                end = "2023-10-23 09:20:00")
   expect_true(.is_same_workout(garmin, watch))
 
-  # Disagreeing distances do not rescue the pair: the watch stopped
-  # early, which is exactly why the start rule missed it.
-  partial <- watch
-  partial$distance <- 4798
-  expect_true(.is_same_workout(garmin, partial))
+  # The same thin overlap with a distance 60 % off has nothing left to
+  # stand on — this is the shape of the one verified false positive, a
+  # 2554 m and a 4798 m ride sharing part of an afternoon.
+  different <- watch
+  different$distance <- 4798
+  expect_false(.is_same_workout(garmin, different))
 })
 
-test_that(".is_same_workout distrusts an implausibly long interval", {
-  # The 2019-12-09 cache row claims a 14.5-hour bike ride. Every session
-  # recorded that afternoon falls inside it, so honouring that interval
-  # would delete real data.
+test_that(".is_same_workout distrusts a half-day interval that went nowhere", {
+  # The 2019-12-09 cache row claims a 14.5-hour bike ride at 0.27 m/s.
+  # Every session recorded that afternoon falls inside it, so honouring
+  # that interval would delete real data.
   broken <- .wk("2019-12-09 08:20:25", distance = 13948, duration = 52180,
                 sport = "cycling", end = "2019-12-09 22:50:05")
   real <- .wk("2019-12-09 12:02:42", distance = 6506, duration = 2056,
@@ -395,6 +397,46 @@ test_that(".is_same_workout distrusts an implausibly long interval", {
   plausible <- broken
   plausible$sessionEnd <- as.POSIXct("2019-12-09 12:40:00", tz = "UTC")
   expect_true(.is_same_workout(plausible, real))
+})
+
+test_that(".is_same_workout trusts a half-day session that covered ground", {
+  # A backyard ultra really does span half a day. The guard above must
+  # key on the pace the interval implies, not on its length, or every
+  # ultra becomes undeduplicatable.
+  ultra <- .wk("2026-09-05 09:00:00", distance = 84000, duration = 45000,
+               sport = "running", end = "2026-09-05 21:30:00")
+  watch <- .wk("2026-09-05 15:00:00", distance = 41000, duration = 23400,
+               sport = "running", end = "2026-09-05 21:30:20")
+  expect_true(.is_same_workout(ultra, watch))
+})
+
+test_that("import_hae_workouts does not let a broken row swallow the evening", {
+  # The same 14.5-hour row, this time as an already-cached HAE session
+  # meeting a new HAE file for a genuinely separate evening ride: the
+  # short session sits entirely inside the broken interval, so the
+  # coverage evidence fires and only the plausibility guard stands
+  # between it and deletion.
+  tmp <- withr::local_tempdir()
+  path <- .write_hae(tmp, "kvall", "2019-12-09 17:18:00 +0000",
+                     "Utomhus Cykling", distance_km = 8.4, duration_s = 2280)
+  raw <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+  raw$data$workouts[[1]]$end <- "2019-12-09 17:56:00 +0000"
+  jsonlite::write_json(raw, path, auto_unbox = TRUE, null = "null")
+
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2019-12-09 08:20:25", tz = "UTC"),
+    sessionEnd = as.POSIXct("2019-12-09 22:50:05", tz = "UTC"),
+    sport = "cycling",
+    distance = 13948,
+    duration = as.difftime(52180, units = "secs"),
+    file = "hae:Cykling-20191209_082025.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  res <- import_hae_workouts(tmp, summaries, list(NULL))
+  expect_equal(res$n_imported, 1)
+  expect_equal(res$n_skipped_dup_hae, 0)
 })
 
 test_that(".is_same_workout requires a distance on both sides to overlap-match", {

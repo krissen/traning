@@ -6,10 +6,13 @@
 #   start criterion:   |dstart| <= 300 s AND (distance within 20 % OR
 #                      duration within 20 %); when neither quantity is
 #                      comparable on both sides, time alone within 120 s.
-#   overlap criterion: wall-clock intervals overlap by >= 60 s. Movement
-#                      sports with a recorded distance only; nothing else
-#                      is required, since two such sessions cannot share
-#                      a wall-clock window unless they are the same one.
+#   overlap criterion: wall-clock intervals overlap by >= 60 s, both
+#                      intervals are believable (a session over 6 h must
+#                      imply >= 1 m/s), and one of three corroborations
+#                      holds: the overlap covers >= 50 % of the shorter
+#                      session, the two stop within 60 s of each other,
+#                      or the distances agree within 20 %. Movement
+#                      sports with a recorded distance only.
 #
 # Garmin (source == "tcx") always wins.
 #
@@ -259,11 +262,15 @@ test_that("cross-source dedup collapses the same session in every direction", {
 .NESTED_DT <- 2400
 .NESTED_DUR <- 1800
 
-# Barely overlapping: 90 s of shared wall clock, well past the 60 s
-# floor but only 5 % of either session. The verified duplicates go down
-# to 79 s of overlap and 4 % coverage, so this must still collapse.
+# Barely overlapping: 90 s of shared wall clock, past the 60 s floor but
+# with nothing to corroborate it — 5 % coverage, stopping half an hour
+# later, distances far apart. Two sessions, not one.
 .THIN_DT <- .LONG_DUR - 90
 .THIN_DUR <- 1800
+
+# The same 90 s, but the short session stops when the long one does.
+.TAIL_DT <- .LONG_DUR - 90
+.TAIL_DUR <- 90
 
 # Two sessions that merely touch: 30 s of overlap, below the 60 s floor.
 .BRUSH_DT <- .LONG_DUR - 30
@@ -274,8 +281,10 @@ test_that("cross-source dedup collapses the same session in every direction", {
        dt = .MID_DT, dur = .MID_DUR, dist_km = 5.006, expect = TRUE),
   list(label = "short recording nested inside the long one",
        dt = .NESTED_DT, dur = .NESTED_DUR, dist_km = 4.196, expect = TRUE),
-  list(label = "90 s of overlap between two long sessions",
-       dt = .THIN_DT, dur = .THIN_DUR, dist_km = 6.0, expect = TRUE),
+  list(label = "90 s of overlap with nothing to corroborate it",
+       dt = .THIN_DT, dur = .THIN_DUR, dist_km = 6.0, expect = FALSE),
+  list(label = "90 s of overlap, stopping together",
+       dt = .TAIL_DT, dur = .TAIL_DUR, dist_km = 0.2, expect = TRUE),
   list(label = "sessions brushing at the edge",
        dt = .BRUSH_DT, dur = .BRUSH_DUR, dist_km = 6.0, expect = FALSE)
 )
@@ -371,13 +380,42 @@ test_that("the overlap criterion spares strength and unclassified sports", {
 
 test_that("the overlap floor is one minute", {
   long <- .span(0, 7980, distance = 24000)
-  # The second session ends `ov` seconds after the first one starts.
-  brush <- function(ov) .span(-1800 + ov, 1800, distance = 4000)
+  # A short session ending exactly when the long one does, so the
+  # stop-time evidence holds and the floor is the only thing left to
+  # decide. Its span is the overlap.
+  tail_of <- function(ov) .span(7980 - ov, ov, distance = 200)
 
-  expect_false(.is_same_workout(long, brush(30)))
-  expect_false(.is_same_workout(long, brush(59)))
-  expect_true(.is_same_workout(long, brush(60)))
-  expect_true(.is_same_workout(long, brush(61)))
+  expect_false(.is_same_workout(long, tail_of(30)))
+  expect_false(.is_same_workout(long, tail_of(59)))
+  expect_true(.is_same_workout(long, tail_of(60)))
+  expect_true(.is_same_workout(long, tail_of(61)))
+})
+
+test_that("a thin overlap needs corroboration to count", {
+  # Above the floor but with no evidence: 90 s shared, the short session
+  # covering 5 % of itself, stopping half an hour later, over a distance
+  # 75 % apart. This is the shape of the one verified false positive.
+  long <- .span(0, 7980, distance = 24000)
+  thin <- .span(7890, 1800, distance = 6000)
+  expect_false(.is_same_workout(long, thin))
+
+  # Each piece of evidence rescues it on its own.
+  expect_true(.is_same_workout(long, .span(7890, 90, distance = 6000)))
+  expect_true(.is_same_workout(long, .span(7890, 1800, distance = 23000)))
+  expect_true(.is_same_workout(long, .span(6180, 1800, distance = 6000)))
+})
+
+test_that("a half-day interval is trusted only if it went somewhere", {
+  # A corrupt sessionEnd swallows everything inside it; a backyard ultra
+  # legitimately spans half a day. Pace, not length, separates them.
+  broken <- .span(0, 52180, distance = 13948)          # 0.27 m/s
+  ultra <- .span(0, 45000, distance = 84000)           # 1.87 m/s
+  inside <- .span(13337, 2056, distance = 6506)
+
+  expect_false(.is_same_workout(broken, inside))
+  expect_true(.is_same_workout(ultra, inside))
+  # Symmetric: the implausible side may be either one.
+  expect_false(.is_same_workout(inside, broken))
 })
 
 test_that("the overlap criterion needs an end and a distance on both sides", {
