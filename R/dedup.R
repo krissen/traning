@@ -250,7 +250,7 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   if (dry_run) {
     if (verbose) {
       cat("Torrkörning — inget skrivet. Kör med dry_run = FALSE ",
-          "(CLI: utan --dry-run) för att ta bort.\n", sep = "")
+          "(CLI: traning dedup --apply) för att ta bort.\n", sep = "")
     }
     return(invisible(dups))
   }
