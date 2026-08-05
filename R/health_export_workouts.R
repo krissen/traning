@@ -934,6 +934,18 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       # verdict — a Garmin row with no distance, and the rest falling
       # short — leaves the cached rows alone and turns this file away
       # rather than deleting on a total nobody can compute.
+      # One file describes one session. Matching Garmin rows from two
+      # different sessions means this row spans both, which no rule here
+      # can resolve — displacing either would delete a session this file
+      # is not a record of. Turn it away untouched.
+      if (length(.session_groups(tcx_rows[hit, , drop = FALSE])) > 1) {
+        result$n_skipped_dup <- result$n_skipped_dup + 1L
+        if (verbose) {
+          cat("Tvetydig mot flera Garmin-pass: ", bn, ", hoppar över\n",
+              sep = "")
+        }
+        next
+      }
       distinct <- hit[.distinct_recordings(tcx_rows$sessionStart[hit])]
       verdict <- .garmin_verdict(row$distance, tcx_rows$distance[distinct])
       if (!isTRUE(verdict %in% FALSE)) {
@@ -965,6 +977,17 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
                                window_seconds = tolerance_seconds,
                                time_only_seconds = time_only_seconds)
     if (length(hit) > 0) {
+      # The same argument on this side: rows that are not copies of each
+      # other are different sessions, and a file that matches both is not
+      # a copy of either. Replacing them all would delete a session this
+      # file never recorded.
+      if (length(.session_groups(hae_rows[hit, , drop = FALSE])) > 1) {
+        result$n_skipped_dup_hae <- result$n_skipped_dup_hae + 1L
+        if (verbose) {
+          cat("Tvetydig mot flera HAE-pass: ", bn, ", hoppar över\n", sep = "")
+        }
+        next
+      }
       best <- hit[.best_copy(hae_rows$distance[hit], hae_rows$duration[hit])]
       incoming_is_richer <- .copy_is_richer(
         row$distance, row$duration,

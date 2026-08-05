@@ -534,3 +534,47 @@ test_that("a copy that recorded a distance beats one that did not", {
   expect_equal(nrow(res$summaries), 1)
   expect_equal(as.numeric(res$summaries$distance), 5000)
 })
+
+# --- a file that matches two different sessions ------------------------------
+
+test_that("an ambiguous HAE file is turned away untouched", {
+  # A wrist recording that matches two cached Garmin sessions is not a
+  # copy of either: replacing them both would delete a session it never
+  # recorded. The same on the other side, where an incoming file matches
+  # two cached wrist rows that are not copies of each other.
+  day <- function(hms) as.POSIXct(paste("2024-03-02", hms), tz = "UTC")
+
+  # Two Garmin sessions that do not match each other.
+  cache <- data.frame(
+    sessionStart = c(day("09:00:00"), day("09:58:00")),
+    sessionEnd = c(day("10:00:00"), day("11:00:00")),
+    sport = "running",
+    distance = c(10000, 3000),
+    duration = as.difftime(c(3600, 3720), units = "secs"),
+    file = c("/tcx/first.tcx", "/tcx/second.tcx"),
+    source = "tcx",
+    stringsAsFactors = FALSE
+  )
+  expect_length(.session_groups(cache), 2)
+
+  dir <- withr::local_tempdir()
+  # 09:50-10:10, overlapping both.
+  payload <- list(data = list(workouts = list(list(
+    id = "spanning", name = "Utomhus Kör",
+    start = "2024-03-02 09:50:00 +0000",
+    end = "2024-03-02 10:10:00 +0000",
+    duration = 1200,
+    distance = list(qty = 3.0, units = "km"),
+    avgHeartRate = list(qty = 140, units = "count/min")
+  ))))
+  jsonlite::write_json(payload, file.path(dir, "spanning.json"),
+                       auto_unbox = TRUE, null = "null")
+
+  res <- import_hae_workouts(dir, cache, list("a", "b"))
+
+  # Nothing imported, nothing displaced.
+  expect_equal(res$n_imported, 0)
+  expect_equal(nrow(res$summaries), 2)
+  expect_setequal(res$summaries$source, "tcx")
+  expect_setequal(round(as.numeric(res$summaries$distance)), c(10000, 3000))
+})
