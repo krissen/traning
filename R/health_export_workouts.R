@@ -216,20 +216,140 @@ parse_hae_workout <- function(path) {
   row
 }
 
+# --- Cross-source matching ----------------------------------------------------
+
+# Δstart window (seconds) used when at least one sanity quantity
+# (distance or duration) can be compared between the two sessions.
+# Apple Watch and Garmin are often started a minute or two apart on the
+# same run — 2026-08-01 was 107 s — so a pure "same second" window is
+# far too narrow.
+.WORKOUT_MATCH_WINDOW <- 300
+
+# Δstart window (seconds) when neither distance nor duration can be
+# compared. Nothing but the clock separates the two rows then, so the
+# window is tightened to avoid collapsing two genuinely adjacent
+# sessions (e.g. a warm-up walk followed by a run).
+.WORKOUT_MATCH_TIME_ONLY_WINDOW <- 120
+
+# Relative tolerance for the distance/duration sanity check. GPS vs.
+# wrist-measured distance for the same run typically differ by a few
+# percent; 20 % leaves room for that without matching a 5 km run to a
+# 12 km one.
+.WORKOUT_MATCH_TOLERANCE <- 0.20
+
+# Pull a field out of a data frame, list or bare vector holder.
+.workout_field <- function(x, name) {
+  if (is.data.frame(x) || is.list(x)) {
+    if (!name %in% names(x)) return(NULL)
+    return(x[[name]])
+  }
+  NULL
+}
+
+# Coerce a duration to seconds. trackeR stores durations as difftime
+# whose units vary by session; a bare numeric is assumed to be seconds.
+.workout_secs <- function(x) {
+  if (is.null(x) || length(x) == 0) return(NA_real_)
+  if (inherits(x, "difftime")) return(as.numeric(x, units = "secs"))
+  as.numeric(x)
+}
+
+# TRUE where both quantities are present, positive and within `tol` of
+# each other (relative to the larger of the two).
+.within_relative <- function(x, y, tol) {
+  ok <- !is.na(x) & !is.na(y) & x > 0 & y > 0
+  out <- rep(FALSE, length(ok))
+  out[ok] <- abs(x[ok] - y[ok]) / pmax(x[ok], y[ok]) <= tol
+  out
+}
+
+#' Whether two workout records describe the same session
+#'
+#' The shared rule behind every cross-source dedup in the package
+#' (HAE import, TCX import, \code{dedup_summaries()}): two sessions are
+#' the same workout when they start within
+#' \code{window_seconds} of each other **and** either their distances or
+#' their durations agree within \code{tolerance}. When neither quantity
+#' can be compared — one side lacks both — the decision falls back to
+#' time alone, with the narrower \code{time_only_seconds} window.
+#'
+#' Sport is deliberately not part of the rule: Apple Watch sometimes
+#' labels a slow jog "Utomhus Gång" while Garmin records it as running.
+#'
+#' Vectorised over \code{b} (and over \code{a}, if given more than one
+#' row); the usual recycling rules apply.
+#'
+#' @param a,b Data frames or lists with `sessionStart` and, optionally,
+#'   `distance` (metres) and `duration` (difftime or seconds).
+#' @param window_seconds Δstart window when a sanity quantity is
+#'   comparable.
+#' @param time_only_seconds Δstart window when neither distance nor
+#'   duration is comparable on both sides.
+#' @param tolerance Relative tolerance for the distance/duration check.
+#' @return Logical vector, one element per compared pair.
+#' @keywords internal
+.is_same_workout <- function(a, b,
+                             window_seconds = .WORKOUT_MATCH_WINDOW,
+                             time_only_seconds = .WORKOUT_MATCH_TIME_ONLY_WINDOW,
+                             tolerance = .WORKOUT_MATCH_TOLERANCE) {
+  sa <- .workout_field(a, "sessionStart")
+  sb <- .workout_field(b, "sessionStart")
+  if (is.null(sa) || is.null(sb) || length(sa) == 0 || length(sb) == 0) {
+    return(logical(0))
+  }
+
+  n <- max(length(sa), length(sb))
+  rec <- function(x, default = NA_real_) {
+    if (is.null(x) || length(x) == 0) return(rep(default, n))
+    rep(x, length.out = n)
+  }
+
+  sa <- rep(as.POSIXct(sa), length.out = n)
+  sb <- rep(as.POSIXct(sb), length.out = n)
+  da <- rec(as.numeric(.workout_field(a, "distance")))
+  db <- rec(as.numeric(.workout_field(b, "distance")))
+  ta <- rec(.workout_secs(.workout_field(a, "duration")))
+  tb <- rec(.workout_secs(.workout_field(b, "duration")))
+
+  dt <- abs(as.numeric(difftime(sa, sb, units = "secs")))
+  dt[is.na(dt)] <- Inf
+
+  dist_ok <- .within_relative(da, db, tolerance)
+  dur_ok <- .within_relative(ta, tb, tolerance)
+  comparable <- (!is.na(da) & !is.na(db) & da > 0 & db > 0) |
+                (!is.na(ta) & !is.na(tb) & ta > 0 & tb > 0)
+
+  ifelse(comparable,
+         dt <= window_seconds & (dist_ok | dur_ok),
+         dt <= time_only_seconds)
+}
+
+# Rows of `candidates` that are the same workout as the single row `row`.
+# Returns an integer vector of positions (empty when nothing matches).
+.which_same_workout <- function(row, candidates, ...) {
+  if (is.null(candidates) || nrow(candidates) == 0) return(integer(0))
+  which(.is_same_workout(row, candidates, ...))
+}
+
 # --- Importer -----------------------------------------------------------------
 
 #' Import HAE workout JSON files into summaries
 #'
 #' Scans `workouts_dir` for `*.json` files, parses each into a summary row,
-#' and appends new rows to `summaries`.  Two dedup checks are applied:
+#' and appends new rows to `summaries`.  Three dedup checks are applied:
 #' \enumerate{
 #'   \item filename already imported (matched via `file = "hae:<basename>"`)
-#'   \item a Garmin (`source == "tcx"`) row exists within
-#'     `tolerance_seconds` of the HAE `sessionStart` — Garmin wins, HAE
-#'     row is skipped.  Sport is **not** required to match, since two
-#'     different activities at the same instant aren't a realistic case
-#'     and the sport label sometimes disagrees between Garmin and AW
-#'     (e.g. a slow jog logged as "walking" by AW).
+#'   \item a Garmin (`source == "tcx"`) row describes the same workout per
+#'     \code{.is_same_workout()} — Garmin wins, the HAE row is skipped.
+#'     Sport is **not** required to match, since two different activities
+#'     at the same instant aren't a realistic case and the sport label
+#'     sometimes disagrees between Garmin and AW (e.g. a slow jog logged
+#'     as "walking" by AW).
+#'   \item another HAE row — already cached or accepted earlier in this
+#'     same run — describes the same workout. HAE frequently delivers two
+#'     JSON files per session (the Apple Watch recording and the
+#'     Garmin-Connect-mirrored copy, typically 0–5 s apart); the first one
+#'     seen wins.
 #' }
 #' `myruns` receives `NULL` placeholders so positional alignment with
 #' `summaries` is preserved.
@@ -238,22 +358,30 @@ parse_hae_workout <- function(path) {
 #' @param summaries Existing summaries data frame.
 #' @param myruns Existing myruns list.
 #' @param verbose Logical. Print per-file progress.
-#' @param tolerance_seconds Integer. ±window for Garmin dedup (default 90).
+#' @param tolerance_seconds Integer. Δstart window (seconds) for dedup when
+#'   distance or duration can be compared (default 300).
+#' @param time_only_seconds Integer. Narrower Δstart window used when
+#'   neither distance nor duration is available on both sides (default 120).
 #' @return List with `summaries`, `myruns`, `n_imported`, `n_skipped_dup`,
-#'   `n_skipped_invalid`, `by_sport`, `n_unmapped_sports` and
-#'   `unmapped_names`. The last two surface activity types that fell
-#'   through to the slug fallback in `.hae_sport_from_name()` — they get
-#'   neither a Swedish label nor a bucket, so they should be added to
-#'   `.HAE_SPORT_NAMES` the first time they appear rather than be
-#'   discovered months later in a report.
+#'   `n_skipped_dup_hae`, `n_skipped_invalid`, `by_sport`,
+#'   `n_unmapped_sports` and `unmapped_names`. `n_skipped_dup` counts rows
+#'   dropped in favour of a Garmin row, `n_skipped_dup_hae` rows dropped in
+#'   favour of another HAE row. `n_unmapped_sports`/`unmapped_names`
+#'   surface activity types that fell through to the slug fallback in
+#'   `.hae_sport_from_name()` — they get neither a Swedish label nor a
+#'   bucket, so they should be added to `.HAE_SPORT_NAMES` the first time
+#'   they appear rather than be discovered months later in a report.
 #' @export
 import_hae_workouts <- function(workouts_dir, summaries, myruns,
-                                verbose = FALSE, tolerance_seconds = 90L) {
+                                verbose = FALSE,
+                                tolerance_seconds = .WORKOUT_MATCH_WINDOW,
+                                time_only_seconds = .WORKOUT_MATCH_TIME_ONLY_WINDOW) {
   result <- list(
     summaries = summaries,
     myruns = myruns,
     n_imported = 0L,
     n_skipped_dup = 0L,
+    n_skipped_dup_hae = 0L,
     n_skipped_invalid = 0L,
     by_sport = integer(0),
     n_unmapped_sports = 0L,
@@ -279,13 +407,30 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     existing_hae <- sub("^hae:", "", hae_files)
   }
 
-  # Garmin TCX rows for cross-source dedup
-  tcx_starts <- as.POSIXct(character(0))
-  if (all(c("source", "sessionStart") %in% names(summaries)) &&
-      nrow(summaries) > 0) {
-    is_tcx <- !is.na(summaries$source) & summaries$source == "tcx"
-    tcx_starts <- summaries$sessionStart[is_tcx]
+  # Cached rows to dedup against: Garmin (TCX) rows for cross-source
+  # dedup, HAE rows for the duplicate-JSON case. Both carry distance and
+  # duration so .is_same_workout() can apply its sanity check.
+  .candidates <- function(which_source) {
+    if (!all(c("source", "sessionStart") %in% names(summaries)) ||
+        nrow(summaries) == 0) {
+      return(NULL)
+    }
+    keep <- !is.na(summaries$source) & summaries$source == which_source
+    if (!any(keep)) return(NULL)
+    data.frame(
+      sessionStart = summaries$sessionStart[keep],
+      distance = if ("distance" %in% names(summaries))
+        as.numeric(summaries$distance[keep]) else NA_real_,
+      duration = if ("duration" %in% names(summaries))
+        .workout_secs(summaries$duration[keep]) else NA_real_,
+      stringsAsFactors = FALSE
+    )
   }
+  tcx_rows <- .candidates("tcx")
+  # Cached HAE rows plus the ones accepted earlier in this same run: two
+  # new JSON files for one session usually arrive in the same batch, so
+  # comparing against the cache alone would let the pair through.
+  hae_rows <- .candidates("hae")
 
   by_sport <- integer(0)
   unmapped <- character(0)
@@ -305,22 +450,44 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       next
     }
 
-    # Cross-source dedup (time-only — sport label may disagree).
-    if (length(tcx_starts) > 0) {
-      dt <- abs(as.numeric(difftime(tcx_starts, row$sessionStart,
-                                    units = "secs")))
-      hit <- which(dt < tolerance_seconds)
-      if (length(hit) > 0) {
-        result$n_skipped_dup <- result$n_skipped_dup + 1L
-        if (verbose) {
-          cat("Dedupp mot Garmin: ", bn,
-              " (Δt = ", round(min(dt[hit])), "s)\n", sep = "")
-        }
-        next
+    # Cross-source dedup: Garmin wins (sport label may disagree).
+    hit <- .which_same_workout(row, tcx_rows,
+                               window_seconds = tolerance_seconds,
+                               time_only_seconds = time_only_seconds)
+    if (length(hit) > 0) {
+      result$n_skipped_dup <- result$n_skipped_dup + 1L
+      if (verbose) {
+        dt <- abs(as.numeric(difftime(tcx_rows$sessionStart[hit],
+                                      row$sessionStart, units = "secs")))
+        cat("Dedupp mot Garmin: ", bn,
+            " (Δt = ", round(min(dt)), "s)\n", sep = "")
       }
+      next
+    }
+
+    # HAE↔HAE dedup: the AW recording and the Connect-mirrored copy of
+    # one session arrive as two JSON files. Keep the first one seen.
+    hit <- .which_same_workout(row, hae_rows,
+                               window_seconds = tolerance_seconds,
+                               time_only_seconds = time_only_seconds)
+    if (length(hit) > 0) {
+      result$n_skipped_dup_hae <- result$n_skipped_dup_hae + 1L
+      if (verbose) {
+        dt <- abs(as.numeric(difftime(hae_rows$sessionStart[hit],
+                                      row$sessionStart, units = "secs")))
+        cat("Dedupp mot HAE: ", bn,
+            " (Δt = ", round(min(dt)), "s)\n", sep = "")
+      }
+      next
     }
 
     new_rows[[length(new_rows) + 1L]] <- row
+    hae_rows <- rbind(hae_rows, data.frame(
+      sessionStart = row$sessionStart,
+      distance = as.numeric(row$distance),
+      duration = .workout_secs(row$duration),
+      stringsAsFactors = FALSE
+    ))
     by_sport[row$sport] <- (if (is.na(by_sport[row$sport])) 0L else
                             by_sport[row$sport]) + 1L
     hae_name <- attr(row, "hae_name")
