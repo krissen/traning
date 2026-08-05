@@ -734,6 +734,8 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       next
     }
 
+    pending_supersede <- integer(0)
+    pending_supersede_from <- NA_real_
     row <- tryCatch(parse_hae_workout(f), error = function(e) NULL)
     if (is.null(row)) {
       result$n_skipped_invalid <- result$n_skipped_invalid + 1L
@@ -759,19 +761,12 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
         }
         next
       }
-      superseded <- c(superseded, tcx_rows$idx[hit])
-      row$superseded_file <- paste(
-        basename(as.character(summaries$file[tcx_rows$idx[hit]])),
-        collapse = ";")
-      result$n_garmin_fragments <- result$n_garmin_fragments + length(hit)
-      if (verbose) {
-        cat("Garmin-fragment ersatt av AW: ", bn, " (",
-            round(min(tcx_rows$distance[hit])), " m mot ",
-            round(as.numeric(row$distance)), " m)\n", sep = "")
-      }
-      # The Garmin rows stay in `tcx_rows` for the remaining files: they
-      # are dropped from `summaries` at the end, and re-testing against
-      # them costs nothing since this file already won.
+      # Remembered, not applied: this file can still be turned away by
+      # the HAE-to-HAE check below, and dropping the Garmin rows for a
+      # file that never gets imported would leave the session with
+      # nothing but the copy already cached.
+      pending_supersede <- tcx_rows$idx[hit]
+      pending_supersede_from <- round(min(tcx_rows$distance[hit]))
     }
 
     # HAE↔HAE dedup: the AW recording and the Connect-mirrored copy of
@@ -788,6 +783,17 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
             " (Δt = ", round(min(dt)), "s)\n", sep = "")
       }
       next
+    }
+
+    if (length(pending_supersede) > 0) {
+      superseded <- c(superseded, pending_supersede)
+      result$n_garmin_fragments <-
+        result$n_garmin_fragments + length(pending_supersede)
+      if (verbose) {
+        cat("Garmin-fragment ersatt av AW: ", bn, " (",
+            pending_supersede_from, " m mot ",
+            round(as.numeric(row$distance)), " m)\n", sep = "")
+      }
     }
 
     new_rows[[length(new_rows) + 1L]] <- row
