@@ -602,24 +602,65 @@ parse_hae_workout <- function(path) {
   keep
 }
 
-#' Which of several copies of one session to keep
+#' Whether one copy of a session is fuller than another
 #'
 #' The copies describe the same session, so what separates them is how
-#' much each recording captured: the longest is the most complete. Ties
-#' keep the earlier entry, so the outcome never depends on the order the
-#' files happen to be read in. When no copy has a distance at all the
-#' first is kept, there being nothing to choose on.
+#' much each recording captured. In order:
+#' \enumerate{
+#'   \item A copy that recorded a distance beats one that did not. The
+#'     distance column is what the reports read, so a copy missing it is
+#'     the less complete record of the same session whatever else it has.
+#'   \item Among copies with a distance, the longest.
+#'   \item Among copies without one — a strength session, yoga, core
+#'     work, where no distance is ever recorded — the longest duration,
+#'     which is all that is left to tell them apart and is what the
+#'     training load is computed from.
+#' }
+#' Never richer than an equal, so ties leave whatever is already in
+#' place and the order files happen to be read in decides nothing.
 #'
-#' Used both when the cleanup finds several Apple Watch rows for one
-#' session and when the importer meets a copy of a row already cached.
+#' @param a_distance,a_duration The candidate.
+#' @param b_distance,b_duration What it is measured against.
+#' @return TRUE when the candidate is the fuller record.
+#' @keywords internal
+.copy_is_richer <- function(a_distance, a_duration, b_distance, b_duration) {
+  ad <- as.numeric(a_distance)[1]
+  bd <- as.numeric(b_distance)[1]
+  if (!is.na(ad) && is.na(bd)) return(TRUE)
+  if (is.na(ad) && !is.na(bd)) return(FALSE)
+  if (!is.na(ad) && !is.na(bd)) return(isTRUE(ad > bd))
+
+  at <- .workout_secs(a_duration)[1]
+  bt <- .workout_secs(b_duration)[1]
+  if (is.na(at)) return(FALSE)
+  if (is.na(bt)) return(TRUE)
+  isTRUE(at > bt)
+}
+
+#' Which of several copies of one session to keep
+#'
+#' The fullest, by \code{.copy_is_richer()}. Used both when the cleanup
+#' finds several Apple Watch rows for one session and when the importer
+#' meets a copy of a row already cached, so that the two cannot come to
+#' different conclusions about the same pair.
 #'
 #' @param distances Distances of the copies, in metres.
+#' @param durations Durations of the copies, for the sports that record
+#'   no distance. Optional; without them only distance is consulted.
 #' @return Index of the copy to keep.
 #' @keywords internal
-.best_copy <- function(distances) {
-  d <- as.numeric(distances)
-  if (length(d) == 0 || all(is.na(d))) return(1L)
-  which.max(d)
+.best_copy <- function(distances, durations = NULL) {
+  n <- length(distances)
+  if (n == 0) return(1L)
+  if (is.null(durations)) durations <- rep(NA_real_, n)
+  best <- 1L
+  for (k in seq_len(n)[-1]) {
+    if (.copy_is_richer(distances[k], durations[k],
+                        distances[best], durations[best])) {
+      best <- k
+    }
+  }
+  best
 }
 
 #' Total distance Garmin holds for one session
@@ -924,11 +965,10 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
                                window_seconds = tolerance_seconds,
                                time_only_seconds = time_only_seconds)
     if (length(hit) > 0) {
-      best <- hit[.best_copy(hae_rows$distance[hit])]
-      incoming_is_richer <-
-        !is.na(as.numeric(row$distance)) &&
-        (is.na(hae_rows$distance[best]) ||
-         as.numeric(row$distance) > hae_rows$distance[best])
+      best <- hit[.best_copy(hae_rows$distance[hit], hae_rows$duration[hit])]
+      incoming_is_richer <- .copy_is_richer(
+        row$distance, row$duration,
+        hae_rows$distance[best], hae_rows$duration[best])
 
       if (!incoming_is_richer) {
         result$n_skipped_dup_hae <- result$n_skipped_dup_hae + 1L
@@ -954,8 +994,13 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       }
       if (verbose) {
         cat("Fylligare HAE-kopia: ", bn, " (",
-            round(as.numeric(row$distance)), " m mot ",
-            round(as.numeric(hae_rows$distance[best])), " m)\n", sep = "")
+            if (is.na(as.numeric(row$distance)))
+              paste0(round(.workout_secs(row$duration) / 60), " min mot ",
+                     round(.workout_secs(hae_rows$duration[best]) / 60), " min")
+            else
+              paste0(round(as.numeric(row$distance)), " m mot ",
+                     round(as.numeric(hae_rows$distance[best])), " m"),
+            ")\n", sep = "")
       }
       hae_rows <- hae_rows[-hit, , drop = FALSE]
     }

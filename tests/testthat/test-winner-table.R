@@ -108,14 +108,18 @@ test_that("an empty cache takes whatever arrives", {
 
 # --- the HAE side ------------------------------------------------------------
 
-.write_session_json <- function(dir, name, distance_km, offset = 0) {
+.write_session_json <- function(dir, name, distance_km, offset = 0,
+                                duration = 3600, workout = "Utomhus Kör") {
   start <- .SESSION_START + offset
   payload <- list(data = list(workouts = list(list(
-    id = name, name = "Utomhus Kör",
+    id = name, name = workout,
     start = format(start, "%Y-%m-%d %H:%M:%S +0000", tz = "UTC"),
-    end = format(start + 3600, "%Y-%m-%d %H:%M:%S +0000", tz = "UTC"),
-    duration = 3600,
-    distance = list(qty = distance_km, units = "km"),
+    end = format(start + duration, "%Y-%m-%d %H:%M:%S +0000", tz = "UTC"),
+    duration = duration,
+    # A strength session records no distance at all; HAE omits the block
+    # rather than writing a zero.
+    distance = if (is.null(distance_km)) NULL else
+      list(qty = distance_km, units = "km"),
     avgHeartRate = list(qty = 140, units = "count/min")
   ))))
   jsonlite::write_json(payload, file.path(dir, paste0(name, ".json")),
@@ -469,4 +473,64 @@ test_that("one Garmin file cannot evict two different sessions at once", {
   expect_setequal(round(as.numeric(res$summaries$distance)),
                   c(10000, 4000, 3000))
   expect_equal(res$n_hae_removed, 1)
+})
+
+# --- copies of a session that records no distance ----------------------------
+
+.strength_row <- function(offset, duration) {
+  start <- .SESSION_START + offset
+  data.frame(
+    sessionStart = start, sessionEnd = start + duration,
+    sport = "strength", distance = NA_real_,
+    duration = as.difftime(duration, units = "secs"),
+    file = sprintf("hae:strength-%d.json", duration),
+    source = "hae", stringsAsFactors = FALSE
+  )
+}
+
+test_that("duration decides between copies that record no distance", {
+  # Strength, yoga, core: HAE writes no distance block at all, so
+  # comparing distances can never tell the two copies apart and the one
+  # that happened to be cached first would keep the session for good —
+  # with the shorter recording behind every training-load figure.
+  expect_true(.copy_is_richer(NA_real_, 3600, NA_real_, 1800))
+  expect_false(.copy_is_richer(NA_real_, 1800, NA_real_, 3600))
+  # Never richer than an equal, so order decides nothing.
+  expect_false(.copy_is_richer(NA_real_, 1800, NA_real_, 1800))
+  expect_equal(.best_copy(c(NA_real_, NA_real_), c(1800, 3600)), 2L)
+
+  # The copies have to be recognisable as one session before any of this
+  # applies, and with no distance to compare that means durations within
+  # the same 20 % the match rule uses — so the difference the fallback
+  # ever sees is a matter of minutes, not halves.
+  #
+  # (a) the shorter copy is cached and the fuller one arrives
+  dir <- withr::local_tempdir()
+  .write_session_json(dir, "incoming", NULL, duration = 3600,
+                      workout = "Funktionell Styrketräning")
+  res <- import_hae_workouts(dir, .strength_row(0, 3400), list(NULL))
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(as.numeric(res$summaries$duration, units = "secs"), 3600)
+
+  # (b) the other way round: the fuller one is cached already
+  dir2 <- withr::local_tempdir()
+  .write_session_json(dir2, "incoming", NULL, duration = 3400,
+                      workout = "Funktionell Styrketräning")
+  res2 <- import_hae_workouts(dir2, .strength_row(0, 3600), list(NULL))
+  expect_equal(nrow(res2$summaries), 1)
+  expect_equal(as.numeric(res2$summaries$duration, units = "secs"), 3600)
+})
+
+test_that("a copy that recorded a distance beats one that did not", {
+  # (c) The documented choice. The distance column is what the reports
+  # read, so the copy carrying one is the fuller record of the session
+  # even when the other ran longer on the clock.
+  expect_true(.copy_is_richer(5000, 1800, NA_real_, 3600))
+  expect_false(.copy_is_richer(NA_real_, 3600, 5000, 1800))
+
+  dir <- withr::local_tempdir()
+  .write_session_json(dir, "incoming", 5, duration = 3400)
+  res <- import_hae_workouts(dir, .strength_row(0, 3600), list(NULL))
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(as.numeric(res$summaries$distance), 5000)
 })

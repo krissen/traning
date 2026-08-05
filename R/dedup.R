@@ -9,6 +9,7 @@
   empty <- data.frame(
     idx = integer(0), sessionStart = as.POSIXct(character(0)),
     sport = character(0), distance_hae = numeric(0),
+    duration_hae = numeric(0),
     distance_tcx = numeric(0), dt_seconds = numeric(0),
     end_gap_seconds = numeric(0),
     file = character(0), tcx_file = character(0),
@@ -61,6 +62,9 @@
       sessionStart = row$sessionStart,
       sport = as.character(row$sport),
       distance_hae = as.numeric(row$distance),
+      # Duration decides between copies of a session that records no
+      # distance at all — strength work, yoga, core.
+      duration_hae = .workout_secs(row$duration),
       distance_tcx = as.numeric(tcx$distance[best]),
       dt_seconds = min(dt),
       end_gap_seconds = end_gap,
@@ -106,7 +110,8 @@
                             function(x) fragment %in% x, logical(1))]
     contenders <- setdiff(contenders, surplus)
     if (length(contenders) < 2) next
-    best <- contenders[.best_copy(dups$distance_hae[contenders])]
+    best <- contenders[.best_copy(dups$distance_hae[contenders],
+                                  dups$duration_hae[contenders])]
     surplus <- c(surplus, setdiff(contenders, best))
   }
   dups$idx[unique(surplus)]
