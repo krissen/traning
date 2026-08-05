@@ -146,3 +146,77 @@ test_that("my_dbs_save preserves the garmin augmentation stamp", {
   after <- my_dbs_load(db_s, db_m)
   expect_equal(attr(after$summaries, "garmin_augmented_at"), stamp)
 })
+
+# --- fragment rule ------------------------------------------------------------
+
+test_that(".garmin_wins defers only when Garmin caught a fragment", {
+  # The ordinary GPS-versus-wrist disagreement stays with Garmin.
+  expect_true(.garmin_wins(10000, 9000))
+  expect_true(.garmin_wins(10000, 8300))   # ratio 1.2
+  expect_true(.garmin_wins(10000, 5000))   # ratio 2.0, the boundary
+  # Below half the Apple Watch distance, Garmin is only a fragment.
+  expect_false(.garmin_wins(10000, 4999))
+  expect_false(.garmin_wins(10274, 460))   # 2023-04-10
+  # A missing distance leaves the default in place.
+  expect_true(.garmin_wins(NA_real_, 460))
+  expect_true(.garmin_wins(10274, NA_real_))
+})
+
+test_that("dedup_summaries keeps the Apple Watch row when Garmin has a fragment", {
+  tmp <- withr::local_tempdir()
+  start <- as.POSIXct("2023-04-10 15:41:41", tz = "UTC")
+  summaries <- data.frame(
+    sessionStart = c(start, start + 1),
+    sessionEnd = c(start + 3180, start + 180),
+    sport = "running",
+    distance = c(10274, 460),
+    duration = as.difftime(c(3180, 180), units = "secs"),
+    file = c("hae:Utomhus_Kor-20230410.json", "/data/tcx/20230410-154142.tcx"),
+    source = c("hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  paths <- .write_fixture_cache(tmp, summaries, list(NULL, "garmin-run"))
+
+  dups <- dedup_summaries(paths$summaries, paths$myruns,
+                          dry_run = TRUE, verbose = FALSE)
+  expect_equal(dups$winner, "aw")
+
+  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE, verbose = FALSE)
+  after <- my_dbs_load(paths$summaries, paths$myruns)
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$source, "hae")
+  expect_equal(after$summaries$distance, 10274)
+  # The displaced Garmin file is recorded so the importer knows it was
+  # handled rather than never seen.
+  expect_equal(after$summaries$superseded_file, "20230410-154142.tcx")
+  expect_equal(length(after$myruns), 1)
+})
+
+test_that("dedup_summaries keeps Garmin when a second row covers the session", {
+  # A Garmin watch stopped and restarted writes two files. Each is short
+  # against the Apple Watch total, but together they are the session, so
+  # Garmin still wins and both Garmin rows survive.
+  tmp <- withr::local_tempdir()
+  start <- as.POSIXct("2025-07-07 14:31:44", tz = "UTC")
+  summaries <- data.frame(
+    sessionStart = c(start, start + 5, start + 2600),
+    sessionEnd = c(start + 5400, start + 2500, start + 5400),
+    sport = "running",
+    distance = c(11124, 4292, 6961),
+    duration = as.difftime(c(5400, 2495, 2800), units = "secs"),
+    file = c("hae:Utomhus_Kor-20250707.json",
+             "/data/tcx/20250707-a.tcx", "/data/tcx/20250707-b.tcx"),
+    source = c("hae", "tcx", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  paths <- .write_fixture_cache(tmp, summaries, list(NULL, "a", "b"))
+
+  dups <- dedup_summaries(paths$summaries, paths$myruns,
+                          dry_run = TRUE, verbose = FALSE)
+  expect_equal(dups$winner, "garmin")
+
+  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE, verbose = FALSE)
+  after <- my_dbs_load(paths$summaries, paths$myruns)
+  expect_equal(nrow(after$summaries), 2)
+  expect_setequal(after$summaries$source, "tcx")
+})

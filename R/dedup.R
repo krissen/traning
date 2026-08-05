@@ -12,6 +12,7 @@
     distance_tcx = numeric(0), dt_seconds = numeric(0),
     end_gap_seconds = numeric(0),
     file = character(0), tcx_file = character(0),
+    winner = character(0), tcx_idx = integer(0),
     stringsAsFactors = FALSE
   )
   if (!is.data.frame(summaries) || nrow(summaries) == 0 ||
@@ -36,6 +37,9 @@
     end_gap <- if ("sessionEnd" %in% names(summaries))
       abs(as.numeric(difftime(tcx$sessionEnd[best], row$sessionEnd,
                               units = "secs"))) else NA_real_
+    # Garmin keeps the session unless every row it matches is a fragment;
+    # the same test the two import paths apply.
+    garmin <- any(.garmin_wins(row$distance, tcx$distance[m]))
     data.frame(
       idx = i,
       sessionStart = row$sessionStart,
@@ -46,6 +50,10 @@
       end_gap_seconds = end_gap,
       file = as.character(row$file),
       tcx_file = basename(as.character(tcx$file[best])),
+      winner = if (garmin) "garmin" else "aw",
+      # Position in `summaries` of the Garmin row that loses when the
+      # Apple Watch row wins; NA otherwise.
+      tcx_idx = if (garmin) NA_integer_ else tcx_idx[best],
       stringsAsFactors = FALSE
     )
   })
@@ -104,9 +112,13 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
 
   dups <- .find_hae_duplicates(summaries)
 
+  n_aw <- sum(dups$winner == "aw")
   if (verbose) {
     cat("Dubblettsökning: ", nrow(summaries), " rader, ",
-        nrow(dups), " Apple Watch-rader har en Garmin-tvilling.\n", sep = "")
+        nrow(dups), " Apple Watch-rader har en Garmin-tvilling",
+        if (n_aw > 0) paste0(" (", n_aw, " där Garmin bara fångade ",
+                             "ett fragment — AW-raden behålls)") else "",
+        ".\n", sep = "")
     if (nrow(dups) > 0) {
       shown <- if (is.null(limit)) dups else utils::head(dups, limit)
       out <- data.frame(
@@ -116,6 +128,7 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
         `tcx_m` = round(shown$distance_tcx),
         `dt_s` = round(shown$dt_seconds),
         `slut_s` = round(shown$end_gap_seconds),
+        behåller = ifelse(shown$winner == "garmin", "Garmin", "AW"),
         fil = sub("^hae:", "", shown$file),
         check.names = FALSE,
         stringsAsFactors = FALSE
@@ -144,7 +157,25 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   summaries <- aligned$summaries
   myruns <- aligned$myruns
 
-  drop <- sort(unique(dups$idx))
+  # Garmin fragments go first, so an Apple Watch row that lost to a
+  # fragment elsewhere isn't dropped on account of a row that is itself
+  # about to disappear.
+  drop_tcx <- sort(unique(dups$tcx_idx[!is.na(dups$tcx_idx)]))
+  if (length(drop_tcx) > 0) {
+    if (!"superseded_file" %in% names(summaries)) {
+      summaries$superseded_file <- NA_character_
+    }
+    for (k in which(dups$winner == "aw")) {
+      keep <- dups$idx[k]
+      prev <- summaries$superseded_file[keep]
+      summaries$superseded_file[keep] <- paste(
+        c(if (!is.na(prev) && nzchar(prev)) prev, dups$tcx_file[k]),
+        collapse = ";")
+    }
+  }
+  drop_hae <- dups$idx[dups$winner == "garmin"]
+  drop <- sort(unique(c(drop_hae, drop_tcx)))
+
   summaries <- .restore_df_attrs(summaries[-drop, , drop = FALSE], summaries)
   rownames(summaries) <- NULL
   myruns <- myruns[-drop]
@@ -157,7 +188,8 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
 
   my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   if (verbose) {
-    cat("Borttaget: ", length(drop), " rader. Kvar: ", nrow(summaries),
+    cat("Borttaget: ", length(drop_hae), " Apple Watch-rader och ",
+        length(drop_tcx), " Garmin-fragment. Kvar: ", nrow(summaries),
         " rader, ", length(myruns), " run-objekt.\n", sep = "")
   }
   invisible(dups)

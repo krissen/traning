@@ -541,3 +541,111 @@ test_that(".onLoad copies trackeR's unit-conversion helpers into the package nam
   expect_equal(get("km2mi", envir = pkg_ns)(1),
               get("km2mi", envir = trackeR_ns)(1))
 })
+
+# --- get_new_workouts(): the Garmin-fragment exception ----------------------
+
+test_that("get_new_workouts keeps the Apple Watch row when the TCX is a fragment", {
+  # Garmin was started late and caught 460 m of a 10 km run the watch
+  # recorded in full. Importing it would replace the real session.
+  base_time <- as.POSIXct("2023-04-10 15:41:42", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time - 1,
+    sessionEnd = base_time + 3179,
+    sport = "running",
+    distance = 10274,
+    duration = as.difftime(3180, units = "secs"),
+    file = "hae:Utomhus_Kor-20230410.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  new_file <- file.path(tempdir(), "20230410-154142.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time, tag = file, distance = 460)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(new_file, existing, list(NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+  expect_equal(res$n_garmin_fragments, 1)
+  expect_equal(res$n_hae_removed, 0)
+  expect_equal(res$summaries$superseded_file, "20230410-154142.tcx")
+})
+
+test_that("get_new_workouts does not re-import a superseded TCX file", {
+  # The flip-flop trap: the file is gone from summaries$file, so without
+  # the superseded key it would be imported again on the next run and
+  # evict the Apple Watch row it had just lost to.
+  base_time <- as.POSIXct("2023-04-10 15:41:42", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time - 1,
+    sessionEnd = base_time + 3179,
+    sport = "running",
+    distance = 10274,
+    duration = as.difftime(3180, units = "secs"),
+    file = "hae:Utomhus_Kor-20230410.json",
+    superseded_file = "20230410-154142.tcx",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  n_parsed <- 0
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      n_parsed <<- n_parsed + 1
+      make_fake_parsed(base_time, tag = file, distance = 460)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(file.path(tempdir(), "20230410-154142.tcx"),
+                          existing, list(NULL), verbose = FALSE)
+
+  expect_equal(n_parsed, 0)
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+})
+
+test_that("repeated imports of the same files leave the cache unchanged", {
+  # Idempotence across the whole import path: fragment eviction, reverse
+  # dedup and the plain append must all settle after the first pass.
+  base <- as.POSIXct("2024-05-01 06:00:00", tz = "UTC")
+  files <- file.path(tempdir(), c("idem_full.tcx", "idem_fragment.tcx"))
+  existing <- data.frame(
+    sessionStart = c(base + 7200, base + 10),
+    sessionEnd = c(base + 10800, base + 3600),
+    sport = "running",
+    distance = c(12000, 9000),
+    duration = as.difftime(c(3600, 3590), units = "secs"),
+    file = c("hae:fragment_twin.json", "hae:full_twin.json"),
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      if (grepl("fragment", file)) {
+        # 800 m against the watch's 12 km -> Garmin loses.
+        make_fake_parsed(base + 7201, tag = file, distance = 800)
+      } else {
+        # 8.9 km against the watch's 9 km -> Garmin wins.
+        make_fake_parsed(base + 11, tag = file, distance = 8900)
+      }
+    },
+    .package = "trackeR"
+  )
+
+  first <- get_new_workouts(files, existing, list(NULL, NULL), verbose = FALSE)
+  second <- get_new_workouts(files, first$summaries, first$myruns,
+                             verbose = FALSE)
+
+  expect_equal(nrow(first$summaries), 2)
+  expect_equal(second$summaries, first$summaries)
+  expect_equal(length(second$myruns), length(first$myruns))
+  expect_equal(second$n_garmin_fragments, 0)
+  expect_equal(second$n_hae_removed, 0)
+})
