@@ -567,6 +567,41 @@ parse_hae_workout <- function(path) {
 #'   Garmin row counts as a fragment.
 #' @return Logical vector; TRUE where the Garmin row wins.
 #' @keywords internal
+# Two Garmin rows starting within this many seconds of each other are
+# one recording under two names — a re-export, a stale copy — rather
+# than two legs of a session. Legs are consecutive and minutes apart.
+.SAME_RECORDING_SECONDS <- 2
+
+#' Which of a set of Garmin rows are distinct recordings
+#'
+#' Copies of one recording must not both count towards what Garmin holds
+#' for a session: two copies of a 40 % fragment would add up to 80 % and
+#' take a session Garmin only ever recorded in part. Legs are unaffected,
+#' being minutes apart.
+#'
+#' The first of a set of copies is the one kept. They are the same
+#' recording, so the choice only has to be deterministic — and the
+#' removal lists elsewhere still take every copy; it is the arithmetic
+#' that must not count one recording twice.
+#'
+#' @param starts Session start times of the rows, in order.
+#' @return Logical vector, TRUE for the rows to count.
+#' @keywords internal
+.distinct_recordings <- function(starts) {
+  n <- length(starts)
+  if (n < 2) return(rep(TRUE, n))
+  s <- as.numeric(starts)
+  keep <- rep(TRUE, n)
+  for (k in seq_len(n)[-1]) {
+    earlier <- which(keep[seq_len(k - 1L)])
+    if (any(!is.na(s[earlier]) & !is.na(s[k]) &
+            abs(s[earlier] - s[k]) < .SAME_RECORDING_SECONDS)) {
+      keep[k] <- FALSE
+    }
+  }
+  keep
+}
+
 #' Total distance Garmin holds for one session
 #'
 #' A watch stopped and restarted writes one file per leg, so the session
@@ -751,7 +786,10 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
                                time_only_seconds = time_only_seconds)
     if (length(hit) > 0) {
       # Against everything Garmin holds for this session, not leg by leg.
-      if (.garmin_wins(row$distance, .garmin_total(tcx_rows$distance[hit]))) {
+      # Copies of one recording count once; legs count separately.
+      distinct <- hit[.distinct_recordings(tcx_rows$sessionStart[hit])]
+      if (.garmin_wins(row$distance,
+                       .garmin_total(tcx_rows$distance[distinct]))) {
         result$n_skipped_dup <- result$n_skipped_dup + 1L
         if (verbose) {
           dt <- abs(as.numeric(difftime(tcx_rows$sessionStart[hit],

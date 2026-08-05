@@ -41,7 +41,10 @@
     # Garmin keeps the session unless everything it recorded for it adds
     # up to less than half the Apple Watch distance — the same test the
     # two import paths apply, against the same total.
-    garmin <- .garmin_wins(row$distance, .garmin_total(tcx$distance[m]))
+    # Copies of one recording count once towards the total; every copy
+    # is still removed below when the Apple Watch row wins.
+    distinct <- m[.distinct_recordings(tcx$sessionStart[m])]
+    garmin <- .garmin_wins(row$distance, .garmin_total(tcx$distance[distinct]))
     # When the watch wins, *every* fragment goes. A Garmin watch stopped
     # and restarted leaves two of them against one session, and removing
     # only the nearest would leave the other orphaned — a few kilometres

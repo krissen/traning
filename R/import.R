@@ -311,8 +311,10 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
     idx <- which(!is.na(summaries$source) & summaries$source == "tcx")
     if (length(idx) == 0) return(numeric(0))
     hae_row <- summaries[dup[1], , drop = FALSE]
-    as.numeric(summaries$distance[idx[.is_same_workout(
-      hae_row, summaries[idx, , drop = FALSE])]])
+    legs <- idx[.is_same_workout(hae_row, summaries[idx, , drop = FALSE])]
+    # One recording cached under two names counts once.
+    legs <- legs[.distinct_recordings(summaries$sessionStart[legs])]
+    as.numeric(summaries$distance[legs])
   }
 
   for (i in seq_along(files)) {
@@ -438,17 +440,12 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   # Garmin row, so matching starts is the whole test, and the window is
   # the one the main loop uses.
   if (length(deferred) > 1) {
-    starts <- vapply(deferred, function(e) as.numeric(e$row$sessionStart),
-                     numeric(1))
-    keep <- rep(TRUE, length(deferred))
-    for (k in seq_along(deferred)[-1]) {
-      earlier <- which(keep[seq_len(k - 1L)])
-      if (any(abs(starts[earlier] - starts[k]) < 2)) {
-        keep[k] <- FALSE
-        if (verbose) {
-          cat("dublett av parkerad del: ", basename(deferred[[k]]$file),
-              ", hoppar över\n", sep = "")
-        }
+    keep <- .distinct_recordings(
+      vapply(deferred, function(e) as.numeric(e$row$sessionStart), numeric(1)))
+    if (verbose) {
+      for (k in which(!keep)) {
+        cat("dublett av parkerad del: ", basename(deferred[[k]]$file),
+            ", hoppar över\n", sep = "")
       }
     }
     deferred <- deferred[keep]

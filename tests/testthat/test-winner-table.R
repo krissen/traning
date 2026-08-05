@@ -154,3 +154,82 @@ test_that("an HAE file loses to a Garmin row that covers the session", {
   expect_equal(out$distances, 9500)
   expect_equal(out$sources, "tcx")
 })
+
+# --- one recording under two names -------------------------------------------
+#
+# Counting copies of a recording as separate legs is the way a fragment
+# gets over the threshold without covering anything: two copies of 40 %
+# add up to 80 %. Every path that sums Garmin distances has to collapse
+# them first, and every path still removes all the copies afterwards.
+
+.two_copies_cache <- function(aw_distance, copy_distance) {
+  start <- .SESSION_START
+  data.frame(
+    sessionStart = c(start, start + 1, start + 2),
+    sessionEnd = c(start + 3600, start + 1700, start + 1701),
+    sport = "running",
+    distance = c(aw_distance, copy_distance, copy_distance),
+    duration = as.difftime(c(3600, 1700, 1700), units = "secs"),
+    file = c("hae:native.json", "/tcx/copy-a.tcx", "/tcx/copy-b.tcx"),
+    source = c("hae", "tcx", "tcx"),
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that("the cleanup counts two copies of a fragment once", {
+  tmp <- withr::local_tempdir()
+  summaries <- .two_copies_cache(aw_distance = 10000, copy_distance = 4000)
+  db_s <- file.path(tmp, "summaries.RData")
+  db_m <- file.path(tmp, "myruns.RData")
+  myruns <- list(NULL, "a", "b")
+  save(summaries, file = db_s)
+  save(myruns, file = db_m)
+
+  dups <- dedup_summaries(db_s, db_m, dry_run = TRUE, verbose = FALSE)
+  # 4000 m, not 8000: the Apple Watch row keeps the session.
+  expect_equal(dups$winner, "aw")
+  # Both copies still go when it is applied.
+  expect_equal(length(dups$tcx_drop[[1]]), 2)
+
+  dedup_summaries(db_s, db_m, dry_run = FALSE, verbose = FALSE)
+  after <- my_dbs_load(db_s, db_m)
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$distance, 10000)
+})
+
+test_that("the import counts two cached copies of a fragment once", {
+  # The same cache, met by a third copy arriving as a new file: the
+  # cached pair must not add up to a session Garmin never recorded.
+  summaries <- .two_copies_cache(aw_distance = 10000, copy_distance = 4000)
+  path <- file.path(tempdir(), "copy-c.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      .fake_parsed(.SESSION_START + 3, 4000, file)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(path, summaries, list(NULL, "a", "b"),
+                          verbose = FALSE)
+
+  # Nothing new imported and the Apple Watch row survives.
+  expect_equal(res$n_imported, 0)
+  expect_true("hae" %in% res$summaries$source)
+  expect_equal(max(res$summaries$distance), 10000)
+})
+
+test_that("the HAE import counts two cached copies of a fragment once", {
+  dir <- withr::local_tempdir()
+  .write_session_json(dir, "incoming", 10)
+  cache <- .two_copies_cache(aw_distance = 10000, copy_distance = 4000)
+  # Drop the cached Apple Watch row: the incoming file is that session.
+  cache <- cache[cache$source == "tcx", ]
+
+  res <- import_hae_workouts(dir, cache, list("a", "b"))
+
+  # 4000 m against 10000 m is a fragment, so the file lands and both
+  # copies of the fragment go.
+  expect_equal(res$n_imported, 1)
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+})
