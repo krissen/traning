@@ -10,6 +10,7 @@
     idx = integer(0), sessionStart = as.POSIXct(character(0)),
     sport = character(0), distance_hae = numeric(0),
     distance_tcx = numeric(0), dt_seconds = numeric(0),
+    end_gap_seconds = numeric(0),
     file = character(0), tcx_file = character(0),
     stringsAsFactors = FALSE
   )
@@ -28,11 +29,13 @@
     row <- summaries[i, , drop = FALSE]
     m <- .which_same_workout(row, tcx, ...)
     if (length(m) == 0) return(NULL)
-    # Several Garmin rows can fall inside the window (rare); report the
-    # closest one.
+    # Several Garmin rows can match (rare); report the closest one.
     dt <- abs(as.numeric(difftime(tcx$sessionStart[m], row$sessionStart,
                                   units = "secs")))
     best <- m[which.min(dt)]
+    end_gap <- if ("sessionEnd" %in% names(summaries))
+      abs(as.numeric(difftime(tcx$sessionEnd[best], row$sessionEnd,
+                              units = "secs"))) else NA_real_
     data.frame(
       idx = i,
       sessionStart = row$sessionStart,
@@ -40,6 +43,7 @@
       distance_hae = as.numeric(row$distance),
       distance_tcx = as.numeric(tcx$distance[best]),
       dt_seconds = min(dt),
+      end_gap_seconds = end_gap,
       file = as.character(row$file),
       tcx_file = basename(as.character(tcx$file[best])),
       stringsAsFactors = FALSE
@@ -54,9 +58,15 @@
 #'
 #' Scans the whole summaries cache for `source == "hae"` rows that
 #' describe the same workout as a `source == "tcx"` row (per
-#' `.is_same_workout()`: Δstart within five minutes plus a distance or
-#' duration sanity check) and removes them — Garmin wins. All sports are
-#' considered, not just running.
+#' `.is_same_workout()`: either a close start plus a distance/duration
+#' sanity check, or overlapping wall-clock intervals) and removes them —
+#' Garmin wins. All sports are considered, not just running, though the
+#' overlap half of the rule exempts the sports listed in
+#' `.WORKOUT_OVERLAP_EXEMPT_SPORTS`.
+#'
+#' The reported `dt_seconds` is the start offset and `end_gap_seconds`
+#' the stop offset; a pair with a large `dt_seconds` and a small
+#' `end_gap_seconds` is the "second watch started midway" shape.
 #'
 #' Runs as a dry run by default: the candidates are listed and nothing is
 #' written. Pass `dry_run = FALSE` to apply. The corresponding `myruns`
@@ -105,6 +115,7 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
         `hae_m` = round(shown$distance_hae),
         `tcx_m` = round(shown$distance_tcx),
         `dt_s` = round(shown$dt_seconds),
+        `slut_s` = round(shown$end_gap_seconds),
         fil = sub("^hae:", "", shown$file),
         check.names = FALSE,
         stringsAsFactors = FALSE
