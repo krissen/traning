@@ -307,3 +307,48 @@ test_that("a cached leg is found through whichever copy recognises it", {
   expect_equal(res$n_hae_removed, 2)
   expect_length(res$myruns, 2)
 })
+
+# --- an unknown distance is not a zero ---------------------------------------
+
+test_that("a partly unmeasured Garmin set does not count as a fragment", {
+  # One leg of 400 m and one whose distance never made it into the
+  # cache. Adding up only what is known gives 400 m, which reads as a
+  # fragment of a 10 km session and evicts both legs — on the strength
+  # of a number that was never the total. Unknown stays unknown, and an
+  # unknown total leaves Garmin the winner, as the rule says.
+  expect_true(is.na(.garmin_total(c(400, NA_real_))))
+  expect_true(is.na(.garmin_total(c(NA_real_, NA_real_))))
+  expect_equal(.garmin_total(c(400, 600)), 1000)
+  expect_true(.garmin_wins(10000, .garmin_total(c(400, NA_real_))))
+
+  # The unmeasured row has to reach the session some other way, since
+  # the overlap criterion needs a distance on both sides: it starts with
+  # the session and runs nearly as long, which the start criterion
+  # matches on duration alone.
+  tmp <- withr::local_tempdir()
+  start <- .SESSION_START
+  summaries <- data.frame(
+    sessionStart = c(start, start + 5, start + 10),
+    sessionEnd = c(start + 3600, start + 900, start + 3410),
+    sport = "running",
+    distance = c(10000, 400, NA_real_),
+    duration = as.difftime(c(3600, 895, 3400), units = "secs"),
+    file = c("hae:native.json", "/tcx/leg-a.tcx", "/tcx/leg-b.tcx"),
+    source = c("hae", "tcx", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  db_s <- file.path(tmp, "summaries.RData")
+  db_m <- file.path(tmp, "myruns.RData")
+  myruns <- list(NULL, "a", "b")
+  save(summaries, file = db_s)
+  save(myruns, file = db_m)
+
+  dups <- dedup_summaries(db_s, db_m, dry_run = TRUE, verbose = FALSE)
+  expect_equal(dups$winner, "garmin")
+
+  # Nothing of Garmin's is removed; the Apple Watch row is the duplicate.
+  dedup_summaries(db_s, db_m, dry_run = FALSE, verbose = FALSE)
+  after <- my_dbs_load(db_s, db_m)
+  expect_equal(nrow(after$summaries), 2)
+  expect_setequal(after$summaries$source, "tcx")
+})

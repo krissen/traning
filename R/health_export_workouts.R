@@ -628,16 +628,23 @@ parse_hae_workout <- function(path) {
 #' Garmin recorded is the sum of the matching rows, not the longest of
 #' them. Weighing the legs one at a time called a session split three
 #' ways — or evenly in two — a fragment and discarded the whole Garmin
-#' recording. All NA gives NA rather than zero, so an unknown distance
-#' stays unknown instead of becoming "nothing".
+#' recording.
+#'
+#' A single unknown distance makes the whole total unknown. Skipping it
+#' and adding up the rest answers a question nobody asked: the partial
+#' sum can fall under the threshold and evict the whole set, the
+#' unmeasured row included, on the strength of a number that was never
+#' the total. `.garmin_wins()` treats an unknown total as a win for
+#' Garmin, which is the documented default when there is no evidence of
+#' a fragment.
 #'
 #' @param distances Distances of the matching Garmin rows, in metres.
-#' @return Single numeric total, or NA when nothing is known.
+#' @return Single numeric total, or NA when any of it is unknown.
 #' @keywords internal
 .garmin_total <- function(distances) {
   d <- as.numeric(distances)
-  if (length(d) == 0 || all(is.na(d))) return(NA_real_)
-  sum(d, na.rm = TRUE)
+  if (length(d) == 0 || anyNA(d)) return(NA_real_)
+  sum(d)
 }
 
 .garmin_wins <- function(hae_distance, tcx_distance,
