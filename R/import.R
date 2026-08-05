@@ -245,6 +245,17 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       # if the old file no longer exists (actual rename vs. two copies).
       ss <- run_summary$sessionStart
       dup_idx <- which(abs(difftime(existing_starts, ss, units = "secs")) < 2)
+      # Only another Garmin row can be this same file under a different
+      # name. An Apple Watch row starting in the same second is a
+      # cross-source duplicate and belongs to the dedup below — letting it
+      # through here overwrote the HAE row's "hae:" file key with the TCX
+      # path, which both broke the row's identity and made its JSON look
+      # unimported, so the next run added it back as a second session.
+      if (length(dup_idx) > 0 && "source" %in% names(summaries)) {
+        same_source <- is.na(summaries$source[dup_idx]) |
+                       summaries$source[dup_idx] == "tcx"
+        dup_idx <- dup_idx[same_source]
+      }
       if (length(dup_idx) > 0) {
         existing_basenames <- c(existing_basenames, basename(thefile))
         old_path <- summaries$file[dup_idx[1]]
