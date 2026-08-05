@@ -485,6 +485,17 @@ test_that("the believability floor applies from either side of the pair", {
   # names must not fall through to the 0.10 default.
   expect_false(.is_same_workout(
     .span(0, 12 * 3600, distance = 0.49 * 12 * 3600, sport = "cykling"), inside))
+
+  # The comparison is >=, so a row exactly on its floor is believed and
+  # the row just beneath it is not. The nearest real case is a 2019-07-05
+  # cycling row at 0.4996 m/s, which sits on the excluded side.
+  span <- 12 * 3600
+  on_floor <- .span(0, span, distance = 0.50 * span, sport = "cycling")
+  just_under <- .span(0, span, distance = 0.4999 * span, sport = "cycling")
+  expect_true(.is_same_workout(on_floor, inside))
+  expect_false(.is_same_workout(just_under, inside))
+  expect_true(.is_same_workout(inside, on_floor))
+  expect_false(.is_same_workout(inside, just_under))
 })
 
 test_that("rename detection does not rewrite an Apple Watch file key", {
