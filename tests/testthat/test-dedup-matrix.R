@@ -1023,3 +1023,137 @@ test_that("a row sitting exactly on its speed floor is believed", {
   expect_true(.is_same_workout(ride(0.50), inside))
   expect_false(.is_same_workout(ride(0.4999), inside))
 })
+
+# --- batch composition --------------------------------------------------------
+#
+# The winner rules run over sets — every wrist row a file matches, every
+# Garmin leg already held for that session, every leg still parked in the
+# batch — and the sets are built at different moments from different
+# populations. These cases vary what a single batch contains and the
+# order it arrives in, since arrival order is an accident of the file
+# system and must never change the cache it produces.
+
+.batch_registry <- new.env(parent = emptyenv())
+
+.batch_file <- function(name, start, distance, duration) {
+  path <- file.path(tempdir(), name)
+  assign(path, list(start = start, distance = distance, duration = duration),
+         envir = .batch_registry)
+  path
+}
+
+.batch_reader <- function(f, ...) {
+  spec <- get(f, envir = .batch_registry)
+  .fake_tcx(spec$start, spec$distance, spec$duration, "running", f)
+}
+
+.batch_wrist <- function(start, distance, duration, file) {
+  data.frame(sessionStart = start, sessionEnd = start + duration,
+             sport = "running", distance = distance,
+             duration = as.difftime(duration, units = "secs"),
+             file = file, source = "hae", stringsAsFactors = FALSE)
+}
+
+.import_batch <- function(files, cache) {
+  testthat::with_mocked_bindings(
+    get_new_workouts(files, cache, vector("list", nrow(cache)), verbose = FALSE),
+    read_container = .batch_reader, .package = "trackeR")
+}
+
+.B0 <- as.POSIXct("2026-03-01 08:00:00", tz = "UTC")
+
+test_that("arrival order does not change what a batch imports", {
+  # Three legs of one session. Individually each is a fragment of the
+  # 10 km the wrist holds; together they are 5300 m, over the half that
+  # keeps the session with Garmin.
+  wrist <- .batch_wrist(.B0, 10000, 5400, "hae:session.json")
+  legs <- c(.batch_file("perm-a.tcx", .B0 + 60, 2000, 1200),
+            .batch_file("perm-b.tcx", .B0 + 2000, 2400, 1200),
+            .batch_file("perm-c.tcx", .B0 + 4000, 900, 1000))
+
+  for (order in list(c(1, 2, 3), c(3, 2, 1), c(2, 1, 3),
+                     c(2, 3, 1), c(3, 1, 2), c(1, 3, 2))) {
+    res <- .import_batch(legs[order], wrist)
+    label <- paste(order, collapse = ">")
+    expect_equal(nrow(res$summaries), 3, info = label)
+    expect_true(all(res$summaries$source == "tcx"), info = label)
+    expect_equal(sum(as.numeric(res$summaries$distance)), 5300, info = label)
+    expect_equal(res$n_hae_removed, 1, info = label)
+    expect_equal(length(res$myruns), nrow(res$summaries), info = label)
+  }
+})
+
+test_that("legs that stay under the bar leave the wrist row alone, in any order", {
+  wrist <- .batch_wrist(.B0, 10000, 5400, "hae:session.json")
+  legs <- c(.batch_file("under-a.tcx", .B0 + 60, 1500, 1200),
+            .batch_file("under-b.tcx", .B0 + 2000, 1500, 1200),
+            .batch_file("under-c.tcx", .B0 + 4000, 1500, 1000))
+
+  for (order in list(c(1, 2, 3), c(3, 2, 1), c(2, 1, 3))) {
+    res <- .import_batch(legs[order], wrist)
+    label <- paste(order, collapse = ">")
+    # 4500 m against 10 km: Garmin caught less than half, so none of the
+    # legs is written and the wrist keeps the session.
+    expect_equal(nrow(res$summaries), 1, info = label)
+    expect_equal(res$summaries$source, "hae", info = label)
+    expect_equal(as.numeric(res$summaries$distance), 10000, info = label)
+    expect_equal(res$n_garmin_fragments, 3, info = label)
+  }
+})
+
+test_that("two copies of one leg in a batch are weighed as one recording", {
+  # The same recording under two names must not be summed into a session
+  # Garmin only caught half of.
+  wrist <- .batch_wrist(.B0, 10000, 5400, "hae:session.json")
+  copies <- c(.batch_file("copy-first.tcx", .B0 + 60, 4000, 1800),
+              .batch_file("copy-second.tcx", .B0 + 61, 4000, 1800))
+
+  res <- .import_batch(copies, wrist)
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+  expect_equal(res$n_garmin_fragments, 1)
+
+  # 4000 + 4000 would clear the bar; one recording of 4000 does not.
+  expect_false(.garmin_wins(10000, 4000))
+  expect_true(.garmin_wins(10000, 8000))
+})
+
+test_that("both wrist copies of a session go when Garmin takes it", {
+  wrist <- rbind(
+    .batch_wrist(.B0, 10000, 5400, "hae:full.json"),
+    .batch_wrist(.B0 + 3, 8000, 5200, "hae:mirror.json"))
+  legs <- c(.batch_file("pair-a.tcx", .B0 + 60, 3000, 1500),
+            .batch_file("pair-b.tcx", .B0 + 3000, 2600, 1500))
+
+  for (order in list(c(1, 2), c(2, 1))) {
+    res <- .import_batch(legs[order], wrist)
+    label <- paste(order, collapse = ">")
+    expect_equal(nrow(res$summaries), 2, info = label)
+    expect_true(all(res$summaries$source == "tcx"), info = label)
+    expect_equal(res$n_hae_removed, 2, info = label)
+    expect_equal(length(res$myruns), nrow(res$summaries), info = label)
+  }
+})
+
+test_that("a fragment of one session is not weighed into another", {
+  # Two wrist sessions hours apart. A big leg takes the first; a fragment
+  # of the second must still lose to the second, rather than ride in on
+  # the first one's total.
+  wrist <- rbind(
+    .batch_wrist(.B0, 10000, 5400, "hae:morning.json"),
+    .batch_wrist(.B0 + 7000, 3000, 1800, "hae:evening.json"))
+  big <- .batch_file("sep-big.tcx", .B0 + 60, 6000, 5000)
+  small <- .batch_file("sep-small.tcx", .B0 + 7100, 200, 1500)
+
+  for (order in list(c(big, small), c(small, big))) {
+    res <- .import_batch(order, wrist)
+    label <- basename(order[1])
+    expect_equal(nrow(res$summaries), 2, info = label)
+    expect_setequal(res$summaries$source, c("hae", "tcx"))
+    # The evening wrist row survives with its own distance.
+    evening <- res$summaries[res$summaries$source == "hae", ]
+    expect_equal(as.numeric(evening$distance), 3000, info = label)
+    expect_equal(res$n_garmin_fragments, 1, info = label)
+    expect_equal(res$n_hae_removed, 1, info = label)
+  }
+})
