@@ -231,3 +231,75 @@ test_that("--dry-run wins over --apply", {
   after <- my_dbs_load(db, file.path(cache_dir, "myruns.RData"))
   expect_equal(nrow(after$summaries), 2)
 })
+
+# --- what the closing report counts ------------------------------------------
+
+write_hae_json <- function(dir, name, start, distance_km, duration_s) {
+  payload <- list(data = list(workouts = list(list(
+    id = name, name = "Utomhus Kör",
+    start = format(start, "%Y-%m-%d %H:%M:%S +0000", tz = "UTC"),
+    end = format(start + duration_s, "%Y-%m-%d %H:%M:%S +0000", tz = "UTC"),
+    duration = duration_s,
+    distance = list(qty = distance_km, units = "km"),
+    avgHeartRate = list(qty = 140, units = "count/min")
+  ))))
+  jsonlite::write_json(payload, file.path(dir, paste0(name, ".json")),
+                       auto_unbox = TRUE, null = "null")
+}
+
+# An empty cache plus whichever sources the caller asks for.
+setup_sources <- function(dir, tcx = FALSE, hae = FALSE) {
+  cache_dir <- file.path(dir, "cache")
+  dir.create(cache_dir, recursive = TRUE)
+  dir.create(file.path(dir, "kristian", "filer", "tcx"), recursive = TRUE)
+  if (tcx) {
+    file.copy(testthat::test_path("fixtures", "sample1.tcx"),
+              file.path(dir, "kristian", "filer", "tcx", "sample1.tcx"))
+  }
+  hae_dir <- file.path(dir, "kristian", "health_export", "workouts")
+  dir.create(hae_dir, recursive = TRUE)
+  if (hae) {
+    write_hae_json(hae_dir, "aw_session",
+                   as.POSIXct("2026-07-04 08:00:00", tz = "UTC"),
+                   distance_km = 7.5, duration_s = 2400)
+  }
+  summaries <- data.frame()
+  myruns <- list()
+  save(summaries, file = file.path(cache_dir, "summaries.RData"))
+  save(myruns, file = file.path(cache_dir, "myruns.RData"))
+  cache_dir
+}
+
+test_that("--import reports an Apple-Watch-only import", {
+  # The report used to count Garmin rows only, so an import that brought
+  # in nothing but HAE workouts saved the cache and then said nothing.
+  tmp <- withr::local_tempdir()
+  setup_sources(tmp, tcx = FALSE, hae = TRUE)
+
+  out <- run_cli_import(tmp)
+
+  expect_match(out, "Import: 1 pass", info = out)
+})
+
+test_that("--import reports every session of a mixed import", {
+  # Both importers append, the HAE rows landing after the Garmin ones, so
+  # counting Garmin rows and taking that many from the end named the
+  # wrong sessions. The count and the total distance together pin which
+  # rows were selected.
+  tmp <- withr::local_tempdir()
+  cache_dir <- setup_sources(tmp, tcx = TRUE, hae = TRUE)
+
+  out <- run_cli_import(tmp)
+
+  expect_match(out, "Import: 2 pass", info = out)
+
+  after <- my_dbs_load(file.path(cache_dir, "summaries.RData"),
+                       file.path(cache_dir, "myruns.RData"))
+  expect_equal(nrow(after$summaries), 2)
+  expect_setequal(after$summaries$source, c("tcx", "hae"))
+
+  # The reported total is both sessions, not one of them twice.
+  total_km <- fmt_dec_sv(sum(after$summaries$distance, na.rm = TRUE) / 1000,
+                         trim_zero = TRUE)
+  expect_match(out, paste0(total_km, " km totalt"), fixed = TRUE, info = out)
+})

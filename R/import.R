@@ -39,6 +39,26 @@
   new
 }
 
+#' Identify summaries rows so a set of them can be recognised later
+#'
+#' Row positions are not a usable identity across an import: rows are
+#' appended by two importers in turn and removed in between, so "the
+#' last n rows" answers a different question than "the rows that were
+#' added". The session start, source and file together are unique per
+#' row, and all three are set on any row an importer appends.
+#'
+#' @param summaries Summaries data frame.
+#' @return Character vector, one key per row.
+#' @keywords internal
+.summary_row_keys <- function(summaries) {
+  if (!is.data.frame(summaries) || nrow(summaries) == 0) return(character(0))
+  col <- function(name) {
+    if (name %in% names(summaries)) as.character(summaries[[name]])
+    else rep(NA_character_, nrow(summaries))
+  }
+  paste(col("sessionStart"), col("source"), col("file"), sep = "\u001f")
+}
+
 #' Bring `myruns` back to the same length as `summaries`
 #'
 #' `myruns` is coupled to `summaries` by position only, and caches

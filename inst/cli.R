@@ -353,11 +353,14 @@ if (do_import) {
   # happened to coerce cleanly via as.numeric() because of dplyr's
   # tibble subtraction behaviour. Plain nrow() is the right primitive.
   summaries_oldlength <- nrow(summaries)
+  # Identities, not positions: both importers append, the dedup removes
+  # rows in between, and the closing report needs to name exactly the
+  # rows that arrived.
+  keys_before_import <- .summary_row_keys(summaries)
   my_templist <- get_new_workouts(files, summaries, myruns, verbose = do_verbose,
                                   db_summaries = db_summaries, db_myruns = db_myruns)
   summaries <- my_templist[["summaries"]]
   myruns <- my_templist[["myruns"]]
-  n_imported <- my_templist[["n_imported"]] %||% 0
   n_updated <- my_templist[["n_updated"]]
   n_hae_removed <- my_templist[["n_hae_removed"]] %||% 0
   n_hae_fragment_swaps <- 0L
@@ -482,14 +485,20 @@ if (do_import) {
     my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   }
   # What to print is a fourth decision in the same family, and it needs
-  # yet another quantity: the number of rows appended, which is neither
-  # the change in row count nor any of the dedup counters. A session that
-  # evicted its Apple Watch twin is a new session worth reporting even
-  # though the cache is the same size. Imported rows sit at the end of
-  # `summaries` in append order, so tail() still selects them.
-  if (n_imported > 0) {
-    summaries_mostrecent <- utils::tail(summaries, n = n_imported)
-    report_mostrecent(summaries_mostrecent, n_imported)
+  # yet another quantity: the rows that were actually added. That is
+  # neither the change in row count nor any of the dedup counters — a
+  # session that evicted its Apple Watch twin is a new session worth
+  # reporting even though the cache is the same size.
+  #
+  # Both importers append, so neither counter alone covers the run and
+  # tail() cannot select by position: the HAE rows land after the TCX
+  # ones, so counting TCX rows and taking that many from the end
+  # reported the wrong sessions on a mixed import and printed nothing at
+  # all when only HAE rows arrived. Compare identities instead.
+  imported_rows <- summaries[
+    !(.summary_row_keys(summaries) %in% keys_before_import), , drop = FALSE]
+  if (nrow(imported_rows) > 0) {
+    report_mostrecent(imported_rows, nrow(imported_rows))
   } else if (n_updated > 0) {
     cat("Inget att importera (", n_updated, " filnamn uppdaterade).\n", sep = "")
   }
