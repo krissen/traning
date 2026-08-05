@@ -35,10 +35,12 @@ my_options <- list(
                   "Reports only; add --apply to remove them")),
   make_option("--apply",
     type = "logical", action = "store_true", default = FALSE,
-    help = "With --dedup: actually remove the rows listed"),
+    help = paste0("With --dedup: actually remove the rows listed. ",
+                  "Ignored when --dry-run is also given")),
   make_option("--dry-run",
     type = "logical", action = "store_true", default = FALSE,
-    help = "Accepted for symmetry with other commands; --dedup is a dry run unless --apply is given"),
+    help = paste0("Report only. This is already the default; passing it ",
+                  "alongside --apply keeps the run harmless")),
   make_option("--repair-hr",
     type = "logical", action = "store_true", default = FALSE,
     help = "Repair myruns entries with missing per-second HR (re-parse TCX)"),
@@ -264,8 +266,13 @@ if (isTRUE(options$dedup)) {
   # rows from the only copy of the cache, so the safe outcome is the one
   # you get by forgetting a flag. `--dry-run` is still accepted and means
   # what it says, it is simply no longer needed.
+  # --dry-run wins over --apply, matching the Python layer. Between two
+  # contradictory flags the harmless reading is the right one, and a
+  # command with no undo should not be talked into writing by an
+  # ambiguous invocation.
   dedup_summaries(db_summaries, db_myruns,
-                  dry_run = !isTRUE(options$apply), verbose = TRUE)
+                  dry_run = isTRUE(options$`dry-run`) || !isTRUE(options$apply),
+                  verbose = TRUE)
   quit(status = 0L, save = "no")
 }
 
