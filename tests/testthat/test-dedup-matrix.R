@@ -6,9 +6,10 @@
 #   start criterion:   |dstart| <= 300 s AND (distance within 20 % OR
 #                      duration within 20 %); when neither quantity is
 #                      comparable on both sides, time alone within 120 s.
-#   overlap criterion: wall-clock intervals overlap by >= 60 s AND the
-#                      overlap covers >= 50 % of the shorter session or
-#                      the two end within 60 s; movement sports only.
+#   overlap criterion: wall-clock intervals overlap by >= 60 s. Movement
+#                      sports with a recorded distance only; nothing else
+#                      is required, since two such sessions cannot share
+#                      a wall-clock window unless they are the same one.
 #
 # Garmin (source == "tcx") always wins.
 #
@@ -43,7 +44,11 @@
     end = if (is.null(end_s)) NULL else
       format(start + end_s, "%Y-%m-%d %H:%M:%S +0000", tz = "UTC"),
     duration = duration_s,
-    distance = list(qty = distance_km, units = "km"),
+    # A session without a distance omits the block entirely, the way HAE
+    # writes a strength workout. Passing NA through would be written as
+    # the string "NA" and re-read as a coercion warning.
+    distance = if (is.na(distance_km)) NULL else
+      list(qty = distance_km, units = "km"),
     avgHeartRate = list(qty = 140, units = "count/min")
   ))))
   path <- file.path(dir, paste0(name, ".json"))
@@ -250,10 +255,15 @@ test_that("cross-source dedup collapses the same session in every direction", {
 .MID_DT <- 6300             # second watch started 1 h 45 m in
 .MID_DUR <- 1681            # ... and stopped 1 s after the first
 
-# Nested but stopping early: covers 100 % of the shorter session while
-# ending half an hour before the longer one.
+# Nested but stopping half an hour before the longer session ends.
 .NESTED_DT <- 2400
 .NESTED_DUR <- 1800
+
+# Barely overlapping: 90 s of shared wall clock, well past the 60 s
+# floor but only 5 % of either session. The verified duplicates go down
+# to 79 s of overlap and 4 % coverage, so this must still collapse.
+.THIN_DT <- .LONG_DUR - 90
+.THIN_DUR <- 1800
 
 # Two sessions that merely touch: 30 s of overlap, below the 60 s floor.
 .BRUSH_DT <- .LONG_DUR - 30
@@ -264,6 +274,8 @@ test_that("cross-source dedup collapses the same session in every direction", {
        dt = .MID_DT, dur = .MID_DUR, dist_km = 5.006, expect = TRUE),
   list(label = "short recording nested inside the long one",
        dt = .NESTED_DT, dur = .NESTED_DUR, dist_km = 4.196, expect = TRUE),
+  list(label = "90 s of overlap between two long sessions",
+       dt = .THIN_DT, dur = .THIN_DUR, dist_km = 6.0, expect = TRUE),
   list(label = "sessions brushing at the edge",
        dt = .BRUSH_DT, dur = .BRUSH_DUR, dist_km = 6.0, expect = FALSE)
 )
@@ -310,6 +322,17 @@ test_that("the overlap criterion behaves the same in every direction", {
   }
 })
 
+test_that("the overlap criterion spares sessions without a distance", {
+  # The physical argument only holds for sessions that moved the person
+  # somewhere; without a distance there is nothing to stand on.
+  r <- .dir_hae_into_cached_tcx(
+    .MID_DT, NA_real_, .MID_DUR, "Utomhus Kör",
+    tcx_distance = 24000, tcx_duration = .LONG_DUR,
+    hae_end_s = .MID_DUR, tcx_end_s = .LONG_DUR)
+  expect_false(r$collapsed)
+  expect_equal(nrow(r$summaries), 2L)
+})
+
 test_that("the overlap criterion spares strength and unclassified sports", {
   # A strength session logged on the watch while the Garmin records a
   # long run is a real second session, not a duplicate recording.
@@ -329,6 +352,66 @@ test_that("the overlap criterion spares strength and unclassified sports", {
     tcx_distance = 24000, tcx_duration = .LONG_DUR,
     hae_end_s = .MID_DUR, tcx_end_s = .LONG_DUR)
   expect_true(r$collapsed)
+})
+
+# A pair of records with explicit wall-clock spans, for asserting the
+# overlap criterion directly rather than through an importer. The starts
+# are always far enough apart that the start criterion cannot fire, so a
+# TRUE here is the overlap criterion and nothing else.
+.span <- function(offset, span, distance = 8000, sport = "running",
+                  end = TRUE) {
+  start <- .TCX_START + offset
+  row <- data.frame(sessionStart = start,
+                    duration = as.difftime(span, units = "secs"),
+                    distance = distance, sport = sport,
+                    stringsAsFactors = FALSE)
+  row$sessionEnd <- if (end) start + span else as.POSIXct(NA)
+  row
+}
+
+test_that("the overlap floor is one minute", {
+  long <- .span(0, 7980, distance = 24000)
+  # The second session ends `ov` seconds after the first one starts.
+  brush <- function(ov) .span(-1800 + ov, 1800, distance = 4000)
+
+  expect_false(.is_same_workout(long, brush(30)))
+  expect_false(.is_same_workout(long, brush(59)))
+  expect_true(.is_same_workout(long, brush(60)))
+  expect_true(.is_same_workout(long, brush(61)))
+})
+
+test_that("the overlap criterion needs an end and a distance on both sides", {
+  long <- .span(0, 7980, distance = 24000)
+  nested <- .span(2400, 1800, distance = 4196)
+  expect_true(.is_same_workout(long, nested))
+
+  # Without an end there is no interval to intersect, and the pair falls
+  # back to the start criterion — which these starts are far outside.
+  expect_false(.is_same_workout(long, .span(2400, 1800, distance = 4196,
+                                            end = FALSE)))
+  expect_false(.is_same_workout(.span(0, 7980, distance = 24000, end = FALSE),
+                                nested))
+
+  # Without a distance the session may not be a distance-bearing one, and
+  # the physical argument behind the criterion no longer applies.
+  expect_false(.is_same_workout(long, .span(2400, 1800, distance = NA_real_)))
+  expect_false(.is_same_workout(.span(0, 7980, distance = NA_real_), nested))
+})
+
+test_that("the overlap exemption applies from either side of the pair", {
+  nested <- .span(2400, 1800, distance = 4196)
+  for (sport in c("strength", "karntraning", "ovrigt", "unknown", "")) {
+    expect_false(
+      .is_same_workout(.span(0, 7980, distance = 24000, sport = sport), nested),
+      info = paste("exempt on the long side:", sport))
+    expect_false(
+      .is_same_workout(.span(0, 7980, distance = 24000),
+                       .span(2400, 1800, distance = 4196, sport = sport)),
+      info = paste("exempt on the short side:", sport))
+  }
+  # The label is matched case- and whitespace-insensitively.
+  expect_false(.is_same_workout(
+    .span(0, 7980, distance = 24000, sport = " Strength "), nested))
 })
 
 test_that("the Garmin row is the one that survives, with its own numbers", {
