@@ -380,11 +380,20 @@ if (do_import) {
     myruns <- hae_res$myruns
     # A Garmin fragment replaced by the Apple Watch row: one row out, one
     # row in, so the row count alone cannot tell that the cache changed.
-    n_hae_fragment_swaps <- (hae_res$n_garmin_fragments %||% 0L) +
-                            (hae_res$n_replaced_hae %||% 0L)
-    if (n_hae_fragment_swaps > 0) {
-      cat("Ersatte ", n_hae_fragment_swaps,
+    n_garmin_fragments_hae <- hae_res$n_garmin_fragments %||% 0L
+    n_replaced_hae <- hae_res$n_replaced_hae %||% 0L
+    # One counter for the save decision, two sentences for the reader:
+    # a Garmin fragment giving way to the watch and a thinner Apple Watch
+    # copy giving way to a fuller one are both one row out and one in,
+    # but they are not the same event.
+    n_hae_fragment_swaps <- n_garmin_fragments_hae + n_replaced_hae
+    if (n_garmin_fragments_hae > 0) {
+      cat("Ersatte ", n_garmin_fragments_hae,
           " Garmin-fragment med Apple Watch-raden.\n", sep = "")
+    }
+    if (n_replaced_hae > 0) {
+      cat("Ersatte ", n_replaced_hae,
+          " Apple Watch-rad(er) med en fylligare kopia.\n", sep = "")
     }
     if (hae_res$n_imported > 0 || hae_res$n_skipped_dup > 0 ||
         hae_res$n_skipped_dup_hae > 0) {
