@@ -212,6 +212,80 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   summaries <- aligned$summaries
   myruns <- aligned$myruns
 
+  # This path deliberately does NOT group the matched rows into sessions
+  # the way the two import paths do, and the omission is a decision, not
+  # an oversight — please do not "complete the class" here without
+  # re-running the measurement below.
+  #
+  # Grouping would guard against a Garmin row that wins against two
+  # different sessions and retires both. Measured against the pre-cleanup
+  # cache, every formulation of that guard costs real duplicates:
+  #   no guard                                       321 candidates
+  #   Garmin may take only one group                 241  (80 lost)
+  #   ... only groups inside its own interval        245  (76 lost)
+  #   ... only when a winning group reaches outside  317   (4 lost)
+  # The reason is that the harmful shape and the commonest real one are
+  # structurally the same. A wrist recording stopped and restarted during
+  # a run leaves several segments that do not match each other but are
+  # all the same outing — 2018-11-02 has four, of 1440, 774, 4624 and
+  # 1888 m, inside one 13 196 m Garmin run — and retiring all of them is
+  # exactly right. The four the narrowest guard still costs are a watch
+  # left running a few minutes past the Garmin stop, which the product
+  # owner counts as the same session.
+  #
+  # The shape the guard would protect against does not occur in the data,
+  # and import_hae_workouts() now turns away any file that matches two
+  # sessions, so it cannot be introduced. Before running --apply against
+  # a cache that has not been measured, count the ambiguous candidates:
+  #
+  #   suppressMessages(devtools::load_all("~/dev/traning", quiet = TRUE))
+  #   cache <- file.path(Sys.getenv("TRANING_DATA"), "cache")
+  #   s <- my_dbs_load(file.path(cache, "summaries.RData"),
+  #                    file.path(cache, "myruns.RData"),
+  #                    load_myruns = FALSE)$summaries
+  #   hae <- which(!is.na(s$source) & s$source == "hae")
+  #   tcx <- s[!is.na(s$source) & s$source == "tcx", ]
+  #   found <- 0L
+  #   for (i in hae) {
+  #     row <- s[i, , drop = FALSE]
+  #     m <- which(traning:::.is_same_workout(row, tcx))
+  #     if (!length(m)) next
+  #     d <- m[traning:::.distinct_recordings(tcx$sessionStart[m])]
+  #     v <- traning:::.garmin_verdict(row$distance, tcx$distance[d])
+  #     if (is.na(v) || !v) next
+  #     near <- hae[abs(as.numeric(difftime(s$sessionStart[hae],
+  #                     row$sessionStart, units = "days"))) <= 1]
+  #     covered <- integer(0)
+  #     for (t in m) covered <- union(covered, near[traning:::.is_same_workout(
+  #       tcx[t, , drop = FALSE], s[near, , drop = FALSE])])
+  #     covered <- sort(as.integer(covered))
+  #     g <- traning:::.session_groups(s[covered, , drop = FALSE])
+  #     if (length(g) < 2) next
+  #     sf <- min(as.numeric(tcx$sessionStart[d]))
+  #     st <- max(as.numeric(tcx$sessionEnd[d]))
+  #     won <- vapply(g, function(gg) all(traning:::.garmin_verdict(
+  #       s$distance[covered[gg]], tcx$distance[d]) %in% TRUE), logical(1))
+  #     inside <- vapply(g, function(gg) { r <- s[covered[gg], , drop = FALSE]
+  #       isTRUE(min(as.numeric(r$sessionStart)) >= sf - 300 &&
+  #              max(as.numeric(r$sessionEnd)) <= st + 300) }, logical(1))
+  #     if (!(sum(won) > 1 && any(won & !inside))) next
+  #     found <- found + 1L
+  #     cat("--- Garmin ", format(tcx$sessionStart[d[1]], "%Y-%m-%d %H:%M"),
+  #         " ", round(tcx$distance[d[1]]), " m\n", sep = "")
+  #     print(data.frame(start = format(s$sessionStart[covered], "%H:%M"),
+  #       slut = format(s$sessionEnd[covered], "%H:%M"),
+  #       sport = s$sport[covered], m = round(s$distance[covered]),
+  #       grupp = rep(seq_along(g), lengths(g)),
+  #       utanfor = rep(!inside, lengths(g))), row.names = FALSE)
+  #   }
+  #   cat("\nTvetydiga kandidater:", found, "\n")
+  #
+  # Read the shapes, not just the count. On kedar's pre-cleanup cache it
+  # prints 4, all of them a wrist recording overshooting the Garmin stop
+  # by minutes. Anything else — two full-length sessions with the Garmin
+  # row a short slice of each — is the shape this path cannot resolve:
+  # stop and escalate rather than running --apply.
+  #
   # Garmin fragments go first, so an Apple Watch row that lost to a
   # fragment elsewhere isn't dropped on account of a row that is itself
   # about to disappear.
