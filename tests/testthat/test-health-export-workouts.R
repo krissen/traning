@@ -225,7 +225,7 @@ test_that("import_hae_workouts keeps HAE row if Garmin is far away in time", {
   .write_hae(tmp, "run1", "2026-04-06 15:44:06 +0200",
              "Utomhus Kör", distance_km = 8.0, duration_s = 2400)
 
-  # Garmin row 5 minutes off -> beyond default 90s tolerance
+  # Garmin row 306 s off -> beyond the 300 s match window
   summaries <- data.frame(
     sessionStart = as.POSIXct("2026-04-06 15:39:00 +0200",
                               format = "%Y-%m-%d %H:%M:%S %z", tz = "UTC"),
@@ -239,6 +239,119 @@ test_that("import_hae_workouts keeps HAE row if Garmin is far away in time", {
   res <- import_hae_workouts(tmp, summaries, list())
   expect_equal(res$n_imported, 1)
   expect_equal(res$n_skipped_dup, 0)
+})
+
+test_that("import_hae_workouts dedups the 2026-08-01 case (107 s apart)", {
+  # Apple Watch started ~2 minutes before the Garmin watch. The old
+  # ±90 s window let this through and the session showed up twice.
+  tmp <- withr::local_tempdir()
+  .write_hae(tmp, "run1", "2026-08-01 11:00:49 +0000",
+             "Utomhus Kör", distance_km = 5.234, duration_s = 1391)
+
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2026-08-01 11:02:36 +0000",
+                              format = "%Y-%m-%d %H:%M:%S %z", tz = "UTC"),
+    sport = "running",
+    distance = 5292,
+    duration = as.difftime(1376, units = "secs"),
+    file = "/data/tcx/20260801-110236.tcx",
+    source = "tcx",
+    stringsAsFactors = FALSE
+  )
+
+  res <- import_hae_workouts(tmp, summaries, list())
+  expect_equal(res$n_imported, 0)
+  expect_equal(res$n_skipped_dup, 1)
+})
+
+test_that("import_hae_workouts keeps a different workout inside the window", {
+  # Same start minute, but a 3 km walk is not the 12 km run — the
+  # distance/duration sanity check must keep both rows.
+  tmp <- withr::local_tempdir()
+  .write_hae(tmp, "gng1", "2026-04-06 15:44:30 +0200",
+             "Utomhus Gång", distance_km = 3.0, duration_s = 1800)
+
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2026-04-06 15:44:06 +0200",
+                              format = "%Y-%m-%d %H:%M:%S %z", tz = "UTC"),
+    sport = "running",
+    distance = 12000,
+    duration = as.difftime(3600, units = "secs"),
+    file = "20260406-running.tcx",
+    source = "tcx",
+    stringsAsFactors = FALSE
+  )
+
+  res <- import_hae_workouts(tmp, summaries, list())
+  expect_equal(res$n_imported, 1)
+  expect_equal(res$n_skipped_dup, 0)
+})
+
+test_that("import_hae_workouts dedups two HAE files for the same session", {
+  # HAE delivers both the Apple Watch recording and the
+  # Garmin-Connect-mirrored copy; they land in the same batch.
+  tmp <- withr::local_tempdir()
+  .write_hae(tmp, "a-native", "2026-04-06 15:44:06 +0200",
+             "Utomhus Kör", distance_km = 8.0, duration_s = 2400)
+  .write_hae(tmp, "b-mirror", "2026-04-06 15:44:09 +0200",
+             "Utomhus Kör", distance_km = 8.02, duration_s = 2398)
+
+  res <- import_hae_workouts(tmp, data.frame(), list())
+  expect_equal(res$n_imported, 1)
+  expect_equal(res$n_skipped_dup_hae, 1)
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(length(res$myruns), 1)
+})
+
+# --- .is_same_workout ---------------------------------------------------------
+
+.wk <- function(start, distance = NA_real_, duration = NA_real_) {
+  data.frame(
+    sessionStart = as.POSIXct(start, tz = "UTC"),
+    distance = distance,
+    duration = duration,
+    stringsAsFactors = FALSE
+  )
+}
+
+test_that(".is_same_workout requires a sanity check inside the wide window", {
+  a <- .wk("2026-08-01 11:00:49", distance = 5234, duration = 1391)
+  expect_true(.is_same_workout(
+    a, .wk("2026-08-01 11:02:36", distance = 5292, duration = 1376)))
+  # 40 % shorter and 40 % quicker: same clock, different workout
+  expect_false(.is_same_workout(
+    a, .wk("2026-08-01 11:02:36", distance = 3140, duration = 830)))
+  # Distance disagrees but duration matches -> still the same workout
+  # (a lost GPS fix shortens distance, not elapsed time)
+  expect_true(.is_same_workout(
+    a, .wk("2026-08-01 11:02:36", distance = 3140, duration = 1376)))
+})
+
+test_that(".is_same_workout falls back to a narrow time-only window", {
+  a <- .wk("2026-08-01 11:00:49")
+  expect_true(.is_same_workout(a, .wk("2026-08-01 11:02:36")))   # 107 s
+  expect_false(.is_same_workout(a, .wk("2026-08-01 11:04:00")))  # 191 s
+})
+
+test_that(".is_same_workout is vectorised over the candidate table", {
+  a <- .wk("2026-08-01 11:00:49", distance = 5234, duration = 1391)
+  cands <- rbind(
+    .wk("2026-08-01 09:00:00", distance = 5200, duration = 1380),
+    .wk("2026-08-01 11:02:36", distance = 5292, duration = 1376),
+    .wk("2026-08-01 11:02:36", distance = 500, duration = 200)
+  )
+  expect_equal(.is_same_workout(a, cands), c(FALSE, TRUE, FALSE))
+})
+
+test_that(".is_same_workout handles difftime durations and NA starts", {
+  a <- .wk("2026-08-01 11:00:49", distance = NA_real_)
+  a$duration <- as.difftime(1391 / 60, units = "mins")
+  b <- .wk("2026-08-01 11:02:36", distance = NA_real_)
+  b$duration <- as.difftime(1376, units = "secs")
+  expect_true(.is_same_workout(a, b))
+
+  na_start <- .wk(NA_character_, distance = 5234, duration = 1391)
+  expect_false(.is_same_workout(a, na_start))
 })
 
 test_that("import_hae_workouts skips already-imported HAE files", {
