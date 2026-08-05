@@ -26,6 +26,11 @@ setup_swap_cache <- function(dir) {
   cache_dir <- file.path(dir, "cache")
   dir.create(tcx_dir, recursive = TRUE)
   dir.create(cache_dir, recursive = TRUE)
+  # An empty Garmin JSON directory is enough for the augmentation block
+  # to run and stamp garmin_matched, which is what the swap has to
+  # trigger.
+  dir.create(file.path(dir, "kristian", "filer", "gconnect"),
+             recursive = TRUE)
   fixture <- testthat::test_path("fixtures", "sample1.tcx")
   file.copy(fixture, file.path(tcx_dir, "sample1.tcx"))
 
@@ -66,6 +71,32 @@ test_that("--import persists a one-for-one Garmin/Apple Watch swap", {
   expect_equal(nrow(after$summaries), 1)
   expect_equal(after$summaries$source, "tcx")
   expect_equal(basename(after$summaries$file), "sample1.tcx")
+})
+
+test_that("--import augments the row a swap brought in", {
+  # The re-augment block is gated on the same quantities as the save, so
+  # a one-for-one swap used to skip it and the new row was written with
+  # garmin_* = NA until some later run backfilled it. A combined
+  # invocation such as `--import --pmc` then read the stale values.
+  tmp <- withr::local_tempdir()
+  cache_dir <- setup_swap_cache(tmp)
+
+  run_cli_import(tmp)
+
+  after <- my_dbs_load(file.path(cache_dir, "summaries.RData"),
+                       file.path(cache_dir, "myruns.RData"))
+  expect_true("garmin_matched" %in% names(after$summaries))
+  expect_false(is.na(after$summaries$garmin_matched[1]))
+})
+
+test_that("--import reports the session a swap brought in", {
+  # The report is gated on the row count too, so a swap imported a
+  # session and said nothing about it.
+  tmp <- withr::local_tempdir()
+  setup_swap_cache(tmp)
+  out <- run_cli_import(tmp)
+  # report_mostrecent()'s wording: "Import: 1 pass (...), N km totalt."
+  expect_match(out, "Import: 1 pass", info = out)
 })
 
 test_that("--import leaves the cache alone when nothing changed", {
@@ -131,4 +162,72 @@ test_that("--import does not rewrite the cache for a declined fragment", {
   after <- my_dbs_load(db, file.path(cache_dir, "myruns.RData"))
   expect_equal(nrow(after$summaries), 1)
   expect_equal(after$summaries$source, "hae")
+})
+
+# --- --dedup flag precedence -------------------------------------------------
+
+run_cli_dedup <- function(traning_data, extra = character(0)) {
+  cli <- file.path(testthat::test_path("..", ".."), "inst", "cli.R")
+  out <- suppressWarnings(withr::with_envvar(
+    c(TRANING_DATA = traning_data),
+    system2("Rscript", args = c(cli, "--dedup", extra),
+            stdout = TRUE, stderr = TRUE)))
+  paste(out, collapse = "\n")
+}
+
+# A cache holding one Apple Watch row and the Garmin row for the same
+# session, i.e. exactly one thing for --dedup to remove.
+setup_dedup_cache <- function(dir) {
+  cache_dir <- file.path(dir, "cache")
+  dir.create(cache_dir, recursive = TRUE)
+  start <- as.POSIXct("2026-08-01 11:00:49", tz = "UTC")
+  summaries <- data.frame(
+    sessionStart = c(start, start + 107),
+    sessionEnd = c(start + 1391, start + 1483),
+    sport = "running",
+    distance = c(5234, 5292),
+    duration = as.difftime(c(1391, 1376), units = "secs"),
+    file = c("hae:Utomhus_Kor-20260801.json", "/data/tcx/20260801.tcx"),
+    source = c("hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  myruns <- list(NULL, "garmin-run")
+  save(summaries, file = file.path(cache_dir, "summaries.RData"))
+  save(myruns, file = file.path(cache_dir, "myruns.RData"))
+  cache_dir
+}
+
+test_that("--dedup reports without writing unless --apply is given", {
+  tmp <- withr::local_tempdir()
+  cache_dir <- setup_dedup_cache(tmp)
+  db <- file.path(cache_dir, "summaries.RData")
+  before <- file.mtime(db)
+  Sys.sleep(1.1)
+
+  out <- run_cli_dedup(tmp)
+  expect_match(out, "Torrk", info = out)
+  expect_identical(file.mtime(db), before)
+
+  out <- run_cli_dedup(tmp, "--apply")
+  after <- my_dbs_load(db, file.path(cache_dir, "myruns.RData"))
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$source, "tcx")
+})
+
+test_that("--dry-run wins over --apply", {
+  # Two flags that contradict each other resolve to the harmless one, the
+  # same way the Python layer resolves them. A command with no undo must
+  # not be talked into writing by an ambiguous invocation.
+  tmp <- withr::local_tempdir()
+  cache_dir <- setup_dedup_cache(tmp)
+  db <- file.path(cache_dir, "summaries.RData")
+  before <- file.mtime(db)
+  Sys.sleep(1.1)
+
+  out <- run_cli_dedup(tmp, c("--apply", "--dry-run"))
+
+  expect_match(out, "Torrk", info = out)
+  expect_identical(file.mtime(db), before)
+  after <- my_dbs_load(db, file.path(cache_dir, "myruns.RData"))
+  expect_equal(nrow(after$summaries), 2)
 })

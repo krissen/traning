@@ -194,8 +194,11 @@ get_my_files <- function(mytcxpath) {
 #' @param summaries Existing summaries data frame
 #' @param myruns Existing myruns list
 #' @param verbose Logical, print progress messages (default FALSE)
-#' @return List with elements "summaries", "myruns", "n_updated",
-#'   "n_hae_removed" and "n_garmin_fragments"
+#' @return List with elements "summaries", "myruns", "n_imported",
+#'   "n_updated", "n_hae_removed" and "n_garmin_fragments". `n_imported`
+#'   counts appended rows, which is not the same as the change in row
+#'   count: a session that evicts its Apple Watch twin adds one row and
+#'   removes another.
 #' @export
 get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
                              batch_size = 500,
@@ -369,6 +372,7 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   my_templist <- list()
   my_templist[["summaries"]] <- summaries
   my_templist[["myruns"]] <- myruns
+  my_templist[["n_imported"]] <- n_imported
   my_templist[["n_updated"]] <- n_updated
   my_templist[["n_hae_removed"]] <- n_hae_removed
   my_templist[["n_garmin_fragments"]] <- n_garmin_fragments

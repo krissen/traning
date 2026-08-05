@@ -306,6 +306,9 @@ json_cache_newer <-
   file.exists(gc_json_cache) &&
   file.mtime(gc_json_cache) > augmented_at
 
+# This block runs before any import, so the import counters that gate the
+# equivalent decisions further down do not exist yet and cannot apply
+# here. See the --import block for the enumeration.
 if ((!("garmin_matched" %in% names(summaries)) || json_cache_newer) &&
     dir.exists(gc_json_dir)) {
   # Presence of `garmin_matched` is the canonical "this cache has been
@@ -354,6 +357,7 @@ if (do_import) {
                                   db_summaries = db_summaries, db_myruns = db_myruns)
   summaries <- my_templist[["summaries"]]
   myruns <- my_templist[["myruns"]]
+  n_imported <- my_templist[["n_imported"]] %||% 0
   n_updated <- my_templist[["n_updated"]]
   n_hae_removed <- my_templist[["n_hae_removed"]] %||% 0
   n_hae_fragment_swaps <- 0L
@@ -414,12 +418,29 @@ if (do_import) {
   # augment_summaries() is incremental, so the (a)-only path stays
   # cheap; (b) triggers force=TRUE further down so previously
   # unmatched rows get a fresh look.
+  #
+  # (a) cannot be read off the row count. The three import counters,
+  # and whether each belongs in this gate:
+  #   n_hae_removed        yes — a Garmin row was appended and an Apple
+  #                        Watch row dropped, so the count stands still
+  #                        while a brand-new row needs its garmin_*
+  #                        columns filled in.
+  #   n_hae_fragment_swaps yes — same shape from the other side: an HAE
+  #                        row replaced a Garmin fragment.
+  #   n_garmin_fragments   no  — that branch declines to add a row, so
+  #   (from get_new_workouts)   there is nothing new to augment. It is
+  #                        also non-zero on every import, which would
+  #                        make this block run forever for nothing.
+  # Without the first two the swapped-in row was saved with garmin_* =
+  # NA until some later run happened to backfill it, and a combined
+  # invocation such as `--import --pmc` read the stale values.
   augmented_at <- attr(summaries, "garmin_augmented_at")
   if (is.null(augmented_at)) augmented_at <- as.POSIXct("1970-01-01", tz = "UTC")
   json_cache_newer <-
     file.exists(gc_json_cache) &&
     file.mtime(gc_json_cache) > augmented_at
-  if ((summaries_lengthdiff > 0 || json_cache_newer) &&
+  if ((summaries_lengthdiff > 0 || json_cache_newer ||
+       n_hae_removed > 0 || n_hae_fragment_swaps > 0) &&
       dir.exists(gc_json_dir)) {
     garmin_data <- tryCatch(load_garmin_json(gc_json_dir),
                              error = function(e) {
@@ -460,9 +481,15 @@ if (do_import) {
       n_hae_removed > 0 || n_hae_fragment_swaps > 0) {
     my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   }
-  if (summaries_lengthdiff > 0) {
-    summaries_mostrecent <- utils::tail(summaries, n = summaries_lengthdiff)
-    report_mostrecent(summaries_mostrecent, summaries_lengthdiff)
+  # What to print is a fourth decision in the same family, and it needs
+  # yet another quantity: the number of rows appended, which is neither
+  # the change in row count nor any of the dedup counters. A session that
+  # evicted its Apple Watch twin is a new session worth reporting even
+  # though the cache is the same size. Imported rows sit at the end of
+  # `summaries` in append order, so tail() still selects them.
+  if (n_imported > 0) {
+    summaries_mostrecent <- utils::tail(summaries, n = n_imported)
+    report_mostrecent(summaries_mostrecent, n_imported)
   } else if (n_updated > 0) {
     cat("Inget att importera (", n_updated, " filnamn uppdaterade).\n", sep = "")
   }
