@@ -27,22 +27,92 @@
   .sum_metrics <<- taxonomy$sum_metrics
 }
 
+# Copy the non-structural attributes of `old` onto `new`. Base
+# subsetting of a data frame drops them, and one of them —
+# "garmin_augmented_at" — is what stops inst/cli.R from re-running the
+# (expensive) Garmin augmentation on every invocation.
+.restore_df_attrs <- function(new, old) {
+  structural <- c("names", "row.names", "class", "dim", "dimnames")
+  for (a in setdiff(names(attributes(old)), structural)) {
+    attr(new, a) <- attr(old, a)
+  }
+  new
+}
+
+#' Bring `myruns` back to the same length as `summaries`
+#'
+#' `myruns` is coupled to `summaries` by position only, and caches
+#' written before that coupling was enforced can be off by a handful of
+#' entries. Pad with `NULL` placeholders (or drop unreachable trailing
+#' entries) rather than letting the mismatch propagate silently.
+#'
+#' @param summaries Summaries data frame.
+#' @param myruns List of trackeR run objects.
+#' @param quiet Logical. Suppress the message describing the repair.
+#' @return List with `summaries` (unchanged) and a length-corrected `myruns`.
+#' @keywords internal
+.align_myruns <- function(summaries, myruns, quiet = FALSE) {
+  n <- nrow(summaries)
+  if (is.null(myruns)) myruns <- list()
+  if (length(myruns) == n) return(list(summaries = summaries, myruns = myruns))
+
+  # An entirely empty myruns is the documented "summaries-only cache"
+  # shape, not corruption — pad it without the alarm. A *partial*
+  # mismatch is the signal worth surfacing.
+  if (!quiet && length(myruns) > 0) {
+    message("myruns/summaries ur synk: ", length(myruns), " run-objekt mot ",
+            n, " rader — justerar längden.")
+  }
+  if (length(myruns) < n) {
+    myruns <- c(myruns, vector("list", n - length(myruns)))
+  } else {
+    # Entries past the last summaries row are unreachable by any caller.
+    myruns <- myruns[seq_len(n)]
+  }
+  list(summaries = summaries, myruns = myruns)
+}
+
 #' Save summaries and myruns to RData files
+#'
+#' `summaries` is sorted by `sessionStart` and deduplicated per source
+#' before writing. `myruns` is reordered and subset by the *same*
+#' permutation: the two objects are coupled by position, so sorting one
+#' without the other silently pairs every row with the wrong trackeR run.
+#'
 #' @param db_summaries Path to summaries.RData
 #' @param db_myruns Path to myruns.RData
 #' @param summaries Data frame of workout summaries
 #' @param myruns List of trackeR run objects
 #' @export
 my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
-  summaries <- dplyr::arrange(summaries, sessionStart)
-  # Dedup within a source (exact-second match). Cross-source dedup runs
-  # at import time (with a tolerance window) — see import_hae_workouts().
-  if ("source" %in% names(summaries)) {
-    summaries <- dplyr::distinct(summaries, sessionStart, source,
-                                 .keep_all = TRUE)
-  } else {
-    summaries <- dplyr::distinct(summaries, sessionStart, .keep_all = TRUE)
+  aligned <- .align_myruns(summaries, myruns)
+  summaries <- aligned$summaries
+  myruns <- aligned$myruns
+
+  if (nrow(summaries) > 0) {
+    old <- summaries
+    # order() on a POSIXct is stable, matching dplyr::arrange()'s
+    # tie behaviour, and gives us the permutation to apply to myruns.
+    ord <- order(summaries$sessionStart)
+    summaries <- summaries[ord, , drop = FALSE]
+    myruns <- myruns[ord]
+
+    # Dedup within a source (exact-second match). Cross-source dedup runs
+    # at import time (with a tolerance window) — see import_hae_workouts().
+    key <- if ("source" %in% names(summaries)) {
+      data.frame(sessionStart = summaries$sessionStart,
+                 source = summaries$source)
+    } else {
+      data.frame(sessionStart = summaries$sessionStart)
+    }
+    keep <- !duplicated(key)
+    summaries <- summaries[keep, , drop = FALSE]
+    myruns <- myruns[keep]
+
+    rownames(summaries) <- NULL
+    summaries <- .restore_df_attrs(summaries, old)
   }
+
   save_atomic(myruns, file = db_myruns)
   save_atomic(summaries, file = db_summaries)
 }
@@ -78,6 +148,17 @@ my_dbs_load <- function(db_summaries, db_myruns, load_myruns = TRUE) {
   if (is.data.frame(summaries) && nrow(summaries) > 0 &&
       !"source" %in% names(summaries)) {
     summaries$source <- "tcx"
+  }
+
+  # Report — but don't repair — a positional mismatch between the two
+  # caches. Repairing here would silently rewrite what the caller sees
+  # without writing it back; my_dbs_save() does the actual alignment.
+  if (load_myruns && is.data.frame(summaries) && length(myruns) > 0 &&
+      length(myruns) != nrow(summaries)) {
+    message("Varning: myruns (", length(myruns), ") och summaries (",
+            nrow(summaries), ") har olika längd — ",
+            "positionskopplingen är ur synk. ",
+            "Nästa my_dbs_save() justerar längden.")
   }
 
   my_templist <- list()
