@@ -573,41 +573,60 @@ test_that("get_new_workouts keeps the Apple Watch row when the TCX is a fragment
   expect_equal(res$summaries$source, "hae")
   expect_equal(res$n_garmin_fragments, 1)
   expect_equal(res$n_hae_removed, 0)
-  expect_equal(res$summaries$superseded_file, "20230410-154142.tcx")
 })
 
-test_that("get_new_workouts does not re-import a superseded TCX file", {
-  # The flip-flop trap: the file is gone from summaries$file, so without
-  # the superseded key it would be imported again on the next run and
-  # evict the Apple Watch row it had just lost to.
-  base_time <- as.POSIXct("2023-04-10 15:41:42", tz = "UTC")
-  existing <- data.frame(
-    sessionStart = base_time - 1,
-    sessionEnd = base_time + 3179,
+test_that("a cleaned-up fragment does not come back on the next fetch", {
+  # The path that matters, end to end: dedup_summaries() drops the Garmin
+  # fragment, which takes its filename out of the cache, so the next
+  # `traning fetch garmin` sees the .tcx as new. Nothing on disk records
+  # the earlier decision — only the fragment rule in the reverse dedup
+  # stops the import from handing the session back to the 460 m row and
+  # deleting the real one.
+  tmp <- withr::local_tempdir()
+  db_s <- file.path(tmp, "summaries.RData")
+  db_m <- file.path(tmp, "myruns.RData")
+  tcx_path <- file.path(tmp, "20230410-154142.tcx")
+  start <- as.POSIXct("2023-04-10 15:41:41", tz = "UTC")
+
+  summaries <- data.frame(
+    sessionStart = c(start, start + 1),
+    sessionEnd = c(start + 3180, start + 180),
     sport = "running",
-    distance = 10274,
-    duration = as.difftime(3180, units = "secs"),
-    file = "hae:Utomhus_Kor-20230410.json",
-    superseded_file = "20230410-154142.tcx",
-    source = "hae",
+    distance = c(10274, 460),
+    duration = as.difftime(c(3180, 180), units = "secs"),
+    file = c("hae:Utomhus_Kor-20230410.json", tcx_path),
+    source = c("hae", "tcx"),
     stringsAsFactors = FALSE
   )
+  myruns <- list(NULL, "garmin-run")
+  save(summaries, file = db_s)
+  save(myruns, file = db_m)
 
-  n_parsed <- 0
+  dedup_summaries(db_s, db_m, dry_run = FALSE, verbose = FALSE)
+  cleaned <- my_dbs_load(db_s, db_m)
+  expect_equal(nrow(cleaned$summaries), 1)
+  expect_equal(cleaned$summaries$distance, 10274)
+
   testthat::local_mocked_bindings(
     read_container = function(file, ...) {
-      n_parsed <<- n_parsed + 1
-      make_fake_parsed(base_time, tag = file, distance = 460)
+      make_fake_parsed(start + 1, tag = file, distance = 460)
     },
     .package = "trackeR"
   )
 
-  res <- get_new_workouts(file.path(tempdir(), "20230410-154142.tcx"),
-                          existing, list(NULL), verbose = FALSE)
+  after <- get_new_workouts(tcx_path, cleaned$summaries, cleaned$myruns,
+                            verbose = FALSE)
 
-  expect_equal(n_parsed, 0)
-  expect_equal(nrow(res$summaries), 1)
-  expect_equal(res$summaries$source, "hae")
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$source, "hae")
+  expect_equal(after$summaries$distance, 10274)
+  expect_equal(after$n_garmin_fragments, 1)
+  expect_equal(after$n_hae_removed, 0)
+
+  # And again, to show the outcome is stable rather than alternating.
+  third <- get_new_workouts(tcx_path, after$summaries, after$myruns,
+                            verbose = FALSE)
+  expect_equal(third$summaries, after$summaries)
 })
 
 test_that("repeated imports of the same files leave the cache unchanged", {
@@ -646,6 +665,9 @@ test_that("repeated imports of the same files leave the cache unchanged", {
   expect_equal(nrow(first$summaries), 2)
   expect_equal(second$summaries, first$summaries)
   expect_equal(length(second$myruns), length(first$myruns))
-  expect_equal(second$n_garmin_fragments, 0)
   expect_equal(second$n_hae_removed, 0)
+  # The fragment file is parsed and rejected again every run — nothing on
+  # disk remembers the decision. The cost is the re-parse, not a change
+  # to the cache, which is why the counter repeats while the rows do not.
+  expect_equal(second$n_garmin_fragments, 1)
 })

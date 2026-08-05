@@ -186,9 +186,6 @@ test_that("dedup_summaries keeps the Apple Watch row when Garmin has a fragment"
   expect_equal(nrow(after$summaries), 1)
   expect_equal(after$summaries$source, "hae")
   expect_equal(after$summaries$distance, 10274)
-  # The displaced Garmin file is recorded so the importer knows it was
-  # handled rather than never seen.
-  expect_equal(after$summaries$superseded_file, "20230410-154142.tcx")
   expect_equal(length(after$myruns), 1)
 })
 

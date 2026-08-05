@@ -39,19 +39,6 @@
   new
 }
 
-# Basenames of source files deliberately not imported, recorded on the
-# row that displaced them. Stored ";"-separated because one Apple Watch
-# session can supersede more than one Garmin fragment.
-.superseded_basenames <- function(summaries) {
-  if (!is.data.frame(summaries) || !"superseded_file" %in% names(summaries)) {
-    return(character(0))
-  }
-  vals <- summaries$superseded_file
-  vals <- vals[!is.na(vals) & nzchar(vals)]
-  if (length(vals) == 0) return(character(0))
-  basename(unlist(strsplit(as.character(vals), ";", fixed = TRUE)))
-}
-
 #' Bring `myruns` back to the same length as `summaries`
 #'
 #' `myruns` is coupled to `summaries` by position only, and caches
@@ -222,13 +209,9 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   summaries <- aligned$summaries
   myruns <- aligned$myruns
 
-  # Match on basename to handle relative vs absolute path mismatches.
-  # `superseded_file` carries the TCX files that lost to an Apple Watch
-  # row under the fragment rule: without them in this list the file would
-  # be re-imported on every run and evicted again, oscillating forever.
+  # Match on basename to handle relative vs absolute path mismatches
   existing_basenames <- if ("file" %in% names(summaries))
     basename(summaries$file[!is.na(summaries$file)]) else character(0)
-  existing_basenames <- c(existing_basenames, .superseded_basenames(summaries))
   existing_starts <- if ("sessionStart" %in% names(summaries))
     summaries$sessionStart else as.POSIXct(character(0))
   n_imported <- 0
@@ -290,7 +273,6 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
         next
       }
 
-      if (verbose) cat("OK\n")
       # Strip trackeRdataSummary class before dplyr operations —
       # its [ method conflicts with dplyr::mutate() and causes
       # row expansion (1 row becomes 28)
@@ -317,26 +299,24 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       if (length(dup) > 0 &&
           !any(.garmin_wins(dup_distance, run_summary$distance))) {
         # Garmin caught only a fragment of a session the watch recorded in
-        # full. Keep the Apple Watch row and record this file on it, so the
-        # next import recognises it as handled instead of importing it and
-        # evicting it again on every run.
-        if (!"superseded_file" %in% names(summaries)) {
-          summaries$superseded_file <- NA_character_
-        }
+        # full, so its row is not written at all. Nothing records that
+        # decision on disk, which means the file is parsed again on every
+        # import and lands here again — wasted work, but the outcome is
+        # stable, and the alternative (a persisted skip list) is a larger
+        # change than this fix warrants. Say so in the log rather than
+        # reporting a plain import.
         keep <- dup[1]
-        prev <- summaries$superseded_file[keep]
-        summaries$superseded_file[keep] <- paste(
-          c(if (!is.na(prev) && nzchar(prev)) prev, basename(thefile)),
-          collapse = ";")
         existing_basenames <- c(existing_basenames, basename(thefile))
         n_garmin_fragments <- n_garmin_fragments + 1
         if (verbose) {
-          cat("  Garmin-fragment (", round(as.numeric(run_summary$distance)),
+          cat("fragment (", round(as.numeric(run_summary$distance)),
               " m mot ", round(as.numeric(summaries$distance[keep])),
-              " m) — behåller Apple Watch-raden\n", sep = "")
+              " m), Apple Watch-raden behålls\n", sep = "")
         }
         next
       }
+
+      if (verbose) cat("OK\n")
 
       # If summaries is empty we may not yet have the same columns; align.
       if (nrow(summaries) == 0) {

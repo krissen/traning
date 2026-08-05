@@ -161,18 +161,6 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   # fragment elsewhere isn't dropped on account of a row that is itself
   # about to disappear.
   drop_tcx <- sort(unique(dups$tcx_idx[!is.na(dups$tcx_idx)]))
-  if (length(drop_tcx) > 0) {
-    if (!"superseded_file" %in% names(summaries)) {
-      summaries$superseded_file <- NA_character_
-    }
-    for (k in which(dups$winner == "aw")) {
-      keep <- dups$idx[k]
-      prev <- summaries$superseded_file[keep]
-      summaries$superseded_file[keep] <- paste(
-        c(if (!is.na(prev) && nzchar(prev)) prev, dups$tcx_file[k]),
-        collapse = ";")
-    }
-  }
   drop_hae <- dups$idx[dups$winner == "garmin"]
   drop <- sort(unique(c(drop_hae, drop_tcx)))
 
