@@ -248,6 +248,73 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   n_updated <- 0
   n_hae_removed <- 0
   n_garmin_fragments <- 0
+  # Garmin legs parked for the second pass below, where they are weighed
+  # as a group rather than one at a time.
+  deferred <- list()
+
+  # Append one parsed session and evict the Apple Watch rows it replaces.
+  # Shared by the loop and the second pass so the myruns bookkeeping —
+  # the slot the row lands on, the slots the evicted rows vacate — exists
+  # in one place only.
+  append_session <- function(run_summary, parsed, dup, thefile, ss) {
+    if (nrow(summaries) == 0) {
+      summaries <<- run_summary
+    } else {
+      summaries <<- .rbind_align(summaries, run_summary)
+    }
+    # Index by the row position this session actually landed on, not by
+    # any loop counter: files are skipped without touching summaries, so
+    # the two drift apart and indexing by the counter silently paired a
+    # row with the wrong trackeR object.
+    myruns[[nrow(summaries)]] <<- parsed
+    existing_basenames <<- c(existing_basenames, basename(thefile))
+    existing_starts <<- c(existing_starts, ss)
+    n_imported <<- n_imported + 1
+
+    # Done after the append so the positions removed here cannot disturb
+    # the myruns slot just assigned.
+    if (length(dup) > 0) {
+      summaries <<- .restore_df_attrs(summaries[-dup, , drop = FALSE], summaries)
+      rownames(summaries) <<- NULL
+      if (length(myruns) > 0) {
+        drop_runs <- dup[dup <= length(myruns)]
+        if (length(drop_runs) > 0) myruns <<- myruns[-drop_runs]
+      }
+      existing_starts <<- existing_starts[-dup]
+      n_hae_removed <<- n_hae_removed + length(dup)
+    }
+  }
+
+  # Apple Watch rows describing the same session as `row`.
+  matching_hae <- function(row) {
+    if (!"source" %in% names(summaries) || nrow(summaries) == 0) {
+      return(integer(0))
+    }
+    idx <- which(!is.na(summaries$source) & summaries$source == "hae")
+    if (length(idx) == 0) return(integer(0))
+    idx[.is_same_workout(row, summaries[idx, , drop = FALSE])]
+  }
+
+  # Distances of the Garmin rows already cached for the session that the
+  # Apple Watch rows `dup` describe.
+  #
+  # Keyed on the Apple Watch row rather than on the incoming file, because
+  # two legs of one session do not match *each other*: they are
+  # consecutive, half an hour apart, and neither overlaps the other. What
+  # makes them one session is that each matches the same wrist recording,
+  # which spans them both.
+  cached_garmin_distances <- function(dup) {
+    if (length(dup) == 0 ||
+        !all(c("source", "distance") %in% names(summaries))) {
+      return(numeric(0))
+    }
+    idx <- which(!is.na(summaries$source) & summaries$source == "tcx")
+    if (length(idx) == 0) return(numeric(0))
+    hae_row <- summaries[dup[1], , drop = FALSE]
+    as.numeric(summaries$distance[idx[.is_same_workout(
+      hae_row, summaries[idx, , drop = FALSE])]])
+  }
+
   for (i in seq_along(files)) {
     thefile <- files[[i]]
     if (basename(thefile) %in% existing_basenames) {
@@ -312,81 +379,42 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       # Which cached Apple Watch rows describe this same session? Decided
       # before the append, because when Garmin loses the fragment rule the
       # right outcome is not to write its row at all.
-      dup <- integer(0)
-      if ("source" %in% names(summaries) && nrow(summaries) > 0) {
-        hae_idx <- which(!is.na(summaries$source) & summaries$source == "hae")
-        if (length(hae_idx) > 0) {
-          dup <- hae_idx[.is_same_workout(run_summary,
-                                          summaries[hae_idx, , drop = FALSE])]
-        }
-      }
+      dup <- matching_hae(run_summary)
 
       # A cache without a distance column leaves the default in place:
       # .garmin_wins() on a zero-length vector would otherwise answer
       # "no row says Garmin wins" and hand the session to the watch.
       dup_distance <- if ("distance" %in% names(summaries))
         summaries$distance[dup] else NA_real_
+      # Weigh this file against every Garmin row already cached for the
+      # same session: the watch may have been stopped and restarted, and
+      # a single leg loses to a session it only partly covers.
+      garmin_total <- .garmin_total(
+        c(as.numeric(run_summary$distance), cached_garmin_distances(dup)))
+
       if (length(dup) > 0 &&
-          !any(.garmin_wins(dup_distance, run_summary$distance))) {
-        # Garmin caught only a fragment of a session the watch recorded in
-        # full, so its row is not written at all. Nothing records that
-        # decision on disk, which means the file is parsed again on every
-        # import and lands here again — wasted work, but the outcome is
-        # stable, and the alternative (a persisted skip list) is a larger
-        # change than this fix warrants. Say so in the log rather than
-        # reporting a plain import.
-        keep <- dup[1]
+          !any(.garmin_wins(dup_distance, garmin_total))) {
+        # Not enough on its own — but the remaining legs may be in this
+        # same batch, so park it and decide once the batch is known.
+        deferred[[length(deferred) + 1L]] <- list(
+          row = run_summary, parsed = parsed, file = thefile, start = ss)
         existing_basenames <- c(existing_basenames, basename(thefile))
-        n_garmin_fragments <- n_garmin_fragments + 1
         if (verbose) {
           cat("fragment (", round(as.numeric(run_summary$distance)),
-              " m mot ", round(as.numeric(summaries$distance[keep])),
-              " m), Apple Watch-raden behålls\n", sep = "")
+              " m), avvaktar resten av batchen\n", sep = "")
         }
         next
       }
 
-      if (verbose) cat("OK\n")
-
-      # If summaries is empty we may not yet have the same columns; align.
-      if (nrow(summaries) == 0) {
-        summaries <- run_summary
-      } else {
-        summaries <- .rbind_align(summaries, run_summary)
-      }
-      # Assign myruns by the row position this session actually landed
-      # on in `summaries` (nrow(summaries) after the append above), not
-      # by the loop index over `files`. `files` enumerates every file on
-      # disk while duplicates/parse failures are skipped via `next`
-      # without touching summaries, so the loop index drifts away from
-      # the summaries row count — indexing by it here silently paired
-      # myruns[[i]] with the wrong summaries row (or clobbered an
-      # unrelated existing entry) once any file in the batch was skipped.
-      myruns[[nrow(summaries)]] <- parsed
-      existing_basenames <- c(existing_basenames, basename(thefile))
-      existing_starts <- c(existing_starts, ss)
-      n_imported <- n_imported + 1
-
-      # Reverse cross-source dedup: drop the Apple Watch rows identified
-      # above, now that the Garmin recording is in. Done after the append
-      # so the row positions removed here can't disturb the myruns slot
-      # just assigned.
-      if (length(dup) > 0) {
-        if (verbose) {
+      if (verbose) {
+        cat("OK\n")
+        if (length(dup) > 0) {
           cat("  ersätter ", length(dup), " Apple Watch-rad",
               if (length(dup) > 1) "er" else "", " för samma pass\n",
               sep = "")
         }
-        summaries <- .restore_df_attrs(summaries[-dup, , drop = FALSE],
-                                       summaries)
-        rownames(summaries) <- NULL
-        if (length(myruns) > 0) {
-          drop_runs <- dup[dup <= length(myruns)]
-          if (length(drop_runs) > 0) myruns <- myruns[-drop_runs]
-        }
-        existing_starts <- existing_starts[-dup]
-        n_hae_removed <- n_hae_removed + length(dup)
       }
+      append_session(run_summary, parsed, dup, thefile, ss)
 
       # Checkpoint: save every batch_size imports
       if (n_imported %% batch_size == 0 &&
@@ -396,6 +424,63 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       }
     }
   }
+  # Second pass over the parked legs. Each is weighed against everything
+  # Garmin holds for its session — the legs still parked here plus any
+  # already cached — so a session that arrives split across several files
+  # wins as a whole even though no single file would.
+  #
+  # This is also how a cache cleaned under the older per-leg rule
+  # converges: the legs were removed and their files left on disk, so the
+  # next import re-reads them together and they take the session back.
+  pending <- rep(TRUE, length(deferred))
+  for (k in seq_along(deferred)) {
+    entry <- deferred[[k]]
+    dup <- matching_hae(entry$row)
+    if (length(dup) == 0) {
+      # The Apple Watch row is already gone — an earlier leg took the
+      # session — so this one is simply part of it.
+      append_session(entry$row, entry$parsed, integer(0), entry$file, entry$start)
+      pending[k] <- FALSE
+      next
+    }
+
+    # Legs of one session are siblings by way of the wrist recording they
+    # both match, not by matching each other — see cached_garmin_distances().
+    others <- setdiff(which(pending), k)
+    other_legs <- vapply(others, function(j) {
+      shared <- intersect(dup, matching_hae(deferred[[j]]$row))
+      if (length(shared) > 0) as.numeric(deferred[[j]]$row$distance) else NA_real_
+    }, numeric(1))
+    total <- .garmin_total(c(as.numeric(entry$row$distance),
+                             cached_garmin_distances(dup),
+                             other_legs))
+    dup_distance <- if ("distance" %in% names(summaries))
+      summaries$distance[dup] else NA_real_
+
+    if (!any(.garmin_wins(dup_distance, total))) {
+      # Garmin really did catch only a fragment. Its row is not written
+      # at all, and nothing on disk records that, so the file is read and
+      # declined again on every import — wasted work, but the outcome is
+      # stable and a persisted skip list is a larger change than this
+      # warrants.
+      n_garmin_fragments <- n_garmin_fragments + 1
+      if (verbose) {
+        cat("fragment (", round(as.numeric(entry$row$distance)),
+            " m mot ", round(as.numeric(summaries$distance[dup[1]])),
+            " m), Apple Watch-raden behålls\n", sep = "")
+      }
+      next
+    }
+
+    if (verbose) {
+      cat("delpass (", round(as.numeric(entry$row$distance)),
+          " m av ", round(total), " m totalt), ersätter Apple Watch-raden\n",
+          sep = "")
+    }
+    append_session(entry$row, entry$parsed, dup, entry$file, entry$start)
+    pending[k] <- FALSE
+  }
+
   my_templist <- list()
   my_templist[["summaries"]] <- summaries
   my_templist[["myruns"]] <- myruns

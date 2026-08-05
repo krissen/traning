@@ -671,3 +671,111 @@ test_that("repeated imports of the same files leave the cache unchanged", {
   # to the cache, which is why the counter repeats while the rows do not.
   expect_equal(second$n_garmin_fragments, 1)
 })
+
+# --- importing a split Garmin session ----------------------------------------
+
+test_that("legs of one session imported together take it back from the watch", {
+  # (e) The recovery case. A cache cleaned under the older per-leg rule
+  # holds the Apple Watch row while both Garmin legs were removed and
+  # their files left on disk. The next import re-reads them, and each leg
+  # on its own is under half the session — so unless the legs are weighed
+  # together the cache can never reach the decision that was made.
+  base_time <- as.POSIXct("2024-11-18 16:42:05", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time,
+    sessionEnd = base_time + 3600,
+    sport = "running",
+    distance = 4968,
+    duration = as.difftime(3600, units = "secs"),
+    file = "hae:Utomhus_Kor-20241118.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+  legs <- file.path(tempdir(), c("20241118-leg1.tcx", "20241118-leg2.tcx"))
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      if (grepl("leg1", file)) {
+        make_fake_parsed(base_time + 5, tag = file, distance = 2351)
+      } else {
+        make_fake_parsed(base_time + 1800, tag = file, distance = 2296)
+      }
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(legs, existing, list(NULL), verbose = FALSE)
+
+  # Both legs in, the Apple Watch row out, and the myruns list still
+  # lines up with the rows.
+  expect_equal(nrow(res$summaries), 2)
+  expect_setequal(res$summaries$source, "tcx")
+  expect_setequal(basename(res$summaries$file), basename(legs))
+  expect_equal(res$n_hae_removed, 1)
+  expect_equal(res$n_garmin_fragments, 0)
+  expect_length(res$myruns, 2)
+
+  # Running it again changes nothing.
+  second <- get_new_workouts(legs, res$summaries, res$myruns, verbose = FALSE)
+  expect_equal(second$summaries, res$summaries)
+})
+
+test_that("a lone leg arriving without its siblings is still declined", {
+  # The same session, but only one leg on disk: 47 % of what the watch
+  # recorded, and nothing else to add to it. The Apple Watch row stays.
+  base_time <- as.POSIXct("2024-11-18 16:42:05", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time,
+    sessionEnd = base_time + 3600,
+    sport = "running",
+    distance = 4968,
+    duration = as.difftime(3600, units = "secs"),
+    file = "hae:Utomhus_Kor-20241118.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+  leg <- file.path(tempdir(), "20241118-lonely.tcx")
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time + 5, tag = file, distance = 2351)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(leg, existing, list(NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+  expect_equal(res$n_garmin_fragments, 1)
+})
+
+test_that("a second leg arriving later joins the one already cached", {
+  # If the legs do arrive in separate runs, the first is declined and the
+  # second finds it in the cache — so the pair still wins, one run late.
+  base_time <- as.POSIXct("2024-11-18 16:42:05", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = c(base_time, base_time + 5),
+    sessionEnd = c(base_time + 3600, base_time + 855),
+    sport = "running",
+    distance = c(4968, 2351),
+    duration = as.difftime(c(3600, 850), units = "secs"),
+    file = c("hae:Utomhus_Kor-20241118.json", "/data/tcx/20241118-leg1.tcx"),
+    source = c("hae", "tcx"),
+    stringsAsFactors = FALSE
+  )
+  leg2 <- file.path(tempdir(), "20241118-leg2b.tcx")
+
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time + 1800, tag = file, distance = 2296)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(leg2, existing, list(NULL, "leg1"), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 2)
+  expect_setequal(res$summaries$source, "tcx")
+  expect_equal(res$n_hae_removed, 1)
+})
