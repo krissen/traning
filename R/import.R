@@ -392,8 +392,13 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       garmin_total <- .garmin_total(
         c(as.numeric(run_summary$distance), cached_garmin_distances(dup)))
 
+      # Against the *best* Apple Watch copy, not any of them. A cache can
+      # hold both copies HAE delivers, the full recording and a shorter
+      # mirrored one, and eviction takes every matching row — so beating
+      # only the short copy would let a partial Garmin file delete the
+      # complete session along with it.
       if (length(dup) > 0 &&
-          !any(.garmin_wins(dup_distance, garmin_total))) {
+          !all(.garmin_wins(dup_distance, garmin_total))) {
         # Not enough on its own — but the remaining legs may be in this
         # same batch, so park it and decide once the batch is known.
         deferred[[length(deferred) + 1L]] <- list(
@@ -504,7 +509,7 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
     dup_distance <- if ("distance" %in% names(summaries))
       summaries$distance[dup] else NA_real_
 
-    if (!any(.garmin_wins(dup_distance, total))) {
+    if (!all(.garmin_wins(dup_distance, total))) {
       # Garmin really did catch only a fragment. Its row is not written
       # at all, and nothing on disk records that, so the file is read and
       # declined again on every import — wasted work, but the outcome is
