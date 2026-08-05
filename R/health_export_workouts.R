@@ -266,16 +266,30 @@ parse_hae_workout <- function(path) {
 # the slowest verified duplicate is a walk at 0.21 m/s, so no single
 # floor can separate them.
 #
-# Margins against the 323 verified pairs, slowest genuine side per
-# family: cycling 1.60 m/s against a 0.50 floor (3.2x, and the broken
-# row sits 1.9x below it), running 0.44 against 0.10 (4.4x), walking
-# 0.21 against 0.10 (2.1x). 0.50 m/s is 1.8 km/h — slower than a
-# stroll, so impossible as cycling rather than merely unusual; 0.10 m/s
-# is in practice a guard against rows with no distance at all. 114 of
-# the 13832 cache rows that carry both fields fall below their floor,
-# nearly all zero-distance sports, and none of them is a verified
-# duplicate. A distrusted pair is still eligible under the start
-# criterion.
+# Margins are quoted on the same footing the code uses: distance over
+# wall-clock span, measured on *both* rows of each of the 321 candidate
+# pairs, and labelled by that row's own sport (the slowest running
+# figure below is a Garmin row whose Apple Watch twin is labelled
+# walking, which is why a per-row reading and a per-pair one disagree).
+# Slowest genuine row per family, against its floor:
+#   cycling 2.31 m/s vs. 0.50 — 4.6x, and the broken row sits 1.9x below
+#   running 0.21 m/s vs. 0.10 — 2.1x
+#   walking 0.50 m/s vs. 0.10 — 5.0x
+# 0.50 m/s is 1.8 km/h, slower than a stroll, so impossible as cycling
+# rather than merely unusual; 0.10 m/s is in practice a guard against
+# rows with no distance at all. Across the whole cache 114 of the 13832
+# rows carrying both fields fall below their floor, nearly all
+# zero-distance sports, and none of them is a candidate today. The
+# closest any cycling row comes to its floor from below is 0.4996 m/s
+# (2019-07-05, 798 m).
+#
+# The comparison is >=, so a row sitting exactly on its floor is
+# believed. The floors are chosen to be impossible rather than merely
+# unusual, so the boundary itself carries no evidence either way, and
+# including it keeps the rule on the permissive side of a judgement call
+# that can only cost a duplicate, never delete real data.
+#
+# A distrusted pair is still eligible under the start criterion.
 .WORKOUT_OVERLAP_MIN_SPEED_CYCLING <- 0.50
 .WORKOUT_OVERLAP_MIN_SPEED_DEFAULT <- 0.10
 

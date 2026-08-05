@@ -835,3 +835,14 @@ test_that("dedup_summaries needs either paths or TRANING_DATA", {
   withr::local_envvar(TRANING_DATA = "")
   expect_error(dedup_summaries(), "TRANING_DATA")
 })
+
+test_that("a row sitting exactly on its speed floor is believed", {
+  # Documented as >=: the floors are set at impossible rather than
+  # merely unusual paces, so the boundary carries no evidence and the
+  # permissive side is the one that cannot delete real data.
+  ride <- function(speed) .span(0, 3600, distance = speed * 3600,
+                                sport = "cycling")
+  inside <- .span(600, 2700, distance = 5000, sport = "cycling")
+  expect_true(.is_same_workout(ride(0.50), inside))
+  expect_false(.is_same_workout(ride(0.4999), inside))
+})
