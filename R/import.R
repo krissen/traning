@@ -98,7 +98,8 @@ my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
     myruns <- myruns[ord]
 
     # Dedup within a source (exact-second match). Cross-source dedup runs
-    # at import time (with a tolerance window) — see import_hae_workouts().
+    # at import time (with a tolerance window) — see import_hae_workouts()
+    # and get_new_workouts() — and retroactively via dedup_summaries().
     key <- if ("source" %in% names(summaries)) {
       data.frame(sessionStart = summaries$sessionStart,
                  source = summaries$source)
@@ -183,11 +184,18 @@ get_my_files <- function(mytcxpath) {
 }
 
 #' Import new TCX workouts not already in summaries
+#'
+#' Each newly imported Garmin session also evicts any Apple Watch
+#' (`source == "hae"`) row describing the same workout — the HAE push
+#' usually beats the Garmin fetch, so without this the pair survives as
+#' two sessions. Garmin wins; matching follows `.is_same_workout()`.
+#'
 #' @param files Character vector of TCX file paths
 #' @param summaries Existing summaries data frame
 #' @param myruns Existing myruns list
 #' @param verbose Logical, print progress messages (default FALSE)
-#' @return List with elements "summaries" and "myruns"
+#' @return List with elements "summaries", "myruns", "n_updated" and
+#'   "n_hae_removed"
 #' @export
 get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
                              batch_size = 500,
@@ -199,6 +207,7 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
     summaries$sessionStart else as.POSIXct(character(0))
   n_imported <- 0
   n_updated <- 0
+  n_hae_removed <- 0
   for (i in seq_along(files)) {
     thefile <- files[[i]]
     if (basename(thefile) %in% existing_basenames) {
@@ -268,6 +277,35 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       existing_starts <- c(existing_starts, ss)
       n_imported <- n_imported + 1
 
+      # Reverse cross-source dedup: drop Apple Watch rows for the same
+      # session now that the Garmin recording is in. Done after the
+      # append so the row positions removed here can't disturb the
+      # myruns slot just assigned above.
+      if ("source" %in% names(summaries)) {
+        is_hae <- !is.na(summaries$source) & summaries$source == "hae"
+        hae_idx <- which(is_hae)
+        if (length(hae_idx) > 0) {
+          dup <- hae_idx[.is_same_workout(run_summary,
+                                          summaries[hae_idx, , drop = FALSE])]
+          if (length(dup) > 0) {
+            if (verbose) {
+              cat("  ersätter ", length(dup), " Apple Watch-rad",
+                  if (length(dup) > 1) "er" else "", " för samma pass\n",
+                  sep = "")
+            }
+            summaries <- .restore_df_attrs(summaries[-dup, , drop = FALSE],
+                                           summaries)
+            rownames(summaries) <- NULL
+            if (length(myruns) > 0) {
+              drop_runs <- dup[dup <= length(myruns)]
+              if (length(drop_runs) > 0) myruns <- myruns[-drop_runs]
+            }
+            existing_starts <- existing_starts[-dup]
+            n_hae_removed <- n_hae_removed + length(dup)
+          }
+        }
+      }
+
       # Checkpoint: save every batch_size imports
       if (n_imported %% batch_size == 0 &&
           !is.null(db_summaries) && !is.null(db_myruns)) {
@@ -280,6 +318,7 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   my_templist[["summaries"]] <- summaries
   my_templist[["myruns"]] <- myruns
   my_templist[["n_updated"]] <- n_updated
+  my_templist[["n_hae_removed"]] <- n_hae_removed
   return(my_templist)
 }
 

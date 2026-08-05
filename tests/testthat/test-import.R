@@ -232,6 +232,68 @@ test_that("get_new_workouts does not dedup files >= 2s apart", {
   expect_equal(res$summaries$file[2], new_file)
 })
 
+# --- get_new_workouts(): reverse cross-source dedup -------------------------
+
+test_that("get_new_workouts evicts the Apple Watch row for the same session", {
+  # The HAE push normally beats the Garmin fetch, so the duplicate has to
+  # be resolved when the TCX arrives — not only the other way round.
+  base_time <- as.POSIXct("2026-08-01 11:02:36", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time - 107,
+    sport = "running",
+    distance = 5234,
+    duration = as.difftime(1391, units = "secs"),
+    file = "hae:Utomhus_Kor-20260801_130049.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  new_file <- file.path(tempdir(), "20260801-110236.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time, tag = file, distance = 5292)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(new_file, existing, list(NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "tcx")
+  expect_equal(res$n_hae_removed, 1)
+  expect_length(res$myruns, 1)
+  expect_false(is.null(res$myruns[[1]]))
+})
+
+test_that("get_new_workouts keeps an Apple-Watch-only session", {
+  # Same day, different workout: the HAE row has no Garmin twin and must
+  # survive the import untouched.
+  base_time <- as.POSIXct("2026-08-01 11:02:36", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time - 7200,
+    sport = "walking",
+    distance = 2000,
+    duration = as.difftime(1800, units = "secs"),
+    file = "hae:Utomhus_Gang-20260801.json",
+    source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  new_file <- file.path(tempdir(), "20260801-110236b.tcx")
+  testthat::local_mocked_bindings(
+    read_container = function(file, ...) {
+      make_fake_parsed(base_time, tag = file, distance = 5292)
+    },
+    .package = "trackeR"
+  )
+
+  res <- get_new_workouts(new_file, existing, list(NULL), verbose = FALSE)
+
+  expect_equal(nrow(res$summaries), 2)
+  expect_equal(res$n_hae_removed, 0)
+  expect_setequal(res$summaries$source, c("hae", "tcx"))
+})
+
 # --- get_new_workouts(): batch checkpointing --------------------------------
 
 test_that("get_new_workouts checkpoints every batch_size imports", {
