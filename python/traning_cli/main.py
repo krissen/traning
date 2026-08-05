@@ -893,13 +893,21 @@ def insight_day(ref_date, push, force):
 # -- dedup ------------------------------------------------------------------
 
 @cli.command()
+@click.option("--apply", "apply_changes", is_flag=True,
+              help="Actually remove the listed rows (default: report only)")
 @click.option("--dry-run", is_flag=True,
-              help="List duplicate candidates without changing the cache")
-def dedup(dry_run):
-    """Remove Apple Watch sessions that duplicate a Garmin recording."""
+              help="Report only. This is the default; the flag is accepted "
+                   "for symmetry with the other commands")
+def dedup(apply_changes, dry_run):
+    """List Apple Watch sessions that duplicate a Garmin recording.
+
+    Reports only. Pass --apply to remove them from the cache.
+    """
+    # Removal edits the only copy of the cache, so the safe outcome is the
+    # one you get by forgetting a flag.
     cmd = ["Rscript", str(CLI_R), "--dedup"]
-    if dry_run:
-        cmd.append("--dry-run")
+    if apply_changes and not dry_run:
+        cmd.append("--apply")
     _exec(cmd)
 
 
