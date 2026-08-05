@@ -464,6 +464,58 @@ test_that("stopping together implies the coverage evidence as well", {
                                .span(6300, 1681, distance = 5006)))
 })
 
+test_that("the believability floor applies from either side of the pair", {
+  # The pace test guards the interval, so it has to reject an implausible
+  # one whichever argument it arrives in, and the cycling floor has to
+  # follow the cycling row rather than the position.
+  slow_ride <- .span(0, 12 * 3600, distance = 0.49 * 12 * 3600, sport = "cycling")
+  inside <- .span(600, 2700, distance = 4000, sport = "cycling")
+  expect_false(.is_same_workout(slow_ride, inside))
+  expect_false(.is_same_workout(inside, slow_ride))
+
+  # A cycling row is held to 0.50 even when it is the short side and the
+  # long side is a believable run.
+  long_run <- .span(0, 12 * 3600, distance = 1.30 * 12 * 3600)
+  expect_false(.is_same_workout(
+    long_run, .span(600, 2700, distance = 0.49 * 2700, sport = "cycling")))
+  expect_true(.is_same_workout(
+    long_run, .span(600, 2700, distance = 0.50 * 2700, sport = "cycling")))
+
+  # The Swedish label reaches the same floor: a cache written from HAE
+  # names must not fall through to the 0.10 default.
+  expect_false(.is_same_workout(
+    .span(0, 12 * 3600, distance = 0.49 * 12 * 3600, sport = "cykling"), inside))
+})
+
+test_that("rename detection does not rewrite an Apple Watch file key", {
+  # The detector matches any row starting within two seconds, and used to
+  # accept an HAE row as the renamed predecessor of an incoming TCX. That
+  # overwrote `hae:...` with the TCX path — losing the key that marks the
+  # row's source — and returned early, so the fragment rule never ran.
+  base_time <- as.POSIXct("2023-04-10 15:41:42", tz = "UTC")
+  existing <- data.frame(
+    sessionStart = base_time - 1, sessionEnd = base_time + 3179,
+    sport = "running", distance = 10274,
+    duration = as.difftime(3180, units = "secs"),
+    file = "hae:Utomhus_Kor-20230410.json", source = "hae",
+    stringsAsFactors = FALSE
+  )
+
+  res <- testthat::with_mocked_bindings(
+    get_new_workouts(file.path(tempdir(), "20230410-154142.tcx"), existing,
+                     list(NULL), verbose = FALSE),
+    read_container = function(f, ...) {
+      .fake_tcx(base_time, 460, 180, "running", f)
+    },
+    .package = "trackeR"
+  )
+
+  expect_equal(nrow(res$summaries), 1)
+  expect_equal(res$summaries$source, "hae")
+  expect_equal(res$summaries$file, "hae:Utomhus_Kor-20230410.json")
+  expect_equal(res$n_updated, 0)
+})
+
 test_that("the believability floor is a pace, per sport, at any length", {
   # There is no span threshold: a session is judged on the pace its
   # interval implies, so a half-day ultra and a 20-minute run are held to
@@ -697,6 +749,120 @@ test_that("import_hae_workouts leaves an aligned pair alone and silent", {
   save(myruns, file = db_m)
   list(summaries = db_s, myruns = db_m)
 }
+
+test_that("Garmin keeps the session when it is split across two files", {
+  # The watch stopped and restarted mid-run, so neither Garmin row is
+  # half the Apple Watch distance on its own while together they are the
+  # whole session. Deferring to the Apple Watch row here would leave the
+  # run counted twice: once on the wrist, once as the two Garmin pieces.
+  # 2024-01-06 in the cache, and the shape behind four more days.
+  aw <- 7815
+  expect_false(.garmin_wins(aw, 2573))            # the first piece alone
+  expect_true(.garmin_wins(aw, 5190))             # the second piece alone
+  # ... so the session stays with Garmin, which is what the importer and
+  # dedup_summaries() both act on.
+
+  tmp <- withr::local_tempdir()
+  start <- as.POSIXct("2024-01-06 11:39:15", tz = "UTC")
+  summaries <- data.frame(
+    sessionStart = c(start, start + 30, start + 1344),
+    sessionEnd = c(start + 2969, start + 864, start + 2853),
+    sport = "running", distance = c(aw, 2573, 5190),
+    duration = as.difftime(c(2969, 834, 1509), units = "secs"),
+    file = c("hae:Utomhus_Kor-20240106.json", "20240106-113950.tcx",
+             "20240106-120144.tcx"),
+    source = c("hae", "tcx", "tcx"), stringsAsFactors = FALSE
+  )
+  paths <- .matrix_cache(tmp, summaries, list(NULL, "r1", "r2"))
+  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE, verbose = FALSE)
+
+  after <- my_dbs_load(paths$summaries, paths$myruns)
+  expect_equal(nrow(after$summaries), 2)
+  expect_true(all(after$summaries$source == "tcx"))
+
+  # Where every Garmin row really is a fragment, the Apple Watch row is
+  # the one that survives and both fragments are recorded on it.
+  #
+  # Note the loop: a single call clears only one fragment per Apple Watch
+  # row, so a session split into two sub-half pieces needs a second pass
+  # to settle. Two days in the cache are of that shape (2019-12-23 and
+  # 2024-11-18), where one pass leaves an orphan Garmin fragment behind
+  # and the session still counted twice. The assertions below are on the
+  # converged state, which holds whether the cleanup gets there in one
+  # pass or two.
+  tmp2 <- withr::local_tempdir()
+  summaries$distance <- c(aw, 900, 1000)
+  paths2 <- .matrix_cache(tmp2, summaries, list(NULL, "r1", "r2"))
+  for (pass in 1:2) {
+    dedup_summaries(paths2$summaries, paths2$myruns, dry_run = FALSE,
+                    verbose = FALSE)
+  }
+
+  after2 <- my_dbs_load(paths2$summaries, paths2$myruns)
+  expect_equal(nrow(after2$summaries), 1)
+  expect_equal(after2$summaries$source, "hae")
+  expect_equal(length(after2$myruns), 1)
+  expect_equal(as.numeric(after2$summaries$distance), aw)
+
+  # ... and the cleanup is a fixed point once it has settled.
+  dedup_summaries(paths2$summaries, paths2$myruns, dry_run = FALSE,
+                  verbose = FALSE)
+  settled <- my_dbs_load(paths2$summaries, paths2$myruns)
+  expect_equal(nrow(settled$summaries), 1)
+  expect_equal(settled$summaries$source, "hae")
+})
+
+test_that("clearing a fragment survives the file being re-imported", {
+  # The cleanup unlists the Garmin fragment but leaves the .tcx on disk,
+  # so the next fetch reads it again. Nothing records that it lost, so
+  # the protection has to come from the import path judging it a fragment
+  # a second time — otherwise the 460 m row is handed the session back
+  # and the real one is deleted.
+  tmp <- withr::local_tempdir()
+  start <- as.POSIXct("2023-04-10 15:41:41", tz = "UTC")
+  summaries <- data.frame(
+    sessionStart = c(start, start + 1),
+    sessionEnd = c(start + 3180, start + 180),
+    sport = "running", distance = c(10274, 460),
+    duration = as.difftime(c(3180, 180), units = "secs"),
+    file = c("hae:Utomhus_Kor-20230410.json", "20230410-154142.tcx"),
+    source = c("hae", "tcx"), stringsAsFactors = FALSE
+  )
+  paths <- .matrix_cache(tmp, summaries, list(NULL, "fragment-run"))
+
+  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
+                  verbose = FALSE)
+
+  after <- my_dbs_load(paths$summaries, paths$myruns)
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$source, "hae")
+  expect_equal(length(after$myruns), 1)
+  # The cleanup leaves no trace on the row, so the cache gains no column.
+  expect_false("superseded_file" %in% names(after$summaries))
+
+  # Now the fetch that reads the unlisted file again — three times over,
+  # since it is re-read on every import for as long as it sits on disk.
+  tcx_path <- file.path(tmp, "20230410-154142.tcx")
+  writeLines("placeholder", tcx_path)
+  cur <- after$summaries
+  runs <- after$myruns
+  for (pass in 1:3) {
+    res <- testthat::with_mocked_bindings(
+      get_new_workouts(tcx_path, cur, runs, verbose = FALSE),
+      read_container = function(f, ...) {
+        .fake_tcx(start + 1, 460, 180, "running", f)
+      },
+      .package = "trackeR"
+    )
+    cur <- res$summaries
+    runs <- res$myruns
+    expect_equal(nrow(cur), 1, info = paste("pass", pass))
+    expect_equal(cur$source, "hae", info = paste("pass", pass))
+    expect_equal(as.numeric(cur$distance), 10274, info = paste("pass", pass))
+    expect_equal(res$n_garmin_fragments, 1, info = paste("pass", pass))
+    expect_equal(length(runs), nrow(cur), info = paste("pass", pass))
+  }
+})
 
 test_that("dedup_summaries dry run writes to neither cache file", {
   tmp <- withr::local_tempdir()
