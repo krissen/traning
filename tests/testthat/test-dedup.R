@@ -339,3 +339,54 @@ test_that("a split Garmin session is judged on the sum of its legs", {
   expect_equal(.winner_for(10000, c(2500, 2400)), "aw")     # 49 %
   expect_equal(.winner_for(10000, c(2500, 2500)), "garmin") # 50 %
 })
+
+# --- surplus copies are chosen per session, not per fragment ------------------
+
+.copies_and_fragments <- function(order_fragments = c(1, 2)) {
+  day <- function(hms) as.POSIXct(paste("2024-05-11", hms), tz = "UTC")
+  aw <- data.frame(
+    sessionStart = c(day("09:00:00"), day("09:05:00"), day("09:40:00")),
+    sessionEnd = c(day("10:00:00"), day("09:20:00"), day("10:02:00")),
+    sport = "running",
+    distance = c(5000, 3000, 9000),
+    duration = as.difftime(c(3600, 900, 1320), units = "secs"),
+    file = c("hae:x.json", "hae:z.json", "hae:y.json"),
+    source = "hae", stringsAsFactors = FALSE
+  )
+  frags <- data.frame(
+    sessionStart = c(day("09:06:00"), day("09:45:00")),
+    sessionEnd = c(day("09:12:00"), day("09:50:00")),
+    sport = "running",
+    distance = c(500, 600),
+    duration = as.difftime(c(360, 300), units = "secs"),
+    file = c("/tcx/frag-a.tcx", "/tcx/frag-b.tcx"),
+    source = "tcx", stringsAsFactors = FALSE
+  )
+  rbind(aw, frags[order_fragments, ])
+}
+
+test_that("which Apple Watch copy survives does not depend on scan order", {
+  # Choosing a survivor per fragment let a row picked as the best copy of
+  # one fragment be struck as surplus for the next, so the answer changed
+  # with the order the fragments happened to be walked in — and a session
+  # could lose every row it had. Grouping by session keeps exactly one
+  # row per session whatever the order.
+  survivors <- lapply(list(c(1, 2), c(2, 1)), function(ord) {
+    tmp <- withr::local_tempdir()
+    summaries <- .copies_and_fragments(ord)
+    paths <- .write_fixture_cache(tmp, summaries,
+                                  as.list(seq_len(nrow(summaries))))
+    dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
+                    verbose = FALSE)
+    after <- my_dbs_load(paths$summaries, paths$myruns)
+    after$summaries[after$summaries$source == "hae", ]
+  })
+
+  # Exactly one Apple Watch row left, the fullest, and the same one
+  # whichever order the fragments sat in.
+  expect_equal(nrow(survivors[[1]]), 1)
+  expect_equal(survivors[[1]]$distance, 9000)
+  expect_equal(survivors[[1]]$file, survivors[[2]]$file)
+  expect_equal(survivors[[1]]$distance, survivors[[2]]$distance)
+})
+
