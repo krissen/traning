@@ -661,3 +661,37 @@ test_that("two recordings of one session still collapse", {
   strength$distance <- NA_real_
   expect_length(.session_groups(strength, same_sport = TRUE), 1)
 })
+
+test_that("a group of three copies loses two of them", {
+  # Groups are not always pairs. Both classes in the real cache contain a
+  # group of three, and a sweep that assumed one surplus row per group
+  # would leave one behind — the same shape that left a fragment
+  # orphaned before the removal took every match.
+  tmp <- withr::local_tempdir()
+  day <- function(hms) as.POSIXct(paste("2020-04-04", hms), tz = "UTC")
+  summaries <- data.frame(
+    # Overlapping, near-identical: three recordings of one session, not
+    # three things done in a row.
+    sessionStart = c(day("23:10:55"), day("23:10:57"), day("23:11:00")),
+    sessionEnd = c(day("23:40:55"), day("23:40:52"), day("23:40:58")),
+    sport = "running",
+    distance = c(6000, 5980, 6010),
+    duration = as.difftime(c(1800, 1795, 1798), units = "secs"),
+    file = c("hae:a.json", "hae:b.json", "hae:c.json"),
+    source = "hae", stringsAsFactors = FALSE
+  )
+  db_s <- file.path(tmp, "summaries.RData")
+  db_m <- file.path(tmp, "myruns.RData")
+  myruns <- list("a", "b", "c")
+  save(summaries, file = db_s)
+  save(myruns, file = db_m)
+
+  dups <- dedup_summaries(db_s, db_m, dry_run = TRUE, verbose = FALSE)
+  expect_length(attr(dups, "hae_copies"), 2)
+
+  dedup_summaries(db_s, db_m, dry_run = FALSE, verbose = FALSE)
+  after <- my_dbs_load(db_s, db_m)
+  expect_equal(nrow(after$summaries), 1)
+  expect_equal(after$summaries$distance, 6010)
+  expect_length(after$myruns, 1)
+})
