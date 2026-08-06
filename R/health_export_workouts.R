@@ -353,8 +353,16 @@ parse_hae_workout <- function(path) {
 # as copies of each other is the overlap the match rule requires when
 # neither row measured a distance, not this test.
 .same_sport_family <- function(a, b, n) {
-  fa <- rep(.sport_family(a), length.out = n)
-  fb <- rep(.sport_family(b), length.out = n)
+  # One answer per compared pair, whatever comes in. A row with no sport
+  # field at all yields a zero-length vector here, and the length only
+  # survives because rep(x, length.out = n) pads a zero-length x with
+  # NA — true, but too quiet a thing for the caller's contract to rest
+  # on. Say it outright: nothing to compare is no match.
+  fa <- .sport_family(a)
+  fb <- .sport_family(b)
+  if (length(fa) == 0 || length(fb) == 0) return(rep(FALSE, n))
+  fa <- rep(fa, length.out = n)
+  fb <- rep(fb, length.out = n)
   !is.na(fa) & !is.na(fb) & fa == fb
 }
 

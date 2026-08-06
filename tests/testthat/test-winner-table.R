@@ -755,3 +755,37 @@ test_that("a measured session is unaffected by the overlap requirement", {
   half$distance[2] <- NA_real_
   expect_true(.is_same_workout(half[1, ], half[2, ], same_sport = TRUE))
 })
+
+test_that("a row with no sport field answers once per pair", {
+  # The sport test has to return one answer per compared pair even when
+  # a row carries no sport field at all — an older cache, a caller
+  # passing a bare list. A shorter answer would quietly truncate the
+  # match result and leave the callers indexing a vector that is not the
+  # length they think it is.
+  expect_equal(.same_sport_family(NULL, "running", 3), rep(FALSE, 3))
+  expect_equal(.same_sport_family("running", NULL, 2), rep(FALSE, 2))
+  expect_equal(.same_sport_family(NULL, NULL, 1), FALSE)
+
+  day <- function(hms) as.POSIXct(paste("2024-01-01", hms), tz = "UTC")
+  no_sport <- data.frame(
+    sessionStart = day("09:00:00"), sessionEnd = day("10:00:00"),
+    distance = 5000, duration = as.difftime(3600, units = "secs")
+  )
+  candidates <- data.frame(
+    sessionStart = c(day("09:01:00"), day("12:00:00")),
+    sessionEnd = c(day("10:01:00"), day("13:00:00")),
+    sport = "running", distance = c(5100, 8000),
+    duration = as.difftime(c(3600, 3600), units = "secs")
+  )
+
+  verdict <- .is_same_workout(no_sport, candidates, same_sport = TRUE)
+  expect_length(verdict, 2)
+  expect_false(any(verdict))
+  # And the call path that indexes on it copes.
+  expect_equal(.which_same_workout(no_sport, candidates, same_sport = TRUE),
+               integer(0))
+
+  # Without the sport requirement the same pair still matches, so the
+  # missing field is what decided it and not the fixture.
+  expect_true(.is_same_workout(no_sport, candidates)[1])
+})
