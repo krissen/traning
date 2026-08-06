@@ -325,6 +325,47 @@ parse_hae_workout <- function(path) {
   "ovrigt", "other", "unknown"
 )
 
+# The sport families used when two rows come from the same device and
+# their labels can therefore be compared. Deliberately narrow: running,
+# walking and cycling are three different things, and a commute of ride
+# out, run, ride home is three sessions whose edges touch — not one
+# session recorded three times.
+#
+# Canonical cache values are already English; the Swedish spellings are
+# here so a row that predates the mapping table is read the same way.
+.sport_family <- function(sport) {
+  s <- tolower(trimws(as.character(sport)))
+  s[is.na(s) | !nzchar(s)] <- NA_character_
+  s[grepl("^(running|l\u00f6pning|k\u00f6r)$", s)] <- "running"
+  s[grepl("^(walking|g\u00e5ng|promenad|vandring)$", s)] <- "walking"
+  s[grepl("^(cycling|cykling|cykel)$", s)] <- "cycling"
+  s
+}
+
+# TRUE where both rows carry a label and the two name the same family.
+#
+# A *missing* label never matches: with nothing to compare there is no
+# confirming that two recordings from one device are the same activity.
+# A label outside the three named families is compared as it stands, so
+# two table tennis sessions or two strength sessions are the same family
+# as each other — the families exist to keep a ride apart from a run,
+# not to rank labels. What keeps consecutive strength logs from reading
+# as copies of each other is the overlap the match rule requires when
+# neither row measured a distance, not this test.
+.same_sport_family <- function(a, b, n) {
+  # One answer per compared pair, whatever comes in. A row with no sport
+  # field at all yields a zero-length vector here, and the length only
+  # survives because rep(x, length.out = n) pads a zero-length x with
+  # NA — true, but too quiet a thing for the caller's contract to rest
+  # on. Say it outright: nothing to compare is no match.
+  fa <- .sport_family(a)
+  fb <- .sport_family(b)
+  if (length(fa) == 0 || length(fb) == 0) return(rep(FALSE, n))
+  fa <- rep(fa, length.out = n)
+  fb <- rep(fb, length.out = n)
+  !is.na(fa) & !is.na(fb) & fa == fb
+}
+
 # Pull a field out of a data frame, list or bare vector holder.
 .workout_field <- function(x, name) {
   if (is.data.frame(x) || is.list(x)) {
@@ -340,6 +381,24 @@ parse_hae_workout <- function(path) {
   if (is.null(x) || length(x) == 0) return(NA_real_)
   if (inherits(x, "difftime")) return(as.numeric(x, units = "secs"))
   as.numeric(x)
+}
+
+# TRUE where the two wall-clock intervals actually overlap. Both ends
+# have to be known: an interval with no end cannot be shown to cover
+# anything.
+.intervals_overlap <- function(a, b, n) {
+  num <- function(x) {
+    if (is.null(x) || length(x) == 0) return(rep(NA_real_, n))
+    rep(as.numeric(as.POSIXct(x)), length.out = n)
+  }
+  sa <- num(.workout_field(a, "sessionStart"))
+  sb <- num(.workout_field(b, "sessionStart"))
+  ea <- num(.workout_field(a, "sessionEnd"))
+  eb <- num(.workout_field(b, "sessionEnd"))
+  ok <- !is.na(sa) & !is.na(sb) & !is.na(ea) & !is.na(eb)
+  out <- rep(FALSE, n)
+  out[ok] <- (pmin(ea[ok], eb[ok]) - pmax(sa[ok], sb[ok])) > 0
+  out
 }
 
 # TRUE where both quantities are present, positive and within `tol` of
@@ -403,6 +462,12 @@ parse_hae_workout <- function(path) {
 #' @param time_only_seconds Δstart window when neither distance nor
 #'   duration is comparable on both sides.
 #' @param tolerance Relative tolerance for the distance/duration check.
+#' @param same_sport Require both rows to name the same sport family.
+#'   FALSE between an Apple Watch row and a Garmin one, whose labels
+#'   disagree often enough to be useless — a slow jog is "Utomhus Gång"
+#'   on one and running on the other. TRUE between two rows from the same
+#'   device, where the labels are comparable and a ride and a run really
+#'   are two sessions however their edges overlap.
 #' @param overlap_min_seconds Minimum wall-clock overlap.
 #' @param overlap_coverage Fraction of the shorter session the overlap
 #'   may cover as evidence.
@@ -413,6 +478,7 @@ parse_hae_workout <- function(path) {
                              window_seconds = .WORKOUT_MATCH_WINDOW,
                              time_only_seconds = .WORKOUT_MATCH_TIME_ONLY_WINDOW,
                              tolerance = .WORKOUT_MATCH_TOLERANCE,
+                             same_sport = FALSE,
                              overlap_min_seconds = .WORKOUT_OVERLAP_MIN,
                              overlap_coverage = .WORKOUT_OVERLAP_COVERAGE,
                              overlap_end_seconds = .WORKOUT_OVERLAP_END_WINDOW) {
@@ -447,12 +513,45 @@ parse_hae_workout <- function(path) {
                      dt <= window_seconds & (dist_ok | dur_ok),
                      dt <= time_only_seconds)
 
-  by_start | .overlaps_same_workout(
+  # With no distance on either side, nearness in time is the whole case
+  # for calling two recordings one session — and it is not enough.
+  #
+  # This is a decision taken on measurement, so please do not relax it
+  # back to nearness without repeating the measurement. Of the nine pairs
+  # the cleanup offered on the development cache before this rule, only
+  # two overlapped in time at all; the other seven sat 4 to 44 seconds
+  # apart, end to start. Those seven are the watch logging strength work
+  # set by set — 2020-04-04 is three entries of 24, 26 and 27 seconds,
+  # 68 and 82 seconds apart, under three separate filenames, and the
+  # 2020-04-06 pair records different average heart rates. Their
+  # durations agree with each other, which is exactly what made them look
+  # like copies once the distance was gone.
+  #
+  # Two recordings of one session share the clock and therefore overlap.
+  # Consecutive entries with a gap between them are consecutive activity,
+  # whatever their durations say. The rule costs nothing where a distance
+  # exists on either side, and no pair in the cache has a Garmin row and
+  # an Apple Watch row that both lack one.
+  unmeasured <- is.na(da) & is.na(db)
+  if (any(unmeasured)) {
+    by_start <- by_start & (!unmeasured | .intervals_overlap(a, b, n))
+  }
+
+  out <- by_start | .overlaps_same_workout(
     a, b, n, da, db, dist_ok,
     overlap_min_seconds = overlap_min_seconds,
     overlap_coverage = overlap_coverage,
     overlap_end_seconds = overlap_end_seconds
   )
+
+  # Two recordings from the same device carry comparable labels, and a
+  # ride and a run are two sessions however their edges overlap. Between
+  # devices the labels disagree too often to be evidence of anything.
+  if (isTRUE(same_sport)) {
+    out <- out & .same_sport_family(.workout_field(a, "sport"),
+                                    .workout_field(b, "sport"), n)
+  }
+  out
 }
 
 # The overlap criterion, split out to keep .is_same_workout() readable.
@@ -747,9 +846,12 @@ parse_hae_workout <- function(path) {
 #' a total built for one of them must not decide the fate of the other.
 #'
 #' @param rows Data frame of summaries rows.
+#' @param same_sport Passed to \code{.is_same_workout()}. TRUE when the
+#'   rows all come from the same device, so their sport labels can be
+#'   compared.
 #' @return List of integer vectors, positions within `rows`.
 #' @keywords internal
-.session_groups <- function(rows) {
+.session_groups <- function(rows, same_sport = FALSE) {
   n <- nrow(rows)
   if (n == 0) return(list())
   if (n == 1) return(list(1L))
@@ -757,7 +859,8 @@ parse_hae_workout <- function(path) {
   for (i in seq_len(n - 1L)) {
     for (j in (i + 1L):n) {
       if (isTRUE(.is_same_workout(rows[i, , drop = FALSE],
-                                  rows[j, , drop = FALSE])[1])) {
+                                  rows[j, , drop = FALSE],
+                                  same_sport = same_sport)[1])) {
         merged <- min(label[i], label[j])
         label[label == label[i] | label == label[j]] <- merged
       }
@@ -975,13 +1078,15 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     # reports read the short distance for good.
     hit <- .which_same_workout(row, hae_rows,
                                window_seconds = tolerance_seconds,
-                               time_only_seconds = time_only_seconds)
+                               time_only_seconds = time_only_seconds,
+                               same_sport = TRUE)
     if (length(hit) > 0) {
       # The same argument on this side: rows that are not copies of each
       # other are different sessions, and a file that matches both is not
       # a copy of either. Replacing them all would delete a session this
       # file never recorded.
-      if (length(.session_groups(hae_rows[hit, , drop = FALSE])) > 1) {
+      if (length(.session_groups(hae_rows[hit, , drop = FALSE],
+                                 same_sport = TRUE)) > 1) {
         result$n_skipped_dup_hae <- result$n_skipped_dup_hae + 1L
         if (verbose) {
           cat("Tvetydig mot flera HAE-pass: ", bn, ", hoppar över\n", sep = "")
