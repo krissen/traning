@@ -499,12 +499,24 @@ parse_hae_workout <- function(path) {
                      dt <= time_only_seconds)
 
   # With no distance on either side, nearness in time is the whole case
-  # for calling two recordings one session — and it is not enough. The
-  # watch logs strength work set by set: three entries of half a minute
-  # each, a minute apart, with their own heart rates. Their durations
-  # agree, which is what made them look like copies. Two recordings of
-  # one session share the clock and therefore overlap; consecutive
-  # entries with a gap between them are consecutive activity.
+  # for calling two recordings one session — and it is not enough.
+  #
+  # This is a decision taken on measurement, so please do not relax it
+  # back to nearness without repeating the measurement. Of the nine pairs
+  # the cleanup offered on the development cache before this rule, only
+  # two overlapped in time at all; the other seven sat 4 to 44 seconds
+  # apart, end to start. Those seven are the watch logging strength work
+  # set by set — 2020-04-04 is three entries of 24, 26 and 27 seconds,
+  # 68 and 82 seconds apart, under three separate filenames, and the
+  # 2020-04-06 pair records different average heart rates. Their
+  # durations agree with each other, which is exactly what made them look
+  # like copies once the distance was gone.
+  #
+  # Two recordings of one session share the clock and therefore overlap.
+  # Consecutive entries with a gap between them are consecutive activity,
+  # whatever their durations say. The rule costs nothing where a distance
+  # exists on either side, and no pair in the cache has a Garmin row and
+  # an Apple Watch row that both lack one.
   unmeasured <- is.na(da) & is.na(db)
   if (any(unmeasured)) {
     by_start <- by_start & (!unmeasured | .intervals_overlap(a, b, n))
