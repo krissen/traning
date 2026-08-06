@@ -1296,3 +1296,99 @@ test_that("a file that covers one session leaves the other alone", {
   expect_equal(as.numeric(surviving$distance), 10000)
   expect_equal(length(res$myruns), nrow(res$summaries))
 })
+
+# --- comparing two recordings from the same device ----------------------------
+#
+# Between an Apple Watch row and a Garmin one the sport labels disagree
+# too often to mean anything — a slow jog is "Utomhus Gång" on one and
+# running on the other — so those comparisons stay sport-blind. Between
+# two rows from the *same* device the labels are comparable, and a ride
+# and a run are two sessions however their edges touch. Commuting by
+# bike with a run in the middle is exactly that shape.
+
+.dev_row <- function(offset, duration, distance = NA_real_,
+                     sport = "running", origin = .B0) {
+  start <- origin + offset
+  data.frame(sessionStart = start, sessionEnd = start + duration,
+             sport = sport, distance = distance,
+             duration = as.difftime(duration, units = "secs"),
+             stringsAsFactors = FALSE)
+}
+
+.same_device <- function(a, b) .is_same_workout(a, b, same_sport = TRUE)
+
+test_that("one device's labels separate the sport families", {
+  measured <- function(sport) .dev_row(0, 600, 1000, sport)
+  later <- function(sport) .dev_row(30, 600, 1000, sport)
+
+  expect_true(.same_device(measured("running"), later("running")))
+  expect_false(.same_device(measured("running"), later("walking")))
+  expect_false(.same_device(measured("running"), later("cycling")))
+  expect_false(.same_device(measured("walking"), later("cycling")))
+
+  # A row written before the mapping table reads the same as one after it.
+  expect_true(.same_device(measured("kör"), later("running")))
+  expect_true(.same_device(measured("löpning"), later("running")))
+  expect_true(.same_device(measured("gång"), later("walking")))
+  expect_true(.same_device(measured("promenad"), later("walking")))
+  expect_true(.same_device(measured("cykling"), later("cycling")))
+
+  # Nothing to compare is not a match.
+  expect_false(.same_device(measured(NA_character_), later("running")))
+  expect_false(.same_device(measured(""), later("running")))
+})
+
+test_that("comparisons across devices stay blind to the sport", {
+  # The label disagreement this rule exists to tolerate: the watch calls
+  # a slow jog a walk while Garmin records it as a run.
+  expect_true(.is_same_workout(.dev_row(0, 600, 1000, "running"),
+                               .dev_row(30, 600, 1000, "walking")))
+})
+
+test_that("two unmeasured recordings must overlap to be one session", {
+  # The watch logs strength work set by set: half a minute each, a minute
+  # apart, with durations that agree — which is what made consecutive sets
+  # look like copies of one session. Two recordings of one session share
+  # the clock; consecutive entries with a gap between them do not.
+  unmeasured <- function(offset) .dev_row(offset, 30, NA_real_, "strength")
+
+  expect_true(.same_device(unmeasured(0), unmeasured(25)))   # 5 s of overlap
+  expect_true(.same_device(unmeasured(0), unmeasured(29)))   # 1 s of overlap
+  expect_false(.same_device(unmeasured(0), unmeasured(30)))  # edges touch
+  expect_false(.same_device(unmeasured(0), unmeasured(31)))  # 1 s apart
+  expect_false(.same_device(unmeasured(0), unmeasured(34)))  # 4 s apart
+
+  # The 2020-04-04 triple in the cache: three sets, roughly a minute
+  # apart, none of them a copy of another.
+  sets <- lapply(c(0, 68, 150), unmeasured)
+  expect_false(.same_device(sets[[1]], sets[[2]]))
+  expect_false(.same_device(sets[[2]], sets[[3]]))
+  expect_false(.same_device(sets[[1]], sets[[3]]))
+})
+
+test_that("a measured recording is unaffected by the overlap requirement", {
+  # The requirement is on the case where neither side has a distance. One
+  # measured side is enough to leave the older behaviour in place, so a
+  # genuine pair separated by a few seconds still matches.
+  for (gap in c(0, 4, 60)) {
+    expect_true(.same_device(.dev_row(0, 30, 500, "running"),
+                             .dev_row(30 + gap, 30, NA_real_, "running")),
+                info = paste("distance on the first side, gap", gap))
+    expect_true(.same_device(.dev_row(0, 30, NA_real_, "running"),
+                             .dev_row(30 + gap, 30, 500, "running")),
+                info = paste("distance on the second side, gap", gap))
+    expect_true(.same_device(.dev_row(0, 30, 500, "running"),
+                             .dev_row(30 + gap, 30, 510, "running")),
+                info = paste("both sides measured, gap", gap))
+  }
+})
+
+test_that("a genuine pair of copies still reads as one session", {
+  # 2017-09-15 in the cache: the same run written twice, fifty seconds
+  # apart, same sport, overlapping throughout. Neither the sport rule nor
+  # the overlap rule may touch it.
+  first <- .dev_row(0, 220, 640, "running")
+  second <- .dev_row(50, 221, 649, "running")
+  expect_true(.same_device(first, second))
+  expect_true(.same_device(second, first))
+})
