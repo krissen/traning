@@ -342,9 +342,16 @@ parse_hae_workout <- function(path) {
   s
 }
 
-# TRUE where both labels are known and name the same family. An unknown
-# label is never "the same": without it there is nothing to confirm two
-# recordings from one device are the same activity.
+# TRUE where both rows carry a label and the two name the same family.
+#
+# A *missing* label never matches: with nothing to compare there is no
+# confirming that two recordings from one device are the same activity.
+# A label outside the three named families is compared as it stands, so
+# two table tennis sessions or two strength sessions are the same family
+# as each other — the families exist to keep a ride apart from a run,
+# not to rank labels. What keeps consecutive strength logs from reading
+# as copies of each other is the overlap the match rule requires when
+# neither row measured a distance, not this test.
 .same_sport_family <- function(a, b, n) {
   fa <- rep(.sport_family(a), length.out = n)
   fb <- rep(.sport_family(b), length.out = n)
