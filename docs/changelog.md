@@ -29,6 +29,21 @@ historiken är rensad.
   åt båda hållen. Levererar Apple Health två filer för samma pass — den
   egna inspelningen och en spegling via Garmin Connect — behålls den
   fylligaste av dem, oavsett vilken som kom först.
+- **En cykeltur och en löprunda är två pass, även när de tar i
+  varandra.** Att cykla till spåret, springa och cykla hem ger tre
+  inspelningar från samma klocka vars kanter överlappar: cykeln stoppas
+  en minut efter att löpningen börjat. Sådana rader lästes som ett och
+  samma pass och en av dem försvann — bland dem två hela löprundor.
+  Mellan två inspelningar från klockan jämförs nu också vad de säger att
+  de är, så tre olika aktiviteter förblir tre pass. Mellan klockan och
+  Garmin är etiketterna fortfarande ingen ledtråd: samma joggtur kan
+  komma tillbaka som promenad från den ena av dem.
+- **Set i följd är inte kopior av varandra.** Ett styrkepass loggas set
+  för set — en halv minut i taget, en dryg minut isär, med var sin puls.
+  Utan sträcka att jämföra såg de likadana ut som två inspelningar av
+  samma pass. Nu krävs att inspelningarna verkligen pågår samtidigt för
+  att räknas som samma: två inspelningar av ett pass delar klocka, två
+  set efter varandra gör det inte.
 - **Garmin har företräde, utom när Garmin bara fångat en bit.** Normalt
   är det Garmins siffror som gäller. Men när klockan startats sent eller
   stoppats tidigt och bara fått med en bråkdel av passet behålls
@@ -45,7 +60,8 @@ historiken är rensad.
   borttagningen. Det städar både dubbletter mot Garmin och pass som
   klockan råkat spela in två gånger utan att Garmin varit med alls. På
   utvecklingsdatorn försvann 314 Apple Watch-dubbletter och nio
-  Garmin-fragment, plus ett tjugotal rena kopior.
+  Garmin-fragment, plus de rena kopiorna — ett fåtal, sedan pass som
+  bara råkade ligga nära varandra i tiden slutat räknas dit.
 - **Sessionerna pekar på rätt inspelning igen.** Den detaljerade
   pulskurvan för ett pass låg i en lista som sorterades separat från
   passlistan, så kopplingen mellan dem gled isär vid varje sparning.
