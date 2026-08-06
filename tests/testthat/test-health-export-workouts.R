@@ -343,10 +343,23 @@ test_that(".is_same_workout requires a sanity check inside the wide window", {
     a, .wk("2026-08-01 11:02:36", distance = 3140, duration = 1376)))
 })
 
-test_that(".is_same_workout falls back to a narrow time-only window", {
-  a <- .wk("2026-08-01 11:00:49")
-  expect_true(.is_same_workout(a, .wk("2026-08-01 11:02:36")))   # 107 s
-  expect_false(.is_same_workout(a, .wk("2026-08-01 11:04:00")))  # 191 s
+test_that(".is_same_workout needs an overlap when nothing was measured", {
+  # With no distance on either side there is nothing but the clock to go
+  # on, and nearness alone is not enough: the watch logs strength work
+  # set by set, half a minute at a time a minute apart. Two recordings of
+  # one session share the clock and overlap.
+  a <- .wk("2026-08-01 11:00:49", end = "2026-08-01 11:23:00")
+  expect_true(.is_same_workout(a, .wk("2026-08-01 11:02:36",
+                                      end = "2026-08-01 11:24:00")))
+  # Consecutive rather than concurrent — a gap, so two sessions.
+  expect_false(.is_same_workout(a, .wk("2026-08-01 11:23:30",
+                                       end = "2026-08-01 11:45:00")))
+  # Without an end there is no overlap to demonstrate, so no match on
+  # nearness alone however close the starts are.
+  expect_false(.is_same_workout(.wk("2026-08-01 11:00:49"),
+                                .wk("2026-08-01 11:02:36")))
+  # And still no match when the starts are far apart.
+  expect_false(.is_same_workout(a, .wk("2026-08-01 11:04:00")))
 })
 
 test_that(".is_same_workout is vectorised over the candidate table", {
@@ -531,9 +544,13 @@ test_that("import_hae_workouts dedups a mid-session Apple Watch recording", {
 })
 
 test_that(".is_same_workout handles difftime durations and NA starts", {
-  a <- .wk("2026-08-01 11:00:49", distance = NA_real_)
+  # Ends are given so the pair can show an overlap: with no distance on
+  # either side that is required, and this case is about the units.
+  a <- .wk("2026-08-01 11:00:49", distance = NA_real_,
+           end = "2026-08-01 11:24:00")
   a$duration <- as.difftime(1391 / 60, units = "mins")
-  b <- .wk("2026-08-01 11:02:36", distance = NA_real_)
+  b <- .wk("2026-08-01 11:02:36", distance = NA_real_,
+           end = "2026-08-01 11:25:32")
   b$duration <- as.difftime(1376, units = "secs")
   expect_true(.is_same_workout(a, b))
 

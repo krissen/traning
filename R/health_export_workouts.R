@@ -368,6 +368,24 @@ parse_hae_workout <- function(path) {
   as.numeric(x)
 }
 
+# TRUE where the two wall-clock intervals actually overlap. Both ends
+# have to be known: an interval with no end cannot be shown to cover
+# anything.
+.intervals_overlap <- function(a, b, n) {
+  num <- function(x) {
+    if (is.null(x) || length(x) == 0) return(rep(NA_real_, n))
+    rep(as.numeric(as.POSIXct(x)), length.out = n)
+  }
+  sa <- num(.workout_field(a, "sessionStart"))
+  sb <- num(.workout_field(b, "sessionStart"))
+  ea <- num(.workout_field(a, "sessionEnd"))
+  eb <- num(.workout_field(b, "sessionEnd"))
+  ok <- !is.na(sa) & !is.na(sb) & !is.na(ea) & !is.na(eb)
+  out <- rep(FALSE, n)
+  out[ok] <- (pmin(ea[ok], eb[ok]) - pmax(sa[ok], sb[ok])) > 0
+  out
+}
+
 # TRUE where both quantities are present, positive and within `tol` of
 # each other (relative to the larger of the two).
 .within_relative <- function(x, y, tol) {
@@ -479,6 +497,18 @@ parse_hae_workout <- function(path) {
   by_start <- ifelse(comparable,
                      dt <= window_seconds & (dist_ok | dur_ok),
                      dt <= time_only_seconds)
+
+  # With no distance on either side, nearness in time is the whole case
+  # for calling two recordings one session — and it is not enough. The
+  # watch logs strength work set by set: three entries of half a minute
+  # each, a minute apart, with their own heart rates. Their durations
+  # agree, which is what made them look like copies. Two recordings of
+  # one session share the clock and therefore overlap; consecutive
+  # entries with a gap between them are consecutive activity.
+  unmeasured <- is.na(da) & is.na(db)
+  if (any(unmeasured)) {
+    by_start <- by_start & (!unmeasured | .intervals_overlap(a, b, n))
+  }
 
   out <- by_start | .overlaps_same_workout(
     a, b, n, da, db, dist_ok,

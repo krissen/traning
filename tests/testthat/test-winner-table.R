@@ -695,3 +695,63 @@ test_that("a group of three copies loses two of them", {
   expect_equal(after$summaries$distance, 6010)
   expect_length(after$myruns, 1)
 })
+
+# --- nearness in time is not enough without a distance -----------------------
+
+test_that("consecutive logs with no distance are not copies of each other", {
+  # The watch logs strength work set by set: entries of half a minute
+  # each, a minute apart, each with its own heart rate. Their durations
+  # agree — which is exactly what made them look like copies, since with
+  # no distance the duration is the only quantity left to compare.
+  # Recordings of one session share the clock and overlap; these have a
+  # gap between them.
+  day <- function(hms) as.POSIXct(paste("2020-04-04", hms), tz = "UTC")
+  set_row <- function(from, to) data.frame(
+    sessionStart = day(from), sessionEnd = day(to), sport = "strength",
+    distance = NA_real_,
+    duration = as.difftime(as.numeric(difftime(day(to), day(from),
+                                               units = "secs")),
+                           units = "secs"),
+    file = paste0("hae:set-", from, ".json"), source = "hae",
+    stringsAsFactors = FALSE)
+
+  first <- set_row("23:10:55", "23:11:19")
+  second <- set_row("23:12:03", "23:12:29")   # 44 s after the first ends
+  third <- set_row("23:13:25", "23:13:52")
+  expect_false(.is_same_workout(first, second, same_sport = TRUE))
+  expect_false(.is_same_workout(second, third, same_sport = TRUE))
+  expect_length(.session_groups(rbind(first, second, third),
+                                same_sport = TRUE), 3)
+
+  # Even a four-second gap is a gap.
+  expect_false(.is_same_workout(set_row("07:56:26", "07:57:47"),
+                                set_row("07:57:51", "07:59:09"),
+                                same_sport = TRUE))
+
+  # Two recordings of one set do overlap, and those are copies.
+  expect_true(.is_same_workout(set_row("23:10:55", "23:11:19"),
+                               set_row("23:10:57", "23:11:21"),
+                               same_sport = TRUE))
+})
+
+test_that("a measured session is unaffected by the overlap requirement", {
+  # The rule only applies where nothing but the clock is left. A pair
+  # with distances is still judged on them — 2017-09-15, two recordings
+  # of one run, 640 m and 649 m.
+  day <- function(hms) as.POSIXct(paste("2017-09-15", hms), tz = "UTC")
+  pair <- data.frame(
+    sessionStart = c(day("17:36:00"), day("17:36:50")),
+    sessionEnd = c(day("17:39:42"), day("17:40:30")),
+    sport = "running", distance = c(640, 649),
+    duration = as.difftime(c(222, 220), units = "secs"),
+    file = c("hae:a.json", "hae:b.json"), source = "hae",
+    stringsAsFactors = FALSE
+  )
+  expect_true(.is_same_workout(pair[1, ], pair[2, ], same_sport = TRUE))
+
+  # And one side having a distance is enough to keep the old behaviour:
+  # the requirement is only for pairs where neither side has one.
+  half <- pair
+  half$distance[2] <- NA_real_
+  expect_true(.is_same_workout(half[1, ], half[2, ], same_sport = TRUE))
+})
