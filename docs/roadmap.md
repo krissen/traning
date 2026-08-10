@@ -1,9 +1,31 @@
 # tRäning — Roadmap
 
-> **Omfattning:** Detta dokument spårar enbart AUR-paketeringsarbetet
-> (separat repo `github.com/krissen/aurbuild`) — inte tRäning-appens eller
-> pipelinens produktroadmap. Levererade produktändringar dokumenteras i
-> `docs/changelog.md`.
+> **Omfattning:** Framtida arbete (pipeline/produkt samt AUR-paketering).
+> Levererade ändringar dokumenteras i `docs/changelog.md`.
+
+## Pipeline: HAE-hämtning och övervakning
+
+Uppföljningsspår från vilopuls-incidenten aug 2026
+(`docs/dev/incidents/2026-08-07-resting-hr-export-gap.md`) och
+MCP-backfillen 2026-08-10.
+
+- **HTTP/MCP-läge i hälsohämtningsklienten.** HAE:s HTTP- och TCP-serverlägen
+  är ömsesidigt uteslutande; `hae_client.py`/`fetch_tcp` talar enbart det
+  gamla rå-TCP-protokollet och får 0 bytes mot en HTTP/MCP-server.
+  MCP-servern (v1.1.0) autentiserar med `Authorization: Bearer <token>` från
+  appens Server-skärm och exponerar `get_health_metrics(start, end, metrics,
+  interval, aggregate)` m.fl. Fungerande prototyp: `~/hae_mcp_fetch.py` på
+  kailash (stdlib-only, hanterar Mcp-Session-Id + SSE-svar).
+- **`aggregate=false` som default vid HAE-hämtning.** `fetch_tcp` hårdkodar
+  `aggregate=True`, vilket ger källblandade dygnsvärden (Apple Watch ~50 bpm
+  medelvärdesbildad med Garmin Connect ~100+ till en enda rad) som
+  `.connect_contaminated_metrics` inte kan rensa — filtret kräver separerade
+  per-källa-samples. Inkluderar audit av historiskt TCP-hämtade
+  vilopulsvärden i canonical.
+- **Per-metrik-staleness-larm i `traning doctor`.** Enskilda metriker kan
+  tyst falla ur HAE:s automatiska pushar (vilopuls aug 2026) utan att någon
+  freshness-check reagerar; okända/utblivna metriker filtreras dessutom tyst
+  av `.import_metrics`-vitlistan (loggas bara vid `verbose=TRUE`).
 
 ## AUR-paketering (pausad 2026-05-18)
 
