@@ -1,5 +1,22 @@
 # tRäning — Changelog
 
+## 2026-08-11 — Vilopulsen kommer fram igen
+
+Sedan början av augusti saknades vilopuls i dagsformen, och orsaken låg
+utanför tRäning. Klockan skriver dagens vilopuls till Hälsa vid
+lunchtid, men tidsstämplar samplet strax efter midnatt. Health Auto
+Exports automatik exporterar "sedan senaste synkronisering" räknat på
+samplets tidsstämpel och inte på när det skrevs, så ett backdaterat
+värde hamnar permanent bakom fönstret och skickas aldrig. Felet är
+anmält uppströms som
+[Lybron/health-auto-export#61](https://github.com/Lybron/health-auto-export/issues/61).
+
+- **Exportfönstret är omställt till "Idag" tills felet är rättat.**
+  Telefonen skickar då hela dygnets metriker vid varje synk i stället
+  för bara det nya, vilket fångar även backdaterade värden.
+  Mottagarsidan är oförändrad: allt dedupliceras till en fil per metrik
+  och dygn, så varken lagring eller historik växer av omställningen.
+
 ## 2026-08-06 — Ett pass, en rad
 
 Apple Watch och Garmin spelar in samma pass var för sig, och båda

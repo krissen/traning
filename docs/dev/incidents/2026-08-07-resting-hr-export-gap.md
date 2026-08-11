@@ -1,7 +1,9 @@
 # Incidentrapport: Vilopuls saknades i kvällsnotisen 5–7 augusti 2026
 
-**Status:** Backfylld t.o.m. 10 aug; fönstermekanismen experimentellt bekräftad 10 aug; inväntar en reproduktion innan HAE-issue postas (utkast klart)
-**Uppdaterad:** 2026-08-10
+**Status:** Avslutad — grundorsak bekräftad 11 aug (reproduktion), upstream-issue
+`Lybron/health-auto-export#61` postad, workaround aktiv ("Idag"-exportfönster).
+Backfylld t.o.m. 10 aug. Kvarstår: bevakningspunkt 12 aug (se nedan).
+**Uppdaterad:** 2026-08-11
 **Allvarlighetsgrad:** Låg — degraderad datakvalitet, inga felaktiga värden
 **Rapportdatum:** 2026-08-07
 
@@ -42,7 +44,7 @@ konfiguration). Starkaste hypotesen är en bugg i automationens
 inkrementella exportfönster: Apples vilopulsvärden tidsstämplas
 00:01–00:05, precis i dygnsskarven, och kan falla mellan två
 exportfönster. Mönstret liknar tidigare HAE-metrikbuggar
-(aggregateSleep, issue #51). Ej bekräftat.
+(aggregateSleep, issue #51). Bekräftad 11 aug — se uppdateringen nedan.
 
 ## Felsökningsnoteringar
 
@@ -92,17 +94,45 @@ Fortsatt utredning 10 aug fastställde följande:
 - **Bifyndet `weight_body_mass`** avskrivet: användaren har inte vägt sig
   sedan 8 juli — ingen bugg.
 
+## Uppdatering 2026-08-11: grundorsak bekräftad, issue postad, workaround vald
+
+Reproduktionen kom 11 aug och stängde frågan.
+
+- **Reproduktion (lokal tid).** Apple Watch skrev dagens vilopuls till
+  Apple Health omkring 11:00, men samplet var tidsstämplat 00:03 —
+  backdaterat ~11 timmar. De automatiska pusharna 12:01 och 13:38, båda
+  med fönstret "Sedan senaste synkronisering", saknade
+  `resting_heart_rate` trots att värdet fanns i Hälsa-appen.
+- **Kontroll.** 13:56 byttes automationens exportfönster till "Idag".
+  14:42 triggades en manuell synk av *samma* automation, som då
+  levererade samplet (`canonical/resting_heart_rate/2026-08-11.json`
+  skapad 14:42 på kailash).
+- **Slutsats.** Inkrementalfönstret ankras på samplets tidsstämpel, inte
+  på när det skrevs till HealthKit. Ett backdaterat sample hamnar därmed
+  permanent bakom fönstret och exporteras aldrig. Att leveransen gick
+  genom samma automation-path utesluter samtidigt ett
+  automation-only-metrikfilter — det är fönstret, inte metrikurvalet.
+- **Upstream-issue postad 11 aug:**
+  [Lybron/health-auto-export#61](https://github.com/Lybron/health-auto-export/issues/61)
+  — *[BUG] "Since Last Sync" automations permanently miss back-dated
+  samples (Resting Heart Rate), while a "Today" window on the same
+  automation delivers them (9.0.15)*.
+
+### Beslut: "Idag"-fönstret som workaround
+
+Automationen står kvar på "Idag"-fönstret tills issuen är åtgärdad
+uppströms. Kostnaden är försumbar: mottagaren deduplicerar till
+per-metrik-per-dag-filer i `canonical/`, så lagring och git-churn är
+oförändrade — endast nätverkspayloaden blir marginellt större.
+
+**Bevakningspunkt 12 aug:** verifiera att retroaktivt skrivna
+gårdagsmetriker (särskilt sömn) fortfarande anländer med "Idag"-fönstret.
+Om de inte gör det: backfilla de dygnen och ompröva fönstervalet.
+
 ## Uppföljningsåtgärder
 
-1. **Invänta en reproduktion** (11 aug: automatiska pushar utan
-   `resting_heart_rate` trots värde i Hälsa-appen), verifiera på kailash,
-   och **posta därefter HAE-issuen** — färdigt språktvättat utkast i
-   `tmp/hae_issue_draft.md` (kompletteras först med experimentresultatet
-   19:48/19:59-paret); postas till `Lybron/health-auto-export` via `gh`
-   efter produktägarens OK. Länka issuen här när den finns.
-2. **Tills fixen:** manuell HAE-export med några dagars mellanrum täpper
-   gluggen (mottagaren kanoniserar allt; dedup per metrik/dag).
-3. **Roadmap-spår** (tillagda 10 aug, se `docs/roadmap.md`):
+1. **Bevakningspunkt 12 aug** enligt ovan.
+2. **Roadmap-spår** (tillagda 10 aug, se `docs/roadmap.md`):
    HTTP/MCP-läge i hämtningsklienten, `aggregate=false` som default +
    audit av historiskt källblandade värden, per-metrik-staleness-larm i
    `traning doctor`.

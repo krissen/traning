@@ -9,6 +9,11 @@ Uppföljningsspår från vilopuls-incidenten aug 2026
 (`docs/dev/incidents/2026-08-07-resting-hr-export-gap.md`) och
 MCP-backfillen 2026-08-10.
 
+- **Bevakningspunkt 2026-08-12: "Idag"-fönstrets täckning.** Automationens
+  exportfönster står på "Idag" som workaround för
+  `Lybron/health-auto-export#61`. Verifiera att retroaktivt skrivna
+  gårdagsmetriker (särskilt sömn) fortfarande anländer; annars backfill och
+  omprövat fönsterval.
 - **HTTP/MCP-läge i hälsohämtningsklienten.** HAE:s HTTP- och TCP-serverlägen
   är ömsesidigt uteslutande; `hae_client.py`/`fetch_tcp` talar enbart det
   gamla rå-TCP-protokollet och får 0 bytes mot en HTTP/MCP-server.
