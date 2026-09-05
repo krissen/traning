@@ -36,6 +36,15 @@ tillförlitliga.
 - **Shiny-panel i tRanat.** Inte byggd. Notisen är den yta som betyder
   något för den här funktionen, och en panel är meningsfull först när det
   finns mer än några veckors historik att visa.
+- **R-testsviten skriver i den riktiga datakatalogen.** `devtools::test()`
+  skriver om `decoupling.RData` och `zone_distribution.RData` i den cache
+  `TRANING_DATA` pekar på, alltså användarens levande katalog vid en
+  vanlig körning på kedar. Beteendet är förbefintligt och båda filerna är
+  regenererbara, och sviten ger samma utfall mot en kopia som mot den
+  riktiga katalogen, så inget test hänger på det verkliga innehållet. Men
+  en testsvit ska inte röra produktionsdata. Egen PR: peka testerna på en
+  temporär katalog, eller låt de berörda testerna sätta `TRANING_DATA`
+  själva. Tills dess: kör sviten med `TRANING_DATA` pekad på en kopia.
 - **Avvikande glasenhet i notistexten.** Produktbeslut. Ändras
   inställningen i DrinkControl skriver notisen standardglas härledda ur ett
   värde som inte längre gäller, utan att antyda det. Flaggan finns redan i
