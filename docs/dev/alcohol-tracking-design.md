@@ -400,14 +400,24 @@ Two different windows, for two different sentences.
   precision rather than shift the level, and makes this the same kind of
   quantity as the daily share.
 
-  The scale is seven for a week that has closed and the elapsed count
-  for the week in progress. A flat seven would project expenditure
-  across days the numerator cannot cover, understating the share of the
-  current week by elapsed over seven, about 29 percent on a Friday. Both
-  report surfaces return the in-progress week beside completed ones, so
-  the two rows would otherwise answer slightly different questions with
-  nothing marking which is which. The Monday notification is unaffected
-  either way, since it reads a week that has closed.
+  The scale is seven for a week that has closed and, for a week in
+  progress, the number of evenings the account actually covers. A flat
+  seven would project expenditure across days the numerator cannot
+  cover, understating the share of the current week by about 29 percent
+  on a Friday. Both report surfaces return the in-progress week beside
+  completed ones, so the two rows would otherwise answer slightly
+  different questions with nothing marking which is which. The Monday
+  notification is unaffected either way, since it reads a closed week.
+
+  The count comes from the table's own last evening rather than from
+  today. Those differ: the table stops at today and a row dated today
+  carries yesterday's evening, so today's evening is normally missing
+  from the numerator, and scaling through today would measure a longer
+  span than the numerator covers. It is present in the one case where
+  drinks were logged today and the morning-after row already exists.
+  Taking the span from the data covers both without assuming which case
+  it is in, and means a week's share does not change merely because it
+  is read later.
 
 The weekly account is keyed by the **drinking date**, the morning date
 minus one, so it is a week of evenings and matches the word `kvällar`

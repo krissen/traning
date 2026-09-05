@@ -709,17 +709,72 @@ test_that("an unfinished week is measured against the days that happened", {
   hd <- fake_health(drink_days)
 
   in_progress <- compute_alcohol_week(a, hd, today = friday)
-  # Five elapsed days, not seven.
+  # Five evenings covered, not seven.
   expect_equal(round(in_progress$week_tdee_kcal), round(5 * 2390.057))
   expect_equal(round(in_progress$share, 4), round(280 / (5 * 2390.057), 4))
 
-  # Seen after the week has closed, the same data scales to a full week.
-  closed <- compute_alcohol_week(a, hd, today = as.Date("2026-09-14"))
+  # Once the week has run out, the same drinking is measured against all
+  # seven of its days. The span follows the account's reach, not the
+  # clock: a table that still stops on Friday keeps answering for five
+  # evenings however long afterwards it is read.
+  whole_week <- seq(as.Date("2026-08-31"), as.Date("2026-09-06"), by = "day")
+  full <- fake_nights(whole_week + 1)
+  full <- set_night(full, as.Date("2026-09-04"), units = 4, kcal = 280)
+  closed <- compute_alcohol_week(full, fake_health(whole_week),
+                                  today = as.Date("2026-09-14"))
   expect_equal(round(closed$week_tdee_kcal), round(7 * 2390.057))
   expect_lt(closed$share, in_progress$share)
+
+  reread <- compute_alcohol_week(a, hd, today = as.Date("2026-09-14"))
+  expect_equal(round(reread$week_tdee_kcal),
+               round(in_progress$week_tdee_kcal))
 })
 
-test_that("elapsed days are counted from the ISO Monday", {
+test_that("the denominator covers the evenings the numerator represents", {
+  # Five completed evenings, Monday through Friday, read on the Saturday
+  # morning. The table is capped at today and a row dated today carries
+  # yesterday's evening, so today's evening is not in the numerator.
+  # Counting today as an elapsed day scaled the denominator through six
+  # days against five evenings, reading about 17 percent low.
+  saturday <- as.Date("2026-09-05")
+  drink_days <- seq(as.Date("2026-08-31"), as.Date("2026-09-04"), by = "day")
+  n <- build_alcohol_nights(
+    sample_row(drink_days, 2),
+    sample_row(drink_days, 140 * 4.184, "DrinkControl", "kJ"),
+    today = saturday)
+  hd <- fake_health(drink_days)
+
+  w <- compute_alcohol_week(n, hd, today = saturday)
+  wk <- w[w$iso_week == "2026-W36", ]
+  expect_equal(wk$drinking_days, 5L)
+  # Five evenings against five days of expenditure.
+  expect_equal(round(wk$week_tdee_kcal), round(5 * 2390.057))
+  expect_equal(round(wk$share, 4), round(wk$kcal / (5 * 2390.057), 4))
+})
+
+test_that("an evening logged today is counted on both sides", {
+  # The one case where today's evening IS in the numerator: drinks
+  # logged today, so the morning-after row already exists and reaches
+  # one day further than the cap alone would suggest.
+  friday <- as.Date("2026-09-04")
+  drink_days <- seq(as.Date("2026-08-31"), friday, by = "day")
+  n <- build_alcohol_nights(
+    sample_row(drink_days, 2),
+    sample_row(drink_days, 140 * 4.184, "DrinkControl", "kJ"),
+    today = friday)
+  # The table reaches Saturday morning, carrying Friday evening.
+  expect_equal(max(n$date), friday + 1)
+
+  hd <- fake_health(drink_days)
+  w <- compute_alcohol_week(n, hd, today = friday)
+  wk <- w[w$iso_week == "2026-W36", ]
+  expect_equal(wk$drinking_days, 5L)
+  # Five evenings, including today's, against five days.
+  expect_equal(round(wk$week_tdee_kcal), round(5 * 2390.057))
+})
+
+test_that("covered evenings are counted from the ISO Monday", {
+  # The argument is the last evening the account covers, not today.
   f <- traning:::.alcohol_week_elapsed_days
   # 2026-W36 runs Monday 2026-08-31 to Sunday 2026-09-06.
   expect_equal(format(as.Date("2026-08-31"), "%G-W%V"), "2026-W36")

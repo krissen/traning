@@ -777,18 +777,28 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
   alcohol
 }
 
-#' How many days of an ISO week have happened
+#' How many evenings of an ISO week the account can cover
 #'
-#' Seven for any week that has closed, and the elapsed count for the week
-#' in progress. Weeks entirely in the future return zero, which sends the
-#' share to NA rather than producing a number for days that do not exist.
+#' Seven for any week that has closed, and the count of covered evenings
+#' for the week in progress. Weeks that have not started return zero,
+#' which sends the share to NA rather than producing a number for days
+#' that do not exist.
+#'
+#' The reference is the last evening the night table can speak about, not
+#' today. Those differ: the table is capped at today and a row dated
+#' today carries yesterday's evening, so today's evening is normally
+#' absent from the numerator, and scaling the denominator through today
+#' would measure a longer span than the numerator covers. It is present
+#' in the one case where drinks were logged today and the morning-after
+#' row already exists. Deriving the count from the table's own reach
+#' handles both without assuming which case it is in.
 #'
 #' @param iso_week Character vector of \code{"\%G-W\%V"} keys.
-#' @param today Reference date.
+#' @param last_evening The latest drinking date the account covers.
 #' @return Integer vector.
 #' @keywords internal
-.alcohol_week_elapsed_days <- function(iso_week, today = Sys.Date()) {
-  today <- as.Date(today)
+.alcohol_week_elapsed_days <- function(iso_week, last_evening) {
+  today <- as.Date(last_evening)
   # The Monday of an ISO week, via the Thursday that defines it: ISO
   # week 1 is the week containing the year's first Thursday, so
   # 4 January is always in week 1 and stepping whole weeks from its
@@ -820,8 +830,10 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
 #' @param summaries Optional session summaries.
 #' @param min_days_in_week Days of expenditure data required before a
 #'   weekly share is reported. Default 5 of 7.
-#' @param today Reference date for deciding how much of a week has
-#'   happened. Default \code{Sys.Date()}; an argument so tests can pin it.
+#' @param today Fallback reference date for deciding how much of a week
+#'   has happened, used only when the table carries no dated rows. The
+#'   count normally comes from the table's own last evening. Default
+#'   \code{Sys.Date()}; an argument so tests can pin it.
 #' @return Tibble, one row per ISO week: \code{iso_week},
 #'   \code{week_start}, \code{units}, \code{standardglas},
 #'   \code{grams}, \code{kcal}, \code{drinking_days}, \code{dry_days},
@@ -885,8 +897,13 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
   # seven: on a Friday, the first day the coverage floor can be met,
   # that is about 29 %. Two rows in the same table would then answer
   # slightly different questions with nothing saying which is which.
+  # The denominator covers the evenings the numerator actually
+  # represents. The table's last row is a morning, and its evening is the
+  # day before it, so that is where the account reaches.
+  last_evening <- suppressWarnings(max(a$drink_date, na.rm = TRUE))
+  if (!is.finite(last_evening)) last_evening <- as.Date(today) - 1L
   week_energy$week_days <- .alcohol_week_elapsed_days(week_energy$iso_week,
-                                                       today)
+                                                       last_evening)
   week_energy$week_tdee_kcal <- week_energy$tdee_mean * week_energy$week_days
   week_energy$week_tdee_kcal[week_energy$n_days < min_days_in_week] <- NA_real_
 
