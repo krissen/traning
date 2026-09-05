@@ -456,6 +456,44 @@ test_that("a contaminated day is dropped from the expenditure pool", {
   expect_equal(nrow(pool_clean), nrow(pool_all) - 1)
 })
 
+test_that("the contamination check runs on the drinking day, not the morning", {
+  # QA's case: drinks on 2026-06-20, attributed to the morning of 06-21.
+  # The Garmin session and the rest-level watch reading both sit on the
+  # 20th. Keyed to the morning, the check missed that day entirely and
+  # instead blanked the share when a session fell on the 21st.
+  dates <- seq(as.Date("2026-05-20"), as.Date("2026-06-21"), by = "day")
+  hd <- fake_health(dates)
+  # Mostly quiet days with a few sessions, so the trailing 90th
+  # percentile that .day_energy_verdict() uses is meaningful.
+  ae <- hd$metric == "active_energy"
+  hd$value[ae] <- 3000
+  hd$value[ae & format(hd$date, "%u") == "6"] <- 7000
+  drink_day <- as.Date("2026-06-20")
+  hd$value[ae & hd$date == drink_day] <- 1200
+  # The morning after carries a workout-sized reading, so it is not
+  # suspect on its own account.
+  hd$value[ae & hd$date == as.Date("2026-06-21")] <- 12000
+
+  session_on_drink_day <- data.frame(
+    sessionStart = as.POSIXct("2026-06-20 10:00:00", tz = "UTC"))
+  session_next_morning <- data.frame(
+    sessionStart = as.POSIXct("2026-06-21 10:00:00", tz = "UTC"))
+
+  pool_drink <- traning:::.alcohol_daily_energy(hd, session_on_drink_day)
+  expect_false(drink_day %in% pool_drink$date)
+
+  # A session on the morning after, with ordinary energy, takes nothing
+  # out: that day's reading is not suspect.
+  pool_morning <- traning:::.alcohol_daily_energy(hd, session_next_morning)
+  expect_true(as.Date("2026-06-21") %in% pool_morning$date)
+
+  # And the night itself stays reportable in both cases.
+  a <- set_night(fake_nights(dates), as.Date("2026-06-21"), units = 4,
+                 kcal = 280)
+  out <- compute_alcohol_energy(a, hd, session_on_drink_day)
+  expect_true(is.finite(out$alcohol_share[out$date == as.Date("2026-06-21")]))
+})
+
 test_that("the daily and weekly shares use the same expenditure pool", {
   dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)
@@ -832,7 +870,7 @@ test_that("the weekly line runs on Monday only and only with drinks in it", {
 
   expect_equal(as.POSIXlt(monday)$wday, 1L)
   line <- traning:::.alcohol_weekly_line(a, hd, monday)
-  expect_match(line, "Förra veckan")
+  expect_match(line, "Alkohol förra veckan")
   expect_match(line, "423 kcal")
   expect_match(line, "1 kväll\\.")
 
@@ -906,6 +944,75 @@ test_that("the alcohol line survives a morning with no readiness verdict", {
   # The alcohol account is not.
   expect_match(out$prosa, "glas")
   expect_equal(out$datum, f$on_date)
+})
+
+# A health series rich enough for compute_readiness() to produce a row,
+# so the full notification can be composed. Mirrors the fixture in
+# test-readiness-insight.R; kept local because testthat does not share
+# helpers across test files.
+readiness_health <- function(today) {
+  metrics <- c(heart_rate_variability = 70, sleep_totalSleep = 7,
+                sleep_deep = 1.0, sleep_rem = 1.5,
+                resting_heart_rate = 55, vo2_max = 53,
+                apple_sleeping_wrist_temperature = 36.5,
+                respiratory_rate = 15, active_energy = 3300,
+                basal_energy_burned = 6700)
+  dates <- seq(today - 30, today, by = "day")
+  set.seed(42)
+  dplyr::bind_rows(lapply(names(metrics), function(m) {
+    tibble::tibble(date = dates, metric = m,
+                   value = metrics[[m]] +
+                     stats::rnorm(length(dates), 0, metrics[[m]] * 0.05),
+                   source = "test")
+  }))
+}
+
+readiness_summaries <- function(today) {
+  starts <- as.POSIXct(seq(today - 14, today, by = "day"))
+  n <- length(starts)
+  tibble::tibble(
+    sessionStart = starts, sport = "running",
+    distance = rep(8000, n), durationMoving = rep(2700, n),
+    avgPaceMoving = rep(5.6, n), avgSpeedMoving = rep(2.97, n),
+    avgHeartRateMoving = rep(140, n),
+    file = paste0("test_", seq_len(n), ".tcx"),
+    year = format(starts, "%Y")
+  )
+}
+
+test_that("the alcohol line follows the verdict and any advice, never splits them", {
+  # The existing context line can carry an imperative ("ta det lugnt
+  # idag"). That belongs to the readiness verdict, and the alcohol line
+  # must not land between the two and be read as part of the advice.
+  today <- as.Date("2026-04-20")
+  hd <- readiness_health(today)
+  # Force the HRV-downtrend context line, which is the imperative one.
+  idx <- hd$metric == "heart_rate_variability" & hd$date > today - 7
+  hd$value[idx] <- seq(80, 55, length.out = sum(idx))
+
+  dates <- sort(unique(hd$date))
+  a <- set_night(fake_nights(dates), today, units = 6, kcal = 422.6)
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  save_alcohol_data(a, file.path(tmp_data, "cache", "alcohol_nights.RData"))
+
+  td <- traning_data(summaries = readiness_summaries(today),
+                     health_daily = hd)
+  out <- health_insight_readiness(td, hr_max = 185, on_date = today)
+  expect_match(out$prosa, "Dagsform")
+  expect_match(out$prosa, "glas")
+
+  verdict_at <- regexpr("Dagsform", out$prosa, fixed = TRUE)
+  alcohol_at <- regexpr("I går:", out$prosa, fixed = TRUE)
+  expect_lt(verdict_at, alcohol_at)
+
+  advice_at <- regexpr("ta det lugnt idag", out$prosa, fixed = TRUE)
+  if (advice_at > 0) {
+    # When the advice fires, the alcohol line sits after it, not between
+    # the verdict and it.
+    expect_lt(advice_at, alcohol_at)
+  }
 })
 
 # --- Reports -----------------------------------------------------------------

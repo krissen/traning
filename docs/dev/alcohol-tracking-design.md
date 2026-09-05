@@ -557,8 +557,8 @@ I går: 6 glas (5 standardglas), 420 kcal från alkoholen (beräknat).
 Weekly, on Monday, covering the week that just ended:
 
 ```
-Förra veckan: alkohol stod för 1 240 kcal, fördelat på 3 kvällar. Det
-motsvarar 6 procent av veckans energiförbrukning. 4 alkoholfria dagar.
+Alkohol förra veckan: 1 240 kcal, fördelat på 3 kvällar. Det motsvarar
+6 procent av veckans energiförbrukning. 4 alkoholfria dagar.
 ```
 
 ### Silence rules
@@ -631,6 +631,14 @@ They also survive a morning with no readiness verdict. When the watch
 has uploaded nothing there is no HRV, no sleep and no score, but the
 energy account needs none of those, and that is exactly the morning
 where it is still true.
+
+**Position in the notification.** The alcohol lines are appended last,
+after the readiness verdict, the components, the activity and weekly
+recaps, and the context line. The context line can carry an imperative
+("HRV sjunkande trend — ta det lugnt idag"), which belongs to the
+readiness verdict; the alcohol line sits after it rather than between
+the verdict and its advice, so it is never read as part of the
+prescription. The alcohol text itself carries no imperative, per rule 6.
 
 They are **additive**, not candidates in the single-slot context chain
 (`.insight_context_line()`, which emits at most one of comeback / ACWR /

@@ -1330,8 +1330,11 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   if (!is.finite(w$drinking_days) || w$drinking_days == 0) return(NULL)
 
   kvall <- if (w$drinking_days == 1) "kväll" else "kvällar"
+  # "Alkohol förra veckan", not "Förra veckan": on a Monday the training
+  # recap already opens with the latter, and two adjacent lines starting
+  # with the same three words read as one line repeating itself.
   line <- sprintf(
-    "Förra veckan: alkohol stod för %s kcal, fördelat på %d %s.",
+    "Alkohol förra veckan: %s kcal, fördelat på %d %s.",
     .fmt_kcal(w$kcal), as.integer(w$drinking_days), kvall)
   if (is.finite(w$share)) {
     line <- paste0(line, sprintf(
