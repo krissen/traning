@@ -1192,6 +1192,21 @@ test_that("report_alcohol reports the actual deviation, not NA", {
   expect_false(is.na(out$`HRV avvik`))
 })
 
+test_that("report_alcohol drops the record's information-free first row", {
+  # The first morning's night ran before logging existed, so every
+  # column about it is empty. The drinks logged that day still appear,
+  # on the following row where they belong.
+  n <- build_alcohol_nights(sample_row("2026-09-05", 6),
+                             today = as.Date("2026-09-10"))
+  td <- traning_data(summaries = data.frame(sessionStart = as.POSIXct(NA)),
+                     health_daily = fake_health(sort(unique(n$date))))
+
+  out <- report_alcohol(td, alcohol = n)
+  expect_false(as.Date("2026-09-05") %in% out$Datum)
+  expect_equal(out$Glas[out$Datum == as.Date("2026-09-06")], 6)
+  expect_false(any(is.na(out$Glas)))
+})
+
 test_that("report_alcohol returns Swedish columns, newest first", {
   f <- alcohol_fixture()
   td <- traning_data(

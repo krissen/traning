@@ -1478,7 +1478,9 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #'
 #' Nights outside a logging-active stretch are dropped rather than shown
 #' as zeros: there, an absent sample means nothing was logged, which is
-#' not the same as nothing was drunk.
+#' not the same as nothing was drunk. The first morning of the record
+#' goes too, since its night ran before logging existed and every column
+#' about it would be empty.
 #'
 #' @param data A traning_data bundle (or, via the legacy shim, a bare
 #'   summaries data.frame with \code{health_daily = ...} folded in).
@@ -1507,6 +1509,12 @@ report_alcohol <- function(data, after = NULL, before = NULL,
   a <- compute_alcohol_energy(alcohol, health_daily, summaries)
   a <- a[!is.na(a$alcohol_logging_active) & a$alcohol_logging_active, ,
          drop = FALSE]
+  # The first morning of the record has an unknowable night, since it
+  # ran the evening before logging existed. Honest, but the row carries
+  # nothing: every column that would say something about the night is
+  # empty, and the drinks logged that day appear on the following row
+  # where they belong.
+  a <- a[!is.na(a$alcohol_night_units), , drop = FALSE]
   a <- filter_by_daterange(a,
                            list(from = .alcohol_as_date(after),
                                 to = .alcohol_as_date(before)),
