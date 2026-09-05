@@ -1074,3 +1074,137 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   }
   line
 }
+
+# --- Reports -----------------------------------------------------------------
+
+#' Resolve an after/before argument to a Date
+#'
+#' Accepts a Date, or any expression \code{parse_date_expr()} handles
+#' ("2026", "2026-08", "-6m"), so the MCP layer can pass through what the
+#' rest of the tool surface already accepts.
+#'
+#' @param x Date, character or NULL.
+#' @return Date or NULL.
+#' @keywords internal
+.alcohol_as_date <- function(x) {
+  if (is.null(x)) return(NULL)
+  if (inherits(x, "Date")) return(x)
+  if (is.character(x) && length(x) == 1L && nzchar(x)) {
+    return(tryCatch(parse_date_expr(x), error = function(e) as.Date(x)))
+  }
+  as.Date(x)
+}
+
+#' Daily alcohol report
+#'
+#' One row per night inside a logging-active stretch: drinks in both
+#' units, energy, the share of average daily expenditure, and the
+#' morning's deviation from the alcohol-free baseline. Newest first.
+#'
+#' Nights outside a logging-active stretch are dropped rather than shown
+#' as zeros: there, an absent sample means nothing was logged, which is
+#' not the same as nothing was drunk.
+#'
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
+#' @param after Start date (inclusive). Date or expression. NULL = no bound.
+#' @param before End date (inclusive). Date or expression. NULL = no bound.
+#' @param alcohol Optional night table; defaults to the cached one.
+#' @return Tibble with Swedish column names, newest first.
+#' @export
+report_alcohol <- function(data, after = NULL, before = NULL,
+                            alcohol = NULL) {
+  td <- .as_traning_data(data)
+  health_daily <- td@health_daily
+  summaries <- td@summaries
+  if (is.null(alcohol)) {
+    alcohol <- tryCatch(load_alcohol_data(), error = function(e) NULL)
+  }
+  empty <- tibble::tibble(
+    Datum = as.Date(character()), Glas = numeric(),
+    Standardglas = numeric(), kcal = numeric(), "Andel %" = numeric(),
+    "HRV avvik" = numeric(), "VP avvik" = numeric(),
+    "Sömn avvik" = numeric(), "Beräknad kcal" = logical()
+  )
+  if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
+
+  a <- compute_alcohol_energy(alcohol, health_daily, summaries)
+  a <- a[!is.na(a$alcohol_logging_active) & a$alcohol_logging_active, ,
+         drop = FALSE]
+  a <- filter_by_daterange(a,
+                           list(from = .alcohol_as_date(after),
+                                to = .alcohol_as_date(before)),
+                           date_col = "date", closed_upper = TRUE)
+  if (nrow(a) == 0) return(empty)
+
+  # Deviations are computed per row, and only for the rows that survive
+  # the window filter — each one needs its own trailing baseline.
+  dev_col <- function(measure) {
+    vapply(a$date, function(d) {
+      dv <- tryCatch(
+        compute_alcohol_deviation(health_daily, alcohol, on_date = d),
+        error = function(e) NULL
+      )
+      if (is.null(dv) || nrow(dv) == 0) return(NA_real_)
+      hit <- dv$delta[dv$measure == measure]
+      if (length(hit) == 0) NA_real_ else hit[[1]]
+    }, numeric(1))
+  }
+
+  out <- tibble::tibble(
+    Datum          = a$date,
+    Glas           = round(a$alcohol_night_units, 1),
+    Standardglas   = round(a$alcohol_standardglas, 1),
+    kcal           = round(a$alcohol_kcal),
+    `Andel %`      = round(a$alcohol_share * 100, 1),
+    `HRV avvik`    = round(dev_col("hrv"), 1),
+    `VP avvik`     = round(dev_col("rhr"), 1),
+    `Sömn avvik` = round(dev_col("sleep")),
+    `Beräknad kcal` = a$alcohol_kcal_estimated
+  )
+  dplyr::arrange(out, dplyr::desc(.data$Datum))
+}
+
+#' Weekly alcohol report
+#'
+#' One row per ISO week, newest first. The share uses that week's own
+#' summed expenditure rather than a rolling mean.
+#'
+#' @inheritParams report_alcohol
+#' @return Tibble with Swedish column names, newest first.
+#' @export
+report_alcohol_weekly <- function(data, after = NULL, before = NULL,
+                                   alcohol = NULL) {
+  td <- .as_traning_data(data)
+  health_daily <- td@health_daily
+  summaries <- td@summaries
+  if (is.null(alcohol)) {
+    alcohol <- tryCatch(load_alcohol_data(), error = function(e) NULL)
+  }
+  empty <- tibble::tibble(
+    Vecka = character(), Start = as.Date(character()), Glas = numeric(),
+    Standardglas = numeric(), kcal = numeric(), "Andel %" = numeric(),
+    "Kvällar" = integer(), "Alkoholfria dagar" = integer()
+  )
+  if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
+
+  w <- compute_alcohol_week(alcohol, health_daily, summaries)
+  if (nrow(w) == 0) return(empty)
+  w <- filter_by_daterange(w,
+                           list(from = .alcohol_as_date(after),
+                                to = .alcohol_as_date(before)),
+                           date_col = "week_start", closed_upper = TRUE)
+  if (nrow(w) == 0) return(empty)
+
+  tibble::tibble(
+    Vecka                = w$iso_week,
+    Start                = w$week_start,
+    Glas                 = round(w$units, 1),
+    Standardglas         = round(w$standardglas, 1),
+    kcal                 = round(w$kcal),
+    `Andel %`            = round(w$share * 100, 1),
+    `Kvällar`       = as.integer(w$drinking_days),
+    `Alkoholfria dagar`  = as.integer(w$dry_days)
+  ) |>
+    dplyr::arrange(dplyr::desc(.data$Start))
+}
