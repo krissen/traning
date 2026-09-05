@@ -213,21 +213,36 @@
 #'   to \code{.alcohol_energy_source} inside this function.
 #' @param active_window_days Half-width, in days, of the window that
 #'   makes an absent sample count as a genuine zero.
+#' @param today Upper bound for the table, defaulting to the current
+#'   date. The active window extends ten days past the last sample, which
+#'   would otherwise manufacture future mornings carrying zero drinks and
+#'   a logging-active flag — and a report claiming seven alcohol-free
+#'   days in a week that has not happened is a statement about the
+#'   future, not an absence of data. Exposed as an argument so tests can
+#'   pin a date.
 #' @return Tibble; see \code{.empty_alcohol_nights()} for the columns.
 #' @export
 build_alcohol_nights <- function(samples, energy = NULL,
-                                  active_window_days = .alcohol_active_window_days) {
+                                  active_window_days = .alcohol_active_window_days,
+                                  today = Sys.Date()) {
   if (is.null(samples) || nrow(samples) == 0) return(.empty_alcohol_nights())
   samples <- samples[!is.na(samples$date) & !is.na(samples$qty), , drop = FALSE]
   if (nrow(samples) == 0) return(.empty_alcohol_nights())
   samples$date <- as.Date(samples$date)
 
   sample_dates <- sort(unique(samples$date))
-  spine <- tibble::tibble(
-    date = seq(min(sample_dates) - active_window_days,
-               max(sample_dates) + active_window_days + 1L,
-               by = "day")
-  )
+  # The morning after the last logged day always belongs in the table
+  # even when it is tomorrow: that row carries real drinks. Everything
+  # past it is padding, and padding beyond today would be a claim about
+  # days that have not happened.
+  last_real <- max(sample_dates) + 1L
+  spine_end <- max(sample_dates) + active_window_days + 1L
+  if (!is.null(today) && !is.na(today)) {
+    spine_end <- max(min(spine_end, as.Date(today)), last_real)
+  }
+  spine_start <- min(sample_dates) - active_window_days
+  if (spine_end < spine_start) return(.empty_alcohol_nights())
+  spine <- tibble::tibble(date = seq(spine_start, spine_end, by = "day"))
 
   by_day <- samples |>
     dplyr::group_by(.data$date) |>
@@ -364,6 +379,8 @@ save_alcohol_data <- function(alcohol_nights, cache_path = NULL) {
 #' midnight, the logging-active window), so a partial update would leave
 #' the table internally inconsistent.
 #'
+#' @param today Upper bound for the table; see
+#'   \code{build_alcohol_nights()}.
 #' @param save Logical, write the cache. Default TRUE.
 #' @param cache_path Path to alcohol_nights.RData. Default: beside the
 #'   health cache.
@@ -373,7 +390,8 @@ save_alcohol_data <- function(alcohol_nights, cache_path = NULL) {
 #' @return The night table, invisibly.
 #' @export
 import_alcohol <- function(save = TRUE, cache_path = NULL,
-                            canonical_dir = NULL, verbose = TRUE) {
+                            canonical_dir = NULL, verbose = TRUE,
+                            today = Sys.Date()) {
   if (is.null(canonical_dir)) {
     canonical_dir <- tryCatch(file.path(.hae_dir(), "canonical"),
                               error = function(e) NULL)
@@ -391,7 +409,7 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   }
   energy <- .read_canonical_samples(file.path(canonical_dir, "dietary_energy"))
 
-  nights <- build_alcohol_nights(samples, energy)
+  nights <- build_alcohol_nights(samples, energy, today = today)
 
   if (verbose) {
     logged <- sum(nights$alcohol_night_units > 0, na.rm = TRUE)

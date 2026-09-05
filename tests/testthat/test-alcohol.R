@@ -197,7 +197,8 @@ test_that("energy already in kcal is not converted a second time", {
 })
 
 test_that("absence counts as zero only inside a logging-active stretch", {
-  n <- build_alcohol_nights(sample_row("2026-09-05", 6))
+  n <- build_alcohol_nights(sample_row("2026-09-05", 6),
+                             today = as.Date("2026-09-20"))
 
   near <- n[n$date == as.Date("2026-09-10"), ]
   expect_true(near$alcohol_logging_active)
@@ -206,6 +207,33 @@ test_that("absence counts as zero only inside a logging-active stretch", {
   far <- n[n$date == as.Date("2026-09-16"), ]
   expect_false(far$alcohol_logging_active)
   expect_true(is.na(far$alcohol_night_units))
+})
+
+test_that("the table never runs past today", {
+  # The active window pads ten days past the last sample. Left alone,
+  # that manufactured future mornings with zero drinks and a
+  # logging-active flag, and the weekly report then announced seven
+  # alcohol-free days in a week that had not happened.
+  n <- build_alcohol_nights(sample_row("2026-09-05", 6),
+                             today = as.Date("2026-09-08"))
+  expect_equal(max(n$date), as.Date("2026-09-08"))
+  expect_false(any(n$date > as.Date("2026-09-08")))
+
+  # But the morning after the last logged day is real data and stays,
+  # even when that morning is tomorrow.
+  today_run <- build_alcohol_nights(sample_row("2026-09-05", 6),
+                                     today = as.Date("2026-09-05"))
+  expect_equal(max(today_run$date), as.Date("2026-09-06"))
+  expect_equal(today_run$alcohol_night_units[
+    today_run$date == as.Date("2026-09-06")], 6)
+})
+
+test_that("no future week reaches the weekly report", {
+  n <- build_alcohol_nights(sample_row("2026-09-05", 6),
+                             today = as.Date("2026-09-08"))
+  w <- compute_alcohol_week(n, NULL)
+  expect_false(any(w$week_start > as.Date("2026-09-08")))
+  expect_false("2026-W38" %in% w$iso_week)
 })
 
 test_that("build_alcohol_nights survives empty input", {
@@ -448,7 +476,8 @@ test_that("a Sunday evening lands in the week it happened in", {
   expect_equal(format(sunday, "%G-W%V"), "2026-W36")
   expect_equal(format(sunday + 1, "%G-W%V"), "2026-W37")
 
-  n <- build_alcohol_nights(sample_row(sunday, 4))
+  n <- build_alcohol_nights(sample_row(sunday, 4),
+                             today = as.Date("2026-09-10"))
   w <- compute_alcohol_week(n, NULL)
   hit <- w[w$units > 0, ]
   expect_equal(nrow(hit), 1)

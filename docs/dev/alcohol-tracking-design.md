@@ -406,6 +406,13 @@ ever added.
 **Missing days.** No wear means no active and no basal figure. Do not
 impute, do not substitute a placeholder. Omit the share.
 
+**Future days.** The logging-active window pads ten days past the last
+sample. The table is cut at today so that padding cannot manufacture
+mornings with zero drinks and an active flag, which the weekly report
+would otherwise present as alcohol-free days in a week that has not
+happened. The morning after the last logged day is kept even when it is
+tomorrow, because that row carries real drinks.
+
 ## Alcohol-free baseline
 
 The reference for the next-morning comparison, computed per metric over
