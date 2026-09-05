@@ -549,9 +549,21 @@ training-state line had something to say, which is most days. Both
 alcohol lines are silent on a dry night and outside a logging-active
 stretch, so being additive cannot turn them into a daily fixture.
 
-**MCP:** `python/traning_cli/mcp/tools.py`, built on the report
-functions above. Add metadata and Swedish and English aliases so
-natural-language metric resolution finds it.
+**MCP:** `get_alcohol(after, before, weekly)` in
+`python/traning_cli/mcp/tools.py`, calling `report_alcohol` and
+`report_alcohol_weekly` through the R bridge. `alcohol_consumption`
+carries metadata and Swedish and English aliases (`alcohol`, `alkohol`,
+`drinks`, `drinkar`, `glas`) so natural-language metric resolution
+reaches it from `get_health_metric` as well. There is no `plot`
+parameter, because there is no alcohol plot function in R.
+
+Both reports take `after`/`before` and close the upper bound, unlike the
+rest of the bridge, so `build_call_args()` in
+`inst/mcp_bridge_shared.R` rebinds them by name and skips the +1 day
+shift the exclusive functions get.
+
+The weekly evaluation prompt asks for the weekly view, gated on there
+being rows: no limits, no recommendations, no judgement.
 
 **Shiny:** deferred. The daily notification is the surface that matters
 for this feature, and a panel can follow once there is more than a few
