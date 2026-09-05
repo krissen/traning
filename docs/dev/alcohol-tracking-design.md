@@ -435,8 +435,18 @@ not habit.
 | Minimum nights | 14 qualifying | Below this the comparison is not printed at all |
 | Exclusions | Nights with `alcohol_night_units > 0`; illness-flagged days | |
 
-Illness exclusion uses the existing readiness flags for elevated wrist
-temperature and elevated respiratory rate.
+Illness exclusion uses its own thresholds, deliberately more sensitive
+than the readiness illness flag: a single night at 0.4 degC above the
+trailing 14-day wrist-temperature median, or 2 breaths per minute above
+the trailing 7-day respiratory-rate mean, against the readiness flag's
+0.5 degC sustained over two consecutive days.
+
+The two answer different questions. The readiness flag tells the reader
+something is wrong, so it should be slow and sure. This rule only
+decides whether one night joins a reference set, where wrongly excluding
+a night costs one observation out of at least fourteen and wrongly
+including one contaminates the reference with the very thing the
+comparison is trying to see.
 
 This baseline is **separate from, and does not modify, the readiness
 baselines**. The readiness windows, 7 days for HRV, 30 days for resting

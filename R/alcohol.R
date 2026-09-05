@@ -842,8 +842,23 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 # and a tighter threshold is the cheaper error.
 .alcohol_deviation_z <- 1.5
 
-# Illness thresholds, reused from the tier-1 update thresholds so the
-# two surfaces cannot drift into two readings of "elevated".
+# Illness thresholds for BASELINE EXCLUSION. These are their own
+# numbers, deliberately more sensitive than the readiness illness flag,
+# which fires at 0.5 degC sustained over two consecutive days
+# (.consecutive_flag in R/readiness.R).
+#
+# The two answer different questions. The readiness flag tells the reader
+# something is wrong, so it should be slow and sure: a single warm night
+# is not news. This rule only decides whether one night joins a reference
+# set of ordinary nights, where the cost of wrongly excluding a night is
+# one fewer observation out of at least fourteen, and the cost of
+# wrongly including one is a reference contaminated by the very thing
+# the comparison is trying to see. A lower bar is right for that trade,
+# and a single day is enough because there is no reader to alarm.
+#
+# An earlier version of this comment claimed these were reused from the
+# tier-1 update thresholds. They were not; .tier1_metrics carries no
+# numbers at all and .tier2_thresholds does not cover these metrics.
 .alcohol_illness_wrist_temp <- 0.4   # degC above the trailing 14d median
 .alcohol_illness_resp_rate  <- 2     # breaths/min above the trailing 7d mean
 
@@ -865,10 +880,14 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 
 #' Dates that look like illness and are excluded from the baseline
 #'
-#' Two signals, both already used elsewhere for the same purpose: a
-#' sleeping wrist temperature well above its own trailing median, and a
-#' respiratory rate well above its trailing mean. A night spent fighting
-#' something off is not a representative alcohol-free night.
+#' Two signals: a sleeping wrist temperature well above its own trailing
+#' median, and a respiratory rate well above its trailing mean. A night
+#' spent fighting something off is not a representative alcohol-free
+#' night.
+#'
+#' Deliberately more sensitive than the readiness illness flag, and on a
+#' single day rather than a sustained run. See the note on the threshold
+#' constants for why the two differ.
 #'
 #' @param health_daily Long health tibble.
 #' @return Date vector of flagged days (possibly empty).
