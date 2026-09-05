@@ -232,6 +232,10 @@ Canonical files are always saved to disk by `save_health_push()`
 regardless of the import filter. The filter only affects what ends up
 in `health_daily.RData`.
 
+An unparseable canonical file is skipped with a warning naming the file
+and the parse error. A full sweep reads thousands of files, so aborting
+on one truncated write would cost every other file in the run.
+
 ### Alcohol night table
 
 `alcohol_nights.RData` sits beside `health_daily.RData` and is rebuilt

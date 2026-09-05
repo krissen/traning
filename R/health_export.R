@@ -670,15 +670,29 @@
 #' Canonical files have the format:
 #' \code{{"metric": "...", "date": "...", "units": "...", "samples": [...]}}
 #'
+#' An unparseable file is skipped with a warning naming the file and the
+#' parse error, not raised. A full import sweeps thousands of canonical
+#' files; letting one truncated write abort the run would cost every
+#' other file in the sweep, and the failure mode is a partially flushed
+#' JSON document rather than anything the caller can act on mid-run.
+#'
 #' @param path Path to the canonical JSON file.
 #' @param verbose Logical, print progress. Default FALSE.
 #' @return A tibble with columns: \code{date}, \code{metric}, \code{value},
-#'   \code{source}.
+#'   \code{source}. Empty tibble when the file cannot be parsed.
 #' @export
 read_canonical_file <- function(path, verbose = FALSE) {
   if (!file.exists(path)) stop("Filen finns inte: ", path)
 
-  raw <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+  raw <- tryCatch(
+    jsonlite::fromJSON(path, simplifyVector = FALSE),
+    error = function(e) {
+      warning("Kunde inte l\u00e4sa canonical-fil, hoppar \u00f6ver: ", path,
+              " (", conditionMessage(e), ")", call. = FALSE)
+      NULL
+    }
+  )
+  if (is.null(raw)) return(tibble::tibble())
 
   # Canonical format: {metric, date, units, samples}
   metric_name <- raw$metric

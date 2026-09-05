@@ -510,6 +510,47 @@ test_that(".save_manifest writes atomically and survives stale temp files", {
   expect_equal(traning:::.load_manifest(manifest_path)[["a"]]$md5, "222")
 })
 
+test_that("read_canonical_file skips an unparseable file with a warning", {
+  tmp <- withr::local_tempdir()
+  bad <- file.path(tmp, "2026-09-05.json")
+  writeLines("{ this was never flushed", bad)
+
+  expect_warning(out <- read_canonical_file(bad),
+                 "Kunde inte l\u00e4sa canonical-fil")
+  expect_equal(nrow(out), 0)
+  # The warning names the file and carries the parser's own message, so
+  # the offending write can be found without re-running the import.
+  w <- tryCatch(read_canonical_file(bad), warning = function(w) w)
+  expect_match(conditionMessage(w), basename(bad), fixed = TRUE)
+  expect_match(conditionMessage(w), "lexical error")
+})
+
+test_that("one corrupt canonical file does not abort a whole import", {
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  canonical <- file.path(tmp_data, "kristian", "health_export", "canonical")
+  dir.create(file.path(canonical, "vo2_max"), recursive = TRUE)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+
+  writeLines("{ truncated mid-write",
+             file.path(canonical, "vo2_max", "2026-09-04.json"))
+  jsonlite::write_json(
+    list(metric = "vo2_max", date = "2026-09-05", units = "ml/kg/min",
+         samples = list(list(qty = 57, source = "AW",
+                              date = "2026-09-05 06:00:00 +0200"))),
+    file.path(canonical, "vo2_max", "2026-09-05.json"), auto_unbox = TRUE)
+
+  cache <- file.path(tmp_data, "cache", "health_daily.RData")
+  suppressWarnings(
+    suppressMessages(import_health_export(cache_path = cache, verbose = FALSE))
+  )
+
+  health <- load_health_data(cache)
+  # The readable day still lands; only the broken file is lost.
+  expect_equal(health$value[health$date == as.Date("2026-09-05") &
+                              health$metric == "vo2_max"], 57)
+})
+
 test_that("import refreshes manifest when .import_metrics filters out all changes", {
   # Copilot's review caught this: if every candidate file is a metric we
   # skip, files_to_parse goes to length 0, the early-return on "no new
