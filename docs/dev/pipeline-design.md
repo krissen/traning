@@ -209,15 +209,19 @@ notified but never block the HTTP response.
 
 `import_health_export()` only imports metrics listed in `.import_metrics`
 (defined in `R/health_export.R`). This avoids parsing high-volume but
-unused metrics (e.g., `basal_energy_burned` with 25K+ samples/day).
+unused metrics. Metrics in `sum_metrics` are cheap regardless, since
+`read_canonical_file()` takes the precomputed `daily_total` and never
+touches the individual samples.
 
-Currently imported (~19 metrics):
+Currently imported (23 metrics):
 `resting_heart_rate`, `heart_rate_variability`, `sleep_totalSleep`,
 `sleep_deep`, `sleep_rem`, `sleep_core`, `sleep_awake`, `vo2_max`,
 `blood_oxygen_saturation`, `cardio_recovery`, `respiratory_rate`,
 `apple_sleeping_wrist_temperature`, `running_ground_contact_time`,
 `running_power`, `running_speed`, `running_stride_length`,
-`running_vertical_oscillation`, `step_count`, `weight_body_mass`
+`running_vertical_oscillation`, `step_count`, `active_energy`,
+`walking_running_distance`, `basal_energy_burned`,
+`alcohol_consumption`, `weight_body_mass`
 
 To add a metric:
 1. Add it to `.import_metrics` in `R/health_export.R`
@@ -227,6 +231,29 @@ To add a metric:
 Canonical files are always saved to disk by `save_health_push()`
 regardless of the import filter. The filter only affects what ends up
 in `health_daily.RData`.
+
+### Alcohol night table
+
+`alcohol_nights.RData` sits beside `health_daily.RData` and is rebuilt
+by `import_alcohol()` at the end of every saving health import. It reads
+`canonical/alcohol_consumption/` and `canonical/dietary_energy/`
+directly rather than going through the health cache, because two things
+the derivation needs do not survive into it:
+
+- **Clock times.** `.parse_metric()` truncates every sample timestamp to
+  a date, so a drink at 23:30 cannot be attributed to the night it
+  belongs to from the cache alone. Nights run noon to noon and are keyed
+  by the morning that ends them.
+- **Per-sample source.** For a sum metric, `read_canonical_file()`
+  returns the daily total tagged with the first sample's source, so
+  `dietary_energy` cannot be filtered to DrinkControl afterwards. The
+  day a food-logging app starts writing dietary energy, that column
+  becomes food plus alcohol with no way to separate them.
+
+Everything that is a parameter choice (baseline window, share window,
+grams per standard unit) stays at query time, so tuning it does not
+require a reimport. A failure to rebuild the alcohol table never fails
+the health import.
 
 ### Cache portability
 
