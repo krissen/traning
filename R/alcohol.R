@@ -981,6 +981,11 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 
 #' Daily alcohol line for the morning notification
 #'
+#' Attached additively to the morning push, not routed through the
+#' single-slot context chain: the energy figure is due after every logged
+#' evening, and as a candidate there it would fall silent whenever a
+#' training-state line had something to say.
+#'
 #' Energy the morning after a logged evening, plus a recovery comparison
 #' only when at least one measure clears the gate. When nothing moved,
 #' the line says so plainly: an honest null is the most trust-building
@@ -1048,21 +1053,11 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
       if (length(present) > 0) {
         subject <- paste(present, collapse = " och ")
         parts <- paste0(parts, sprintf(
-          " %s ligger på dina normala nivåer i dag.",
-          .capitalise_first(subject)))
+          " I dag: %s ligger på dina normala nivåer.", subject))
       }
     }
   }
   parts
-}
-
-#' Upper-case the first character of a string
-#' @keywords internal
-.capitalise_first <- function(x) {
-  if (!nzchar(x)) return(x)
-  # HRV is already upper-case; toupper on the first character is a no-op
-  # there and does the right thing for "vilopuls".
-  paste0(toupper(substr(x, 1, 1)), substr(x, 2, nchar(x)))
 }
 
 #' Weekly alcohol line for the Monday recap

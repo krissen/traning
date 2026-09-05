@@ -443,34 +443,44 @@ the sentence itself states milliseconds, beats and minutes.
 
 ### Templates
 
-Daily, alcohol logged, no recovery signal beyond threshold:
+The templates below are the strings the code emits, verified against
+`.insight_alcohol_line()` and `.alcohol_weekly_line()` in `R/alcohol.R`.
+
+Daily, alcohol plus a recovery signal that clears the gate. Deviations
+are named in the order resting heart rate, HRV, sleep, which is
+descending standardized effect size (Grosicki et al. 2026):
 
 ```
-I går: 6 glas (5 svenska standardglas). Energi från alkoholen: 423 kcal.
-Det motsvarar 14 procent av din genomsnittliga dygnsförbrukning.
-```
-
-Daily, alcohol plus a recovery signal that clears the gate:
-
-```
-I går: 4 glas, 282 kcal från alkoholen.
-I dag: HRV 38 ms mot 52 i snitt på alkoholfria nätter, vilopuls 4 slag
-högre, sömn 42 minuter kortare.
+I går: 4 glas (3,3 standardglas), 282 kcal från alkoholen. Det motsvarar
+12 procent av din genomsnittliga dygnsförbrukning. I dag: vilopuls 4
+slag högre, HRV 38 ms mot 52 på alkoholfria nätter, sömn 42 minuter
+kortare.
 ```
 
 Daily, alcohol logged and nothing moved — the honest null:
 
 ```
-I går: 3 glas, 212 kcal från alkoholen.
-I dag: HRV och vilopuls ligger på dina normala nivåer.
+I går: 3 glas (2,5 standardglas), 212 kcal från alkoholen. Det motsvarar
+9 procent av din genomsnittliga dygnsförbrukning. I dag: vilopuls och
+HRV ligger på dina normala nivåer.
 ```
 
-Weekly:
+The share clause is dropped when the denominator is thin or
+untrustworthy, and the recovery clause when the baseline is. Either can
+be absent; the drinks-and-energy clause always leads.
+
+Where the app wrote no energy for the night, the kcal figure is computed
+from the fallback constant and says so:
 
 ```
-Alkohol stod för 1 240 kcal den här veckan, fördelat på tre kvällar.
-Det motsvarar 6 procent av veckans energiförbrukning. Fyra alkoholfria
-dagar.
+I går: 6 glas (5 standardglas), 420 kcal från alkoholen (beräknat).
+```
+
+Weekly, on Monday, covering the week that just ended:
+
+```
+Förra veckan: alkohol stod för 1 240 kcal, fördelat på 3 kvällar. Det
+motsvarar 6 procent av veckans energiförbrukning. 4 alkoholfria dagar.
 ```
 
 ### Silence rules
@@ -499,19 +509,51 @@ In priority order.
 
 ## Surfaces
 
-- **R API:** `compute_alcohol_summary()` and a sibling
-  `render_alcohol_prose()` in `R/advanced_metrics.R`, following the
-  pattern of the existing compute/render pairs.
-- **Notification:** the alcohol line is composed by this feature and
-  attached to the daily push alongside the readiness verdict. It is not
-  routed through the generic tier-based delta machinery, which is why
-  the metric sits in tier 3.
-- **MCP:** `get_alcohol_summary(after, before)` in
-  `python/traning_cli/mcp/tools.py`. Add metadata and Swedish and
-  English aliases so natural-language metric resolution finds it.
-- **Shiny:** deferred. The daily notification is the surface that
-  matters for this feature, and a panel can follow once there is more
-  than a few weeks of history.
+**R API.** Everything lives in `R/alcohol.R`, not in
+`R/advanced_metrics.R` as an earlier draft of this document proposed:
+the module owns an import path, a cache and a prose surface, which is
+more than the compute/render pattern there covers.
+
+```r
+build_alcohol_nights(samples, energy = NULL, active_window_days = 10)
+import_alcohol(save = TRUE, cache_path = NULL, canonical_dir = NULL,
+               verbose = TRUE)
+load_alcohol_data(cache_path = NULL)
+save_alcohol_data(alcohol_nights, cache_path = NULL)
+
+compute_alcohol_energy(alcohol, health_daily = NULL, summaries = NULL,
+                       window_days = 28, min_days = 20)
+compute_alcohol_week(alcohol, health_daily = NULL, summaries = NULL,
+                     min_days_in_week = 5)
+compute_alcohol_baseline(health_daily, alcohol, on_date = NULL,
+                         window_days = 42, min_nights = 14)
+compute_alcohol_deviation(health_daily, alcohol, on_date = NULL,
+                          baseline = NULL, z_threshold = 1, ...)
+
+report_alcohol(data, after = NULL, before = NULL, alcohol = NULL)
+report_alcohol_weekly(data, after = NULL, before = NULL, alcohol = NULL)
+```
+
+**Notification.** The alcohol lines are composed by this feature and
+attached to the daily push alongside the readiness verdict. They are not
+routed through the generic tier-based delta machinery, which is why the
+metric sits in tier 3.
+
+They are **additive**, not candidates in the single-slot context chain
+(`.insight_context_line()`, which emits at most one of comeback / ACWR /
+HRV-downtrend). The product decision is an energy line after every
+logged evening; as a candidate the line would fall silent whenever a
+training-state line had something to say, which is most days. Both
+alcohol lines are silent on a dry night and outside a logging-active
+stretch, so being additive cannot turn them into a daily fixture.
+
+**MCP:** `python/traning_cli/mcp/tools.py`, built on the report
+functions above. Add metadata and Swedish and English aliases so
+natural-language metric resolution finds it.
+
+**Shiny:** deferred. The daily notification is the surface that matters
+for this feature, and a panel can follow once there is more than a few
+weeks of history.
 
 ## Future: dose-response
 

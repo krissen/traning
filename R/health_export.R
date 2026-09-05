@@ -1957,18 +1957,27 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   }
 
   # Smart insight: at most one prioritized trend line (streak / ACWR /
-  # HRV-trend / alcohol). Opt-out: TRANING_NOTIFY_CONTEXT=false.
+  # HRV-trend). Opt-out: TRANING_NOTIFY_CONTEXT=false.
   if (.notify_context_enabled()) {
-    # The alcohol table is a separate cache; a missing or unreadable one
-    # simply means the alcohol candidates stay silent.
-    alcohol <- tryCatch(load_alcohol_data(), error = function(e) NULL)
-    ctx_line <- .insight_context_line(summaries, health_daily, row$date,
-                                       alcohol = alcohol)
+    ctx_line <- .insight_context_line(summaries, health_daily, row$date)
     if (!is.null(ctx_line)) parts <- c(parts, ctx_line)
 
+    # Alcohol lines are ADDITIVE, not candidates for the single slot
+    # above: an energy figure is due after every logged evening, and as a
+    # candidate it would fall silent whenever a training-state line had
+    # something to say. Both are silent on a dry night, so this cannot
+    # turn into a daily fixture. The alcohol table is a separate cache; a
+    # missing or unreadable one simply means both lines stay silent.
+    alcohol <- tryCatch(load_alcohol_data(), error = function(e) NULL)
+    alcohol_line <- tryCatch(
+      .insight_alcohol_line(alcohol, health_daily, row$date,
+                             summaries = summaries),
+      error = function(e) NULL
+    )
+    if (!is.null(alcohol_line)) parts <- c(parts, alcohol_line)
+
     # Monday also gets the week's alcohol total, beside the training
-    # recap. Separate from the single context line above: it summarises
-    # a week rather than annotating today, so the two never compete.
+    # recap.
     alcohol_week <- tryCatch(
       .alcohol_weekly_line(alcohol, health_daily, row$date,
                             summaries = summaries),

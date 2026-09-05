@@ -547,7 +547,7 @@ test_that("the daily line is silent outside a logging-active stretch", {
 test_that("an honest null is stated when nothing moved", {
   f <- alcohol_fixture()
   line <- traning:::.insight_alcohol_line(f$alcohol, f$health_daily, f$on_date)
-  expect_match(line, "normala niv")
+  expect_match(line, "I dag: .* ligger på dina normala nivåer\\.")
   expect_false(grepl("\\?", line))
 })
 
@@ -587,28 +587,25 @@ test_that("the weekly line runs on Monday only and only with drinks in it", {
   expect_null(traning:::.alcohol_weekly_line(dry, hd, monday))
 })
 
-test_that("alcohol is the lowest-priority context line", {
+test_that("the alcohol line is additive, not a context-chain candidate", {
   f <- alcohol_fixture()
   hd <- f$health_daily
-  # A steep HRV downtrend over the last week: that line must win.
-  window <- hd$metric == "heart_rate_variability" &
-    hd$date > f$on_date - 7
+  # A steep HRV downtrend: the context chain has something to say, and
+  # the alcohol line must still appear beside it rather than lose the
+  # single slot. An energy figure is due after every logged evening.
+  window <- hd$metric == "heart_rate_variability" & hd$date > f$on_date - 7
   hd$value[window] <- seq(60, 40, length.out = sum(window))
 
-  line <- traning:::.insight_context_line(NULL, hd, f$on_date,
-                                           alcohol = f$alcohol)
-  expect_match(line, "HRV sjunkande trend")
+  ctx <- traning:::.insight_context_line(NULL, hd, f$on_date)
+  expect_match(ctx, "HRV sjunkande trend")
+  expect_false(grepl("glas", ctx))
 
-  # With no downtrend, the alcohol line is reached.
-  line2 <- traning:::.insight_context_line(NULL, f$health_daily, f$on_date,
-                                            alcohol = f$alcohol)
-  expect_match(line2, "glas")
+  alcohol_line <- traning:::.insight_alcohol_line(f$alcohol, hd, f$on_date)
+  expect_match(alcohol_line, "glas")
 })
 
-test_that("the context chain is unchanged when no alcohol table exists", {
-  f <- alcohol_fixture()
-  expect_null(traning:::.insight_context_line(NULL, f$health_daily,
-                                               f$on_date, alcohol = NULL))
+test_that("the context chain no longer takes an alcohol argument", {
+  expect_false("alcohol" %in% names(formals(traning:::.insight_context_line)))
 })
 
 

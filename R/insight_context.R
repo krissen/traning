@@ -8,8 +8,12 @@
 #      between.
 #   2. ACWR commentary: low (< 0.8) or elevated (> 1.3).
 #   3. HRV trend: 7-day linear slope < -0.5 ms/day.
-#   4. Alcohol: energy from a logged evening, plus a recovery
-#      comparison when a measure clears the gate.
+#
+# The alcohol line is deliberately NOT a candidate here. It is additive
+# and composed in health_insight_readiness(), because the product
+# decision is an energy line after every logged evening — as a candidate
+# it would fall silent whenever a training-state line had something to
+# say, which is most days.
 #
 # The first match wins; later helpers are only consulted if the
 # higher-priority one is silent. Keeps the notification readable —
@@ -145,26 +149,22 @@
 #'   \item Comeback streak (\code{.insight_streak_line}).
 #'   \item ACWR commentary (\code{.insight_acwr_line}).
 #'   \item HRV downtrend (\code{.insight_hrv_trend_line}).
-#'   \item Alcohol (\code{.insight_alcohol_line}).
 #' }
 #'
-#' Alcohol sits last on purpose. The three lines above it are about
-#' training state, which is what the morning push exists to report; the
-#' alcohol line is an annotation on that state, and an annotation should
-#' never displace the thing it annotates.
+#' The alcohol line is not among them. It carries an energy figure that
+#' is due after every logged evening, so it is attached additively by
+#' \code{health_insight_readiness()} rather than competing for this one
+#' slot.
 #'
 #' Returns \code{NULL} when no helper has anything to say.
 #'
 #' @keywords internal
-.insight_context_line <- function(summaries, health_daily, on_date,
-                                   alcohol = NULL) {
+.insight_context_line <- function(summaries, health_daily, on_date) {
   candidates <- list(
     function() .insight_streak_line(summaries, on_date),
     function() .insight_acwr_line(summaries, on_date,
                                     health_daily = health_daily),
-    function() .insight_hrv_trend_line(health_daily, on_date),
-    function() .insight_alcohol_line(alcohol, health_daily, on_date,
-                                       summaries = summaries)
+    function() .insight_hrv_trend_line(health_daily, on_date)
   )
   for (fn in candidates) {
     line <- tryCatch(fn(), error = function(e) NULL)
