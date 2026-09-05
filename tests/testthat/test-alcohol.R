@@ -295,7 +295,7 @@ test_that("the table never runs past today", {
 test_that("no future week reaches the weekly report", {
   n <- build_alcohol_nights(sample_row("2026-09-05", 6),
                              today = as.Date("2026-09-08"))
-  w <- compute_alcohol_week(n, NULL)
+  w <- compute_alcohol_week(n, NULL, today = as.Date("2026-09-08"))
   expect_false(any(w$week_start > as.Date("2026-09-08")))
   expect_false("2026-W38" %in% w$iso_week)
 })
@@ -597,6 +597,7 @@ test_that("the daily and weekly shares use the same expenditure pool", {
 
   a <- fake_nights(dates)
   a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
+  closed_after <- as.Date("2026-09-20")
 
   daily_with <- compute_alcohol_energy(a, hd, summaries)
   daily_without <- compute_alcohol_energy(a, hd, NULL)
@@ -607,8 +608,8 @@ test_that("the daily and weekly shares use the same expenditure pool", {
   expect_gt(daily_with$tdee_kcal_28d[row], daily_without$tdee_kcal_28d[row])
   expect_true(is.finite(daily_with$alcohol_share[row]))
 
-  week_with <- compute_alcohol_week(a, hd, summaries)
-  week_without <- compute_alcohol_week(a, hd, NULL)
+  week_with <- compute_alcohol_week(a, hd, summaries, today = closed_after)
+  week_without <- compute_alcohol_week(a, hd, NULL, today = closed_after)
   wk <- "2026-W36"
   # Same direction as the daily figure above: dropping a day that reads
   # far too low raises the level rather than shrinking the total, since
@@ -631,7 +632,7 @@ test_that("the weekly summary counts evenings, dry days and its own share", {
   a <- set_night(a, as.Date("2026-09-05"), units = 3, kcal = 210)
   a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
-  w <- compute_alcohol_week(a, hd)
+  w <- compute_alcohol_week(a, hd, today = as.Date("2026-09-20"))
   expect_equal(nrow(w), 1)
   expect_equal(w$iso_week, "2026-W36")
   expect_equal(w$week_start, as.Date("2026-08-31"))
@@ -654,7 +655,7 @@ test_that("a Sunday evening lands in the week it happened in", {
 
   n <- build_alcohol_nights(sample_row(sunday, 4),
                              today = as.Date("2026-09-10"))
-  w <- compute_alcohol_week(n, NULL)
+  w <- compute_alcohol_week(n, NULL, today = as.Date("2026-09-10"))
   hit <- w[w$units > 0, ]
   expect_equal(nrow(hit), 1)
   expect_equal(hit$iso_week, "2026-W36")
@@ -682,13 +683,55 @@ test_that("imperfect wear costs precision, not level, in the weekly share", {
   a <- set_night(a, as.Date("2026-09-05"), units = 3, kcal = 210)
   a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
-  full <- compute_alcohol_week(a, fake_health(drink_days))
+  after <- as.Date("2026-09-20")
+  full <- compute_alcohol_week(a, fake_health(drink_days), today = after)
   # Two days off the wrist, still above the five-day floor.
-  partial <- compute_alcohol_week(a, fake_health(drink_days[1:5]))
+  partial <- compute_alcohol_week(a, fake_health(drink_days[1:5]),
+                                   today = after)
 
   expect_equal(full$kcal, partial$kcal)
   expect_equal(round(full$share, 4), round(partial$share, 4))
   expect_equal(round(full$week_tdee_kcal), round(partial$week_tdee_kcal))
+})
+
+test_that("an unfinished week is measured against the days that happened", {
+  # Scaling to a flat seven projects expenditure across days the
+  # numerator cannot cover, so the share of the week in progress reads
+  # low: on a Friday, the first day the coverage floor can be met, by
+  # about 29 percent.
+  friday <- as.Date("2026-09-04")
+  expect_equal(format(friday, "%G-W%V"), "2026-W36")
+  drink_days <- seq(as.Date("2026-08-31"), friday, by = "day")
+  mornings <- drink_days + 1
+
+  a <- fake_nights(mornings)
+  a <- set_night(a, as.Date("2026-09-04"), units = 4, kcal = 280)
+  hd <- fake_health(drink_days)
+
+  in_progress <- compute_alcohol_week(a, hd, today = friday)
+  # Five elapsed days, not seven.
+  expect_equal(round(in_progress$week_tdee_kcal), round(5 * 2390.057))
+  expect_equal(round(in_progress$share, 4), round(280 / (5 * 2390.057), 4))
+
+  # Seen after the week has closed, the same data scales to a full week.
+  closed <- compute_alcohol_week(a, hd, today = as.Date("2026-09-14"))
+  expect_equal(round(closed$week_tdee_kcal), round(7 * 2390.057))
+  expect_lt(closed$share, in_progress$share)
+})
+
+test_that("elapsed days are counted from the ISO Monday", {
+  f <- traning:::.alcohol_week_elapsed_days
+  # 2026-W36 runs Monday 2026-08-31 to Sunday 2026-09-06.
+  expect_equal(format(as.Date("2026-08-31"), "%G-W%V"), "2026-W36")
+  expect_equal(f("2026-W36", as.Date("2026-08-31")), 1L)
+  expect_equal(f("2026-W36", as.Date("2026-09-04")), 5L)
+  expect_equal(f("2026-W36", as.Date("2026-09-06")), 7L)
+  # A closed week stays at seven however long ago it was.
+  expect_equal(f("2026-W36", as.Date("2027-01-01")), 7L)
+  # A week that has not started yet has no days to divide by.
+  expect_equal(f("2026-W40", as.Date("2026-09-04")), 0L)
+  # Year boundaries follow the ISO rule, not the calendar year.
+  expect_equal(f("2026-W01", as.Date("2026-12-31")), 7L)
 })
 
 test_that("a week with too few expenditure days reports no share", {
@@ -698,7 +741,7 @@ test_that("a week with too few expenditure days reports no share", {
   a <- fake_nights(mornings)
   a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
-  w <- compute_alcohol_week(a, hd)
+  w <- compute_alcohol_week(a, hd, today = as.Date("2026-09-20"))
   expect_equal(nrow(w), 1)
   expect_true(is.na(w$share))
   expect_equal(w$drinking_days, 1L)

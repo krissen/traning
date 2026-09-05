@@ -777,6 +777,36 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
   alcohol
 }
 
+#' How many days of an ISO week have happened
+#'
+#' Seven for any week that has closed, and the elapsed count for the week
+#' in progress. Weeks entirely in the future return zero, which sends the
+#' share to NA rather than producing a number for days that do not exist.
+#'
+#' @param iso_week Character vector of \code{"\%G-W\%V"} keys.
+#' @param today Reference date.
+#' @return Integer vector.
+#' @keywords internal
+.alcohol_week_elapsed_days <- function(iso_week, today = Sys.Date()) {
+  today <- as.Date(today)
+  # The Monday of an ISO week, via the Thursday that defines it: ISO
+  # week 1 is the week containing the year's first Thursday, so
+  # 4 January is always in week 1 and stepping whole weeks from its
+  # Monday lands on the Monday of any given week.
+  vapply(iso_week, function(k) {
+    parts <- strsplit(k, "-W", fixed = TRUE)[[1]]
+    if (length(parts) != 2L) return(7L)
+    year <- suppressWarnings(as.integer(parts[1]))
+    week <- suppressWarnings(as.integer(parts[2]))
+    if (is.na(year) || is.na(week)) return(7L)
+    jan4 <- as.Date(sprintf("%04d-01-04", year))
+    week1_monday <- jan4 - (as.integer(format(jan4, "%u")) - 1L)
+    monday <- week1_monday + (week - 1L) * 7L
+    elapsed <- as.integer(today - monday) + 1L
+    max(0L, min(7L, elapsed))
+  }, integer(1), USE.NAMES = FALSE)
+}
+
 #' Weekly alcohol energy summary
 #'
 #' The weekly line uses that week's actual summed expenditure rather than
@@ -790,13 +820,16 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
 #' @param summaries Optional session summaries.
 #' @param min_days_in_week Days of expenditure data required before a
 #'   weekly share is reported. Default 5 of 7.
+#' @param today Reference date for deciding how much of a week has
+#'   happened. Default \code{Sys.Date()}; an argument so tests can pin it.
 #' @return Tibble, one row per ISO week: \code{iso_week},
 #'   \code{week_start}, \code{units}, \code{standardglas},
 #'   \code{grams}, \code{kcal}, \code{drinking_days}, \code{dry_days},
 #'   \code{week_tdee_kcal}, \code{share}.
 #' @export
 compute_alcohol_week <- function(alcohol, health_daily = NULL,
-                                  summaries = NULL, min_days_in_week = 5) {
+                                  summaries = NULL, min_days_in_week = 5,
+                                  today = Sys.Date()) {
   empty <- tibble::tibble(
     iso_week = character(), week_start = as.Date(character()),
     units = numeric(), standardglas = numeric(), grams = numeric(),
@@ -841,10 +874,20 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
   week_energy <- energy |>
     dplyr::group_by(.data$iso_week) |>
     dplyr::summarise(
-      week_tdee_kcal = mean(.data$tdee_kcal, na.rm = TRUE) * 7,
+      tdee_mean = mean(.data$tdee_kcal, na.rm = TRUE),
       n_days = dplyr::n(),
       .groups = "drop"
     )
+  # Scale to the days of the week that have actually happened, not a
+  # flat seven. For a completed week those are the same number. For the
+  # week in progress a flat seven projects expenditure across days the
+  # numerator cannot cover, understating the share by elapsed over
+  # seven: on a Friday, the first day the coverage floor can be met,
+  # that is about 29 %. Two rows in the same table would then answer
+  # slightly different questions with nothing saying which is which.
+  week_energy$week_days <- .alcohol_week_elapsed_days(week_energy$iso_week,
+                                                       today)
+  week_energy$week_tdee_kcal <- week_energy$tdee_mean * week_energy$week_days
   week_energy$week_tdee_kcal[week_energy$n_days < min_days_in_week] <- NA_real_
 
   out <- a |>

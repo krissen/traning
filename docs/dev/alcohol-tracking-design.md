@@ -390,15 +390,24 @@ Two different windows, for two different sentences.
   run happened, so a share against today's total would swing widely for a
   constant number of drinks, and the swing would be about the running.
 - The **weekly** line uses that week's own expenditure, as the mean of
-  the days present scaled to seven, not their raw sum. A week averages
-  out session lumpiness, and the reader is asking about that specific
-  week, but the numerator covers every night in it while the denominator
-  only covers the days the watch recorded. A raw sum therefore inflated
-  the share by seven over the number of days present: the same drinking
-  read 4,9 percent in a fully worn week and 6,8 percent in one missing
-  two days. Scaling makes imperfect wear cost precision rather than
-  shift the level, and makes this the same kind of quantity as the daily
-  share.
+  the days present scaled to the length of the week, not their raw sum.
+  A week averages out session lumpiness, and the reader is asking about
+  that specific week, but the numerator covers every night in it while
+  the denominator only covers the days the watch recorded. A raw sum
+  therefore inflated the share by seven over the number of days present:
+  the same drinking read 4,9 percent in a fully worn week and 6,8
+  percent in one missing two days. Scaling makes imperfect wear cost
+  precision rather than shift the level, and makes this the same kind of
+  quantity as the daily share.
+
+  The scale is seven for a week that has closed and the elapsed count
+  for the week in progress. A flat seven would project expenditure
+  across days the numerator cannot cover, understating the share of the
+  current week by elapsed over seven, about 29 percent on a Friday. Both
+  report surfaces return the in-progress week beside completed ones, so
+  the two rows would otherwise answer slightly different questions with
+  nothing marking which is which. The Monday notification is unaffected
+  either way, since it reads a week that has closed.
 
 The weekly account is keyed by the **drinking date**, the morning date
 minus one, so it is a week of evenings and matches the word `kvällar`
