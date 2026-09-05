@@ -1244,7 +1244,13 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   running_stride_length            = "m",
   running_vertical_oscillation     = "cm",
   alcohol_consumption              = "glas",
-  basal_energy_burned              = "kcal"
+  # kJ, not kcal: health_daily stores the raw qty HAE wrote, and nothing
+  # converts energy at import. active_energy is handled the same way, by
+  # not being converted either. The label has to name what is actually
+  # in the column, or a future caller renders "1 900 kcal" for a 1 900 kJ
+  # day. The alcohol module needs kilocalories and gets them by reading
+  # the units field off the canonical documents, where it survives.
+  basal_energy_burned              = "kJ"
 )
 
 

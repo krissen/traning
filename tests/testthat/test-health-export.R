@@ -525,6 +525,21 @@ test_that("read_canonical_file skips an unparseable file with a warning", {
   expect_match(conditionMessage(w), "lexical error")
 })
 
+test_that("the basal energy label names the unit that is actually stored", {
+  # HAE writes this metric in kilojoules and nothing converts it at
+  # import, so the cache holds kJ. A "kcal" label would understate the
+  # number by a factor of four for anyone who rendered it.
+  expect_equal(unname(traning:::.metric_units[["basal_energy_burned"]]), "kJ")
+  # active_energy is stored the same way and carries no label at all,
+  # which is the other consistent answer.
+  expect_false("active_energy" %in% names(traning:::.metric_units))
+
+  # The canonical documents still carry the unit, which is how the
+  # alcohol module gets kilocalories without guessing.
+  expect_equal(round(traning:::.energy_to_kcal(4184, "kJ")), 1000)
+  expect_equal(traning:::.energy_to_kcal(1000, "kcal"), 1000)
+})
+
 test_that("the empty branches keep the documented columns", {
   cols <- c("date", "metric", "value", "source")
 
