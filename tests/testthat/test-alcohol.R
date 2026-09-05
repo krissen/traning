@@ -198,6 +198,44 @@ test_that("energy already in kcal is not converted a second time", {
   expect_equal(round(traning:::.energy_to_kcal(418.4, "kJ"), 1), 100)
 })
 
+test_that("a canonical file without a units field never yields a silent zero", {
+  # The unit is assumed to be kilojoules, which is what every energy
+  # document on this device declares. The outcome to avoid is an NA kcal
+  # that sum(na.rm = TRUE) turns into a night that cost nothing, which
+  # would also flip the estimated flag and the gram figure.
+  tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "alcohol_consumption"), recursive = TRUE)
+  dir.create(file.path(tmp, "dietary_energy"), recursive = TRUE)
+  writeLines(
+    '{"metric": "alcohol_consumption", "date": "2026-09-05", "units": "count", "samples": [{"source": "DrinkControl", "qty": 6, "date": "2026-09-05 18:44:00 +0200"}]}',
+    file.path(tmp, "alcohol_consumption", "2026-09-05.json"))
+  # No units field at all.
+  writeLines(
+    '{"metric": "dietary_energy", "date": "2026-09-05", "samples": [{"source": "DrinkControl", "qty": 1768.3175, "date": "2026-09-05 18:44:00 +0200"}]}',
+    file.path(tmp, "dietary_energy", "2026-09-05.json"))
+
+  n <- import_alcohol(save = FALSE, canonical_dir = tmp, verbose = FALSE,
+                      today = as.Date("2026-09-10"))
+  row <- n[n$date == as.Date("2026-09-06"), ]
+  expect_equal(round(row$alcohol_kcal, 1), 422.6)
+  expect_equal(round(row$alcohol_grams, 1), 60.4)
+  expect_false(row$alcohol_grams_estimated)
+  expect_false(row$alcohol_unit_mismatch)
+  # The assumption is recorded rather than hidden: NA means the document
+  # omitted the field.
+  expect_true(is.na(attr(n, "energy_units")[["dietary_energy"]]))
+})
+
+test_that("an unknown energy unit is read as kilojoules, explicitly", {
+  expect_equal(round(traning:::.energy_to_kcal(4184, NA_character_)), 1000)
+  expect_equal(round(traning:::.energy_to_kcal(4184, "")), 1000)
+  expect_equal(round(traning:::.energy_to_kcal(4184, "unrecognised")), 1000)
+  expect_equal(traning:::.energy_to_kcal(1000, "kcal"), 1000)
+  # No branch produces NA, whatever the unit says.
+  expect_false(any(is.na(traning:::.energy_to_kcal(
+    c(4184, 1000, 4184), c(NA, "kcal", "kJ")))))
+})
+
 test_that("absence counts as zero only inside a logging-active stretch", {
   n <- build_alcohol_nights(sample_row("2026-09-05", 6),
                              today = as.Date("2026-09-20"))

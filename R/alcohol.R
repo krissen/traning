@@ -202,14 +202,28 @@
   as.character(.coalesce_scalar(raw$units, NA_character_))
 }
 
-#' Convert a dietary_energy quantity to kcal
+#' Convert an energy quantity to kcal
 #'
-#' HAE reports the metric in kJ on this device, but the units field is
+#' HAE reports energy in kJ on this device, but the units field is
 #' honoured rather than assumed: a device switched to kcal must not have
 #' its numbers divided by 4.184 a second time.
 #'
+#' A missing or unrecognised unit is treated as kilojoules, explicitly
+#' and by name rather than by falling off the end of a condition. That is
+#' the canonical default: kJ is what every energy document on this device
+#' declares, so a document that omits the field is far likelier to be an
+#' incomplete write than a device that switched units without saying so.
+#' The alternative, carrying NA through, would discard a real measurement
+#' and force the count-based fallback to stand in for it, labelled
+#' "(beräknat)" when the app had in fact recorded the energy.
+#'
+#' Whichever way it went, the one outcome to avoid is a silent zero:
+#' \code{sum(na.rm = TRUE)} downstream would turn an NA night into 0 kcal,
+#' which reads as a night that cost nothing and would flip the estimated
+#' flag and the gram figure with it. Neither branch here can produce one.
+#'
 #' @param qty Numeric vector.
-#' @param units Character vector of unit strings.
+#' @param units Character vector of unit strings. NA means unknown.
 #' @return Numeric vector of kcal.
 #' @keywords internal
 .energy_to_kcal <- function(qty, units) {
@@ -217,7 +231,9 @@
   # `units` is a scalar when it describes a whole metric and a vector
   # when it comes per sample; recycle explicitly rather than relying on
   # if_else's strict length rules.
-  is_kcal <- rep_len(u %in% c("kcal", "cal", "kalorier"), length(qty))
+  u <- rep_len(u, length(qty))
+  is_kcal <- !is.na(u) & u %in% c("kcal", "cal", "kalorier")
+  # The kJ branch takes both the declared kilojoules and the unknowns.
   dplyr::if_else(is_kcal, qty, qty / .kj_per_kcal)
 }
 
@@ -463,10 +479,15 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   # is converted from kilojoules on faith: a device writing kcal would
   # put a 4500 kcal day at 1076 after conversion, inside the
   # plausibility band and silently wrong by a factor of four.
+  # dietary_energy is recorded alongside the two expenditure metrics so
+  # the unit behind the kcal column is inspectable after the fact. NA
+  # here means the document omitted the field and kilojoules were
+  # assumed; see .energy_to_kcal().
   attr(nights, "energy_units") <- c(
     active_energy = .read_canonical_units(canonical_dir, "active_energy"),
     basal_energy_burned = .read_canonical_units(canonical_dir,
-                                                 "basal_energy_burned")
+                                                 "basal_energy_burned"),
+    dietary_energy = .read_canonical_units(canonical_dir, "dietary_energy")
   )
 
   if (verbose) {
