@@ -519,10 +519,14 @@ test_that("read_canonical_file skips an unparseable file with a warning", {
                  "Kunde inte l\u00e4sa canonical-fil")
   expect_equal(nrow(out), 0)
   # The warning names the file and carries the parser's own message, so
-  # the offending write can be found without re-running the import.
+  # the offending write can be found without re-running the import. The
+  # parser's wording is not asserted: "lexical error" is yajl's phrasing
+  # and would break the test on a jsonlite that words it differently.
+  # What matters is that something from the parser is passed through.
   w <- tryCatch(read_canonical_file(bad), warning = function(w) w)
-  expect_match(conditionMessage(w), basename(bad), fixed = TRUE)
-  expect_match(conditionMessage(w), "lexical error")
+  msg <- conditionMessage(w)
+  expect_match(msg, basename(bad), fixed = TRUE)
+  expect_match(msg, "\\(.+\\)")
 })
 
 test_that("the basal energy label names the unit that is actually stored", {

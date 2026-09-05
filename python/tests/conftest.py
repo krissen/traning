@@ -12,12 +12,14 @@ before the package is imported, hence at the top of the file.
 import sys
 from pathlib import Path
 
-_PYTHON_ROOT = Path(__file__).resolve().parent.parent
-# `not sys.path` matters: guarding on a truthy sys.path meant an empty
-# one skipped the insert entirely, which is the one case where the
-# import would certainly have resolved elsewhere or not at all.
-if not sys.path or sys.path[0] != str(_PYTHON_ROOT):
-    sys.path.insert(0, str(_PYTHON_ROOT))
+_PYTHON_ROOT = str(Path(__file__).resolve().parent.parent)
+# Drop any existing entry before inserting, so the root ends up at the
+# front exactly once. Inserting on a "not already first" test alone left
+# a duplicate whenever the root was present further down the list, and
+# skipped the insert entirely when sys.path was empty, which is the one
+# case where the import would certainly have resolved elsewhere.
+sys.path[:] = [p for p in sys.path if p != _PYTHON_ROOT]
+sys.path.insert(0, _PYTHON_ROOT)
 
 import pytest  # noqa: E402
 from traning_cli.settings import get_settings  # noqa: E402

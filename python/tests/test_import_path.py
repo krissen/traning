@@ -22,22 +22,23 @@ def test_package_comes_from_this_worktree():
     )
 
 
-def test_insert_happens_even_when_sys_path_is_empty():
-    """The guard must not treat an empty sys.path as already correct.
+def test_root_ends_up_first_exactly_once():
+    """Replays the conftest logic against a stand-in list.
 
-    Guarding on a truthy sys.path skipped the insert exactly when it was
-    most needed. Replays the conftest logic against a stand-in list
-    rather than mutating the real sys.path mid-run.
+    Three cases that a "not already first" test alone got wrong: an
+    empty path skipped the insert entirely, and a root sitting further
+    down the list gained a duplicate instead of moving.
     """
     root = str(PYTHON_ROOT)
-    for start, expected_first in (
-        ([], root),
-        (["/somewhere/else"], root),
-        ([root, "/somewhere/else"], root),
+    for start in (
+        [],
+        ["/somewhere/else"],
+        [root, "/somewhere/else"],
+        ["/somewhere/else", root],
+        [root, "/somewhere/else", root],
     ):
         path = list(start)
-        if not path or path[0] != root:
-            path.insert(0, root)
-        assert path[0] == expected_first
-        # And it is inserted once, never stacked up on repeat runs.
+        path[:] = [p for p in path if p != root]
+        path.insert(0, root)
+        assert path[0] == root
         assert path.count(root) == 1
