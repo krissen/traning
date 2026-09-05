@@ -275,9 +275,17 @@ build_alcohol_nights <- function(samples, energy = NULL,
   if (!is.null(today) && !is.na(today)) {
     spine_end <- max(min(spine_end, as.Date(today)), last_real)
   }
-  spine_start <- min(sample_dates) - active_window_days
-  if (spine_end < spine_start) return(.empty_alcohol_nights())
-  spine <- tibble::tibble(date = seq(spine_start, spine_end, by = "day"))
+  # The table starts at the first sample, not ten days before it. The
+  # active window is symmetric, which is the right rule INSIDE the
+  # record: a gap with logging on both sides really is evidence that
+  # logging was happening. Before the first sample there is no such
+  # evidence by construction, the app was not installed, and those days
+  # are the unknowable case rather than dry nights. Left unclamped they
+  # fed straight into the alcohol-free baseline, where up to ten
+  # pre-install nights could make up most of its fourteen.
+  first_date <- min(sample_dates)
+  if (spine_end < first_date) return(.empty_alcohol_nights())
+  spine <- tibble::tibble(date = seq(first_date, spine_end, by = "day"))
 
   by_day <- samples |>
     dplyr::group_by(.data$date) |>
@@ -324,8 +332,13 @@ build_alcohol_nights <- function(samples, energy = NULL,
 
   out$alcohol_units <- dplyr::if_else(
     active & is.na(out$alcohol_units), 0, out$alcohol_units)
+  # The first row's night ran the evening BEFORE logging existed, so it
+  # is unknowable in the same way the pre-history is. Its calendar-day
+  # total above is real and stays.
+  known_night <- out$date > first_date
   out$alcohol_night_units <- dplyr::if_else(
-    active & is.na(out$alcohol_night_units), 0, out$alcohol_night_units)
+    active & known_night & is.na(out$alcohol_night_units), 0,
+    out$alcohol_night_units)
   # A dry night has no energy to report, and 0 kcal is the honest value
   # there; a night with drinks but no app energy stays NA so the gram
   # figure can be flagged as computed rather than measured.

@@ -121,10 +121,12 @@ test_that("build_alcohol_nights attributes an evening to the next morning", {
   expect_equal(night$alcohol_night_units, 6)
 
   # The calendar-day total stays on the day the drinks were logged, so a
-  # per-day metric view and this table cannot disagree.
+  # per-day metric view and this table cannot disagree. Its own night
+  # ran before logging existed, so that stays unknowable rather than
+  # counted as dry.
   day <- n[n$date == as.Date("2026-09-05"), ]
   expect_equal(day$alcohol_units, 6)
-  expect_equal(day$alcohol_night_units, 0)
+  expect_true(is.na(day$alcohol_night_units))
 })
 
 test_that("grams come from the app's energy, not from the count", {
@@ -207,6 +209,30 @@ test_that("absence counts as zero only inside a logging-active stretch", {
   far <- n[n$date == as.Date("2026-09-16"), ]
   expect_false(far$alcohol_logging_active)
   expect_true(is.na(far$alcohol_night_units))
+})
+
+test_that("no dry night is invented before logging started", {
+  # The active window is symmetric, so the ten days before the first
+  # sample used to arrive as alcohol-free nights with the flag set. They
+  # fed the alcohol-free baseline, where up to ten pre-install nights
+  # could make up most of its fourteen, and the app was not even
+  # installed on them.
+  first <- as.Date("2026-09-01")
+  n <- build_alcohol_nights(sample_row(first, 3),
+                             today = as.Date("2026-09-10"))
+  expect_equal(min(n$date), first)
+  expect_false(any(n$date < first))
+
+  # The first row keeps its calendar-day total, which is real, but its
+  # night ran the evening before logging existed and stays unknowable.
+  row <- n[n$date == first, ]
+  expect_equal(row$alcohol_units, 3)
+  expect_true(is.na(row$alcohol_night_units))
+
+  # So it cannot reach the baseline's reference set either.
+  dry <- n$date[!is.na(n$alcohol_night_units) & n$alcohol_night_units == 0 &
+                  n$alcohol_logging_active]
+  expect_false(any(dry <= first))
 })
 
 test_that("the table never runs past today", {

@@ -444,6 +444,15 @@ plausibility band is only a backstop and a leaky one: a device writing
 4500 kcal lands at 1076 after an unwanted conversion, inside the band
 and silently wrong by a factor of four.
 
+**Days before logging started.** The active window is symmetric, which
+is the right rule inside the record: a gap with logging on both sides is
+evidence that logging was happening. Before the first sample there is no
+such evidence, the app was not installed, and those days are the
+unknowable case rather than dry nights. The table therefore starts at
+the first sample. The first row keeps its calendar-day total, which is
+real, but its night ran the evening before logging existed and stays
+`NA`, so it cannot enter the alcohol-free baseline.
+
 **Future days.** The logging-active window pads ten days past the last
 sample. The table is cut at today so that padding cannot manufacture
 mornings with zero drinks and an active flag, which the weekly report
