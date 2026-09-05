@@ -406,6 +406,14 @@ ever added.
 **Missing days.** No wear means no active and no basal figure. Do not
 impute, do not substitute a placeholder. Omit the share.
 
+**Units.** `health_daily` drops the units field, so the denominator
+would otherwise be converted from kilojoules on faith. The unit strings
+for `active_energy` and `basal_energy_burned` are read from canonical at
+import and travel with the alcohol table as an attribute. The
+plausibility band is only a backstop and a leaky one: a device writing
+4500 kcal lands at 1076 after an unwanted conversion, inside the band
+and silently wrong by a factor of four.
+
 **Future days.** The logging-active window pads ten days past the last
 sample. The table is cut at today so that padding cannot manufacture
 mornings with zero drinks and an active flag, which the weekly report

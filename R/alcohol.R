@@ -180,6 +180,28 @@
   out[!is.na(out$date) & !is.na(out$qty), , drop = FALSE]
 }
 
+#' Read the unit string a canonical metric is written in
+#'
+#' Takes the most recent file, since a device that switches units does so
+#' going forward. Returns NA when the directory or the field is absent,
+#' which callers treat as "unknown" rather than as any particular unit.
+#'
+#' @param canonical_dir Path to the canonical directory.
+#' @param metric Metric name.
+#' @return Character scalar, or NA_character_.
+#' @keywords internal
+.read_canonical_units <- function(canonical_dir, metric) {
+  dir <- file.path(canonical_dir, metric)
+  if (!dir.exists(dir)) return(NA_character_)
+  files <- sort(list.files(dir, pattern = "\\.json$", full.names = TRUE))
+  if (length(files) == 0) return(NA_character_)
+  raw <- tryCatch(jsonlite::fromJSON(utils::tail(files, 1),
+                                      simplifyVector = FALSE),
+                  error = function(e) NULL)
+  if (is.null(raw)) return(NA_character_)
+  as.character(.coalesce_scalar(raw$units, NA_character_))
+}
+
 #' Convert a dietary_energy quantity to kcal
 #'
 #' HAE reports the metric in kJ on this device, but the units field is
@@ -192,7 +214,11 @@
 #' @keywords internal
 .energy_to_kcal <- function(qty, units) {
   u <- tolower(trimws(as.character(units)))
-  dplyr::if_else(u %in% c("kcal", "cal", "kalorier"), qty, qty / 4.184)
+  # `units` is a scalar when it describes a whole metric and a vector
+  # when it comes per sample; recycle explicitly rather than relying on
+  # if_else's strict length rules.
+  is_kcal <- rep_len(u %in% c("kcal", "cal", "kalorier"), length(qty))
+  dplyr::if_else(is_kcal, qty, qty / .kj_per_kcal)
 }
 
 # --- Night table -------------------------------------------------------------
@@ -419,6 +445,16 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   energy <- .read_canonical_samples(file.path(canonical_dir, "dietary_energy"))
 
   nights <- build_alcohol_nights(samples, energy, today = today)
+  # The unit strings for the expenditure metrics travel with the table.
+  # health_daily drops the units field, so without this the denominator
+  # is converted from kilojoules on faith: a device writing kcal would
+  # put a 4500 kcal day at 1076 after conversion, inside the
+  # plausibility band and silently wrong by a factor of four.
+  attr(nights, "energy_units") <- c(
+    active_energy = .read_canonical_units(canonical_dir, "active_energy"),
+    basal_energy_burned = .read_canonical_units(canonical_dir,
+                                                 "basal_energy_burned")
+  )
 
   if (verbose) {
     logged <- sum(nights$alcohol_night_units > 0, na.rm = TRUE)
@@ -475,6 +511,15 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 # what catches a device that ever starts writing kcal.
 .kj_per_kcal <- 4.184
 
+#' Unit string for one expenditure metric, defaulting to kilojoules
+#' @keywords internal
+.metric_energy_unit <- function(energy_units, metric) {
+  if (is.null(energy_units) || !metric %in% names(energy_units)) return("kJ")
+  u <- energy_units[[metric]]
+  if (is.null(u) || is.na(u) || !nzchar(u)) return("kJ")
+  u
+}
+
 # A day's total expenditure has to land in this range to be usable as a
 # denominator. Outside it the reading is wrong rather than unusual, and
 # an implausible denominator produces a confidently wrong percentage.
@@ -501,9 +546,16 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 #' @param health_daily Long health tibble.
 #' @param summaries Optional session summaries. Without them no
 #'   contamination check is possible and every day is kept.
+#' @param energy_units Optional named character vector of unit strings
+#'   for \code{active_energy} and \code{basal_energy_burned}, as
+#'   recorded on the alcohol table at import. Unknown units are treated
+#'   as kilojoules, which is what this device writes; the plausibility
+#'   band is the backstop, and it is a leaky one in the middle of its
+#'   range.
 #' @return Tibble with \code{date} and \code{tdee_kcal}, ascending.
 #' @keywords internal
-.alcohol_daily_energy <- function(health_daily, summaries = NULL) {
+.alcohol_daily_energy <- function(health_daily, summaries = NULL,
+                                   energy_units = NULL) {
   empty <- tibble::tibble(date = as.Date(character()), tdee_kcal = numeric())
   if (is.null(health_daily) || !is.data.frame(health_daily) ||
       nrow(health_daily) == 0 ||
@@ -529,7 +581,12 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
                   !is.na(.data$basal_energy_burned)) |>
     dplyr::transmute(
       date = .data$date,
-      tdee_kcal = (.data$active_energy + .data$basal_energy_burned) / .kj_per_kcal
+      tdee_kcal = .energy_to_kcal(.data$active_energy,
+                                   .metric_energy_unit(energy_units,
+                                                        "active_energy")) +
+        .energy_to_kcal(.data$basal_energy_burned,
+                         .metric_energy_unit(energy_units,
+                                              "basal_energy_burned"))
     ) |>
     dplyr::filter(.data$tdee_kcal >= .alcohol_tdee_plausible_kcal[1],
                   .data$tdee_kcal <= .alcohol_tdee_plausible_kcal[2]) |>
@@ -659,7 +716,8 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
   # date happens to look suspect. The old per-day suppression also keyed
   # off the morning date while the questionable energy reading sits on
   # the evening before, so it fired on the wrong day in both directions.
-  energy <- .alcohol_daily_energy(health_daily, summaries)
+  energy <- .alcohol_daily_energy(health_daily, summaries,
+                                   attr(alcohol, "energy_units"))
   alcohol$tdee_kcal_28d <- .alcohol_tdee_baseline(
     energy, alcohol$date, window_days = window_days, min_days = min_days)
 
@@ -718,7 +776,8 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 
   # Same pool as the daily share, so the two percentages cannot be
   # computed under different rules and disagree about the same week.
-  energy <- .alcohol_daily_energy(health_daily, summaries)
+  energy <- .alcohol_daily_energy(health_daily, summaries,
+                                   attr(alcohol, "energy_units"))
   energy$iso_week <- format(energy$date, "%G-W%V")
   week_energy <- energy |>
     dplyr::group_by(.data$iso_week) |>

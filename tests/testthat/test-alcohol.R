@@ -372,6 +372,50 @@ test_that("a thin expenditure window omits the share rather than guessing", {
   expect_true(is.na(out$alcohol_share[out$date == as.Date("2026-09-06")]))
 })
 
+test_that("the expenditure metrics' units travel with the alcohol table", {
+  dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
+  # A device writing kcal, on a hard training day: 1500 + 3000 is a
+  # 4500 kcal day. Divided by 4.184 on the assumption of kilojoules it
+  # lands at 1076, INSIDE the plausibility band, so the band cannot catch
+  # it and every share built on it is wrong by a factor of four.
+  hd <- fake_health(dates, active = 1500, basal = 3000)
+
+  as_kj <- traning:::.alcohol_daily_energy(hd)
+  expect_equal(round(as_kj$tdee_kcal[1]), 1076)
+
+  as_kcal <- traning:::.alcohol_daily_energy(
+    hd, NULL, c(active_energy = "kcal", basal_energy_burned = "kcal"))
+  expect_equal(round(as_kcal$tdee_kcal[1]), 4500)
+
+  # Unknown units fall back to kilojoules, which is what this device
+  # writes.
+  expect_equal(traning:::.metric_energy_unit(NULL, "active_energy"), "kJ")
+  expect_equal(traning:::.metric_energy_unit(c(active_energy = NA_character_),
+                                              "active_energy"), "kJ")
+})
+
+test_that("import records the units and they survive the cache round trip", {
+  tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "alcohol_consumption"), recursive = TRUE)
+  dir.create(file.path(tmp, "active_energy"), recursive = TRUE)
+  writeLines(
+    '{"metric": "alcohol_consumption", "date": "2026-09-05", "units": "count", "samples": [{"source": "DrinkControl", "qty": 6, "date": "2026-09-05 18:44:00 +0200"}]}',
+    file.path(tmp, "alcohol_consumption", "2026-09-05.json"))
+  writeLines(
+    '{"metric": "active_energy", "date": "2026-09-05", "units": "kJ", "samples": [{"source": "AW", "qty": 3300, "date": "2026-09-05 18:44:00 +0200"}]}',
+    file.path(tmp, "active_energy", "2026-09-05.json"))
+
+  cache <- file.path(tmp, "alcohol_nights.RData")
+  n <- import_alcohol(save = TRUE, cache_path = cache, canonical_dir = tmp,
+                      verbose = FALSE, today = as.Date("2026-09-06"))
+  expect_equal(unname(attr(n, "energy_units")[["active_energy"]]), "kJ")
+  # basal_energy_burned has no canonical directory here, so its unit is
+  # unknown rather than assumed.
+  expect_true(is.na(attr(n, "energy_units")[["basal_energy_burned"]]))
+  expect_equal(attr(load_alcohol_data(cache), "energy_units"),
+               attr(n, "energy_units"))
+})
+
 test_that("a day with only active energy is left out of the denominator", {
   dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)
