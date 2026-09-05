@@ -720,9 +720,22 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
     .alcohol_g_per_standardglas
 
   # Fallback only where drinks were logged but the app wrote no energy.
-  # The grams behind it were already flagged as estimated at import.
+  #
+  # The flag is derived from alcohol_grams_estimated, which is set once
+  # at import and means exactly this, rather than from the NA that this
+  # function is about to fill in. Deriving it from the NA made the
+  # function destroy its own evidence: a second call saw a non-NA kcal
+  # everywhere, wrote FALSE over the flag, and a computed figure was
+  # then presented as one the app had logged. Nothing calls it twice
+  # today, but the guard lived in the callers while the fragility lived
+  # here, and the function is exported.
   needs_fallback <- !is.na(units) & units > 0 & is.na(alcohol$alcohol_kcal)
-  alcohol$alcohol_kcal_estimated <- needs_fallback
+  already_estimated <- if ("alcohol_grams_estimated" %in% names(alcohol)) {
+    !is.na(alcohol$alcohol_grams_estimated) & alcohol$alcohol_grams_estimated
+  } else {
+    rep(FALSE, nrow(alcohol))
+  }
+  alcohol$alcohol_kcal_estimated <- needs_fallback | already_estimated
   alcohol$alcohol_kcal[needs_fallback] <-
     alcohol$alcohol_grams[needs_fallback] * .alcohol_kcal_per_g
 

@@ -375,6 +375,33 @@ test_that("fallback kcal is used only when the app wrote none, and is flagged", 
   expect_equal(out$alcohol_kcal[2], 422.6)
 })
 
+test_that("compute_alcohol_energy is idempotent", {
+  # The flag used to be derived from the NA the same function then
+  # filled in, so a second pass wrote FALSE over it and a computed
+  # figure was presented as one DrinkControl had logged. That is the one
+  # distinction the module must never blur.
+  a <- fake_nights(as.Date(c("2026-09-05", "2026-09-06")))
+  a <- set_night(a, as.Date("2026-09-05"), units = 4)
+  a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
+
+  once <- compute_alcohol_energy(a, NULL)
+  twice <- compute_alcohol_energy(once, NULL)
+
+  expect_equal(sum(once$alcohol_kcal_estimated), 1L)
+  expect_equal(twice$alcohol_kcal_estimated, once$alcohol_kcal_estimated)
+  expect_equal(twice$alcohol_kcal, once$alcohol_kcal)
+  expect_equal(twice$alcohol_standardglas, once$alcohol_standardglas)
+
+  # And the prose still labels the computed figure on the second pass.
+  dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
+  hd <- fake_health(dates)
+  b <- set_night(fake_nights(dates), as.Date("2026-09-06"), units = 6)
+  line <- traning:::.insight_alcohol_line(
+    compute_alcohol_energy(compute_alcohol_energy(b, hd), hd),
+    hd, as.Date("2026-09-06"))
+  expect_match(line, "\\(beräknat\\)")
+})
+
 test_that("the share is a fraction of the 28-day mean expenditure", {
   dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)
