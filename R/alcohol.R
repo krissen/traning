@@ -660,3 +660,239 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
   out$share[!is.finite(out$share)] <- NA_real_
   out |> dplyr::arrange(dplyr::desc(.data$week_start))
 }
+
+# --- Alcohol-free baseline ---------------------------------------------------
+
+# Rolling window for the alcohol-free baseline. A compromise: long
+# enough to stabilise a median, short enough that fitness drift does not
+# accumulate inside it.
+.alcohol_baseline_window_days <- 42L
+
+# Below this many qualifying nights the comparison is not printed at all
+# rather than printed from a thin reference.
+.alcohol_baseline_min_nights <- 14L
+
+# Robust z beyond which a measure is worth a sentence. One robust
+# standard deviation from the alcohol-free median: below that the
+# morning is inside the ordinary spread of ordinary mornings, and
+# saying so would be a sentence hunting for evidence.
+.alcohol_deviation_z <- 1
+
+# Illness thresholds, reused from the tier-1 update thresholds so the
+# two surfaces cannot drift into two readings of "elevated".
+.alcohol_illness_wrist_temp <- 0.4   # degC above the trailing 14d median
+.alcohol_illness_resp_rate  <- 2     # breaths/min above the trailing 7d mean
+
+#' Robust centre and spread of a numeric vector
+#'
+#' Median and MAD rather than mean and SD: one very bad night must not
+#' be able to move the reference the rest of the nights are compared to.
+#'
+#' @param x Numeric vector.
+#' @return List with \code{center}, \code{spread}, \code{n}.
+#' @keywords internal
+.robust_stats <- function(x) {
+  x <- x[is.finite(x)]
+  if (length(x) == 0) return(list(center = NA_real_, spread = NA_real_, n = 0L))
+  s <- stats::mad(x, constant = 1.4826)
+  list(center = stats::median(x), spread = if (is.finite(s) && s > 0) s else NA_real_,
+       n = length(x))
+}
+
+#' Dates that look like illness and are excluded from the baseline
+#'
+#' Two signals, both already used elsewhere for the same purpose: a
+#' sleeping wrist temperature well above its own trailing median, and a
+#' respiratory rate well above its trailing mean. A night spent fighting
+#' something off is not a representative alcohol-free night.
+#'
+#' @param health_daily Long health tibble.
+#' @return Date vector of flagged days (possibly empty).
+#' @keywords internal
+.alcohol_illness_dates <- function(health_daily) {
+  none <- as.Date(character())
+  if (is.null(health_daily) || !is.data.frame(health_daily) ||
+      nrow(health_daily) == 0) {
+    return(none)
+  }
+  flagged <- none
+
+  series <- function(metric) {
+    s <- health_daily[health_daily$metric == metric, c("date", "value"),
+                      drop = FALSE]
+    s <- s[!is.na(s$value), , drop = FALSE]
+    if (nrow(s) == 0) return(NULL)
+    s$date <- as.Date(s$date)
+    s[order(s$date), , drop = FALSE]
+  }
+
+  wt <- series("apple_sleeping_wrist_temperature")
+  if (!is.null(wt) && nrow(wt) >= 4) {
+    for (i in seq_len(nrow(wt))) {
+      win <- wt$value[wt$date < wt$date[i] & wt$date >= wt$date[i] - 14]
+      if (length(win) < 3) next
+      if (wt$value[i] - stats::median(win) > .alcohol_illness_wrist_temp) {
+        flagged <- c(flagged, wt$date[i])
+      }
+    }
+  }
+
+  rr <- series("respiratory_rate")
+  if (!is.null(rr) && nrow(rr) >= 4) {
+    for (i in seq_len(nrow(rr))) {
+      win <- rr$value[rr$date < rr$date[i] & rr$date >= rr$date[i] - 7]
+      if (length(win) < 3) next
+      if (rr$value[i] - mean(win) > .alcohol_illness_resp_rate) {
+        flagged <- c(flagged, rr$date[i])
+      }
+    }
+  }
+
+  sort(unique(flagged))
+}
+
+# The three measures compared against the alcohol-free baseline. `sign`
+# is the direction that counts as adverse: -1 when lower is worse.
+.alcohol_measures <- list(
+  hrv = list(metric = "heart_rate_variability", label = "HRV",
+             unit = "ms", digits = 0, scale = 1, log = TRUE, sign = -1),
+  rhr = list(metric = "resting_heart_rate", label = "vilopuls",
+             unit = "slag", digits = 0, scale = 1, log = FALSE, sign = 1),
+  sleep = list(metric = "sleep_totalSleep", label = "sömn",
+               unit = "minuter", digits = 0, scale = 60, log = FALSE, sign = -1)
+)
+
+#' Alcohol-free baseline for HRV, resting heart rate and sleep
+#'
+#' Median over the alcohol-free nights in a rolling window, excluding
+#' illness-flagged days. This is a descriptive reference for a daily
+#' line, not a causal estimate: alcohol-free nights skew towards
+#' weekdays, so nothing that generalises may rest on it.
+#'
+#' The readiness baselines are deliberately left alone. Those are
+#' unconditional descriptions of recent state, and that is correct for
+#' their purpose: after four nights of drinking, readiness should reflect
+#' that the body is in fact in a degraded state.
+#'
+#' @param health_daily Long health tibble.
+#' @param alcohol Night table (needs \code{alcohol_night_units} and
+#'   \code{alcohol_logging_active}).
+#' @param on_date Date to build the baseline for. Default: latest night.
+#' @param window_days Rolling window length. Default 42.
+#' @param min_nights Qualifying nights required. Default 14.
+#' @return List with one entry per measure
+#'   (\code{center}, \code{spread}, \code{n}, on the reported scale) plus
+#'   \code{n_nights} and \code{on_date}. Entries are NA when the window
+#'   is too thin.
+#' @export
+compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
+                                      window_days = .alcohol_baseline_window_days,
+                                      min_nights = .alcohol_baseline_min_nights) {
+  empty <- list(on_date = as.Date(NA), n_nights = 0L)
+  for (nm in names(.alcohol_measures)) {
+    empty[[nm]] <- list(center = NA_real_, spread = NA_real_, n = 0L)
+  }
+  if (is.null(alcohol) || nrow(alcohol) == 0 ||
+      is.null(health_daily) || nrow(health_daily) == 0) {
+    return(empty)
+  }
+  alcohol <- tibble::as_tibble(alcohol)
+  if (is.null(on_date)) on_date <- max(alcohol$date, na.rm = TRUE)
+  on_date <- as.Date(on_date)
+  empty$on_date <- on_date
+
+  dry <- alcohol$date[
+    !is.na(alcohol$alcohol_night_units) & alcohol$alcohol_night_units == 0 &
+      !is.na(alcohol$alcohol_logging_active) & alcohol$alcohol_logging_active &
+      alcohol$date < on_date & alcohol$date >= on_date - window_days
+  ]
+  dry <- setdiff(as.character(dry), as.character(.alcohol_illness_dates(health_daily)))
+  dry <- as.Date(dry)
+  if (length(dry) < min_nights) {
+    empty$n_nights <- length(dry)
+    return(empty)
+  }
+
+  out <- list(on_date = on_date, n_nights = length(dry))
+  hd <- health_daily
+  hd$date <- as.Date(hd$date)
+  for (nm in names(.alcohol_measures)) {
+    spec <- .alcohol_measures[[nm]]
+    vals <- hd$value[hd$metric == spec$metric & hd$date %in% dry]
+    vals <- vals[is.finite(vals)] * spec$scale
+    # The gate runs on the log scale for HRV: RMSSD is close to
+    # log-normal, so a symmetric threshold on the raw scale would treat
+    # a fall and a rise of the same size as equally unusual when they
+    # are not.
+    stats_raw <- .robust_stats(vals)
+    stats_gate <- if (isTRUE(spec$log)) .robust_stats(log(vals[vals > 0])) else stats_raw
+    out[[nm]] <- list(center = stats_raw$center, spread = stats_raw$spread,
+                       n = stats_raw$n,
+                       gate_center = stats_gate$center,
+                       gate_spread = stats_gate$spread)
+  }
+  out
+}
+
+#' Deviation of one morning from the alcohol-free baseline
+#'
+#' @param health_daily Long health tibble.
+#' @param alcohol Night table.
+#' @param on_date Morning to evaluate.
+#' @param baseline Optional precomputed baseline from
+#'   \code{compute_alcohol_baseline()}.
+#' @param z_threshold Robust z beyond which a measure is flagged.
+#'   Default 1.
+#' @param ... Passed to \code{compute_alcohol_baseline()}.
+#' @return Tibble with one row per measure: \code{measure},
+#'   \code{label}, \code{unit}, \code{value}, \code{baseline},
+#'   \code{delta}, \code{z}, \code{flagged}. Measures with no reading
+#'   are dropped rather than carried as placeholders.
+#' @export
+compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
+                                       baseline = NULL,
+                                       z_threshold = .alcohol_deviation_z,
+                                       ...) {
+  empty <- tibble::tibble(
+    measure = character(), label = character(), unit = character(),
+    value = numeric(), baseline = numeric(), delta = numeric(),
+    z = numeric(), flagged = logical()
+  )
+  if (is.null(health_daily) || nrow(health_daily) == 0) return(empty)
+  if (is.null(baseline)) {
+    baseline <- compute_alcohol_baseline(health_daily, alcohol,
+                                          on_date = on_date, ...)
+  }
+  on_date <- if (is.null(on_date)) baseline$on_date else as.Date(on_date)
+  if (is.na(on_date) || baseline$n_nights == 0L) return(empty)
+
+  hd <- health_daily
+  hd$date <- as.Date(hd$date)
+  rows <- lapply(names(.alcohol_measures), function(nm) {
+    spec <- .alcohol_measures[[nm]]
+    b <- baseline[[nm]]
+    if (is.null(b) || !is.finite(b$center)) return(NULL)
+    v <- hd$value[hd$metric == spec$metric & hd$date == on_date]
+    v <- v[is.finite(v)]
+    if (length(v) == 0) return(NULL)
+    v <- mean(v) * spec$scale
+
+    gate_v <- if (isTRUE(spec$log)) {
+      if (v > 0) log(v) else NA_real_
+    } else v
+    z <- if (is.finite(gate_v) && is.finite(b$gate_center) &&
+             is.finite(b$gate_spread)) {
+      (gate_v - b$gate_center) / b$gate_spread
+    } else NA_real_
+
+    tibble::tibble(
+      measure = nm, label = spec$label, unit = spec$unit,
+      value = v, baseline = b$center, delta = v - b$center,
+      z = z,
+      flagged = is.finite(z) && (z * spec$sign) >= z_threshold
+    )
+  })
+  out <- dplyr::bind_rows(rows)
+  if (nrow(out) == 0) return(empty)
+  out
+}
