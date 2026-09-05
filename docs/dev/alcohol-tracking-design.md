@@ -83,12 +83,16 @@ every figure in this feature wrong:
 | DrinkControl count | 10 |
 | Swedish standardglas | 12 |
 
-Conversion: `standardglas = count × 10 / 12`, that is `count × 0.833`.
-Never multiply the raw count by 12 g.
+Conversion: `standardglas = grams / 12`, where grams come from the app's
+own energy figure. Never multiply the raw count by 12 g. `count × 10 /
+12` gives the same answer only while the app's unit setting really is
+10 g, which is why the count is not the quantity anything is stored in.
 
-If the DrinkControl setting is ever changed, every historical figure
-moves with it. The setting is therefore recorded here as a decision, not
-inferred at runtime, and a change to it is a migration.
+If the DrinkControl setting is ever changed, a count-based figure would
+change meaning silently. Deriving grams from energy makes the stored
+history independent of the setting, and `grams / count` recovers the
+setting itself as an integrity check: a drift beyond 15 % sets
+`alcohol_unit_mismatch` and prints a message at import.
 
 ### What the source does not provide
 
@@ -117,12 +121,14 @@ associated with a 0.87 bpm lower resting heart rate and a 1.5 ms higher
 HRV in females, and with a 1.2 bpm and 3.7 ms difference in 20 to 29
 year olds. That lever cannot be offered from this feed.
 
-Consequence for the data model: `alcohol_last_sample_time` records the
-latest sample timestamp within the night, which under the present feed
-is an export time and not a drink time. It must not be presented to the
-reader as when the drinking stopped, and the noon-to-noon night boundary
-must not be assumed to sort drinks correctly until per-drink timestamps
-are confirmed to exist.
+Consequence for the data model: no timestamp is stored at all. An
+earlier draft kept the latest sample time within a night, but under this
+feed that is an export time, so it could not be shown to the reader as
+when the drinking stopped, nor used to sort drinks across a noon
+boundary. Storing it would have invited both. Attribution is by calendar
+date instead; see "Import-time derived values". If per-drink timestamps
+ever appear in the feed, the timing lever above becomes available and
+this decision should be revisited.
 
 ### Data availability
 
@@ -271,28 +277,43 @@ wrong with no error raised.
 
 ### Import-time derived values
 
+Keyed by `date`, the morning a night is attributed to.
+
 | Value | Basis |
 |---|---|
-| `alcohol_units` | Daily total of `alcohol_consumption` |
-| `alcohol_night_units` | Units attributed to the night, using a 12:00 to 12:00 boundary rather than midnight |
-| `alcohol_standardglas` | `alcohol_night_units × 10 / 12` |
-| `alcohol_kcal` | `dietary_energy` samples filtered to source DrinkControl, converted from kJ |
-| `alcohol_kcal_is_calculated` | TRUE when the fallback constant was used |
-| `alcohol_last_sample_time` | Latest sample timestamp within the night |
+| `alcohol_units` | Daily total of `alcohol_consumption`, on the calendar day the drinks were logged |
+| `alcohol_night_units` | The same total, moved to the following morning |
+| `alcohol_kcal` | `dietary_energy` samples filtered to source DrinkControl, converted using the units field |
+| `alcohol_grams` | `alcohol_kcal / 7`, or the flagged fallback below |
+| `alcohol_grams_estimated` | TRUE when the fallback constant was used because the app wrote no energy |
+| `alcohol_g_per_unit` | `alcohol_grams / alcohol_night_units`, which recovers DrinkControl's unit setting |
+| `alcohol_unit_mismatch` | TRUE when that setting has drifted more than 15 % from the expected 10 g |
 | `alcohol_logging_active` | Logical, see "Logging-active period" |
 
-The **noon-to-noon night boundary** means a drink at 02:00 on Sunday
-belongs to Saturday night and is compared against Sunday morning's
-recovery, while a drink at 13:00 on Saturday also belongs to Saturday
-night. Both are the intended attribution. Calendar-day grouping gets the
-first case wrong, and it is not a rare case.
+Standardglas is **not** stored. It is `alcohol_grams / 12`, computed at
+query time, because it is a display conversion of a stored quantity
+rather than a fact about the night. `alcohol_last_sample_time` is not
+stored either: the only timestamp available is the export time.
+
+**Attribution is by calendar date**, with a day's drinking credited to
+the following morning. An earlier version of this section specified a
+noon-to-noon boundary on the sample timestamp and called calendar
+grouping a bug. That was written before the feed was seen. The feed
+delivers one aggregated row per day, and its timestamp is when the
+export ran, so there is no drink time to put on either side of a noon
+boundary: applying one would sort by an artefact of the export schedule.
+The section "Nor is there a drink time" above says the same thing, and
+the two paragraphs used to contradict each other.
 
 ### Computed at query time
 
+- Swedish standardglas, `alcohol_grams / 12`.
 - The alcohol-free baselines. Window length and exclusion rules are
   analysis parameters that will be tuned, and tuning them must not
   require a full reimport.
 - The energy share, since the denominator depends on a window choice.
+- The kcal fallback for a night where the app wrote no energy, from the
+  grams stored at import.
 - Everything in "Future: dose-response".
 
 The dividing line: anything requiring information the cache has
@@ -330,11 +351,13 @@ immediately.
 Per night with logged alcohol:
 
 ```
-units        = alcohol_night_units                  (DrinkControl, 10 g)
-standardglas = units × 10 / 12
-kcal         = dietary_energy(DrinkControl) / 4.184
-kcal         = units × 10 × 7                       (fallback, marked)
-grams        = kcal / 7                             (internal quantity)
+units        = alcohol_night_units                  (DrinkControl count)
+kcal         = dietary_energy(DrinkControl), converted per its units field
+grams        = kcal / 7                             (stored quantity)
+grams        = units × 10                           (fallback, flagged)
+kcal         = grams × 7                            (fallback, flagged)
+standardglas = grams / 12                           (display only)
+g_per_unit   = grams / units                        (integrity check)
 ```
 
 The 7 kcal/g factor is from Annex XIV of Regulation (EU) No 1169/2011.
