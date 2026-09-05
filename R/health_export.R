@@ -1088,6 +1088,15 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   # expensive; the fast-path in read_canonical_file() makes inclusion
   # near-free for files written by the post-2026-05-11 storage layer.
   "step_count", "active_energy", "walking_running_distance",
+  # basal_energy_burned joins active_energy as the second half of total
+  # daily expenditure — the denominator the alcohol energy share is
+  # reported against (R/alcohol.R). Same daily_total fast-path, so the
+  # cost is one extra row per day.
+  "basal_energy_burned",
+  # Alcohol: per-drink counts from DrinkControl via HealthKit. Summed
+  # per day (see inst/metric_taxonomy.json) and classified tier 3 below
+  # so a logged drink never triggers a push on its own.
+  "alcohol_consumption",
   # Body composition
   "weight_body_mass"
 )
@@ -1129,6 +1138,11 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   "walking_speed", "walking_step_length",
   "walking_asymmetry_percentage", "walking_double_support_percentage",
   "walking_heart_rate_average",
+  # Alcohol is reported through the dedicated alcohol lines
+  # (.insight_alcohol_line in R/alcohol.R), never as a raw delta. Listing
+  # it here is not optional: an unclassified metric defaults to tier 1,
+  # which would fire a notification for every single logged drink.
+  "alcohol_consumption",
   # Nutritional
   "dietary_energy", "dietary_sugar", "dietary_water", "protein",
   "carbohydrates", "total_fat", "fiber", "saturated_fat",
@@ -1165,7 +1179,9 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   running_power                    = "l\u00f6peffekt",
   running_speed                    = "l\u00f6phastighet",
   running_stride_length            = "stegl\u00e4ngd",
-  running_vertical_oscillation     = "vertikal oscillation"
+  running_vertical_oscillation     = "vertikal oscillation",
+  alcohol_consumption              = "alkohol",
+  basal_energy_burned              = "basalf\u00f6rbr\u00e4nning"
 )
 
 # Units for metrics
@@ -1183,7 +1199,9 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   running_power                    = "W",
   running_speed                    = "m/s",
   running_stride_length            = "m",
-  running_vertical_oscillation     = "cm"
+  running_vertical_oscillation     = "cm",
+  alcohol_consumption              = "glas",
+  basal_energy_burned              = "kcal"
 )
 
 

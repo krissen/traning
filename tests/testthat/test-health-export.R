@@ -109,7 +109,7 @@ test_that(".sum_metrics matches inst/metric_taxonomy.json", {
     "step_count", "active_energy", "basal_energy_burned", "flights_climbed",
     "apple_exercise_time", "apple_stand_time", "apple_stand_hour",
     "walking_running_distance", "cycling_distance", "mindful_minutes",
-    "time_in_daylight"
+    "time_in_daylight", "alcohol_consumption"
   )
   expect_equal(traning:::.sum_metrics, expected)
 
