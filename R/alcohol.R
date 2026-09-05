@@ -661,7 +661,14 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
     alcohol$alcohol_logging_active
   a <- alcohol[keep, , drop = FALSE]
   if (nrow(a) == 0) return(empty)
-  a$iso_week <- format(a$date, "%G-W%V")
+
+  # The week is a week of EVENINGS, so it is keyed by the drinking date,
+  # which is the morning date minus one. Grouping on the morning splits a
+  # Sunday-evening session out of the week it happened in and into the
+  # next one, which the Monday recap has already reported. The prose says
+  # "kvällar", and this is the quantity that word names.
+  a$drink_date <- a$date - 1L
+  a$iso_week <- format(a$drink_date, "%G-W%V")
 
   energy <- .alcohol_daily_energy(health_daily)
   energy$iso_week <- format(energy$date, "%G-W%V")
@@ -677,7 +684,7 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
   out <- a |>
     dplyr::group_by(.data$iso_week) |>
     dplyr::summarise(
-      week_start    = min(.data$date),
+      week_start    = min(.data$drink_date),
       units         = sum(.data$alcohol_night_units, na.rm = TRUE),
       standardglas  = sum(.data$alcohol_standardglas, na.rm = TRUE),
       grams         = sum(.data$alcohol_grams, na.rm = TRUE),

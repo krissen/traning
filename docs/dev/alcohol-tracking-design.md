@@ -370,6 +370,15 @@ Two different windows, for two different sentences.
   averages out session lumpiness, and the reader is asking about that
   specific week.
 
+The weekly account is keyed by the **drinking date**, the morning date
+minus one, so it is a week of evenings and matches the word `kvällar`
+in the prose. Keyed by the morning instead, a Sunday-evening session
+would fall into the following ISO week, out of the recap of the week it
+happened in and into one the Monday recap had already reported. The
+expenditure denominator is keyed by its own calendar day, which is the
+same day the drinks were logged, so numerator and denominator share a
+key.
+
 Coverage floors: at least 20 of 28 days present for the monthly mean, at
 least 5 of 7 for the week. Below the floor, omit the share rather than
 computing it from a thin denominator.

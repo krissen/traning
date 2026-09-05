@@ -389,15 +389,20 @@ test_that("the share is suppressed when a Garmin day has rest-level energy", {
 # --- Weekly ------------------------------------------------------------------
 
 test_that("the weekly summary counts evenings, dry days and its own share", {
-  dates <- seq(as.Date("2026-08-31"), as.Date("2026-09-06"), by = "day")
-  hd <- fake_health(dates)
-  a <- fake_nights(dates)
+  # The night table is keyed by MORNINGS, so a week of evenings runs
+  # Tuesday morning to the following Monday morning. Expenditure is
+  # keyed by the calendar day, which is the drinking day.
+  mornings <- seq(as.Date("2026-09-01"), as.Date("2026-09-07"), by = "day")
+  drink_days <- seq(as.Date("2026-08-31"), as.Date("2026-09-06"), by = "day")
+  hd <- fake_health(drink_days)
+  a <- fake_nights(mornings)
   a <- set_night(a, as.Date("2026-09-05"), units = 3, kcal = 210)
   a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
   w <- compute_alcohol_week(a, hd)
   expect_equal(nrow(w), 1)
   expect_equal(w$iso_week, "2026-W36")
+  expect_equal(w$week_start, as.Date("2026-08-31"))
   expect_equal(w$drinking_days, 2L)
   expect_equal(w$dry_days, 5L)
   expect_equal(round(w$kcal, 1), 632.6)
@@ -405,13 +410,44 @@ test_that("the weekly summary counts evenings, dry days and its own share", {
   expect_equal(round(w$share, 4), round(632.6 / (7 * 2390.057), 4))
 })
 
-test_that("a week with too few expenditure days reports no share", {
-  dates <- seq(as.Date("2026-08-31"), as.Date("2026-09-06"), by = "day")
-  hd <- fake_health(dates[1:3])
+test_that("a Sunday evening lands in the week it happened in", {
+  # The night is attributed to Monday morning, which is the NEXT ISO
+  # week. Grouping on the morning dropped a Sunday-evening session out of
+  # the recap of its own week and moved it into a week the Monday recap
+  # had already reported.
+  sunday <- as.Date("2026-09-06")
+  expect_equal(as.POSIXlt(sunday)$wday, 0L)
+  expect_equal(format(sunday, "%G-W%V"), "2026-W36")
+  expect_equal(format(sunday + 1, "%G-W%V"), "2026-W37")
+
+  n <- build_alcohol_nights(sample_row(sunday, 4))
+  w <- compute_alcohol_week(n, NULL)
+  hit <- w[w$units > 0, ]
+  expect_equal(nrow(hit), 1)
+  expect_equal(hit$iso_week, "2026-W36")
+  expect_equal(hit$drinking_days, 1L)
+  # And the week it was wrongly landing in reports nothing.
+  expect_equal(w$drinking_days[w$iso_week == "2026-W37"], 0L)
+})
+
+test_that("the Monday recap covers the week that just ended", {
+  monday <- as.Date("2026-09-07")
+  dates <- seq(monday - 40, monday, by = "day")
   a <- fake_nights(dates)
+  a <- set_night(a, as.Date("2026-09-07"), units = 4, kcal = 280)  # Sun eve
+  line <- traning:::.alcohol_weekly_line(a, fake_health(dates), monday)
+  expect_match(line, "1 kväll\\.")
+})
+
+test_that("a week with too few expenditure days reports no share", {
+  mornings <- seq(as.Date("2026-09-01"), as.Date("2026-09-07"), by = "day")
+  hd <- fake_health(seq(as.Date("2026-08-31"), as.Date("2026-09-02"),
+                         by = "day"))
+  a <- fake_nights(mornings)
   a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
   w <- compute_alcohol_week(a, hd)
+  expect_equal(nrow(w), 1)
   expect_true(is.na(w$share))
   expect_equal(w$drinking_days, 1L)
 })
