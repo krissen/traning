@@ -206,6 +206,45 @@ metric has moved beyond threshold against the alcohol-free baseline.
 Otherwise the honest null is stated once. Silence at zero drinks. No
 imperatives anywhere.
 
+### 6. Grams of ethanol is the internal quantity
+
+DrinkControl's unit cannot be set to 12 g. Sweden is not among the
+jurisdictions the app offers, and the setting stays at the WHO 10 g.
+
+So the internal quantity is **grams of ethanol**, derived from the
+energy rather than from the count: `grams = kcal / 7`, with
+`count × 10 g` as the fallback when the energy record is missing.
+Standardglas is a display form only, `grams / 12`.
+
+The reason for deriving from energy rather than multiplying the count by
+a constant is that the count is denominated in a setting inside a
+third-party app. The energy route is exact whatever that setting is, and
+the ratio `grams / count` recovers the setting itself, which turns a
+silent change into a detectable one. Two conditions bound it: it holds
+only while DrinkControl is the sole writer of `dietary_energy`, and only
+while per-drink-type calorie values are unedited. When either fails, use
+the count fallback and mark the figure calculated.
+
+### 7. Public-health limits never appear in Vayu
+
+No risk thresholds, no weekly guideline, no drinking-limit comparison,
+no goal count, no streak. The Swedish figures exist and are documented
+in the research knowledge base, and they stay there.
+
+The reference frame is the reader's own nights against the reader's own
+other nights, and nothing else. This follows established practice in the
+two products with published data on the question. Oura's November 2025
+analysis of more than 600,000 members reports what alcohol-tagged nights
+did against surrounding untagged nights and stops there. WHOOP's journal
+works the same way, comparing a member to their own baseline. Neither
+scores the behaviour, sets a target or grades the reader against a
+population.
+
+A training app that starts reporting a runner against public-health
+drinking limits has changed genre, and it invites the reader to stop
+logging. This decision is a constraint on every surface in the feature,
+not a default that individual templates may override.
+
 ## Data model
 
 ### Why import-time derivation is required
@@ -294,8 +333,11 @@ Per night with logged alcohol:
 units        = alcohol_night_units                  (DrinkControl, 10 g)
 standardglas = units × 10 / 12
 kcal         = dietary_energy(DrinkControl) / 4.184
-kcal         = units × 10 × 7.1                     (fallback, marked)
+kcal         = units × 10 × 7                       (fallback, marked)
+grams        = kcal / 7                             (internal quantity)
 ```
+
+The 7 kcal/g factor is from Annex XIV of Regulation (EU) No 1169/2011.
 
 If the DrinkControl setting is ever found to differ from 10 g, the
 grams-per-unit figure becomes a configured constant rather than a
@@ -381,10 +423,19 @@ below.
 Percentages for the energy share. **Absolute units** for the recovery
 deltas, with a z-score used only as a hidden gate.
 
-The percentage form is deliberately not used for HRV. RMSSD is strongly
-right-skewed and close to log-normal [source pending], so a percentage
-on the raw scale is asymmetric and misleads: a fall of 20 % and a rise
-of 20 % are not events of equal magnitude. A percentage also answers how
+The percentage form is deliberately not used for HRV. The convention in
+this literature is to analyse RMSSD on the natural-log scale rather than
+the raw scale: Buchheit (2014) and Stanley et al. (2013) both report Ln
+rMSSD throughout, and Stanley et al. state that where multiple indices
+were available they chose Ln rMSSD "because it is more reliable than
+spectral indices". The stronger distributional claim, that raw RMSSD is
+close to log-normal, is [unverified] here; no source in the project's
+knowledge base states it, and it should not be asserted until one does.
+
+What does not depend on that claim is the practical point: because the
+working scale is logarithmic, a percentage on the raw scale is
+asymmetric, and a fall of 20 % and a rise of 20 % are not events of
+equal magnitude. A percentage also answers how
 far down without answering whether that is unusual for this person,
 which is the question actually being asked. The z-score answers both but
 does not read as prose, so it decides whether the sentence appears while
@@ -533,16 +584,39 @@ that is not a physiological quantity.
 
 | Rank | Outcome | Expectation |
 |---|---|---|
-| 1 | HRV, as z-score of ln RMSSD | Largest and most reliable effect [source pending] |
-| 2 | Resting heart rate deviation from baseline | Robust, low day-to-day noise |
-| 3 | Deep plus REM as a fraction of total sleep | Mechanism: REM suppression and second-half fragmentation [source pending] |
-| 4 | Respiratory rate deviation | Sensitive, currently underused |
-| 5 | Total sleep duration | Expect little effect [source pending] |
+| 1 | Resting heart rate deviation from baseline | Largest standardized effect in the literature, and low day-to-day noise (Grosicki et al. 2026) |
+| 2 | HRV, as z-score of ln RMSSD | Consistent and dose-dependent, but a smaller standardized effect than resting heart rate (Grosicki et al. 2026; Pietilä et al. 2018) |
+| 3 | Total sleep duration | Expect a clear, dose-dependent shortening (Grosicki et al. 2026) |
+| 4 | Deep plus REM as a fraction of total sleep | Mechanism is REM suppression and second-half fragmentation [unverified]; industry aggregate data is consistent with it (Oura 2025) |
+| 5 | Respiratory rate deviation | Sensitive, currently underused, no alcohol-specific source located |
 
-Outcome 5 acts as a check on the design. Alcohol shortens sleep latency
-and degrades quality more than it shortens duration, so if total
-duration moves as much as HRV does, the analysis is picking up bedtime
-rather than alcohol and should be treated as failed.
+**Two changes from the earlier draft, both because the sources say
+otherwise.**
+
+First, resting heart rate and HRV are swapped. Grosicki et al. (2026)
+report standardized effects of 0.61 in females and 0.52 in males for
+resting heart rate against 0.30 and 0.26 for HRV, per one drink above
+personal average. Resting heart rate is the larger and better-resolved
+signal, not HRV. Both remain dose-dependent and both are worth modelling.
+
+Second, the earlier draft expected little effect on total sleep duration
+and used that as a check on the design. That expectation is contradicted.
+Grosicki et al. (2026) state that sleep duration declined progressively
+with increasing alcohol intake across both sexes and all age groups, and
+Oura's aggregate data over more than 600,000 members reports 35 minutes
+less total sleep on alcohol-tagged nights. A design check resting on
+duration not moving would therefore fail on correct data.
+
+Strüven et al. (2025) offer a partial counterpoint from a small
+controlled study, n = 40 on a smartwatch: objective sleep architecture
+was unchanged while subjective sleep quality fell. That was read at
+abstract level only, and it does not outweigh two large cohorts.
+
+A replacement design check is needed. The honest one is sleep onset
+clock time, which must be in the cross-check model in any case: if the
+alcohol effect disappears once onset time is included, the analysis was
+measuring bedtime. Duration cannot serve the purpose because alcohol
+genuinely moves it.
 
 ### Dose bands
 
@@ -551,8 +625,23 @@ rather than alcohol and should be treated as failed.
 Bands rather than a continuous dose because self-reported counts have
 poor precision, and the precision degrades as the count rises. A
 continuous slope claims a resolution the input does not have. Bands are
-also what the runner can act on. The dose-response relationship over
-this range is reported as roughly monotonic [source pending].
+also what the runner can act on.
+
+The dose-response relationship over this range is monotonic in both
+large cohorts. Pietilä et al. (2018) report increases in heart rate of
+1.4, 4.0 and 8.7 bpm and reductions in RMSSD of 2.0, 5.7 and 12.9 ms
+across low, moderate and high dose groups averaging 1.1, 2.9 and 7.0
+portions. Grosicki et al. (2026) fit smooth curves that rise and fall
+monotonically over the observed range and show the step from three to
+five drinks costing a further 5.6 ms of HRV in females and 5.1 ms in
+males.
+
+One caution on the band boundaries. Both sets of figures are in units of
+roughly 12 g of ethanol in Pietilä, who defines a portion as 12 g, and
+of an undefined self-reported drink in Grosicki, whose user base is
+mostly American. The bands here are in DrinkControl's 10 g units, so
+they are not directly comparable to either. Convert to grams before
+setting a boundary against a published figure.
 
 ### Logging-active period
 
@@ -579,9 +668,18 @@ and sleep.
 | 30 to 60 | Matched estimate with its interval, explicitly labelled provisional |
 | Over 60 | Full band-wise design |
 
-The threshold reflects the within-person day-to-day variability of ln
-RMSSD, which is large relative to plausible effects at low doses [source
-pending]. This rule is written down now, before the counts are known,
+The threshold reflects the within-person day-to-day variability of Ln
+rMSSD, which is large relative to plausible effects at low doses.
+Buchheit (2014) puts it at a coefficient of variation of 10 to 20 %:
+"The day-to-day variations in training load entail large daily
+variations in cardiac ANS activity (i.e., CV = 10-20 % for Ln rMSSD)".
+Set against that, the effect at one drink above personal average is a
+standardized 0.30 in females and 0.26 in males (Grosicki et al. 2026),
+and 2.0 ms of RMSSD in the lowest dose band (Pietilä et al. 2018). The
+signal at low doses is real but small relative to the noise, which is
+what a night count has to overcome. The specific 30 and 60 night
+thresholds are a judgement rather than a powered calculation
+[unverified]. This rule is written down now, before the counts are known,
 because deciding it after seeing the data is how a null result turns
 into a published slope.
 
@@ -597,21 +695,100 @@ into a published slope.
 
 ## Literature
 
-Claims marked `[source pending]` above await verified references:
+Every source below was read before being cited. Text extracts are in
+`research/_txt/` and the analysis primers in `research/_analys/`, in the
+project knowledge base at `/Users/krisniem/dev/traning/research/`.
 
-- Energy density of ethanol, and the WHO 10 g unit against the Swedish
-  12 g standardglas.
-- Total beverage energy per unit of ethanol by drink category,
-  supporting the 1× to 1.6× range.
-- Log-normality of RMSSD, and why a percentage change on the raw scale
-  misleads.
-- Alcohol's effect on next-morning HRV, and on resting heart rate in
-  absolute beats per minute for calibrating the gate threshold.
-- REM suppression and second-half sleep fragmentation as the mechanism.
-- Limited effect on total sleep duration relative to sleep quality.
-- Dose-response monotonicity over 1 to 5 or more units.
-- Within-person day-to-day variability of ln RMSSD, for the stop rule.
+### Peer-reviewed
 
-No figure in this document is supported by a citation yet. None should
-be published with a reference attached until one has been supplied and
-verified.
+- Pietilä, J., Helander, E., Korhonen, I., Myllymäki, T., Kujala, U.M.,
+  & Lindholm, H. (2018). Acute effect of alcohol intake on
+  cardiovascular autonomic regulation during the first hours of sleep in
+  a large real-world sample of Finnish employees: observational study.
+  *JMIR Mental Health*, 5(1), e23. DOI: 10.2196/mental.9519. PMC5878366.
+  Read in full. 12,411 nights from 4,098 participants, chest-worn
+  beat-to-beat R-R, within-subject. Defines a portion as 12 g of ethanol.
+- Grosicki, G.J., Robinson, A.T., Joyner, M.J., Carter, J.R., von
+  Hippel, W., Presby, D.M., Fielding, F., Bigalke, J.A., Kim, J.,
+  Chapman, C., & Holmes, K.E. (2026). Real-world effects of alcohol on
+  heart rate, sleep, and physical activity by age and sex. *PLOS Digital
+  Health*, 5(3), e0001284. DOI: 10.1371/journal.pdig.0001284. Read in
+  full. 5,109,185 person-days from 20,968 WHOOP users. **Funded by
+  WHOOP, and several authors are WHOOP employees holding stock options.**
+  The paper discloses this and points to a preregistered analysis plan.
+  Its findings agree with the independent Finnish cohort on direction and
+  magnitude, which is why they are relied on here.
+- Buchheit, M. (2014). Monitoring training status with HR measures: do
+  all roads lead to Rome? *Frontiers in Physiology*, 5, 73. DOI:
+  10.3389/fphys.2014.00073. Source for the 10 to 20 % day-to-day
+  coefficient of variation in Ln rMSSD.
+- Stanley, J., Peake, J.M., & Buchheit, M. (2013). Cardiac
+  parasympathetic reactivation following exercise: implications for
+  training prescription. *Sports Medicine*, 43(12), 1259-1277. DOI:
+  10.1007/s40279-013-0083-4. Source for the field's use of Ln rMSSD and
+  its reliability rationale.
+- Strüven, A., Schlichtiger, J., Hoppe, J.M., Thiessen, I., Brunner, S.,
+  & Stremmel, C. (2025). The impact of alcohol on sleep physiology.
+  *Nutrients*, 17, 1470. DOI: 10.3390/nu17091470. **Abstract only.**
+  Cited only as a partial counterpoint on sleep architecture.
+
+### Not read, and therefore not cited for any figure
+
+- Ebrahim, I.O., Shapiro, C.M., Williams, A.J., & Fenwick, P.B. (2013).
+  Alcohol and sleep I: effects on normal sleep. *Alcoholism: Clinical
+  and Experimental Research*, 37(4), 539-549. DOI: 10.1111/acer.12006.
+  Paywalled. This is the standard reference for the REM-suppression and
+  second-half-fragmentation mechanism, which is why that claim is marked
+  [unverified] above. Listed in `research/to_fetch.md`.
+
+### Official and regulatory
+
+- Regulation (EU) No 1169/2011 on the provision of food information to
+  consumers, Annex XIV, conversion factors. Alcohol (ethanol) 29 kJ/g,
+  7 kcal/g. Binding for nutrition labelling in Sweden.
+- Centralförbundet för alkohol- och narkotikaupplysning (CAN). *Hur
+  många dricker riskabelt?* Retrieved 2026-09-05. Swedish standardglas
+  is 12 g of alcohol, corresponding to about 33 cl strong beer, 12 cl
+  wine or 4 cl spirits. Cited for the unit definition only, never for
+  its risk thresholds, per decision 7.
+- Systembolaget. *Hur många kalorier finns det i starköl, sprit och
+  vin?* Retrieved 2026-09-05. Per 10 cl: strong beer 5.6 % 47 kcal, dry
+  white wine 12 % 67 kcal, red wine 12 % 72 kcal, whisky 40 % 222 kcal.
+- Livsmedelsverket. *Livsmedelsdatabasen*, version 2026-07-01. Named as
+  the authoritative Swedish per-100-g source. Per-item values have not
+  been extracted; the search interface needs the full Excel export.
+
+### Platform and product documentation
+
+- Apple Developer Documentation. *HKQuantityTypeIdentifier
+  .numberOfAlcoholicBeverages* and *.bloodAlcoholContent*. Retrieved
+  2026-09-05. Count unit, cumulative aggregation, qualitative definition
+  of a standard drink, no beverage type or volume in the type.
+- HealthyApps. *Health Auto Export: Supported Data and Metrics* and
+  *JSON Export Format*. Retrieved 2026-09-05.
+- DrinkControl. *Help & Support*, App Store description and press kit.
+  Retrieved 2026-09-05. Per-jurisdiction standard-drink definitions,
+  the 7 kcal/g figure, the ethanol-only calorie scope, and the fact that
+  per-drink-type calorie values are user-editable.
+- Oura. *Oura data reveals the true impact of alcohol on sleep.*
+  Published 2025-11-04. Aggregate data from more than 600,000 members,
+  January to October 2025: average heart rate up 9.6 %, lowest resting
+  heart rate up 8.2 %, HRV down 10.8 ms or 15.6 %, total sleep 35
+  minutes shorter, deep sleep down about 5 minutes and REM down about 15
+  minutes. Industry analysis, not peer-reviewed. Cited for the sleep
+  mechanism as supporting evidence only, and for the framing convention
+  in decision 7.
+
+### Claims still marked [unverified]
+
+Three, all reformulated above rather than removed:
+
+1. That raw RMSSD is close to log-normal. The log-scale convention is
+   sourced; the distributional claim is not.
+2. REM suppression and second-half fragmentation as the mechanism for
+   the sleep-quality outcome. Awaits Ebrahim et al. (2013).
+3. The specific 30 and 60 qualifying-night thresholds in the stop rule,
+   which are a judgement rather than a powered calculation.
+
+Cider and sweet wine sit outside the verified part of the beverage
+energy range, and that is noted at the point of use.

@@ -404,3 +404,259 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   })
   isTRUE(res)
 }
+
+# --- Energy ------------------------------------------------------------------
+
+# HAE writes every energy metric on this device in kilojoules — verified
+# in the canonical files for active_energy, basal_energy_burned and
+# dietary_energy. The units field does not survive into health_daily, so
+# the conversion here is by assumption; the plausibility guard below is
+# what catches a device that ever starts writing kcal.
+.kj_per_kcal <- 4.184
+
+# A day's total expenditure has to land in this range to be usable as a
+# denominator. Outside it the reading is wrong rather than unusual, and
+# an implausible denominator produces a confidently wrong percentage.
+.alcohol_tdee_plausible_kcal <- c(1000, 8000)
+
+#' Total daily energy expenditure, in kcal
+#'
+#' Sum of active and basal energy from the Apple Watch. Basal energy is
+#' modelled by Apple from age, sex, height and weight rather than
+#' measured, which is why no user-facing text calls this a measurement.
+#'
+#' A day is only included when both halves are present: a day with
+#' active energy but no basal figure is not a small expenditure day, it
+#' is a partially worn watch, and averaging it in would drag the
+#' denominator down.
+#'
+#' @param health_daily Long health tibble.
+#' @return Tibble with \code{date} and \code{tdee_kcal}, ascending.
+#' @keywords internal
+.alcohol_daily_energy <- function(health_daily) {
+  empty <- tibble::tibble(date = as.Date(character()), tdee_kcal = numeric())
+  if (is.null(health_daily) || !is.data.frame(health_daily) ||
+      nrow(health_daily) == 0 ||
+      !all(c("date", "metric", "value") %in% names(health_daily))) {
+    return(empty)
+  }
+  e <- health_daily[health_daily$metric %in%
+                      c("active_energy", "basal_energy_burned"),
+                    c("date", "metric", "value"), drop = FALSE]
+  e <- e[!is.na(e$value), , drop = FALSE]
+  if (nrow(e) == 0) return(empty)
+  e$date <- as.Date(e$date)
+
+  wide <- e |>
+    dplyr::group_by(.data$date, .data$metric) |>
+    dplyr::summarise(value = sum(.data$value, na.rm = TRUE), .groups = "drop") |>
+    tidyr::pivot_wider(names_from = "metric", values_from = "value")
+  if (!all(c("active_energy", "basal_energy_burned") %in% names(wide))) {
+    return(empty)
+  }
+  out <- wide |>
+    dplyr::filter(!is.na(.data$active_energy),
+                  !is.na(.data$basal_energy_burned)) |>
+    dplyr::transmute(
+      date = .data$date,
+      tdee_kcal = (.data$active_energy + .data$basal_energy_burned) / .kj_per_kcal
+    ) |>
+    dplyr::filter(.data$tdee_kcal >= .alcohol_tdee_plausible_kcal[1],
+                  .data$tdee_kcal <= .alcohol_tdee_plausible_kcal[2]) |>
+    dplyr::arrange(.data$date)
+  out
+}
+
+#' Trailing mean of daily expenditure
+#'
+#' The daily share is reported against a 28-day mean rather than that
+#' day's own expenditure. A single day is dominated by whether a long run
+#' happened, so a share against today's total would swing wildly for a
+#' constant number of drinks, and the swing would be about the running.
+#'
+#' @param energy Tibble from \code{.alcohol_daily_energy()}.
+#' @param dates Date vector to evaluate at.
+#' @param window_days Length of the trailing window. Default 28.
+#' @param min_days Days that must be present in it. Default 20.
+#' @return Numeric vector, NA where the window is too thin.
+#' @keywords internal
+.alcohol_tdee_baseline <- function(energy, dates, window_days = 28,
+                                    min_days = 20) {
+  if (is.null(energy) || nrow(energy) == 0) return(rep(NA_real_, length(dates)))
+  ed <- as.numeric(energy$date)
+  ev <- energy$tdee_kcal
+  vapply(as.numeric(dates), function(d) {
+    vals <- ev[ed <= d & ed > d - window_days]
+    if (length(vals) < min_days) return(NA_real_)
+    mean(vals, na.rm = TRUE)
+  }, numeric(1))
+}
+
+#' Dates where a Garmin session exists but the watch recorded rest-level energy
+#'
+#' On those days active energy undercounts, the denominator shrinks, and
+#' the alcohol share is inflated on exactly the days most likely to be
+#' read. The share is suppressed rather than printed inflated.
+#'
+#' @param summaries Session summaries, or NULL.
+#' @param health_daily Long health tibble.
+#' @param dates Date vector to evaluate.
+#' @return Logical vector, TRUE where the day is untrustworthy.
+#' @keywords internal
+.alcohol_energy_contaminated <- function(summaries, health_daily, dates) {
+  out <- rep(FALSE, length(dates))
+  if (is.null(summaries) || !is.data.frame(summaries) ||
+      nrow(summaries) == 0 || !"sessionStart" %in% names(summaries)) {
+    return(out)
+  }
+  session_dates <- unique(as.Date(summaries$sessionStart))
+  session_dates <- session_dates[!is.na(session_dates)]
+  if (length(session_dates) == 0) return(out)
+  for (i in seq_along(dates)) {
+    d <- as.Date(dates[i])
+    if (!(d %in% session_dates)) next
+    verdict <- tryCatch(.day_energy_verdict(health_daily, d),
+                        error = function(e) "insufficient")
+    out[i] <- identical(verdict, "rest")
+  }
+  out
+}
+
+#' Per-night alcohol energy accounting
+#'
+#' Adds the derived energy columns to the night table: Swedish
+#' standardglas, grams of ethanol, kcal (the app's own figure where it
+#' exists, a flagged fallback where it does not) and the share of total
+#' daily expenditure.
+#'
+#' The kcal figure is DrinkControl's own arithmetic on DrinkControl's own
+#' unit definition, so it cannot drift out of step with the count the way
+#' a constant on this side would the moment the app's standard-drink
+#' setting changes. The fallback multiplies the count by the configured
+#' grams per unit and the energy density of ethanol, and is flagged in
+#' \code{alcohol_kcal_estimated} so no caller can present a computed
+#' figure as a logged one.
+#'
+#' @param alcohol Night table from \code{build_alcohol_nights()} or
+#'   \code{load_alcohol_data()}.
+#' @param health_daily Long health tibble (needs active_energy and
+#'   basal_energy_burned for the share).
+#' @param summaries Optional session summaries, used to suppress the
+#'   share on days where a Garmin session exists but the watch recorded
+#'   rest-level energy.
+#' @param window_days Trailing window for the expenditure mean. Default 28.
+#' @param min_days Days required in that window. Default 20.
+#' @return The night table with \code{alcohol_standardglas},
+#'   \code{alcohol_grams}, \code{alcohol_kcal_estimated},
+#'   \code{tdee_kcal_28d} and \code{alcohol_share} added.
+#' @export
+compute_alcohol_energy <- function(alcohol, health_daily = NULL,
+                                    summaries = NULL,
+                                    window_days = 28, min_days = 20) {
+  if (is.null(alcohol) || nrow(alcohol) == 0) {
+    out <- .empty_alcohol_nights()
+    out$alcohol_standardglas <- numeric()
+    out$alcohol_grams <- numeric()
+    out$alcohol_kcal_estimated <- logical()
+    out$tdee_kcal_28d <- numeric()
+    out$alcohol_share <- numeric()
+    return(out)
+  }
+  alcohol <- tibble::as_tibble(alcohol)
+  g <- .alcohol_grams_per_unit()
+  units <- alcohol$alcohol_night_units
+
+  alcohol$alcohol_grams <- units * g
+  alcohol$alcohol_standardglas <- alcohol$alcohol_grams /
+    .alcohol_g_per_standardglas
+
+  # Fallback only where drinks were logged but the app wrote no energy.
+  needs_fallback <- !is.na(units) & units > 0 & is.na(alcohol$alcohol_kcal)
+  alcohol$alcohol_kcal_estimated <- needs_fallback
+  alcohol$alcohol_kcal[needs_fallback] <-
+    alcohol$alcohol_grams[needs_fallback] * .alcohol_kcal_per_g
+
+  energy <- .alcohol_daily_energy(health_daily)
+  alcohol$tdee_kcal_28d <- .alcohol_tdee_baseline(
+    energy, alcohol$date, window_days = window_days, min_days = min_days)
+
+  contaminated <- .alcohol_energy_contaminated(summaries, health_daily,
+                                                alcohol$date)
+  share <- alcohol$alcohol_kcal / alcohol$tdee_kcal_28d
+  share[contaminated] <- NA_real_
+  share[!is.finite(share)] <- NA_real_
+  alcohol$alcohol_share <- share
+
+  alcohol
+}
+
+#' Weekly alcohol energy summary
+#'
+#' The weekly line uses that week's actual summed expenditure rather than
+#' a rolling mean: a week averages out the session lumpiness on its own,
+#' and the reader is asking about that specific week.
+#'
+#' @param alcohol Night table, already through
+#'   \code{compute_alcohol_energy()} or raw (it is run through it here
+#'   when the derived columns are absent).
+#' @param health_daily Long health tibble.
+#' @param summaries Optional session summaries.
+#' @param min_days_in_week Days of expenditure data required before a
+#'   weekly share is reported. Default 5 of 7.
+#' @return Tibble, one row per ISO week: \code{iso_week},
+#'   \code{week_start}, \code{units}, \code{standardglas}, \code{kcal},
+#'   \code{drinking_days}, \code{dry_days}, \code{week_tdee_kcal},
+#'   \code{share}.
+#' @export
+compute_alcohol_week <- function(alcohol, health_daily = NULL,
+                                  summaries = NULL, min_days_in_week = 5) {
+  empty <- tibble::tibble(
+    iso_week = character(), week_start = as.Date(character()),
+    units = numeric(), standardglas = numeric(), kcal = numeric(),
+    drinking_days = integer(), dry_days = integer(),
+    week_tdee_kcal = numeric(), share = numeric()
+  )
+  if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
+  if (!"alcohol_share" %in% names(alcohol)) {
+    alcohol <- compute_alcohol_energy(alcohol, health_daily, summaries)
+  }
+
+  # Nights outside a logging-active stretch carry no information and are
+  # dropped rather than counted as dry.
+  keep <- !is.na(alcohol$alcohol_logging_active) &
+    alcohol$alcohol_logging_active
+  a <- alcohol[keep, , drop = FALSE]
+  if (nrow(a) == 0) return(empty)
+  a$iso_week <- format(a$date, "%G-W%V")
+
+  energy <- .alcohol_daily_energy(health_daily)
+  energy$iso_week <- format(energy$date, "%G-W%V")
+  week_energy <- energy |>
+    dplyr::group_by(.data$iso_week) |>
+    dplyr::summarise(
+      week_tdee_kcal = sum(.data$tdee_kcal, na.rm = TRUE),
+      n_days = dplyr::n(),
+      .groups = "drop"
+    )
+  week_energy$week_tdee_kcal[week_energy$n_days < min_days_in_week] <- NA_real_
+
+  out <- a |>
+    dplyr::group_by(.data$iso_week) |>
+    dplyr::summarise(
+      week_start    = min(.data$date),
+      units         = sum(.data$alcohol_night_units, na.rm = TRUE),
+      standardglas  = sum(.data$alcohol_standardglas, na.rm = TRUE),
+      kcal          = sum(.data$alcohol_kcal, na.rm = TRUE),
+      drinking_days = sum(!is.na(.data$alcohol_night_units) &
+                            .data$alcohol_night_units > 0),
+      dry_days      = sum(!is.na(.data$alcohol_night_units) &
+                            .data$alcohol_night_units == 0),
+      .groups = "drop"
+    ) |>
+    dplyr::left_join(week_energy[, c("iso_week", "week_tdee_kcal")],
+                     by = "iso_week")
+
+  out$share <- out$kcal / out$week_tdee_kcal
+  out$share[!is.finite(out$share)] <- NA_real_
+  out |> dplyr::arrange(dplyr::desc(.data$week_start))
+}
