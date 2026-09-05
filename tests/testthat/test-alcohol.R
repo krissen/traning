@@ -2,10 +2,15 @@
 # Fixtures are inline tibbles, matching the pattern in
 # test-health-export.R — no external JSON to keep in sync.
 
-sample_row <- function(ts, qty, source = "DrinkControl", units = "count") {
-  tibble::tibble(ts = traning:::.parse_hae_timestamp(ts), qty = qty,
-                 source = source, units = units)
+sample_row <- function(date, qty, source = "DrinkControl",
+                        units = "count") {
+  tibble::tibble(date = as.Date(date), qty = qty, source = source,
+                 units = units)
 }
+
+# 1768.3175 kJ is 422.6 kcal, which at 7 kcal/g is 60.4 g of ethanol —
+# the real DrinkControl figures for 2026-09-05.
+kj_for_six_drinks <- 1768.3175
 
 # A dense health_daily over `dates`, one row per metric per day.
 fake_health <- function(dates, hrv = 52, rhr = 48, sleep = 7.5,
@@ -31,9 +36,29 @@ fake_nights <- function(dates) {
     alcohol_units = 0,
     alcohol_night_units = 0,
     alcohol_kcal = 0,
-    alcohol_last_sample_time = as.POSIXct(NA, tz = "UTC"),
+    alcohol_grams = 0,
+    alcohol_grams_estimated = FALSE,
+    alcohol_g_per_unit = NA_real_,
+    alcohol_unit_mismatch = FALSE,
     alcohol_logging_active = TRUE
   )
+}
+
+# Set the derived columns for one night the way build_alcohol_nights
+# would, so query-side fixtures cannot drift from the import shape.
+set_night <- function(a, date, units, kcal = NULL) {
+  i <- a$date == date
+  a$alcohol_night_units[i] <- units
+  if (is.null(kcal)) {
+    a$alcohol_kcal[i] <- NA_real_
+    a$alcohol_grams[i] <- units * 10
+    a$alcohol_grams_estimated[i] <- TRUE
+  } else {
+    a$alcohol_kcal[i] <- kcal
+    a$alcohol_grams[i] <- kcal / 7
+  }
+  a$alcohol_g_per_unit[i] <- a$alcohol_grams[i] / units
+  a
 }
 
 
@@ -66,41 +91,34 @@ test_that("health_insight_delta stays silent about a new drink", {
 
 # --- Timestamps and night attribution ---------------------------------------
 
-test_that(".parse_hae_timestamp keeps wall-clock time and ignores the offset", {
-  ts <- traning:::.parse_hae_timestamp("2026-09-05 18:44:00 +0200")
-  expect_equal(format(ts, "%Y-%m-%d %H:%M"), "2026-09-05 18:44")
-
-  # ISO 8601 with a T separator parses the same way.
-  ts2 <- traning:::.parse_hae_timestamp("2026-09-05T18:44:00+02:00")
-  expect_equal(ts, ts2)
-
-  # Date-only strings land at midnight rather than dropping out as NA.
-  ts3 <- traning:::.parse_hae_timestamp("2026-09-05")
-  expect_equal(format(ts3, "%H:%M"), "00:00")
-  expect_true(is.na(traning:::.parse_hae_timestamp("not a timestamp")))
+test_that("a day's drinking is attributed to the following morning", {
+  expect_equal(traning:::.alcohol_night_date(as.Date("2026-09-05")),
+               as.Date("2026-09-06"))
+  expect_equal(traning:::.alcohol_night_date(as.Date(c("2026-01-01",
+                                                        "2026-12-31"))),
+               as.Date(c("2026-01-02", "2027-01-01")))
 })
 
-test_that("nights run noon to noon and end on the following morning", {
-  night <- function(x) traning:::.alcohol_night_date(
-    traning:::.parse_hae_timestamp(x))
-  expect_equal(night("2026-09-05 11:59:00"), as.Date("2026-09-05"))
-  expect_equal(night("2026-09-05 12:00:00"), as.Date("2026-09-06"))
-  expect_equal(night("2026-09-05 23:30:00"), as.Date("2026-09-06"))
-  # A drink at 01:00 belongs to the night already under way, not the
-  # one that follows it.
-  expect_equal(night("2026-09-06 01:00:00"), as.Date("2026-09-06"))
+test_that("the canonical document date wins over the export timestamp", {
+  tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "alcohol_consumption"))
+  # The sample timestamp is when the export ran, and it can fall on a
+  # different day than the one the metric is for.
+  writeLines(
+    '{"metric": "alcohol_consumption", "date": "2026-09-05", "units": "count", "samples": [{"source": "DrinkControl", "qty": 6, "date": "2026-09-06 09:12:00 +0200"}]}',
+    file.path(tmp, "alcohol_consumption", "2026-09-05.json"))
+  out <- traning:::.read_canonical_samples(file.path(tmp,
+                                                     "alcohol_consumption"))
+  expect_equal(out$date, as.Date("2026-09-05"))
 })
-
 
 # --- Night table -------------------------------------------------------------
 
 test_that("build_alcohol_nights attributes an evening to the next morning", {
-  s <- sample_row("2026-09-05 18:44:00 +0200", 6)
-  n <- build_alcohol_nights(s)
+  n <- build_alcohol_nights(sample_row("2026-09-05", 6))
 
   night <- n[n$date == as.Date("2026-09-06"), ]
   expect_equal(night$alcohol_night_units, 6)
-  expect_equal(format(night$alcohol_last_sample_time, "%H:%M"), "18:44")
 
   # The calendar-day total stays on the day the drinks were logged, so a
   # per-day metric view and this table cannot disagree.
@@ -109,13 +127,64 @@ test_that("build_alcohol_nights attributes an evening to the next morning", {
   expect_equal(day$alcohol_night_units, 0)
 })
 
+test_that("grams come from the app's energy, not from the count", {
+  n <- build_alcohol_nights(
+    sample_row("2026-09-05", 6),
+    sample_row("2026-09-05", kj_for_six_drinks, "DrinkControl", "kJ"))
+  night <- n[n$date == as.Date("2026-09-06"), ]
+
+  expect_equal(round(night$alcohol_grams, 1), 60.4)
+  expect_false(night$alcohol_grams_estimated)
+  # grams / count recovers DrinkControl's own unit setting.
+  expect_equal(round(night$alcohol_g_per_unit, 1), 10.1)
+  expect_false(night$alcohol_unit_mismatch)
+})
+
+test_that("a night without app energy falls back to ten grams, flagged", {
+  n <- build_alcohol_nights(sample_row("2026-09-05", 4))
+  night <- n[n$date == as.Date("2026-09-06"), ]
+  expect_equal(night$alcohol_grams, 40)
+  expect_true(night$alcohol_grams_estimated)
+  # A fallback figure cannot disagree with the constant it was built
+  # from, so it is never reported as a unit mismatch.
+  expect_false(night$alcohol_unit_mismatch)
+})
+
+test_that("a changed unit setting is flagged rather than swallowed", {
+  # 14 g units (the US setting) against an assumed 10: the energy says
+  # 84 g for six drinks, so grams per unit lands at 14.
+  n <- build_alcohol_nights(
+    sample_row("2026-09-05", 6),
+    sample_row("2026-09-05", 84 * 7 * 4.184, "DrinkControl", "kJ"))
+  night <- n[n$date == as.Date("2026-09-06"), ]
+  expect_equal(round(night$alcohol_g_per_unit), 14)
+  expect_true(night$alcohol_unit_mismatch)
+})
+
+test_that("import_alcohol says so out loud when the unit setting drifts", {
+  tmp <- withr::local_tempdir()
+  dir.create(file.path(tmp, "alcohol_consumption"), recursive = TRUE)
+  dir.create(file.path(tmp, "dietary_energy"), recursive = TRUE)
+  writeLines(
+    '{"metric": "alcohol_consumption", "date": "2026-09-05", "units": "count", "samples": [{"source": "DrinkControl", "qty": 6, "date": "2026-09-05 18:44:00 +0200"}]}',
+    file.path(tmp, "alcohol_consumption", "2026-09-05.json"))
+  writeLines(
+    sprintf('{"metric": "dietary_energy", "date": "2026-09-05", "units": "kJ", "samples": [{"source": "DrinkControl", "qty": %f, "date": "2026-09-05 18:44:00 +0200"}]}',
+            84 * 7 * 4.184),
+    file.path(tmp, "dietary_energy", "2026-09-05.json"))
+  expect_message(
+    import_alcohol(save = FALSE, canonical_dir = tmp, verbose = FALSE),
+    "avvikande gram per glas"
+  )
+})
+
 test_that("kcal comes only from DrinkControl's own dietary_energy samples", {
-  s <- sample_row("2026-09-05 18:44:00 +0200", 6)
+  s <- sample_row("2026-09-05", 6)
   e <- dplyr::bind_rows(
-    sample_row("2026-09-05 18:44:00 +0200", 1768.3175, "DrinkControl", "kJ"),
-    # A food logger writing dietary energy the same evening must not be
+    sample_row("2026-09-05", kj_for_six_drinks, "DrinkControl", "kJ"),
+    # A food logger writing dietary energy the same day must not be
     # counted as alcohol energy.
-    sample_row("2026-09-05 19:30:00 +0200", 4000, "MatLogg", "kJ")
+    sample_row("2026-09-05", 4000, "MatLogg", "kJ")
   )
   n <- build_alcohol_nights(s, e)
   night <- n[n$date == as.Date("2026-09-06"), ]
@@ -128,8 +197,7 @@ test_that("energy already in kcal is not converted a second time", {
 })
 
 test_that("absence counts as zero only inside a logging-active stretch", {
-  s <- sample_row("2026-09-05 18:44:00 +0200", 6)
-  n <- build_alcohol_nights(s)
+  n <- build_alcohol_nights(sample_row("2026-09-05", 6))
 
   near <- n[n$date == as.Date("2026-09-10"), ]
   expect_true(near$alcohol_logging_active)
@@ -142,7 +210,7 @@ test_that("absence counts as zero only inside a logging-active stretch", {
 
 test_that("build_alcohol_nights survives empty input", {
   expect_equal(nrow(build_alcohol_nights(NULL)), 0)
-  expect_equal(nrow(build_alcohol_nights(sample_row(NA_character_, NA_real_))), 0)
+  expect_equal(nrow(build_alcohol_nights(sample_row(NA, NA_real_))), 0)
 })
 
 
@@ -154,7 +222,7 @@ test_that("the alcohol cache round-trips and sits beside the health cache", {
   expect_equal(traning:::.alcohol_cache_path(health_cache),
                file.path(tmp, "alcohol_nights.RData"))
 
-  nights <- build_alcohol_nights(sample_row("2026-09-05 18:44:00 +0200", 6))
+  nights <- build_alcohol_nights(sample_row("2026-09-05", 6))
   path <- traning:::.alcohol_cache_path(health_cache)
   save_alcohol_data(nights, path)
   expect_true(file.exists(path))
@@ -190,6 +258,27 @@ test_that("import_alcohol reads canonical files and writes the cache", {
   expect_true(file.exists(cache))
 })
 
+test_that("the real DrinkControl export lands on the expected night", {
+  # The one live canonical day, used as a fixture in place rather than
+  # copied into the repo: it is a personal record and this repo is
+  # public. Skips where the data repo is not present.
+  root <- Sys.getenv("TRANING_DATA", unset = NA_character_)
+  skip_if(is.na(root), "TRANING_DATA is not set")
+  canonical <- file.path(root, "kristian", "health_export", "canonical")
+  skip_if_not(file.exists(file.path(canonical, "alcohol_consumption",
+                                     "2026-09-05.json")),
+              "no live canonical alcohol file")
+
+  out <- import_alcohol(save = FALSE, canonical_dir = canonical,
+                        verbose = FALSE)
+  night <- out[out$date == as.Date("2026-09-06"), ]
+  expect_equal(round(night$alcohol_night_units), 6)
+  expect_equal(round(night$alcohol_kcal, 1), 422.6)
+  expect_equal(round(night$alcohol_grams, 1), 60.4)
+  expect_equal(round(night$alcohol_g_per_unit, 1), 10.1)
+  expect_false(night$alcohol_unit_mismatch)
+})
+
 test_that("a missing canonical directory is not an error", {
   tmp <- withr::local_tempdir()
   out <- import_alcohol(save = FALSE,
@@ -201,34 +290,33 @@ test_that("a missing canonical directory is not an error", {
 
 # --- Energy ------------------------------------------------------------------
 
-test_that("standard drinks convert as count times ten grams over twelve", {
-  a <- fake_nights(as.Date("2026-09-06"))
-  a$alcohol_night_units <- 6
-  a$alcohol_kcal <- 422.6
+test_that("standardglas is grams over twelve, not the raw count", {
+  a <- set_night(fake_nights(as.Date("2026-09-06")), as.Date("2026-09-06"),
+                 units = 6, kcal = 422.6)
   out <- compute_alcohol_energy(a, NULL)
-  expect_equal(out$alcohol_grams, 60)
-  expect_equal(out$alcohol_standardglas, 5)
-  # The sketch's "count times twelve grams" would have said 72 g.
-  expect_false(isTRUE(all.equal(out$alcohol_grams, 72)))
+  expect_equal(round(out$alcohol_grams, 1), 60.4)
+  expect_equal(round(out$alcohol_standardglas, 2), round(60.4 / 12, 2))
+  # Multiplying the count by twelve grams would have said 72 g, nearly a
+  # fifth too much for a count denominated in ten-gram units.
+  expect_false(isTRUE(all.equal(round(out$alcohol_grams), 72)))
 })
 
-test_that("grams per unit follows the option when the app setting changes", {
-  withr::local_options(traning.alcohol_g_per_unit = 12)
-  a <- fake_nights(as.Date("2026-09-06"))
-  a$alcohol_night_units <- 6
-  out <- compute_alcohol_energy(a, NULL)
-  expect_equal(out$alcohol_grams, 72)
-  expect_equal(out$alcohol_standardglas, 6)
+test_that("the fallback constant follows the option, at import", {
+  withr::local_options(traning.alcohol_g_per_unit = 14)
+  n <- build_alcohol_nights(sample_row("2026-09-05", 6))
+  night <- n[n$date == as.Date("2026-09-06"), ]
+  expect_equal(night$alcohol_grams, 84)
+  expect_true(night$alcohol_grams_estimated)
 })
 
 test_that("fallback kcal is used only when the app wrote none, and is flagged", {
   a <- fake_nights(as.Date(c("2026-09-05", "2026-09-06")))
-  a$alcohol_night_units <- c(4, 6)
-  a$alcohol_kcal <- c(NA_real_, 422.6)
+  a <- set_night(a, as.Date("2026-09-05"), units = 4)
+  a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
   out <- compute_alcohol_energy(a, NULL)
 
   expect_true(out$alcohol_kcal_estimated[1])
-  expect_equal(out$alcohol_kcal[1], 4 * 10 * 7.1)
+  expect_equal(out$alcohol_kcal[1], 4 * 10 * 7)
   expect_false(out$alcohol_kcal_estimated[2])
   expect_equal(out$alcohol_kcal[2], 422.6)
 })
@@ -237,8 +325,7 @@ test_that("the share is a fraction of the 28-day mean expenditure", {
   dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)
   a <- fake_nights(dates)
-  a$alcohol_night_units[a$date == as.Date("2026-09-06")] <- 6
-  a$alcohol_kcal[a$date == as.Date("2026-09-06")] <- 422.6
+  a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
   out <- compute_alcohol_energy(a, hd)
   row <- out[out$date == as.Date("2026-09-06"), ]
@@ -251,8 +338,7 @@ test_that("a thin expenditure window omits the share rather than guessing", {
   dates <- seq(as.Date("2026-09-01"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)
   a <- fake_nights(dates)
-  a$alcohol_night_units[a$date == as.Date("2026-09-06")] <- 6
-  a$alcohol_kcal[a$date == as.Date("2026-09-06")] <- 422.6
+  a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
   out <- compute_alcohol_energy(a, hd)
   expect_true(is.na(out$alcohol_share[out$date == as.Date("2026-09-06")]))
@@ -287,8 +373,7 @@ test_that("the share is suppressed when a Garmin day has rest-level energy", {
              hd$date == as.Date("2026-09-06")] <- 1500
 
   a <- fake_nights(dates)
-  a$alcohol_night_units[a$date == as.Date("2026-09-06")] <- 6
-  a$alcohol_kcal[a$date == as.Date("2026-09-06")] <- 422.6
+  a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
   summaries <- data.frame(
     sessionStart = as.POSIXct("2026-09-06 10:00:00", tz = "UTC"))
 
@@ -307,10 +392,8 @@ test_that("the weekly summary counts evenings, dry days and its own share", {
   dates <- seq(as.Date("2026-08-31"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)
   a <- fake_nights(dates)
-  a$alcohol_night_units[a$date %in% as.Date(c("2026-09-05", "2026-09-06"))] <-
-    c(3, 6)
-  a$alcohol_kcal[a$date %in% as.Date(c("2026-09-05", "2026-09-06"))] <-
-    c(210, 422.6)
+  a <- set_night(a, as.Date("2026-09-05"), units = 3, kcal = 210)
+  a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
   w <- compute_alcohol_week(a, hd)
   expect_equal(nrow(w), 1)
@@ -326,8 +409,7 @@ test_that("a week with too few expenditure days reports no share", {
   dates <- seq(as.Date("2026-08-31"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates[1:3])
   a <- fake_nights(dates)
-  a$alcohol_night_units[a$date == as.Date("2026-09-06")] <- 6
-  a$alcohol_kcal[a$date == as.Date("2026-09-06")] <- 422.6
+  a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
 
   w <- compute_alcohol_week(a, hd)
   expect_true(is.na(w$share))
@@ -355,7 +437,7 @@ test_that("the baseline uses alcohol-free nights only and needs 14 of them", {
              hd$date %in% drink_nights] <- 20
 
   a <- fake_nights(dates)
-  a$alcohol_night_units[a$date %in% drink_nights] <- 4
+  for (d in drink_nights) a <- set_night(a, d, units = 4)
 
   b <- compute_alcohol_baseline(hd, a, on_date = as.Date("2026-09-06"))
   expect_equal(b$hrv$center, 52)
@@ -433,8 +515,8 @@ alcohol_fixture <- function(on_date = as.Date("2026-09-06"), units = 6,
   dates <- seq(on_date - 40, on_date, by = "day")
   hd <- fake_health(dates)
   a <- fake_nights(dates)
-  a$alcohol_night_units[a$date == on_date] <- units
-  a$alcohol_kcal[a$date == on_date] <- kcal
+  a <- set_night(a, on_date, units = units,
+                 kcal = if (is.na(kcal)) NULL else kcal)
   list(health_daily = hd, alcohol = a, on_date = on_date)
 }
 
@@ -483,7 +565,7 @@ test_that("a flagged measure replaces the null statement", {
 test_that("a computed kcal figure is labelled as computed", {
   f <- alcohol_fixture(kcal = NA_real_)
   line <- traning:::.insight_alcohol_line(f$alcohol, f$health_daily, f$on_date)
-  expect_match(line, "426 kcal från alkoholen \\(beräknat\\)")
+  expect_match(line, "420 kcal från alkoholen \\(beräknat\\)")
 })
 
 test_that("the weekly line runs on Monday only and only with drinks in it", {
@@ -491,8 +573,7 @@ test_that("the weekly line runs on Monday only and only with drinks in it", {
   dates <- seq(monday - 40, monday, by = "day")
   hd <- fake_health(dates)
   a <- fake_nights(dates)
-  a$alcohol_night_units[a$date == as.Date("2026-09-05")] <- 6
-  a$alcohol_kcal[a$date == as.Date("2026-09-05")] <- 422.6
+  a <- set_night(a, as.Date("2026-09-05"), units = 6, kcal = 422.6)
 
   expect_equal(as.POSIXlt(monday)$wday, 1L)
   line <- traning:::.alcohol_weekly_line(a, hd, monday)

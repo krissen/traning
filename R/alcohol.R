@@ -23,25 +23,32 @@
 
 # --- Constants ---------------------------------------------------------------
 
-# Grams of ethanol in one DrinkControl "count". The app is configured for
-# the WHO ten-gram unit; if that setting is ever changed the constant
-# moves with it, which is why it is an option rather than a literal.
+# Grams of ethanol per DrinkControl "count", used ONLY as a fallback when
+# the app wrote no energy sample for the night. The count is denominated
+# by a setting inside someone else's app: DrinkControl offers 8, 10,
+# 13.45 and 14 gram units by jurisdiction, and Sweden's 12 g standardglas
+# is not among them. If that setting changes, every historical count
+# silently changes meaning, which is why grams and not drinks is the
+# quantity this module stores.
 .alcohol_g_per_unit <- 10
 
 # Grams of ethanol in one Swedish standardglas. Fixed by definition.
 .alcohol_g_per_standardglas <- 12
 
-# Energy density of ethanol, kcal per gram. Used only for the fallback
-# path, when DrinkControl wrote a count but no dietary_energy sample.
-.alcohol_kcal_per_g <- 7.1
+# Energy density of ethanol, kcal per gram. EU regulation 1169/2011 and
+# DrinkControl's own documentation both use 7, so the same constant runs
+# in both directions: kcal to grams at import, grams to kcal in the
+# fallback.
+.alcohol_kcal_per_g <- 7
+
+# How far grams-per-unit may drift from the expected setting before the
+# night is flagged. grams / count recovers the app's unit setting for
+# free, so a drift means either the setting changed or someone edited a
+# per-drink calorie value. Either way the number is not what it claims.
+.alcohol_unit_tolerance <- 0.15
 
 # The only source whose dietary_energy samples are alcohol energy.
 .alcohol_energy_source <- "DrinkControl"
-
-# Clock hour that splits one drinking night from the next. Noon rather
-# than midnight so that a drink logged at 01:00 counts towards the night
-# that is already under way, not the one that follows it.
-.alcohol_night_start_hour <- 12L
 
 # Absence of a sample is only informative inside a stretch where logging
 # is demonstrably happening. Outside it, "no drinks" and "forgot to log"
@@ -81,54 +88,37 @@
 #' @keywords internal
 .empty_alcohol_nights <- function() {
   tibble::tibble(
-    date                    = as.Date(character()),
-    alcohol_units           = numeric(),
-    alcohol_night_units     = numeric(),
-    alcohol_kcal            = numeric(),
-    alcohol_last_sample_time = as.POSIXct(character(), tz = "UTC"),
-    alcohol_logging_active  = logical()
+    date                     = as.Date(character()),
+    alcohol_units            = numeric(),
+    alcohol_night_units      = numeric(),
+    alcohol_kcal             = numeric(),
+    alcohol_grams            = numeric(),
+    alcohol_grams_estimated  = logical(),
+    alcohol_g_per_unit       = numeric(),
+    alcohol_unit_mismatch    = logical(),
+    alcohol_logging_active   = logical()
   )
 }
 
-# --- Timestamp parsing -------------------------------------------------------
+# --- Night attribution -------------------------------------------------------
 
-#' Parse a HAE canonical sample timestamp as wall-clock time
+#' Morning date a day's drinking is attributed to
 #'
-#' Canonical samples carry strings like
-#' \code{"2026-09-05 18:44:00 +0200"}. The UTC offset is deliberately
-#' discarded: night attribution is a statement about the clock on the
-#' wall when the drink was logged, and converting to UTC would push an
-#' early-afternoon summer drink across the noon boundary into the wrong
-#' night. The result is therefore a POSIXct in UTC that *represents*
-#' local wall-clock time, never an instant.
+#' Nights run noon to noon and are keyed by the morning that ends them,
+#' so a Saturday evening lands on Sunday morning. Getting this backwards
+#' would silently invert every comparison the module produces.
 #'
-#' @param x Character vector of timestamps.
-#' @return POSIXct vector (tz UTC), NA where unparseable.
+#' Attribution is by calendar date, not by clock time, and deliberately
+#' so. The timestamp on a canonical alcohol sample is when the export
+#' ran, not when the drink was had: the day arrives as a single
+#' aggregated row. Reading an hour off that timestamp would be building
+#' on a number that does not mean what it looks like.
+#'
+#' @param date Date vector of the days drinks were logged for.
+#' @return Date vector of the mornings they are attributed to.
 #' @keywords internal
-.parse_hae_timestamp <- function(x) {
-  x <- as.character(x)
-  x <- sub("T", " ", x, fixed = TRUE)
-  # Date-only strings ("2026-09-05") get midnight so they still land on
-  # a night rather than dropping out as NA.
-  short <- !is.na(x) & nchar(x) <= 10L
-  x[short] <- paste0(x[short], " 00:00:00")
-  as.POSIXct(substr(x, 1, 19), format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
-}
-
-#' Morning date a timestamp's night is attributed to
-#'
-#' A sample at or after \code{night_start_hour} belongs to the night that
-#' ends the next morning; anything earlier belongs to the night that
-#' ended this morning.
-#'
-#' @param ts POSIXct vector (wall clock, see \code{.parse_hae_timestamp}).
-#' @param night_start_hour Integer hour of the split. Default 12.
-#' @return Date vector.
-#' @keywords internal
-.alcohol_night_date <- function(ts, night_start_hour = .alcohol_night_start_hour) {
-  d <- as.Date(ts)
-  hr <- as.integer(format(ts, "%H"))
-  d + as.integer(hr >= as.integer(night_start_hour))
+.alcohol_night_date <- function(date) {
+  as.Date(date) + 1L
 }
 
 # --- Canonical readers -------------------------------------------------------
@@ -139,14 +129,16 @@
 #' collapses a sum metric to one daily total and drops the clock time and
 #' the per-sample source, both of which the alcohol derivation needs.
 #'
+#' The date comes from the canonical document, not from the samples: the
+#' sample timestamp is when the export ran.
+#'
 #' @param dir Path to \code{canonical/<metric>/}.
-#' @return Tibble with \code{ts} (POSIXct), \code{qty}, \code{source},
+#' @return Tibble with \code{date} (Date), \code{qty}, \code{source},
 #'   \code{units}. Empty tibble when the directory is absent or empty.
 #' @keywords internal
 .read_canonical_samples <- function(dir) {
-  empty <- tibble::tibble(ts = as.POSIXct(character(), tz = "UTC"),
-                          qty = numeric(), source = character(),
-                          units = character())
+  empty <- tibble::tibble(date = as.Date(character()), qty = numeric(),
+                          source = character(), units = character())
   if (is.null(dir) || !dir.exists(dir)) return(empty)
   files <- list.files(dir, pattern = "\\.json$", full.names = TRUE)
   if (length(files) == 0) return(empty)
@@ -156,10 +148,17 @@
                     error = function(e) NULL)
     if (is.null(raw) || length(raw$samples) == 0) return(NULL)
     units <- .coalesce_scalar(raw$units, NA_character_)
+    doc_date <- suppressWarnings(as.Date(
+      as.character(.coalesce_scalar(raw$date, NA_character_))))
     parts <- lapply(raw$samples, function(s) {
       qty <- suppressWarnings(as.numeric(.coalesce_scalar(s$qty, NA_real_)))
+      d <- doc_date
+      if (is.na(d)) {
+        d <- suppressWarnings(as.Date(substr(
+          as.character(.coalesce_scalar(s$date, NA_character_)), 1, 10)))
+      }
       tibble::tibble(
-        ts     = .parse_hae_timestamp(.coalesce_scalar(s$date, NA_character_)),
+        date   = d,
         qty    = qty,
         source = as.character(.coalesce_scalar(s$source, NA_character_)),
         units  = as.character(units)
@@ -169,7 +168,7 @@
   })
   out <- dplyr::bind_rows(rows)
   if (nrow(out) == 0) return(empty)
-  out[!is.na(out$ts) & !is.na(out$qty), , drop = FALSE]
+  out[!is.na(out$date) & !is.na(out$qty), , drop = FALSE]
 }
 
 #' Convert a dietary_energy quantity to kcal
@@ -193,33 +192,37 @@
 #'
 #' One row per calendar date over the span the logging covers. The date
 #' is the morning a night is attributed to, so
-#' \code{alcohol_night_units} on 2026-09-06 counts the drinks logged
-#' between noon on the 5th and noon on the 6th.
+#' \code{alcohol_night_units} on 2026-09-06 counts the drinks logged on
+#' the 5th.
 #'
 #' \code{alcohol_units} is the plain calendar-day total, kept because it
 #' is what any per-day metric view (report_metric, Shiny, MCP) will show
 #' and the two must not silently disagree.
 #'
+#' Grams of ethanol, not drinks, is the quantity this table is built
+#' around. A "drink" is denominated by a setting inside DrinkControl, and
+#' if that setting changes every historical count silently changes
+#' meaning. Grams come from the app's own energy figure divided by
+#' 7 kcal/g, which is exact and independent of the setting, and dividing
+#' grams by the count recovers the setting itself as a free integrity
+#' check.
+#'
 #' @param samples Tibble of alcohol_consumption samples
-#'   (\code{ts}, \code{qty}, \code{source}, \code{units}).
+#'   (\code{date}, \code{qty}, \code{source}, \code{units}).
 #' @param energy Tibble of dietary_energy samples, same shape. Filtered
 #'   to \code{.alcohol_energy_source} inside this function.
-#' @param night_start_hour Hour splitting one night from the next.
 #' @param active_window_days Half-width, in days, of the window that
 #'   makes an absent sample count as a genuine zero.
 #' @return Tibble; see \code{.empty_alcohol_nights()} for the columns.
 #' @export
 build_alcohol_nights <- function(samples, energy = NULL,
-                                  night_start_hour = .alcohol_night_start_hour,
                                   active_window_days = .alcohol_active_window_days) {
   if (is.null(samples) || nrow(samples) == 0) return(.empty_alcohol_nights())
-  samples <- samples[!is.na(samples$ts) & !is.na(samples$qty), , drop = FALSE]
+  samples <- samples[!is.na(samples$date) & !is.na(samples$qty), , drop = FALSE]
   if (nrow(samples) == 0) return(.empty_alcohol_nights())
+  samples$date <- as.Date(samples$date)
 
-  samples$cal_date <- as.Date(samples$ts)
-  samples$night <- .alcohol_night_date(samples$ts, night_start_hour)
-
-  sample_dates <- sort(unique(samples$cal_date))
+  sample_dates <- sort(unique(samples$date))
   spine <- tibble::tibble(
     date = seq(min(sample_dates) - active_window_days,
                max(sample_dates) + active_window_days + 1L,
@@ -227,30 +230,26 @@ build_alcohol_nights <- function(samples, energy = NULL,
   )
 
   by_day <- samples |>
-    dplyr::group_by(date = .data$cal_date) |>
+    dplyr::group_by(.data$date) |>
     dplyr::summarise(alcohol_units = sum(.data$qty, na.rm = TRUE),
                      .groups = "drop")
 
-  by_night <- samples |>
-    dplyr::group_by(date = .data$night) |>
-    dplyr::summarise(
-      alcohol_night_units = sum(.data$qty, na.rm = TRUE),
-      alcohol_last_sample_time = max(.data$ts, na.rm = TRUE),
-      .groups = "drop"
-    )
+  by_night <- by_day
+  by_night$date <- .alcohol_night_date(by_night$date)
+  names(by_night)[names(by_night) == "alcohol_units"] <- "alcohol_night_units"
 
   # Energy: DrinkControl's own arithmetic on its own unit definition, so
   # it cannot drift out of step with the count the way a constant on this
   # side would the moment the app's standard-drink setting changes.
   kcal_by_night <- NULL
   if (!is.null(energy) && nrow(energy) > 0) {
-    e <- energy[!is.na(energy$ts) & !is.na(energy$qty), , drop = FALSE]
+    e <- energy[!is.na(energy$date) & !is.na(energy$qty), , drop = FALSE]
     e <- e[!is.na(e$source) & e$source == .alcohol_energy_source, , drop = FALSE]
     if (nrow(e) > 0) {
-      e$night <- .alcohol_night_date(e$ts, night_start_hour)
+      e$date <- .alcohol_night_date(as.Date(e$date))
       e$kcal <- .energy_to_kcal(e$qty, e$units)
       kcal_by_night <- e |>
-        dplyr::group_by(date = .data$night) |>
+        dplyr::group_by(.data$date) |>
         dplyr::summarise(alcohol_kcal = sum(.data$kcal, na.rm = TRUE),
                          .groups = "drop")
     }
@@ -278,16 +277,41 @@ build_alcohol_nights <- function(samples, energy = NULL,
   out$alcohol_night_units <- dplyr::if_else(
     active & is.na(out$alcohol_night_units), 0, out$alcohol_night_units)
   # A dry night has no energy to report, and 0 kcal is the honest value
-  # there; a night with drinks but no app energy stays NA so the fallback
-  # path can be flagged as computed rather than measured.
-  out$alcohol_kcal <- dplyr::if_else(
-    !is.na(out$alcohol_night_units) & out$alcohol_night_units == 0 &
-      is.na(out$alcohol_kcal),
-    0, out$alcohol_kcal)
+  # there; a night with drinks but no app energy stays NA so the gram
+  # figure can be flagged as computed rather than measured.
+  dry <- !is.na(out$alcohol_night_units) & out$alcohol_night_units == 0
+  out$alcohol_kcal <- dplyr::if_else(dry & is.na(out$alcohol_kcal), 0,
+                                      out$alcohol_kcal)
+
+  units <- out$alcohol_night_units
+  kcal <- out$alcohol_kcal
+  from_energy <- !is.na(kcal) & kcal > 0
+  out$alcohol_grams <- dplyr::if_else(from_energy, kcal / .alcohol_kcal_per_g,
+                                       NA_real_)
+  # Fallback: no energy sample for a night that had drinks. The constant
+  # is the app's documented default unit, and the result is flagged so no
+  # caller can present it as the app's own figure.
+  fallback <- !from_energy & !is.na(units) & units > 0
+  out$alcohol_grams[fallback] <- units[fallback] * .alcohol_grams_per_unit()
+  out$alcohol_grams[dry] <- 0
+  out$alcohol_grams_estimated <- fallback
+
+  # grams / count recovers the app's unit setting. Deviation is recorded
+  # rather than swallowed: it means the setting changed, or a per-drink
+  # calorie value was edited, and in both cases the numbers downstream
+  # are not what they claim to be.
+  out$alcohol_g_per_unit <- dplyr::if_else(
+    !is.na(units) & units > 0 & !is.na(out$alcohol_grams),
+    out$alcohol_grams / units, NA_real_)
+  expected <- .alcohol_grams_per_unit()
+  out$alcohol_unit_mismatch <- !is.na(out$alcohol_g_per_unit) &
+    !out$alcohol_grams_estimated &
+    abs(out$alcohol_g_per_unit - expected) / expected > .alcohol_unit_tolerance
 
   out |>
     dplyr::select("date", "alcohol_units", "alcohol_night_units",
-                  "alcohol_kcal", "alcohol_last_sample_time",
+                  "alcohol_kcal", "alcohol_grams", "alcohol_grams_estimated",
+                  "alcohol_g_per_unit", "alcohol_unit_mismatch",
                   "alcohol_logging_active") |>
     dplyr::arrange(.data$date)
 }
@@ -373,6 +397,16 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
     logged <- sum(nights$alcohol_night_units > 0, na.rm = TRUE)
     cat("Alkohol:", nrow(samples), "samples,", nrow(nights), "dygn,",
         logged, "natter med registrerad alkohol\n")
+  }
+  # A unit-setting drift is never swallowed, whatever the verbosity: it
+  # means every gram figure on those nights rests on a different
+  # definition than the one this module assumes.
+  mismatch <- nights[which(nights$alcohol_unit_mismatch), , drop = FALSE]
+  if (nrow(mismatch) > 0) {
+    message(sprintf(
+      "Alkohol: %d natt(er) med avvikande gram per glas (vantat %s g, sett %s g). Kontrollera DrinkControls glasinstallning.",
+      nrow(mismatch), format(.alcohol_grams_per_unit()),
+      paste(unique(round(mismatch$alcohol_g_per_unit, 1)), collapse = ", ")))
   }
   if (save) {
     path <- if (is.null(cache_path)) .alcohol_cache_path() else cache_path
@@ -556,21 +590,21 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
   if (is.null(alcohol) || nrow(alcohol) == 0) {
     out <- .empty_alcohol_nights()
     out$alcohol_standardglas <- numeric()
-    out$alcohol_grams <- numeric()
     out$alcohol_kcal_estimated <- logical()
     out$tdee_kcal_28d <- numeric()
     out$alcohol_share <- numeric()
     return(out)
   }
   alcohol <- tibble::as_tibble(alcohol)
-  g <- .alcohol_grams_per_unit()
   units <- alcohol$alcohol_night_units
 
-  alcohol$alcohol_grams <- units * g
+  # Swedish standardglas are twelve grams. Display only: the stored
+  # quantity is grams, so a changed app setting never rewrites history.
   alcohol$alcohol_standardglas <- alcohol$alcohol_grams /
     .alcohol_g_per_standardglas
 
   # Fallback only where drinks were logged but the app wrote no energy.
+  # The grams behind it were already flagged as estimated at import.
   needs_fallback <- !is.na(units) & units > 0 & is.na(alcohol$alcohol_kcal)
   alcohol$alcohol_kcal_estimated <- needs_fallback
   alcohol$alcohol_kcal[needs_fallback] <-
@@ -604,16 +638,16 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
 #' @param min_days_in_week Days of expenditure data required before a
 #'   weekly share is reported. Default 5 of 7.
 #' @return Tibble, one row per ISO week: \code{iso_week},
-#'   \code{week_start}, \code{units}, \code{standardglas}, \code{kcal},
-#'   \code{drinking_days}, \code{dry_days}, \code{week_tdee_kcal},
-#'   \code{share}.
+#'   \code{week_start}, \code{units}, \code{standardglas},
+#'   \code{grams}, \code{kcal}, \code{drinking_days}, \code{dry_days},
+#'   \code{week_tdee_kcal}, \code{share}.
 #' @export
 compute_alcohol_week <- function(alcohol, health_daily = NULL,
                                   summaries = NULL, min_days_in_week = 5) {
   empty <- tibble::tibble(
     iso_week = character(), week_start = as.Date(character()),
-    units = numeric(), standardglas = numeric(), kcal = numeric(),
-    drinking_days = integer(), dry_days = integer(),
+    units = numeric(), standardglas = numeric(), grams = numeric(),
+    kcal = numeric(), drinking_days = integer(), dry_days = integer(),
     week_tdee_kcal = numeric(), share = numeric()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
@@ -646,6 +680,7 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
       week_start    = min(.data$date),
       units         = sum(.data$alcohol_night_units, na.rm = TRUE),
       standardglas  = sum(.data$alcohol_standardglas, na.rm = TRUE),
+      grams         = sum(.data$alcohol_grams, na.rm = TRUE),
       kcal          = sum(.data$alcohol_kcal, na.rm = TRUE),
       drinking_days = sum(!is.na(.data$alcohol_night_units) &
                             .data$alcohol_night_units > 0),
@@ -1122,9 +1157,10 @@ report_alcohol <- function(data, after = NULL, before = NULL,
   }
   empty <- tibble::tibble(
     Datum = as.Date(character()), Glas = numeric(),
-    Standardglas = numeric(), kcal = numeric(), "Andel %" = numeric(),
-    "HRV avvik" = numeric(), "VP avvik" = numeric(),
-    "Sömn avvik" = numeric(), "Beräknad kcal" = logical()
+    Standardglas = numeric(), Gram = numeric(), kcal = numeric(),
+    "Andel %" = numeric(), "HRV avvik" = numeric(), "VP avvik" = numeric(),
+    "Sömn avvik" = numeric(), "Beräknad kcal" = logical(),
+    "Avvikande enhet" = logical()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
 
@@ -1152,15 +1188,17 @@ report_alcohol <- function(data, after = NULL, before = NULL,
   }
 
   out <- tibble::tibble(
-    Datum          = a$date,
-    Glas           = round(a$alcohol_night_units, 1),
-    Standardglas   = round(a$alcohol_standardglas, 1),
-    kcal           = round(a$alcohol_kcal),
-    `Andel %`      = round(a$alcohol_share * 100, 1),
-    `HRV avvik`    = round(dev_col("hrv"), 1),
-    `VP avvik`     = round(dev_col("rhr"), 1),
-    `Sömn avvik` = round(dev_col("sleep")),
-    `Beräknad kcal` = a$alcohol_kcal_estimated
+    Datum             = a$date,
+    Glas              = round(a$alcohol_night_units, 1),
+    Standardglas      = round(a$alcohol_standardglas, 1),
+    Gram              = round(a$alcohol_grams, 1),
+    kcal              = round(a$alcohol_kcal),
+    `Andel %`         = round(a$alcohol_share * 100, 1),
+    `HRV avvik`       = round(dev_col("hrv"), 1),
+    `VP avvik`        = round(dev_col("rhr"), 1),
+    `Sömn avvik`      = round(dev_col("sleep")),
+    `Beräknad kcal`   = a$alcohol_kcal_estimated,
+    `Avvikande enhet` = a$alcohol_unit_mismatch
   )
   dplyr::arrange(out, dplyr::desc(.data$Datum))
 }
@@ -1183,8 +1221,9 @@ report_alcohol_weekly <- function(data, after = NULL, before = NULL,
   }
   empty <- tibble::tibble(
     Vecka = character(), Start = as.Date(character()), Glas = numeric(),
-    Standardglas = numeric(), kcal = numeric(), "Andel %" = numeric(),
-    "Kvällar" = integer(), "Alkoholfria dagar" = integer()
+    Standardglas = numeric(), Gram = numeric(), kcal = numeric(),
+    "Andel %" = numeric(), "Kvällar" = integer(),
+    "Alkoholfria dagar" = integer()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
 
@@ -1201,6 +1240,7 @@ report_alcohol_weekly <- function(data, after = NULL, before = NULL,
     Start                = w$week_start,
     Glas                 = round(w$units, 1),
     Standardglas         = round(w$standardglas, 1),
+    Gram                 = round(w$grams, 1),
     kcal                 = round(w$kcal),
     `Andel %`            = round(w$share * 100, 1),
     `Kvällar`       = as.integer(w$drinking_days),

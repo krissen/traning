@@ -240,20 +240,28 @@ by `import_alcohol()` at the end of every saving health import. It reads
 directly rather than going through the health cache, because two things
 the derivation needs do not survive into it:
 
-- **Clock times.** `.parse_metric()` truncates every sample timestamp to
-  a date, so a drink at 23:30 cannot be attributed to the night it
-  belongs to from the cache alone. Nights run noon to noon and are keyed
-  by the morning that ends them.
 - **Per-sample source.** For a sum metric, `read_canonical_file()`
   returns the daily total tagged with the first sample's source, so
   `dietary_energy` cannot be filtered to DrinkControl afterwards. The
   day a food-logging app starts writing dietary energy, that column
   becomes food plus alcohol with no way to separate them.
+- **The document date.** The timestamp on an alcohol sample is when the
+  export ran, not when the drink was had: the day arrives as one
+  aggregated row. Attribution therefore uses the canonical document's
+  date, and a day's drinking is credited to the following morning.
 
-Everything that is a parameter choice (baseline window, share window,
-grams per standard unit) stays at query time, so tuning it does not
-require a reimport. A failure to rebuild the alcohol table never fails
-the health import.
+The stored quantity is **grams of ethanol**, not drinks. A "drink" is
+denominated by a setting inside DrinkControl (8, 10, 13.45 or 14 g by
+jurisdiction; Sweden's 12 g standardglas is not offered), so a changed
+setting would silently rewrite the meaning of every historical count.
+Grams come from the app's own energy figure at 7 kcal/g, and `grams /
+count` recovers the setting as a free integrity check: a drift beyond
+15% sets `alcohol_unit_mismatch` and prints a message at import.
+Standardglas for display is `grams / 12`.
+
+Everything that is a parameter choice (baseline window, share window)
+stays at query time, so tuning it does not require a reimport. A failure
+to rebuild the alcohol table never fails the health import.
 
 ### Cache portability
 
