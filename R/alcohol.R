@@ -144,8 +144,17 @@
   if (length(files) == 0) return(empty)
 
   rows <- lapply(files, function(f) {
-    raw <- tryCatch(jsonlite::fromJSON(f, simplifyVector = FALSE),
-                    error = function(e) NULL)
+    raw <- tryCatch(
+      jsonlite::fromJSON(f, simplifyVector = FALSE),
+      error = function(e) {
+        # Named, not silent. A truncated write here loses a whole day of
+        # drinks, and a silent loss is one nobody ever finds. Matches the
+        # treatment in read_canonical_file() (R/health_export.R).
+        warning("Kunde inte l\u00e4sa canonical-fil, hoppar \u00f6ver: ", f,
+                " (", conditionMessage(e), ")", call. = FALSE)
+        NULL
+      }
+    )
     if (is.null(raw) || length(raw$samples) == 0) return(NULL)
     units <- .coalesce_scalar(raw$units, NA_character_)
     doc_date <- suppressWarnings(as.Date(

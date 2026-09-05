@@ -852,9 +852,21 @@ test_that("a corrupt canonical file leaves the alcohol rebuild standing", {
     '{"metric": "alcohol_consumption", "date": "2026-09-06", "units": "count", "samples": [{"source": "DrinkControl", "qty": 3, "date": "2026-09-06 20:00:00 +0200"}]}',
     file.path(canonical, "alcohol_consumption", "2026-09-06.json"))
 
-  # The unreadable file is skipped, the readable one still lands.
-  out <- import_alcohol(save = FALSE, verbose = FALSE)
+  # The unreadable file is skipped with a named warning, and the
+  # readable one still lands. Silence here would lose a whole day of
+  # drinks with nothing to find it by.
+  expect_warning(
+    out <- import_alcohol(save = FALSE, verbose = FALSE,
+                          today = as.Date("2026-09-20")),
+    "Kunde inte l\u00e4sa canonical-fil"
+  )
   expect_equal(out$alcohol_night_units[out$date == as.Date("2026-09-07")], 3)
+  w <- tryCatch(
+    import_alcohol(save = FALSE, verbose = FALSE,
+                   today = as.Date("2026-09-20")),
+    warning = function(w) w
+  )
+  expect_match(conditionMessage(w), "2026-09-05.json", fixed = TRUE)
 
   # And the refresh helper swallows any failure rather than taking the
   # health import down with it: the alcohol table is derived
