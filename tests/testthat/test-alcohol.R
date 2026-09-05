@@ -938,7 +938,10 @@ test_that("report_alcohol returns Swedish columns, newest first", {
   )
   out <- report_alcohol(td, after = "2026-09-01", alcohol = f$alcohol)
   expect_true(all(c("Datum", "Glas", "Standardglas", "kcal", "Andel %",
-                    "HRV avvik", "VP avvik") %in% names(out)))
+                    "VP avvik", "HRV avvik") %in% names(out)))
+  # Resting heart rate leads here too, so the table and the prose tell
+  # the same story about which signal matters most.
+  expect_lt(match("VP avvik", names(out)), match("HRV avvik", names(out)))
   expect_equal(out$Datum, sort(out$Datum, decreasing = TRUE))
   expect_equal(out$Glas[out$Datum == f$on_date], 6)
   expect_equal(out$Standardglas[out$Datum == f$on_date], 5)

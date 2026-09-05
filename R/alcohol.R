@@ -1393,7 +1393,7 @@ report_alcohol <- function(data, after = NULL, before = NULL,
   empty <- tibble::tibble(
     Datum = as.Date(character()), Glas = numeric(),
     Standardglas = numeric(), Gram = numeric(), kcal = numeric(),
-    "Andel %" = numeric(), "HRV avvik" = numeric(), "VP avvik" = numeric(),
+    "Andel %" = numeric(), "VP avvik" = numeric(), "HRV avvik" = numeric(),
     "Sömn avvik" = numeric(), "Beräknad kcal" = logical(),
     "Avvikande enhet" = logical()
   )
@@ -1443,8 +1443,8 @@ report_alcohol <- function(data, after = NULL, before = NULL,
     Gram              = round(a$alcohol_grams, 1),
     kcal              = round(a$alcohol_kcal),
     `Andel %`         = round(a$alcohol_share * 100, 1),
-    `HRV avvik`       = round(unname(deltas[, "hrv"]), 1),
     `VP avvik`        = round(unname(deltas[, "rhr"]), 1),
+    `HRV avvik`       = round(unname(deltas[, "hrv"]), 1),
     `Sömn avvik`      = round(unname(deltas[, "sleep"])),
     `Beräknad kcal`   = a$alcohol_kcal_estimated,
     `Avvikande enhet` = a$alcohol_unit_mismatch
