@@ -1899,7 +1899,22 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   ctx <- .readiness_for_insight(health_daily, summaries, on_date,
                                  hr_max, hr_rest)
   if (is.null(ctx)) {
-    return(list(prosa = "", datum = NA, status = NA_character_,
+    # No readiness verdict is computable — but the alcohol account needs
+    # none. A morning where the watch uploaded nothing is exactly the
+    # morning where "you logged six drinks last night and here is what
+    # they cost" is still true, and dropping it there would quietly undo
+    # the decision that the energy line follows every logged evening.
+    fallback_date <- if (is.null(on_date)) {
+      if (!is.null(health_daily) && nrow(health_daily) > 0) {
+        max(as.Date(health_daily$date), na.rm = TRUE)
+      } else NA
+    } else as.Date(on_date)
+    alcohol_only <- if (!is.na(fallback_date)) {
+      .alcohol_notification_lines(health_daily, summaries, fallback_date)
+    } else character()
+    return(list(prosa = paste(alcohol_only, collapse = " "),
+                datum = if (length(alcohol_only) > 0) fallback_date else NA,
+                status = NA_character_,
                 score = NA_real_, kvalitet = NA_character_,
                 components = list(), components_present = list()))
   }
@@ -1975,30 +1990,17 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   if (.notify_context_enabled()) {
     ctx_line <- .insight_context_line(summaries, health_daily, row$date)
     if (!is.null(ctx_line)) parts <- c(parts, ctx_line)
-
-    # Alcohol lines are ADDITIVE, not candidates for the single slot
-    # above: an energy figure is due after every logged evening, and as a
-    # candidate it would fall silent whenever a training-state line had
-    # something to say. Both are silent on a dry night, so this cannot
-    # turn into a daily fixture. The alcohol table is a separate cache; a
-    # missing or unreadable one simply means both lines stay silent.
-    alcohol <- tryCatch(load_alcohol_data(), error = function(e) NULL)
-    alcohol_line <- tryCatch(
-      .insight_alcohol_line(alcohol, health_daily, row$date,
-                             summaries = summaries),
-      error = function(e) NULL
-    )
-    if (!is.null(alcohol_line)) parts <- c(parts, alcohol_line)
-
-    # Monday also gets the week's alcohol total, beside the training
-    # recap.
-    alcohol_week <- tryCatch(
-      .alcohol_weekly_line(alcohol, health_daily, row$date,
-                            summaries = summaries),
-      error = function(e) NULL
-    )
-    if (!is.null(alcohol_week)) parts <- c(parts, alcohol_week)
   }
+
+  # Alcohol lines are ADDITIVE, not candidates for the single slot above:
+  # an energy figure is due after every logged evening, and as a
+  # candidate it would fall silent whenever a training-state line had
+  # something to say. They also sit outside the context opt-out and
+  # carry their own, since silencing the streak and ACWR lines is a
+  # different decision from silencing the energy account. Both are
+  # silent on a dry night, so this cannot turn into a daily fixture.
+  parts <- c(parts, .alcohol_notification_lines(health_daily, summaries,
+                                                 row$date))
 
   prosa <- paste(parts, collapse = " ")
 

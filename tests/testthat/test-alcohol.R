@@ -776,6 +776,50 @@ test_that("the context chain no longer takes an alcohol argument", {
 })
 
 
+# --- Notification wiring -----------------------------------------------------
+
+test_that("the alcohol lines have their own opt-out, not the context one", {
+  f <- alcohol_fixture()
+  withr::local_envvar(TRANING_NOTIFY_CONTEXT = "false")
+  lines <- traning:::.alcohol_notification_lines(f$health_daily, NULL,
+                                                  f$on_date, f$alcohol)
+  expect_length(lines, 1)
+  expect_match(lines[[1]], "glas")
+
+  withr::local_envvar(TRANING_ALCOHOL_NOTIFY = "false")
+  expect_length(
+    traning:::.alcohol_notification_lines(f$health_daily, NULL, f$on_date,
+                                           f$alcohol),
+    0
+  )
+})
+
+test_that("the alcohol line survives a morning with no readiness verdict", {
+  # The watch uploaded nothing, so there is no HRV, no sleep and no
+  # readiness row. The energy account needs none of them, and this is
+  # exactly the morning where it is still true.
+  f <- alcohol_fixture()
+  energy_only <- f$health_daily[f$health_daily$metric %in%
+                                  c("active_energy",
+                                    "basal_energy_burned"), ]
+  td <- traning_data(
+    summaries = data.frame(sessionStart = as.POSIXct(NA)),
+    health_daily = energy_only
+  )
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  save_alcohol_data(f$alcohol,
+                     file.path(tmp_data, "cache", "alcohol_nights.RData"))
+
+  out <- health_insight_readiness(td, on_date = f$on_date)
+  # Readiness itself is genuinely absent, and is reported as absent.
+  expect_true(is.na(out$status))
+  # The alcohol account is not.
+  expect_match(out$prosa, "glas")
+  expect_equal(out$datum, f$on_date)
+})
+
 # --- Reports -----------------------------------------------------------------
 
 test_that("report_alcohol returns Swedish columns, newest first", {

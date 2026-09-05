@@ -572,6 +572,16 @@ attached to the daily push alongside the readiness verdict. They are not
 routed through the generic tier-based delta machinery, which is why the
 metric sits in tier 3.
 
+They have their own opt-out, `TRANING_ALCOHOL_NOTIFY`, and are not
+behind `TRANING_NOTIFY_CONTEXT`: that switch exists to silence the
+streak, ACWR and HRV-trend lines, which is a different decision from
+silencing the energy account.
+
+They also survive a morning with no readiness verdict. When the watch
+has uploaded nothing there is no HRV, no sleep and no score, but the
+energy account needs none of those, and that is exactly the morning
+where it is still true.
+
 They are **additive**, not candidates in the single-slot context chain
 (`.insight_context_line()`, which emits at most one of comeback / ACWR /
 HRV-downtrend). The product decision is an energy line after every

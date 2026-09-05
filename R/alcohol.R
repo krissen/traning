@@ -1013,6 +1013,60 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 
 # --- Prose -------------------------------------------------------------------
 
+#' Are the alcohol lines enabled?
+#'
+#' Their own switch, \code{TRANING_ALCOHOL_NOTIFY}. They used to sit
+#' behind \code{TRANING_NOTIFY_CONTEXT}, which exists to silence the
+#' streak, ACWR and HRV-trend lines: a different feature with a different
+#' rationale, and silencing those should not silence the energy account.
+#' Defaults to on, like the other notification switches.
+#'
+#' @return Logical.
+#' @keywords internal
+.notify_alcohol_enabled <- function() {
+  v <- tolower(Sys.getenv("TRANING_ALCOHOL_NOTIFY", unset = "true"))
+  !v %in% c("false", "0", "no", "off")
+}
+
+#' Compose the alcohol lines for a morning
+#'
+#' One place that builds both, so the energy columns are derived once per
+#' notification rather than once per line, and so the two cannot end up
+#' behind different guards.
+#'
+#' @param health_daily Long health tibble.
+#' @param summaries Session summaries, or NULL.
+#' @param on_date Date being rendered.
+#' @param alcohol Optional night table; defaults to the cached one.
+#' @return Character vector of zero, one or two lines.
+#' @keywords internal
+.alcohol_notification_lines <- function(health_daily, summaries, on_date,
+                                         alcohol = NULL) {
+  if (!.notify_alcohol_enabled()) return(character())
+  if (is.null(alcohol)) {
+    alcohol <- tryCatch(load_alcohol_data(), error = function(e) NULL)
+  }
+  if (is.null(alcohol) || nrow(alcohol) == 0) return(character())
+
+  enriched <- tryCatch(
+    compute_alcohol_energy(alcohol, health_daily, summaries),
+    error = function(e) NULL
+  )
+  if (is.null(enriched)) return(character())
+
+  daily <- tryCatch(
+    .insight_alcohol_line(enriched, health_daily, on_date,
+                           summaries = summaries),
+    error = function(e) NULL
+  )
+  weekly <- tryCatch(
+    .alcohol_weekly_line(enriched, health_daily, on_date,
+                          summaries = summaries),
+    error = function(e) NULL
+  )
+  c(daily, weekly)
+}
+
 #' Format a kcal figure for Swedish prose
 #'
 #' Whole kilocalories with a space as thousands separator. False
