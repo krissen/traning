@@ -93,6 +93,11 @@ func_registry <- list(
   # Health reports
   report_readiness       = "sh",
   report_metric          = "h",
+  # Alcohol reports read the nights table from its own cache
+  # (load_alcohol_data()), but still need health_daily for the energy
+  # denominator and summaries for the Garmin rest-day suppression.
+  report_alcohol         = "sh",
+  report_alcohol_weekly  = "sh",
   health_insight_readiness = "sh",
   health_insight_update    = "sh",
   recent_data_dump         = "sh",
@@ -275,6 +280,19 @@ build_call_args <- function(func_name, func_args, bundle) {
     if (!is.null(func_args$sport)) {
       a$sport <- as.character(func_args$sport)
     }
+  }
+
+  # report_alcohol / report_alcohol_weekly take `after`/`before` instead
+  # of the house `from`/`to`, and treat the upper bound as INCLUSIVE
+  # (filter_by_daterange(..., closed_upper = TRUE)). So the generic
+  # from/to values stashed above are dropped and re-bound by name, with
+  # no +1 day shift — Python's get_alcohol() deliberately sends the
+  # boundary unshifted for the same reason.
+  if (func_name %in% c("report_alcohol", "report_alcohol_weekly")) {
+    a$from <- NULL
+    a$to   <- NULL
+    if (!is.null(func_args$from)) a$after  <- parse_date_expr(func_args$from)
+    if (!is.null(func_args$to))   a$before <- parse_date_expr(func_args$to)
   }
 
   if (func_name == "recent_data_dump" && !is.null(func_args$hours)) {
