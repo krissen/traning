@@ -525,6 +525,37 @@ test_that("read_canonical_file skips an unparseable file with a warning", {
   expect_match(conditionMessage(w), "lexical error")
 })
 
+test_that("the empty branches keep the documented columns", {
+  cols <- c("date", "metric", "value", "source")
+
+  tmp <- withr::local_tempdir()
+  bad <- file.path(tmp, "2026-09-05.json")
+  writeLines("{ this was never flushed", bad)
+  out <- suppressWarnings(read_canonical_file(bad))
+  expect_equal(nrow(out), 0)
+  expect_equal(names(out), cols)
+
+  # A well-formed document with no samples takes a different branch and
+  # must answer the same shape.
+  empty_doc <- file.path(tmp, "2026-09-06.json")
+  writeLines('{"metric": "vo2_max", "date": "2026-09-06", "units": "ml/kg/min", "samples": []}',
+             empty_doc)
+  out2 <- read_canonical_file(empty_doc)
+  expect_equal(nrow(out2), 0)
+  expect_equal(names(out2), cols)
+
+  # And so must the parser underneath it, for both the no-samples and
+  # the unknown-sleep-format branches.
+  expect_equal(names(traning:::.parse_metric(list(name = "vo2_max",
+                                                   data = list()))), cols)
+  expect_warning(sleep <- traning:::.parse_sleep(list(list(qty = 1))))
+  expect_equal(names(sleep), cols)
+
+  # Column types survive too, so a bind against real rows cannot coerce.
+  expect_s3_class(out$date, "Date")
+  expect_type(out$value, "double")
+})
+
 test_that("one corrupt canonical file does not abort a whole import", {
   tmp_data <- withr::local_tempdir()
   withr::local_envvar(TRANING_DATA = tmp_data)

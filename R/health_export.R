@@ -187,15 +187,37 @@
 #'   \item Sleep: nested fields (totalSleep, core, deep, rem, awake, etc.)
 #' }
 #'
+#' Empty long-format health tibble with the documented columns
+#'
+#' The parse and read paths all promise \code{date}, \code{metric},
+#' \code{value}, \code{source}, and several of them used to return a
+#' bare \code{tibble()} with no columns at all on the empty and
+#' unparseable branches. Callers that bind or select by name then behave
+#' differently depending on whether a file happened to parse, which is
+#' the kind of difference that only shows up on the day something is
+#' already wrong.
+#'
+#' @return A zero-row tibble with the four columns and their types.
+#' @keywords internal
+.empty_health_long <- function() {
+  tibble::tibble(
+    date   = as.Date(character()),
+    metric = character(),
+    value  = numeric(),
+    source = character()
+  )
+}
+
 #' @param metric_obj A list from the parsed JSON (one element of
 #'   \code{data$metrics}).
 #' @return A tibble with columns: \code{date}, \code{metric}, \code{value},
-#'   \code{source}.
+#'   \code{source}. Zero rows, but always those columns, when there is
+#'   nothing to parse.
 #' @keywords internal
 .parse_metric <- function(metric_obj) {
   name <- metric_obj$name
   samples <- metric_obj$data
-  if (length(samples) == 0) return(tibble::tibble())
+  if (length(samples) == 0) return(.empty_health_long())
 
   if (name == "sleep_analysis") {
     return(.parse_sleep(samples))
@@ -247,7 +269,7 @@
 #' @return Tibble in long format with sleep_* metrics
 #' @keywords internal
 .parse_sleep <- function(samples) {
-  if (length(samples) == 0) return(tibble::tibble())
+  if (length(samples) == 0) return(.empty_health_long())
 
   # Detect format: aggregated has "totalSleep", raw has "value"
   first <- samples[[1]]
@@ -258,7 +280,7 @@
     return(.parse_sleep_raw(samples))
   }
   warning("Okänt sömnformat — varken aggregerat eller rått")
-  tibble::tibble()
+  .empty_health_long()
 }
 
 #' Parse aggregated sleep samples (HAE daily export format)
@@ -500,7 +522,7 @@
       dplyr::filter(!is.na(parsed)) |>
       dplyr::select(date, metric, value, source)
   } else {
-    tibble::tibble()
+    .empty_health_long()
   }
 
   dplyr::bind_rows(numeric_long, time_long)
@@ -679,7 +701,8 @@
 #' @param path Path to the canonical JSON file.
 #' @param verbose Logical, print progress. Default FALSE.
 #' @return A tibble with columns: \code{date}, \code{metric}, \code{value},
-#'   \code{source}. Empty tibble when the file cannot be parsed.
+#'   \code{source}. Zero rows, but always those columns, when the file
+#'   cannot be parsed or carries no samples.
 #' @export
 read_canonical_file <- function(path, verbose = FALSE) {
   if (!file.exists(path)) stop("Filen finns inte: ", path)
@@ -692,13 +715,13 @@ read_canonical_file <- function(path, verbose = FALSE) {
       NULL
     }
   )
-  if (is.null(raw)) return(tibble::tibble())
+  if (is.null(raw)) return(.empty_health_long())
 
   # Canonical format: {metric, date, units, samples}
   metric_name <- raw$metric
   samples <- raw$samples
   if (is.null(metric_name) || is.null(samples) || length(samples) == 0) {
-    return(tibble::tibble())
+    return(.empty_health_long())
   }
 
   # Sum metrics produce one daily total. Two paths feed it:
@@ -781,7 +804,7 @@ read_health_export <- function(path, verbose = FALSE) {
       error = function(e) {
         warning("Kunde inte parsa '", m$name, "': ", conditionMessage(e),
                 call. = FALSE)
-        tibble::tibble()
+        .empty_health_long()
       }
     )
     if (verbose && nrow(result) > 0) {
