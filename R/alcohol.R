@@ -432,7 +432,7 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
                               error = function(e) NULL)
   }
   if (is.null(canonical_dir) || !dir.exists(canonical_dir)) {
-    if (verbose) cat("Ingen canonical-katalog — hoppar over alkoholimport\n")
+    if (verbose) cat("Ingen canonical-katalog, hoppar \u00f6ver alkoholimport\n")
     return(invisible(.empty_alcohol_nights()))
   }
 
@@ -459,7 +459,7 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   if (verbose) {
     logged <- sum(nights$alcohol_night_units > 0, na.rm = TRUE)
     cat("Alkohol:", nrow(samples), "samples,", nrow(nights), "dygn,",
-        logged, "natter med registrerad alkohol\n")
+        logged, "n\u00e4tter med registrerad alkohol\n")
   }
   # A unit-setting drift is never swallowed, whatever the verbosity: it
   # means every gram figure on those nights rests on a different
@@ -467,7 +467,9 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   mismatch <- nights[which(nights$alcohol_unit_mismatch), , drop = FALSE]
   if (nrow(mismatch) > 0) {
     message(sprintf(
-      "Alkohol: %d natt(er) med avvikande gram per glas (vantat %s g, sett %s g). Kontrollera DrinkControls glasinstallning.",
+      paste0("Alkohol: %d natt(er) med avvikande gram per glas ",
+             "(f\u00f6rv\u00e4ntat %s g, sett %s g). ",
+             "Kontrollera DrinkControls glasinst\u00e4llning."),
       nrow(mismatch), format(.alcohol_grams_per_unit()),
       paste(unique(round(mismatch$alcohol_g_per_unit, 1)), collapse = ", ")))
   }
@@ -950,7 +952,7 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
              unit = "slag", digits = 0, scale = 1, log = FALSE, sign = 1),
   hrv = list(metric = "heart_rate_variability", label = "HRV",
              unit = "ms", digits = 0, scale = 1, log = TRUE, sign = -1),
-  sleep = list(metric = "sleep_totalSleep", label = "sömn",
+  sleep = list(metric = "sleep_totalSleep", label = "s\u00f6mn",
                unit = "minuter", digits = 0, scale = 60, log = FALSE, sign = -1)
 )
 
@@ -1190,14 +1192,14 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   vapply(seq_len(nrow(flagged)), function(i) {
     r <- flagged[i, ]
     if (identical(r$measure, "hrv")) {
-      sprintf("HRV %s ms mot %s på alkoholfria nätter",
+      sprintf("HRV %s ms mot %s p\u00e5 alkoholfria n\u00e4tter",
               fmt_dec_sv(r$value, digits = 0, trim_zero = TRUE),
               fmt_dec_sv(r$baseline, digits = 0, trim_zero = TRUE))
     } else {
       direction <- if (identical(r$measure, "sleep")) {
-        if (r$delta < 0) "kortare" else "längre"
+        if (r$delta < 0) "kortare" else "l\u00e4ngre"
       } else {
-        if (r$delta > 0) "högre" else "lägre"
+        if (r$delta > 0) "h\u00f6gre" else "l\u00e4gre"
       }
       sprintf("%s %s %s %s", r$label,
               fmt_dec_sv(abs(r$delta), digits = 0, trim_zero = TRUE),
@@ -1249,12 +1251,12 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 
   glas <- fmt_dec_sv(units, digits = 1, trim_zero = TRUE)
   standard <- fmt_dec_sv(row$alcohol_standardglas, digits = 1, trim_zero = TRUE)
-  parts <- sprintf("I går: %s glas (%s standardglas)", glas, standard)
+  parts <- sprintf("I g\u00e5r: %s glas (%s standardglas)", glas, standard)
 
   kcal <- row$alcohol_kcal
   if (is.finite(kcal)) {
-    suffix <- if (isTRUE(row$alcohol_kcal_estimated)) " (beräknat)" else ""
-    parts <- paste0(parts, sprintf(", %s kcal från alkoholen%s.",
+    suffix <- if (isTRUE(row$alcohol_kcal_estimated)) " (ber\u00e4knat)" else ""
+    parts <- paste0(parts, sprintf(", %s kcal fr\u00e5n alkoholen%s.",
                                    .fmt_kcal(kcal), suffix))
   } else {
     parts <- paste0(parts, ".")
@@ -1263,7 +1265,7 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   share <- row$alcohol_share
   if (is.finite(share)) {
     parts <- paste0(parts, sprintf(
-      " Det motsvarar %d procent av din genomsnittliga dygnsförbrukning.",
+      " Det motsvarar %d procent av din genomsnittliga dygnsf\u00f6rbrukning.",
       as.integer(round(share * 100))))
   }
 
@@ -1293,7 +1295,7 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
         # and calling that normal would be a small untruth in the
         # direction of the feature's own thesis.
         parts <- paste0(parts, sprintf(
-          " I dag: %s ligger inte sämre än vanligt.", subject))
+          " I dag: %s ligger inte s\u00e4mre \u00e4n vanligt.", subject))
       }
     }
   }
@@ -1329,16 +1331,16 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   if (nrow(w) != 1L) return(NULL)
   if (!is.finite(w$drinking_days) || w$drinking_days == 0) return(NULL)
 
-  kvall <- if (w$drinking_days == 1) "kväll" else "kvällar"
+  kvall <- if (w$drinking_days == 1) "kv\u00e4ll" else "kv\u00e4llar"
   # "Alkohol förra veckan", not "Förra veckan": on a Monday the training
   # recap already opens with the latter, and two adjacent lines starting
   # with the same three words read as one line repeating itself.
   line <- sprintf(
-    "Alkohol förra veckan: %s kcal, fördelat på %d %s.",
+    "Alkohol f\u00f6rra veckan: %s kcal, f\u00f6rdelat p\u00e5 %d %s.",
     .fmt_kcal(w$kcal), as.integer(w$drinking_days), kvall)
   if (is.finite(w$share)) {
     line <- paste0(line, sprintf(
-      " Det motsvarar %d procent av veckans energiförbrukning.",
+      " Det motsvarar %d procent av veckans energif\u00f6rbrukning.",
       as.integer(round(w$share * 100))))
   }
   if (is.finite(w$dry_days) && w$dry_days > 0) {
@@ -1397,7 +1399,7 @@ report_alcohol <- function(data, after = NULL, before = NULL,
     Datum = as.Date(character()), Glas = numeric(),
     Standardglas = numeric(), Gram = numeric(), kcal = numeric(),
     "Andel %" = numeric(), "VP avvik" = numeric(), "HRV avvik" = numeric(),
-    "Sömn avvik" = numeric(), "Beräknad kcal" = logical(),
+    "S\u00f6mn avvik" = numeric(), "Ber\u00e4knad kcal" = logical(),
     "Avvikande enhet" = logical()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
@@ -1439,6 +1441,9 @@ report_alcohol <- function(data, after = NULL, before = NULL,
     deltas[i, ] <- dv$delta[hit]
   }
 
+  # Backtick-quoted names keep their literal characters: R rejects
+  # \uXXXX inside backticks outright, so these cannot follow the escape
+  # convention the rest of the file uses for Swedish strings.
   out <- tibble::tibble(
     Datum             = a$date,
     Glas              = round(a$alcohol_night_units, 1),
@@ -1474,7 +1479,7 @@ report_alcohol_weekly <- function(data, after = NULL, before = NULL,
   empty <- tibble::tibble(
     Vecka = character(), Start = as.Date(character()), Glas = numeric(),
     Standardglas = numeric(), Gram = numeric(), kcal = numeric(),
-    "Andel %" = numeric(), "Kvällar" = integer(),
+    "Andel %" = numeric(), "Kv\u00e4llar" = integer(),
     "Alkoholfria dagar" = integer()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
