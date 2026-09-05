@@ -1076,6 +1076,50 @@ test_that("the alcohol lines have their own opt-out, not the context one", {
   )
 })
 
+test_that("the notification helper always answers with a character vector", {
+  f <- alcohol_fixture()
+
+  # Two lines on a Monday after a logged evening, one on other days.
+  some <- traning:::.alcohol_notification_lines(f$health_daily, NULL,
+                                                 f$on_date, f$alcohol)
+  expect_type(some, "character")
+  expect_gte(length(some), 1)
+
+  # Nothing at all on a dry morning. This is the common path, and it
+  # used to return NULL because c(NULL, NULL) is NULL.
+  dry <- traning:::.alcohol_notification_lines(f$health_daily, NULL,
+                                                f$on_date - 1, f$alcohol)
+  expect_false(is.null(dry))
+  expect_type(dry, "character")
+  expect_length(dry, 0)
+
+  # And with no table at all.
+  none <- traning:::.alcohol_notification_lines(
+    f$health_daily, NULL, f$on_date, traning:::.empty_alcohol_nights())
+  expect_type(none, "character")
+  expect_length(none, 0)
+})
+
+test_that("prosa is a single string even when there is nothing to say", {
+  # The branch that runs when no readiness verdict can be computed.
+  # paste(character(0), collapse = " ") is "", not character(0), so this
+  # already held; the test pins it because the branch is the one that
+  # feeds the notification pipeline directly.
+  hd <- tibble::tibble(date = as.Date("2026-09-06"),
+                       metric = "active_energy", value = 3300,
+                       source = "AW")
+  td <- traning_data(summaries = data.frame(sessionStart = as.POSIXct(NA)),
+                     health_daily = hd)
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+
+  out <- health_insight_readiness(td, on_date = as.Date("2026-09-06"))
+  expect_type(out$prosa, "character")
+  expect_length(out$prosa, 1)
+  expect_equal(out$prosa, "")
+  expect_true(is.na(out$status))
+})
+
 test_that("the alcohol line survives a morning with no readiness verdict", {
   # The watch uploaded nothing, so there is no HRV, no sleep and no
   # readiness row. The energy account needs none of them, and this is

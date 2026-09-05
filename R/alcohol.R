@@ -1234,7 +1234,9 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #' @param summaries Session summaries, or NULL.
 #' @param on_date Date being rendered.
 #' @param alcohol Optional night table; defaults to the cached one.
-#' @return Character vector of zero, one or two lines.
+#' @return Character vector of zero, one or two lines. Always a
+#'   character vector, never NULL, so callers can concatenate or measure
+#'   it without a type check.
 #' @keywords internal
 .alcohol_notification_lines <- function(health_daily, summaries, on_date,
                                          alcohol = NULL) {
@@ -1260,7 +1262,16 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
                           summaries = summaries),
     error = function(e) NULL
   )
-  c(daily, weekly)
+  # Built up from character(), not c(daily, weekly): both lines are NULL
+  # on any dry morning, and c(NULL, NULL) is NULL, so the function
+  # promised a character vector and returned NULL on its most common
+  # path. Harmless where the result is only concatenated, but every
+  # other exit here is a character vector and a caller should not have
+  # to know which day it is to know the type.
+  out <- character()
+  if (!is.null(daily)) out <- c(out, daily)
+  if (!is.null(weekly)) out <- c(out, weekly)
+  out
 }
 
 #' Format a kcal figure for Swedish prose
