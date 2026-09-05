@@ -566,3 +566,58 @@ test_that("the reports degrade to an empty table without alcohol data", {
   expect_equal(nrow(report_alcohol(td, alcohol = empty)), 0)
   expect_equal(nrow(report_alcohol_weekly(td, alcohol = empty)), 0)
 })
+
+
+# --- Wiring into the health import -------------------------------------------
+
+test_that("a health import refreshes the alcohol table beside its cache", {
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  canonical <- file.path(tmp_data, "kristian", "health_export", "canonical")
+  dir.create(file.path(canonical, "alcohol_consumption"), recursive = TRUE)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  writeLines(
+    '{"metric": "alcohol_consumption", "date": "2026-09-05", "units": "count", "samples": [{"source": "DrinkControl", "qty": 6, "date": "2026-09-05 18:44:00 +0200"}]}',
+    file.path(canonical, "alcohol_consumption", "2026-09-05.json"))
+
+  cache <- file.path(tmp_data, "cache", "health_daily.RData")
+  suppressMessages(import_health_export(cache_path = cache, verbose = FALSE))
+
+  alcohol_cache <- file.path(tmp_data, "cache", "alcohol_nights.RData")
+  expect_true(file.exists(alcohol_cache))
+  nights <- load_alcohol_data(alcohol_cache)
+  expect_equal(nights$alcohol_night_units[nights$date == as.Date("2026-09-06")],
+               6)
+
+  # The daily total also reaches health_daily, since the metric is now
+  # whitelisted in .import_metrics.
+  health <- load_health_data(cache)
+  expect_true("alcohol_consumption" %in% health$metric)
+})
+
+test_that("a corrupt canonical file leaves the alcohol rebuild standing", {
+  tmp_data <- withr::local_tempdir()
+  withr::local_envvar(TRANING_DATA = tmp_data)
+  dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
+  canonical <- file.path(tmp_data, "kristian", "health_export", "canonical")
+  dir.create(file.path(canonical, "alcohol_consumption"), recursive = TRUE)
+  writeLines("{ not json",
+             file.path(canonical, "alcohol_consumption", "2026-09-05.json"))
+  writeLines(
+    '{"metric": "alcohol_consumption", "date": "2026-09-06", "units": "count", "samples": [{"source": "DrinkControl", "qty": 3, "date": "2026-09-06 20:00:00 +0200"}]}',
+    file.path(canonical, "alcohol_consumption", "2026-09-06.json"))
+
+  # The unreadable file is skipped, the readable one still lands.
+  out <- import_alcohol(save = FALSE, verbose = FALSE)
+  expect_equal(out$alcohol_night_units[out$date == as.Date("2026-09-07")], 3)
+
+  # And the refresh helper swallows any failure rather than taking the
+  # health import down with it: the alcohol table is derived
+  # convenience, health_daily.RData is not.
+  blocker <- file.path(tmp_data, "blocker")
+  writeLines("not a directory", blocker)
+  # The failing write warns on its way out; that noise is the induced
+  # failure itself, not a latent problem.
+  expect_false(suppressWarnings(traning:::.refresh_alcohol_cache(
+    file.path(blocker, "cache", "health_daily.RData"), verbose = FALSE)))
+})
