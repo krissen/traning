@@ -746,13 +746,18 @@ def get_alcohol(
     absent rather than reported as zero, and an inactive period returns no
     rows at all.
 
-    Daily columns: `Glas` (drinks as DrinkControl counts them, one unit =
-    10 g ethanol), `Standardglas` (Swedish standard drinks, grams / 12),
-    `Gram` (grams of ethanol), `kcal` (ethanol energy at 7 kcal/g, taken
-    from DrinkControl's own energy record; `Beräknad kcal` is true when it
-    had to be derived from the count instead), `Andel %` (share of the 28-day
-    mean daily energy expenditure), and the next morning's deviation from the
-    alcohol-free baseline for HRV, resting heart rate (`VP avvik`) and
+    Daily columns: `Glas` (drinks as DrinkControl counts them, in whatever
+    standard-drink size the app is configured for; in this installation
+    that works out at 10 g of ethanol), `Gram` (grams of ethanol, derived
+    from DrinkControl's own energy record rather than from the count, so
+    it does not depend on that setting), `Standardglas` (Swedish standard
+    drinks, grams / 12), `kcal` (ethanol energy at 7 kcal/g; `Beräknad
+    kcal` is true when it had to be derived from the count instead),
+    `Avvikande enhet` (true when grams per drink has drifted from the
+    expected setting, which means the figures on that night rest on a
+    different definition), `Andel %` (share of the 28-day mean daily
+    energy expenditure), and the next morning's deviation from the
+    alcohol-free baseline for resting heart rate (`VP avvik`), HRV and
     sleep. A deviation column is empty when there is no reading or no
     baseline yet.
 
@@ -981,7 +986,10 @@ _HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
     "running_vertical_oscillation": ("Running", "Vertical oscillation (cm)"),
     # Lifestyle
     "alcohol_consumption":    ("Lifestyle", (
-        "Alcohol, as counted by DrinkControl (one unit = 10 g ethanol). "
+        "Alcohol, as counted by DrinkControl, in the standard-drink size "
+        "the app is configured for (10 g of ethanol in this installation; "
+        "the app offers 8 to 14 g by jurisdiction). Grams of ethanol are "
+        "derived from the app's energy record, not from this count. "
         "Use get_alcohol for energy and next-morning comparison"
     )),
     # Sleep
