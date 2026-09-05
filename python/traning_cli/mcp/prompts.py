@@ -23,12 +23,17 @@ def veckoutvardering(weeks_back: int = 1) -> str:
         f"Gör en veckoutvärdering (senaste {weeks_back} veckor):\n\n"
         f"1. Hämta pass med get_sessions(after='-{weeks_back}w')\n"
         f"2. Hämta belastning med get_training_load(metric='pmc', after='-{weeks_back}w')\n"
-        f"3. Hämta zondistribution med get_zones(after='-{max(weeks_back * 4, 4)}w')\n\n"
+        f"3. Hämta zondistribution med get_zones(after='-{max(weeks_back * 4, 4)}w')\n"
+        f"4. Hämta alkohol med get_alcohol(after='-{weeks_back}w', weekly=True)\n\n"
         "Analysera:\n"
         "- Total veckovolym (km) och jämför med föregående vecka\n"
         "- Intensitetsbalans (Z1/Z2/Z3-fördelning)\n"
         "- Monotoni (variation i daglig belastning)\n"
         "- ACWR-trend (belastningsförändring)\n"
+        "- Alkoholens energibidrag, men BARA om get_alcohol gav rader:\n"
+        "  redovisa kcal och andel av veckans förbrukning, och nämn\n"
+        "  avvikelser mot alkoholfria nätter bara när de finns. Inga\n"
+        "  riskgränser, inga rekommendationer, ingen värdering.\n"
         "- Ge konkreta förslag för kommande vecka\n"
     )
 
