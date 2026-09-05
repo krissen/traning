@@ -1,0 +1,406 @@
+# Alcohol: import-time derivation, energy accounting, alcohol-free
+# baseline and the Swedish prose lines that surface them.
+#
+# Why a module of its own, and why the derived values are computed at
+# import rather than at query time:
+#
+#   * .parse_metric() truncates every sample timestamp to a date
+#     (R/health_export.R). The clock time survives only in the canonical
+#     JSON, so night attribution — a drink at 23:30 belongs to the night
+#     that ends the following morning — is simply not computable from
+#     health_daily.RData.
+#   * Per-sample `source` survives only in canonical too. For a sum
+#     metric, read_canonical_file() returns the precomputed daily total
+#     tagged with the FIRST sample's source. dietary_energy is written by
+#     DrinkControl today, but the day a food-logging app is added, the
+#     cached daily value becomes food plus alcohol with no way to
+#     separate them. Filtering on source has to happen while the samples
+#     are still individually visible.
+#
+# Everything that is a parameter choice (baseline window, share window,
+# grams per standard unit) stays at query time so tuning it does not
+# require a reimport.
+
+# --- Constants ---------------------------------------------------------------
+
+# Grams of ethanol in one DrinkControl "count". The app is configured for
+# the WHO ten-gram unit; if that setting is ever changed the constant
+# moves with it, which is why it is an option rather than a literal.
+.alcohol_g_per_unit <- 10
+
+# Grams of ethanol in one Swedish standardglas. Fixed by definition.
+.alcohol_g_per_standardglas <- 12
+
+# Energy density of ethanol, kcal per gram. Used only for the fallback
+# path, when DrinkControl wrote a count but no dietary_energy sample.
+.alcohol_kcal_per_g <- 7.1
+
+# The only source whose dietary_energy samples are alcohol energy.
+.alcohol_energy_source <- "DrinkControl"
+
+# Clock hour that splits one drinking night from the next. Noon rather
+# than midnight so that a drink logged at 01:00 counts towards the night
+# that is already under way, not the one that follows it.
+.alcohol_night_start_hour <- 12L
+
+# Absence of a sample is only informative inside a stretch where logging
+# is demonstrably happening. Outside it, "no drinks" and "forgot to log"
+# are indistinguishable and the night is excluded rather than counted
+# as a zero.
+.alcohol_active_window_days <- 10L
+
+#' Grams of ethanol per logged unit (configurable)
+#'
+#' @return Numeric scalar; \code{getOption("traning.alcohol_g_per_unit")}
+#'   when set, otherwise 10.
+#' @keywords internal
+.alcohol_grams_per_unit <- function() {
+  g <- getOption("traning.alcohol_g_per_unit", .alcohol_g_per_unit)
+  if (!is.numeric(g) || length(g) != 1L || !is.finite(g) || g <= 0) {
+    return(.alcohol_g_per_unit)
+  }
+  g
+}
+
+# --- Paths -------------------------------------------------------------------
+
+#' Resolve the alcohol night-table cache path
+#'
+#' Lives beside health_daily.RData so a caller that redirects the health
+#' cache (tests, an alternate data root) redirects this one too.
+#'
+#' @param health_cache_path Optional path to health_daily.RData.
+#' @return Character path to alcohol_nights.RData.
+#' @keywords internal
+.alcohol_cache_path <- function(health_cache_path = NULL) {
+  if (is.null(health_cache_path)) health_cache_path <- .hae_cache_path()
+  file.path(dirname(health_cache_path), "alcohol_nights.RData")
+}
+
+#' Empty alcohol night table with the canonical column set
+#' @keywords internal
+.empty_alcohol_nights <- function() {
+  tibble::tibble(
+    date                    = as.Date(character()),
+    alcohol_units           = numeric(),
+    alcohol_night_units     = numeric(),
+    alcohol_kcal            = numeric(),
+    alcohol_last_sample_time = as.POSIXct(character(), tz = "UTC"),
+    alcohol_logging_active  = logical()
+  )
+}
+
+# --- Timestamp parsing -------------------------------------------------------
+
+#' Parse a HAE canonical sample timestamp as wall-clock time
+#'
+#' Canonical samples carry strings like
+#' \code{"2026-09-05 18:44:00 +0200"}. The UTC offset is deliberately
+#' discarded: night attribution is a statement about the clock on the
+#' wall when the drink was logged, and converting to UTC would push an
+#' early-afternoon summer drink across the noon boundary into the wrong
+#' night. The result is therefore a POSIXct in UTC that *represents*
+#' local wall-clock time, never an instant.
+#'
+#' @param x Character vector of timestamps.
+#' @return POSIXct vector (tz UTC), NA where unparseable.
+#' @keywords internal
+.parse_hae_timestamp <- function(x) {
+  x <- as.character(x)
+  x <- sub("T", " ", x, fixed = TRUE)
+  # Date-only strings ("2026-09-05") get midnight so they still land on
+  # a night rather than dropping out as NA.
+  short <- !is.na(x) & nchar(x) <= 10L
+  x[short] <- paste0(x[short], " 00:00:00")
+  as.POSIXct(substr(x, 1, 19), format = "%Y-%m-%d %H:%M:%S", tz = "UTC")
+}
+
+#' Morning date a timestamp's night is attributed to
+#'
+#' A sample at or after \code{night_start_hour} belongs to the night that
+#' ends the next morning; anything earlier belongs to the night that
+#' ended this morning.
+#'
+#' @param ts POSIXct vector (wall clock, see \code{.parse_hae_timestamp}).
+#' @param night_start_hour Integer hour of the split. Default 12.
+#' @return Date vector.
+#' @keywords internal
+.alcohol_night_date <- function(ts, night_start_hour = .alcohol_night_start_hour) {
+  d <- as.Date(ts)
+  hr <- as.integer(format(ts, "%H"))
+  d + as.integer(hr >= as.integer(night_start_hour))
+}
+
+# --- Canonical readers -------------------------------------------------------
+
+#' Read per-sample rows from a canonical metric directory
+#'
+#' Bypasses \code{read_canonical_file()} on purpose: that function
+#' collapses a sum metric to one daily total and drops the clock time and
+#' the per-sample source, both of which the alcohol derivation needs.
+#'
+#' @param dir Path to \code{canonical/<metric>/}.
+#' @return Tibble with \code{ts} (POSIXct), \code{qty}, \code{source},
+#'   \code{units}. Empty tibble when the directory is absent or empty.
+#' @keywords internal
+.read_canonical_samples <- function(dir) {
+  empty <- tibble::tibble(ts = as.POSIXct(character(), tz = "UTC"),
+                          qty = numeric(), source = character(),
+                          units = character())
+  if (is.null(dir) || !dir.exists(dir)) return(empty)
+  files <- list.files(dir, pattern = "\\.json$", full.names = TRUE)
+  if (length(files) == 0) return(empty)
+
+  rows <- lapply(files, function(f) {
+    raw <- tryCatch(jsonlite::fromJSON(f, simplifyVector = FALSE),
+                    error = function(e) NULL)
+    if (is.null(raw) || length(raw$samples) == 0) return(NULL)
+    units <- .coalesce_scalar(raw$units, NA_character_)
+    parts <- lapply(raw$samples, function(s) {
+      qty <- suppressWarnings(as.numeric(.coalesce_scalar(s$qty, NA_real_)))
+      tibble::tibble(
+        ts     = .parse_hae_timestamp(.coalesce_scalar(s$date, NA_character_)),
+        qty    = qty,
+        source = as.character(.coalesce_scalar(s$source, NA_character_)),
+        units  = as.character(units)
+      )
+    })
+    dplyr::bind_rows(parts)
+  })
+  out <- dplyr::bind_rows(rows)
+  if (nrow(out) == 0) return(empty)
+  out[!is.na(out$ts) & !is.na(out$qty), , drop = FALSE]
+}
+
+#' Convert a dietary_energy quantity to kcal
+#'
+#' HAE reports the metric in kJ on this device, but the units field is
+#' honoured rather than assumed: a device switched to kcal must not have
+#' its numbers divided by 4.184 a second time.
+#'
+#' @param qty Numeric vector.
+#' @param units Character vector of unit strings.
+#' @return Numeric vector of kcal.
+#' @keywords internal
+.energy_to_kcal <- function(qty, units) {
+  u <- tolower(trimws(as.character(units)))
+  dplyr::if_else(u %in% c("kcal", "cal", "kalorier"), qty, qty / 4.184)
+}
+
+# --- Night table -------------------------------------------------------------
+
+#' Build the per-night alcohol table
+#'
+#' One row per calendar date over the span the logging covers. The date
+#' is the morning a night is attributed to, so
+#' \code{alcohol_night_units} on 2026-09-06 counts the drinks logged
+#' between noon on the 5th and noon on the 6th.
+#'
+#' \code{alcohol_units} is the plain calendar-day total, kept because it
+#' is what any per-day metric view (report_metric, Shiny, MCP) will show
+#' and the two must not silently disagree.
+#'
+#' @param samples Tibble of alcohol_consumption samples
+#'   (\code{ts}, \code{qty}, \code{source}, \code{units}).
+#' @param energy Tibble of dietary_energy samples, same shape. Filtered
+#'   to \code{.alcohol_energy_source} inside this function.
+#' @param night_start_hour Hour splitting one night from the next.
+#' @param active_window_days Half-width, in days, of the window that
+#'   makes an absent sample count as a genuine zero.
+#' @return Tibble; see \code{.empty_alcohol_nights()} for the columns.
+#' @export
+build_alcohol_nights <- function(samples, energy = NULL,
+                                  night_start_hour = .alcohol_night_start_hour,
+                                  active_window_days = .alcohol_active_window_days) {
+  if (is.null(samples) || nrow(samples) == 0) return(.empty_alcohol_nights())
+  samples <- samples[!is.na(samples$ts) & !is.na(samples$qty), , drop = FALSE]
+  if (nrow(samples) == 0) return(.empty_alcohol_nights())
+
+  samples$cal_date <- as.Date(samples$ts)
+  samples$night <- .alcohol_night_date(samples$ts, night_start_hour)
+
+  sample_dates <- sort(unique(samples$cal_date))
+  spine <- tibble::tibble(
+    date = seq(min(sample_dates) - active_window_days,
+               max(sample_dates) + active_window_days + 1L,
+               by = "day")
+  )
+
+  by_day <- samples |>
+    dplyr::group_by(date = .data$cal_date) |>
+    dplyr::summarise(alcohol_units = sum(.data$qty, na.rm = TRUE),
+                     .groups = "drop")
+
+  by_night <- samples |>
+    dplyr::group_by(date = .data$night) |>
+    dplyr::summarise(
+      alcohol_night_units = sum(.data$qty, na.rm = TRUE),
+      alcohol_last_sample_time = max(.data$ts, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # Energy: DrinkControl's own arithmetic on its own unit definition, so
+  # it cannot drift out of step with the count the way a constant on this
+  # side would the moment the app's standard-drink setting changes.
+  kcal_by_night <- NULL
+  if (!is.null(energy) && nrow(energy) > 0) {
+    e <- energy[!is.na(energy$ts) & !is.na(energy$qty), , drop = FALSE]
+    e <- e[!is.na(e$source) & e$source == .alcohol_energy_source, , drop = FALSE]
+    if (nrow(e) > 0) {
+      e$night <- .alcohol_night_date(e$ts, night_start_hour)
+      e$kcal <- .energy_to_kcal(e$qty, e$units)
+      kcal_by_night <- e |>
+        dplyr::group_by(date = .data$night) |>
+        dplyr::summarise(alcohol_kcal = sum(.data$kcal, na.rm = TRUE),
+                         .groups = "drop")
+    }
+  }
+
+  out <- spine |>
+    dplyr::left_join(by_day, by = "date") |>
+    dplyr::left_join(by_night, by = "date")
+  if (!is.null(kcal_by_night)) {
+    out <- dplyr::left_join(out, kcal_by_night, by = "date")
+  } else {
+    out$alcohol_kcal <- NA_real_
+  }
+
+  # Inside the logging-active window an absent sample means zero drinks.
+  # Outside it, the value stays NA — see the note on the constant.
+  sample_days <- as.numeric(sample_dates)
+  active <- vapply(as.numeric(out$date), function(d) {
+    any(abs(sample_days - d) <= active_window_days)
+  }, logical(1))
+  out$alcohol_logging_active <- active
+
+  out$alcohol_units <- dplyr::if_else(
+    active & is.na(out$alcohol_units), 0, out$alcohol_units)
+  out$alcohol_night_units <- dplyr::if_else(
+    active & is.na(out$alcohol_night_units), 0, out$alcohol_night_units)
+  # A dry night has no energy to report, and 0 kcal is the honest value
+  # there; a night with drinks but no app energy stays NA so the fallback
+  # path can be flagged as computed rather than measured.
+  out$alcohol_kcal <- dplyr::if_else(
+    !is.na(out$alcohol_night_units) & out$alcohol_night_units == 0 &
+      is.na(out$alcohol_kcal),
+    0, out$alcohol_kcal)
+
+  out |>
+    dplyr::select("date", "alcohol_units", "alcohol_night_units",
+                  "alcohol_kcal", "alcohol_last_sample_time",
+                  "alcohol_logging_active") |>
+    dplyr::arrange(.data$date)
+}
+
+# --- Cache I/O ---------------------------------------------------------------
+
+#' Load the cached alcohol night table
+#'
+#' @param cache_path Path to alcohol_nights.RData. Defaults to the file
+#'   beside the health cache.
+#' @return Tibble; empty (with the right columns) when no cache exists or
+#'   TRANING_DATA is unset.
+#' @export
+load_alcohol_data <- function(cache_path = NULL) {
+  if (is.null(cache_path)) {
+    cache_path <- tryCatch(.alcohol_cache_path(), error = function(e) NULL)
+  }
+  if (is.null(cache_path) || !file.exists(cache_path)) {
+    return(.empty_alcohol_nights())
+  }
+  alcohol_nights <- NULL
+  loaded <- tryCatch({
+    load(cache_path)
+    alcohol_nights
+  }, error = function(e) NULL)
+  if (is.null(loaded) || !is.data.frame(loaded)) return(.empty_alcohol_nights())
+  tibble::as_tibble(loaded)
+}
+
+#' Save the alcohol night table to cache
+#'
+#' @param alcohol_nights Tibble from \code{build_alcohol_nights()}.
+#' @param cache_path Path to alcohol_nights.RData.
+#' @return The path, invisibly.
+#' @export
+save_alcohol_data <- function(alcohol_nights, cache_path = NULL) {
+  if (is.null(cache_path)) cache_path <- .alcohol_cache_path()
+  cache_dir <- dirname(cache_path)
+  if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
+  save_atomic(alcohol_nights, file = cache_path)
+}
+
+#' Rebuild the alcohol night table from canonical files
+#'
+#' Reads \code{canonical/alcohol_consumption/} and
+#' \code{canonical/dietary_energy/} directly, so it sees the clock times
+#' and per-sample sources that the health cache has thrown away.
+#' Rebuilding is a full sweep rather than an incremental merge: the
+#' derived values depend on neighbouring days (night attribution across
+#' midnight, the logging-active window), so a partial update would leave
+#' the table internally inconsistent.
+#'
+#' @param save Logical, write the cache. Default TRUE.
+#' @param cache_path Path to alcohol_nights.RData. Default: beside the
+#'   health cache.
+#' @param canonical_dir Path to the canonical directory. Default:
+#'   \code{$TRANING_DATA/kristian/health_export/canonical}.
+#' @param verbose Logical, print progress. Default TRUE.
+#' @return The night table, invisibly.
+#' @export
+import_alcohol <- function(save = TRUE, cache_path = NULL,
+                            canonical_dir = NULL, verbose = TRUE) {
+  if (is.null(canonical_dir)) {
+    canonical_dir <- tryCatch(file.path(.hae_dir(), "canonical"),
+                              error = function(e) NULL)
+  }
+  if (is.null(canonical_dir) || !dir.exists(canonical_dir)) {
+    if (verbose) cat("Ingen canonical-katalog — hoppar over alkoholimport\n")
+    return(invisible(.empty_alcohol_nights()))
+  }
+
+  samples <- .read_canonical_samples(
+    file.path(canonical_dir, "alcohol_consumption"))
+  if (nrow(samples) == 0) {
+    if (verbose) cat("Inga alkoholsamples i canonical/\n")
+    return(invisible(.empty_alcohol_nights()))
+  }
+  energy <- .read_canonical_samples(file.path(canonical_dir, "dietary_energy"))
+
+  nights <- build_alcohol_nights(samples, energy)
+
+  if (verbose) {
+    logged <- sum(nights$alcohol_night_units > 0, na.rm = TRUE)
+    cat("Alkohol:", nrow(samples), "samples,", nrow(nights), "dygn,",
+        logged, "natter med registrerad alkohol\n")
+  }
+  if (save) {
+    path <- if (is.null(cache_path)) .alcohol_cache_path() else cache_path
+    save_alcohol_data(nights, path)
+    if (verbose) cat("Sparad:", path, "\n")
+  }
+  invisible(nights)
+}
+
+#' Refresh the alcohol cache after a health import
+#'
+#' Failure here must never take the health import down with it: the
+#' alcohol table is a derived convenience, health_daily.RData is not.
+#'
+#' @param health_cache_path Path to health_daily.RData, used to place the
+#'   alcohol cache beside it.
+#' @param verbose Logical.
+#' @return TRUE when the table was rebuilt, FALSE otherwise.
+#' @keywords internal
+.refresh_alcohol_cache <- function(health_cache_path = NULL, verbose = FALSE) {
+  res <- tryCatch({
+    import_alcohol(save = TRUE,
+                   cache_path = .alcohol_cache_path(health_cache_path),
+                   verbose = verbose)
+    TRUE
+  }, error = function(e) {
+    if (verbose) cat("Alkoholtabellen kunde inte byggas:", conditionMessage(e), "\n")
+    FALSE
+  })
+  isTRUE(res)
+}

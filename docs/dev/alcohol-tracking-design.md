@@ -39,14 +39,41 @@ DrinkControl writes a second record at the same timestamp:
 ### DrinkControl's unit and its energy
 
 DrinkControl is configured for **10 g of ethanol per drink**, the WHO
-unit. At an ethanol energy density of about 7.1 kcal/g [source pending],
-10 g gives 71 kcal, which matches the observed 70.4 within rounding.
+unit. DrinkControl's support pages (retrieved 2026-09-05) define the
+standard drink per jurisdiction and give 10 g for the World Health
+Organization, Australia, Ireland, Italy, Poland, Spain and Germany, 14 g
+for the United States, about 8 g for the United Kingdom and 13.45 g for
+Canada. Sweden is not among the options.
 
-The energy DrinkControl writes is therefore **ethanol energy, not total
-beverage energy**. A 50 cl beer at 5.2 % holds about 20.5 g of ethanol,
-so 2.05 WHO units, and carries roughly 215 kcal in total, which is about
-105 kcal per unit [source pending]. The observed 70.4 sits well below
-that and matches ethanol alone.
+The energy density of ethanol is **7 kcal/g**, the conversion factor for
+alcohol set in Annex XIV of Regulation (EU) No 1169/2011, which is the
+binding factor for nutrition labelling in Sweden. DrinkControl uses the
+same value in its own documentation: "One gram of ethyl alcohol yields
+seven Calories". Ten grams therefore gives 70 kcal against the observed
+70.4, a 0.6 % difference.
+
+An earlier draft of this document used 7.1 kcal/g. That figure is a
+physiological-net value with no standing in EU labelling law, and it is
+not the value DrinkControl computes with. The constant is 7 throughout
+this document, including in the fallback in decision 1.
+
+The energy DrinkControl writes is **ethanol energy, not total beverage
+energy**, which the app states directly: it reports alcohol calories and
+excludes calories from other beverage components, on the grounds that
+those vary too much between products.
+
+The arithmetic confirms this. A 50 cl beer at 5.2 % holds about 20.5 g
+of ethanol, so 2.05 WHO units. Systembolaget publishes 47 kcal per 10 cl
+for a 5.6 % strong beer; of that, 31 kcal is ethanol by the EU factor,
+leaving about 16 kcal per 10 cl of residual carbohydrate. Applying the
+same residual to a 5.2 % beer gives roughly 225 kcal for 50 cl, about
+110 kcal per WHO unit. The observed 70.4 sits well below that and
+matches ethanol alone.
+
+One caveat on the ethanol-only property: DrinkControl's per-drink-type
+calorie values are user-editable, and its documentation says an edited
+value feeds the figure synced to Apple Health. The property holds until
+someone changes a drink type in the app's settings.
 
 Two units are in play, and conflating them is the easiest way to get
 every figure in this feature wrong:
@@ -65,10 +92,37 @@ inferred at runtime, and a change to it is a migration.
 
 ### What the source does not provide
 
-HealthKit's alcohol record is a bare count. There is **no drink type, no
-volume and no alcohol percentage**, and DrinkControl exports none of
-them even though it holds them internally. This constrains the design
-more than anything else and is the reason for decision 2.
+HealthKit's alcohol record is a bare count. Apple's own definition is
+qualitative: a quantity type measuring "the number of standard alcoholic
+drinks that the user has consumed", where "A standard drink is one beer,
+glass of wine, or mixed drink made with spirits". There is **no drink
+type, no volume and no alcohol percentage** in the type, no gram-ethanol
+equivalence, and DrinkControl exports none of them even though it holds
+them internally. This constrains the design more than anything else and
+is the reason for decision 2.
+
+**Nor is there a drink time.** The alcohol record arrived as a single
+aggregated row for the day, not one row per drink, and the timestamp on
+it is the time the export ran rather than the time anything was drunk.
+The 18:44 in the table above is an export clock reading. Nothing in the
+current feed carries when a drink was actually taken, and it is not yet
+established whether the aggregation happens inside DrinkControl or
+inside Health Auto Export. Logging two drinks several hours apart and
+re-exporting would settle it.
+
+This matters because timing is one of the few things the literature
+identifies as actionable. Grosicki et al. (2026) found that drinking 60
+minutes earlier than usual, compared with 60 minutes later, was
+associated with a 0.87 bpm lower resting heart rate and a 1.5 ms higher
+HRV in females, and with a 1.2 bpm and 3.7 ms difference in 20 to 29
+year olds. That lever cannot be offered from this feed.
+
+Consequence for the data model: `alcohol_last_sample_time` records the
+latest sample timestamp within the night, which under the present feed
+is an export time and not a drink time. It must not be presented to the
+reader as when the drinking stopped, and the noon-to-noon night boundary
+must not be assumed to sort drinks correctly until per-drink timestamps
+are confirmed to exist.
 
 ### Data availability
 
@@ -91,8 +145,9 @@ definition, so it cannot drift out of step with the count the way a
 constant maintained on our side would the moment a setting changes.
 
 Fallback, used only when the energy record is missing for a night:
-`count × 10 g × 7.1 kcal/g`, that is 71 kcal per drink. Output must mark
-this as calculated rather than recorded.
+`count × 10 g × 7 kcal/g`, that is 70 kcal per drink. Output must mark
+this as calculated rather than recorded. The 7 kcal/g factor is from
+Annex XIV of Regulation (EU) No 1169/2011.
 
 ### 2. Estimated total beverage energy is dropped
 
@@ -104,9 +159,14 @@ type.
 This is dropped because the inputs do not exist. Type, volume and
 strength are not exported by any source available to us, so a template
 estimate would have to assume the drink category, and the assumption
-would be the entire content of the answer. The spread from spirits taken
-neat to cider is roughly 1× to 1.6× the ethanol energy [source pending],
-which is wider than the precision such a number would be printed with.
+would be the entire content of the answer. Systembolaget's published
+per-10-cl figures, set against the ethanol energy computed from the EU
+factor, put the spread at roughly 1.0× for spirits and dry wine, where
+essentially all the energy is ethanol, to about 1.5× for strong beer,
+where residual carbohydrate adds about half again. Cider and sweet wine
+are higher still, though by how much is [unverified] because no
+per-item value was extracted for them. Even the verified part of that
+range is wider than the precision such a number would be printed with.
 Presenting a point estimate would be an assumption wearing the clothes
 of a measurement, which is what this feature is explicitly meant to
 avoid.

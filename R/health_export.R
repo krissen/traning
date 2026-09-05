@@ -973,6 +973,12 @@ import_health_export <- function(path = NULL, cache_path = NULL,
       .compute_manifest_to_save(files, path, existing_manifest)
     )
     if (verbose) cat("Manifest uppdaterad\n")
+
+    # Alcohol derivations read the canonical files directly (clock times
+    # and per-sample sources, both lost in health_daily) and are enriched
+    # once here rather than by each consumer. Never fatal: a failure
+    # costs the alcohol table, not the health cache just written.
+    .refresh_alcohol_cache(cache_path, verbose = verbose)
   }
 
   invisible(health_daily)
