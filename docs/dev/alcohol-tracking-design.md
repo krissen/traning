@@ -389,9 +389,16 @@ Two different windows, for two different sentences.
   day's figure. A single day's expenditure is dominated by whether a long
   run happened, so a share against today's total would swing widely for a
   constant number of drinks, and the swing would be about the running.
-- The **weekly** line uses that week's actual summed expenditure. A week
-  averages out session lumpiness, and the reader is asking about that
-  specific week.
+- The **weekly** line uses that week's own expenditure, as the mean of
+  the days present scaled to seven, not their raw sum. A week averages
+  out session lumpiness, and the reader is asking about that specific
+  week, but the numerator covers every night in it while the denominator
+  only covers the days the watch recorded. A raw sum therefore inflated
+  the share by seven over the number of days present: the same drinking
+  read 4,9 percent in a fully worn week and 6,8 percent in one missing
+  two days. Scaling makes imperfect wear cost precision rather than
+  shift the level, and makes this the same kind of quantity as the daily
+  share.
 
 The weekly account is keyed by the **drinking date**, the morning date
 minus one, so it is a week of evenings and matches the word `kvällar`

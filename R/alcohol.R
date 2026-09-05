@@ -781,10 +781,20 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
   energy <- .alcohol_daily_energy(health_daily, summaries,
                                    attr(alcohol, "energy_units"))
   energy$iso_week <- format(energy$date, "%G-W%V")
+  # Mean times seven, not the raw sum. The numerator covers every
+  # logging-active night in the week, up to seven, while the denominator
+  # only covers the days that survived the pool filter, and the floor
+  # lets that be as few as five. A raw sum therefore inflated the share
+  # by 7/n: identical drinking read 4.9 % in a fully worn week and 6.8 %
+  # in one where the watch was off for two days. Scaling to a full week
+  # makes missing days cost precision rather than shift the level, and
+  # makes this the same kind of quantity as the daily share, which
+  # divides by a 28-day mean and is immune to missing days by
+  # construction.
   week_energy <- energy |>
     dplyr::group_by(.data$iso_week) |>
     dplyr::summarise(
-      week_tdee_kcal = sum(.data$tdee_kcal, na.rm = TRUE),
+      week_tdee_kcal = mean(.data$tdee_kcal, na.rm = TRUE) * 7,
       n_days = dplyr::n(),
       .groups = "drop"
     )

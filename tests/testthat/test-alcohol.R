@@ -519,7 +519,10 @@ test_that("the daily and weekly shares use the same expenditure pool", {
   week_with <- compute_alcohol_week(a, hd, summaries)
   week_without <- compute_alcohol_week(a, hd, NULL)
   wk <- "2026-W36"
-  expect_lt(week_with$week_tdee_kcal[week_with$iso_week == wk],
+  # Same direction as the daily figure above: dropping a day that reads
+  # far too low raises the level rather than shrinking the total, since
+  # the weekly denominator is a mean scaled to seven days.
+  expect_gt(week_with$week_tdee_kcal[week_with$iso_week == wk],
             week_without$week_tdee_kcal[week_without$iso_week == wk])
 })
 
@@ -576,6 +579,25 @@ test_that("the Monday recap covers the week that just ended", {
   a <- set_night(a, as.Date("2026-09-07"), units = 4, kcal = 280)  # Sun eve
   line <- traning:::.alcohol_weekly_line(a, fake_health(dates), monday)
   expect_match(line, "1 kväll\\.")
+})
+
+test_that("imperfect wear costs precision, not level, in the weekly share", {
+  # The numerator covers every night in the week; the denominator only
+  # covers the days the watch actually recorded. Divided as a raw sum,
+  # the same drinking read 40 % higher in a week with two days missing.
+  mornings <- seq(as.Date("2026-09-01"), as.Date("2026-09-07"), by = "day")
+  drink_days <- seq(as.Date("2026-08-31"), as.Date("2026-09-06"), by = "day")
+  a <- fake_nights(mornings)
+  a <- set_night(a, as.Date("2026-09-05"), units = 3, kcal = 210)
+  a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
+
+  full <- compute_alcohol_week(a, fake_health(drink_days))
+  # Two days off the wrist, still above the five-day floor.
+  partial <- compute_alcohol_week(a, fake_health(drink_days[1:5]))
+
+  expect_equal(full$kcal, partial$kcal)
+  expect_equal(round(full$share, 4), round(partial$share, 4))
+  expect_equal(round(full$week_tdee_kcal), round(partial$week_tdee_kcal))
 })
 
 test_that("a week with too few expenditure days reports no share", {
