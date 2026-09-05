@@ -514,6 +514,37 @@ test_that("ethanol energy uses 7 kcal per gram, not 7.1", {
   expect_equal(traning:::.alcohol_kcal_per_g, 7)
 })
 
+test_that("a morning one robust SD out does not clear the gate", {
+  # Pins the null branch. At the old threshold of 1 this fired on about
+  # 40 % of ordinary mornings across three measures, which turned the
+  # recovery sentence into an accusation hunting for evidence.
+  expect_equal(traning:::.alcohol_deviation_z, 1.5)
+
+  dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
+  on_date <- as.Date("2026-09-06")
+  hd <- fake_health(dates)
+  # A resting-heart-rate series with a known robust spread: alternating
+  # 47/49 gives a median of 48 and a MAD of 1 * 1.4826.
+  rhr <- hd$metric == "resting_heart_rate"
+  hd$value[rhr] <- rep(c(47, 49), length.out = sum(rhr))
+  a <- fake_nights(dates)
+
+  b <- compute_alcohol_baseline(hd, a, on_date = on_date)
+  spread <- b$rhr$gate_spread
+  expect_true(is.finite(spread))
+
+  one_sd <- hd
+  one_sd$value[rhr & one_sd$date == on_date] <- 48 + spread
+  dev <- compute_alcohol_deviation(one_sd, a, on_date = on_date)
+  expect_equal(round(dev$z[dev$measure == "rhr"], 2), 1)
+  expect_false(dev$flagged[dev$measure == "rhr"])
+
+  two_sd <- hd
+  two_sd$value[rhr & two_sd$date == on_date] <- 48 + 2 * spread
+  dev2 <- compute_alcohol_deviation(two_sd, a, on_date = on_date)
+  expect_true(dev2$flagged[dev2$measure == "rhr"])
+})
+
 test_that("a measure with no reading is dropped, not carried as a placeholder", {
   dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)

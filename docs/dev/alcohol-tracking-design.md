@@ -502,7 +502,12 @@ In priority order.
    resting heart rate are present, name the two that exist and omit the
    third entirely. No placeholder, no question mark, no "saknas".
 5. **The recovery sentence is gated on the signal.** Mention HRV, resting
-   heart rate or sleep only when at least one has moved beyond threshold.
+   heart rate or sleep only when at least one has moved beyond a robust
+   z of 1.5 against the alcohol-free baseline. One robust standard
+   deviation is too low a bar: under the null it fires on about 40 % of
+   mornings across the three measures, and the sentence only ever
+   appears after a drinking evening, so a false flag reads as evidence
+   for the very story the reader is primed to believe.
    Otherwise use the honest-null template above. Without this gate the
    sentence reads as an accusation looking for evidence.
 6. **No imperatives.** No "bör", no training prescription, no
@@ -530,7 +535,7 @@ compute_alcohol_week(alcohol, health_daily = NULL, summaries = NULL,
 compute_alcohol_baseline(health_daily, alcohol, on_date = NULL,
                          window_days = 42, min_nights = 14)
 compute_alcohol_deviation(health_daily, alcohol, on_date = NULL,
-                          baseline = NULL, z_threshold = 1, ...)
+                          baseline = NULL, z_threshold = 1.5, ...)
 
 report_alcohol(data, after = NULL, before = NULL, alcohol = NULL)
 report_alcohol_weekly(data, after = NULL, before = NULL, alcohol = NULL)

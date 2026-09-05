@@ -707,11 +707,26 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 # rather than printed from a thin reference.
 .alcohol_baseline_min_nights <- 14L
 
-# Robust z beyond which a measure is worth a sentence. One robust
-# standard deviation from the alcohol-free median: below that the
-# morning is inside the ordinary spread of ordinary mornings, and
-# saying so would be a sentence hunting for evidence.
-.alcohol_deviation_z <- 1
+# Robust z beyond which a measure is worth a sentence.
+#
+# One robust standard deviation is far too low. Under the null a
+# one-sided z >= 1 fires on 15.9 % of mornings per measure, and with
+# three measures tested independently at least one fires on about 40 %
+# of them (somewhat less in practice, since the three are correlated).
+# The sentence only ever appears after a drinking evening, so every
+# false flag reads as evidence for a causal story the reader is already
+# primed to believe — which is exactly what gating on the signal was
+# supposed to prevent.
+#
+# At 1.5 the per-measure rate is 6.7 % and the family rate about 19 %,
+# roughly one morning in five. One threshold for all three rather than a
+# lower bar for resting heart rate: the effect-size difference is
+# already expressed in the order the measures are named, and a
+# per-measure knob would be a tuning parameter with nothing to tune it
+# against. The spread behind the z is a median absolute deviation from
+# as few as 14 nights, so the denominator is noisy in both directions
+# and a tighter threshold is the cheaper error.
+.alcohol_deviation_z <- 1.5
 
 # Illness thresholds, reused from the tier-1 update thresholds so the
 # two surfaces cannot drift into two readings of "elevated".
@@ -886,7 +901,7 @@ compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
 #' @param baseline Optional precomputed baseline from
 #'   \code{compute_alcohol_baseline()}.
 #' @param z_threshold Robust z beyond which a measure is flagged.
-#'   Default 1.
+#'   Default 1.5.
 #' @param ... Passed to \code{compute_alcohol_baseline()}.
 #' @return Tibble with one row per measure: \code{measure},
 #'   \code{label}, \code{unit}, \code{value}, \code{baseline},
