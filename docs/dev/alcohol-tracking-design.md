@@ -390,7 +390,9 @@ impute, do not substitute a placeholder. Omit the share.
 ## Alcohol-free baseline
 
 The reference for the next-morning comparison, computed per metric over
-HRV, resting heart rate and total sleep.
+resting heart rate, HRV and total sleep, and named in the prose in that
+order: it is descending standardized effect size (Grosicki et al. 2026),
+not habit.
 
 | Parameter | Value | Reason |
 |---|---|---|

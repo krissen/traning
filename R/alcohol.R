@@ -788,11 +788,20 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 
 # The three measures compared against the alcohol-free baseline. `sign`
 # is the direction that counts as adverse: -1 when lower is worse.
+#
+# Order matters: it is the order the measures are named in the prose,
+# and it runs by descending standardized effect size rather than by
+# habit. Grosicki et al. (2026) report 0.61 in females and 0.52 in males
+# for resting heart rate per drink above personal average, against 0.30
+# and 0.26 for HRV. Resting heart rate is the larger and better-resolved
+# signal, so it leads. Sleep duration is last but is a real outcome, not
+# a control: the same cohort found duration declining progressively with
+# intake.
 .alcohol_measures <- list(
-  hrv = list(metric = "heart_rate_variability", label = "HRV",
-             unit = "ms", digits = 0, scale = 1, log = TRUE, sign = -1),
   rhr = list(metric = "resting_heart_rate", label = "vilopuls",
              unit = "slag", digits = 0, scale = 1, log = FALSE, sign = 1),
+  hrv = list(metric = "heart_rate_variability", label = "HRV",
+             unit = "ms", digits = 0, scale = 1, log = TRUE, sign = -1),
   sleep = list(metric = "sleep_totalSleep", label = "sömn",
                unit = "minuter", digits = 0, scale = 60, log = FALSE, sign = -1)
 )
@@ -1049,7 +1058,7 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
     if (length(clauses) > 0) {
       parts <- paste0(parts, " I dag: ", paste(clauses, collapse = ", "), ".")
     } else {
-      present <- dev$label[dev$measure %in% c("hrv", "rhr")]
+      present <- dev$label[dev$measure %in% c("rhr", "hrv")]
       if (length(present) > 0) {
         subject <- paste(present, collapse = " och ")
         parts <- paste0(parts, sprintf(

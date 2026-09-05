@@ -496,6 +496,24 @@ test_that("deviation flags an adverse move and stays quiet on a normal one", {
   expect_gt(loud$delta[loud$measure == "rhr"], 0)
 })
 
+test_that("measures are ordered by standardized effect size", {
+  # Grosicki et al. (2026): resting heart rate 0.61/0.52 per drink above
+  # personal average, HRV 0.30/0.26. Resting heart rate leads.
+  expect_equal(names(traning:::.alcohol_measures), c("rhr", "hrv", "sleep"))
+
+  dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
+  hd <- fake_health(dates)
+  a <- fake_nights(dates)
+  dev <- compute_alcohol_deviation(hd, a, on_date = as.Date("2026-09-06"))
+  expect_equal(dev$measure, c("rhr", "hrv", "sleep"))
+})
+
+test_that("ethanol energy uses 7 kcal per gram, not 7.1", {
+  # EU 1169/2011 and DrinkControl's own documentation both use 7. An
+  # earlier draft used 7.1, which shifts every gram figure by 1.4 %.
+  expect_equal(traning:::.alcohol_kcal_per_g, 7)
+})
+
 test_that("a measure with no reading is dropped, not carried as a placeholder", {
   dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)
@@ -560,6 +578,31 @@ test_that("a flagged measure replaces the null statement", {
   line <- traning:::.insight_alcohol_line(f$alcohol, hd, f$on_date)
   expect_match(line, "HRV 30 ms mot")
   expect_false(grepl("normala niv", line))
+})
+
+test_that("the prose names resting heart rate before HRV", {
+  f <- alcohol_fixture()
+  hd <- f$health_daily
+  set.seed(7)
+  for (m in c("heart_rate_variability", "resting_heart_rate")) {
+    idx <- hd$metric == m
+    hd$value[idx] <- if (m == "heart_rate_variability") {
+      round(stats::rnorm(sum(idx), 52, 4), 1)
+    } else {
+      round(stats::rnorm(sum(idx), 48, 1.5))
+    }
+  }
+  hd$value[hd$metric == "heart_rate_variability" & hd$date == f$on_date] <- 30
+  hd$value[hd$metric == "resting_heart_rate" & hd$date == f$on_date] <- 56
+
+  line <- traning:::.insight_alcohol_line(f$alcohol, hd, f$on_date)
+  expect_lt(regexpr("vilopuls", line, fixed = TRUE),
+            regexpr("HRV", line, fixed = TRUE))
+
+  # And the honest null names them in the same order.
+  null_line <- traning:::.insight_alcohol_line(f$alcohol, f$health_daily,
+                                                f$on_date)
+  expect_match(null_line, "vilopuls och HRV ligger")
 })
 
 test_that("a computed kcal figure is labelled as computed", {
