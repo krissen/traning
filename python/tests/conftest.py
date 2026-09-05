@@ -13,7 +13,10 @@ import sys
 from pathlib import Path
 
 _PYTHON_ROOT = Path(__file__).resolve().parent.parent
-if sys.path and sys.path[0] != str(_PYTHON_ROOT):
+# `not sys.path` matters: guarding on a truthy sys.path meant an empty
+# one skipped the insert entirely, which is the one case where the
+# import would certainly have resolved elsewhere or not at all.
+if not sys.path or sys.path[0] != str(_PYTHON_ROOT):
     sys.path.insert(0, str(_PYTHON_ROOT))
 
 import pytest  # noqa: E402

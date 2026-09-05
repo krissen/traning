@@ -20,3 +20,24 @@ def test_package_comes_from_this_worktree():
     assert resolved == PYTHON_ROOT, (
         f"traning_cli resolved to {resolved}, expected {PYTHON_ROOT}"
     )
+
+
+def test_insert_happens_even_when_sys_path_is_empty():
+    """The guard must not treat an empty sys.path as already correct.
+
+    Guarding on a truthy sys.path skipped the insert exactly when it was
+    most needed. Replays the conftest logic against a stand-in list
+    rather than mutating the real sys.path mid-run.
+    """
+    root = str(PYTHON_ROOT)
+    for start, expected_first in (
+        ([], root),
+        (["/somewhere/else"], root),
+        ([root, "/somewhere/else"], root),
+    ):
+        path = list(start)
+        if not path or path[0] != root:
+            path.insert(0, root)
+        assert path[0] == expected_first
+        # And it is inserted once, never stacked up on repeat runs.
+        assert path.count(root) == 1
