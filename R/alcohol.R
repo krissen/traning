@@ -1198,11 +1198,24 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
     if (length(clauses) > 0) {
       parts <- paste0(parts, " I dag: ", paste(clauses, collapse = ", "), ".")
     } else {
-      present <- dev$label[dev$measure %in% c("rhr", "hrv")]
+      # Every measure that has a reading, in the same order as the
+      # flagged list. Sleep used to be excluded here while appearing in
+      # the flagged clause, so a morning where sleep was measured and
+      # normal said so about the other two and stayed quiet about sleep,
+      # invisibly.
+      present <- dev$label[!is.na(dev$value)]
       if (length(present) > 0) {
-        subject <- paste(present, collapse = " och ")
+        subject <- if (length(present) == 1) present else {
+          paste0(paste(utils::head(present, -1), collapse = ", "), " och ",
+                 utils::tail(present, 1))
+        }
+        # "ligger inte sämre än vanligt", not "ligger på dina normala
+        # nivåer". The gate is one-sided: only adverse moves are
+        # flagged, so a morning with unusually GOOD HRV also lands here,
+        # and calling that normal would be a small untruth in the
+        # direction of the feature's own thesis.
         parts <- paste0(parts, sprintf(
-          " I dag: %s ligger på dina normala nivåer.", subject))
+          " I dag: %s ligger inte sämre än vanligt.", subject))
       }
     }
   }

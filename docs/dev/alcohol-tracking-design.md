@@ -485,13 +485,22 @@ slag högre, HRV 38 ms mot 52 på alkoholfria nätter, sömn 42 minuter
 kortare.
 ```
 
-Daily, alcohol logged and nothing moved — the honest null:
+Daily, alcohol logged and nothing moved — the honest null. Every measure
+with a reading is named, in the same order as the flagged clause:
 
 ```
 I går: 3 glas (2,5 standardglas), 212 kcal från alkoholen. Det motsvarar
-9 procent av din genomsnittliga dygnsförbrukning. I dag: vilopuls och
-HRV ligger på dina normala nivåer.
+9 procent av din genomsnittliga dygnsförbrukning. I dag: vilopuls, HRV
+och sömn ligger inte sämre än vanligt.
 ```
+
+The wording is "ligger inte sämre än vanligt", not "ligger på dina
+normala nivåer". The gate is one-sided: only adverse moves are flagged,
+so a morning with unusually good HRV also lands in this branch, and
+calling that normal would be a small untruth in the direction of the
+feature's own thesis. Flagging both directions was the alternative, and
+was rejected because a "your HRV was unusually good" line after a
+drinking evening reads as encouragement.
 
 The share clause is dropped when the denominator is thin or
 untrustworthy, and the recovery clause when the baseline is. Either can

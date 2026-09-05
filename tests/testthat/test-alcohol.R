@@ -702,7 +702,7 @@ test_that("the daily line is silent outside a logging-active stretch", {
 test_that("an honest null is stated when nothing moved", {
   f <- alcohol_fixture()
   line <- traning:::.insight_alcohol_line(f$alcohol, f$health_daily, f$on_date)
-  expect_match(line, "I dag: .* ligger på dina normala nivåer\\.")
+  expect_match(line, "I dag: .* ligger inte sämre än vanligt\\.")
   expect_false(grepl("\\?", line))
 })
 
@@ -714,7 +714,7 @@ test_that("a flagged measure replaces the null statement", {
   hd$value[hd$metric == "heart_rate_variability" & hd$date == f$on_date] <- 30
   line <- traning:::.insight_alcohol_line(f$alcohol, hd, f$on_date)
   expect_match(line, "HRV 30 ms mot")
-  expect_false(grepl("normala niv", line))
+  expect_false(grepl("inte sämre än vanligt", line))
 })
 
 test_that("the prose names resting heart rate before HRV", {
@@ -739,7 +739,38 @@ test_that("the prose names resting heart rate before HRV", {
   # And the honest null names them in the same order.
   null_line <- traning:::.insight_alcohol_line(f$alcohol, f$health_daily,
                                                 f$on_date)
-  expect_match(null_line, "vilopuls och HRV ligger")
+  expect_match(null_line, "vilopuls, HRV och sömn ligger")
+})
+
+test_that("the honest null names every measure that has a reading", {
+  f <- alcohol_fixture()
+  line <- traning:::.insight_alcohol_line(f$alcohol, f$health_daily,
+                                           f$on_date)
+  expect_match(line, "vilopuls, HRV och sömn ligger inte sämre än vanligt")
+
+  # Drop sleep for that morning: the clause names the two that remain,
+  # with no placeholder for the third.
+  hd <- f$health_daily[!(f$health_daily$metric == "sleep_totalSleep" &
+                           f$health_daily$date == f$on_date), ]
+  two <- traning:::.insight_alcohol_line(f$alcohol, hd, f$on_date)
+  expect_match(two, "vilopuls och HRV ligger inte sämre än vanligt")
+  expect_false(grepl("sömn", two))
+})
+
+test_that("an unusually good morning is not called normal", {
+  # The gate is one-sided, so a morning well ABOVE baseline lands in the
+  # null branch. Saying it is at normal levels would be a small untruth
+  # in the direction of the feature's own thesis.
+  f <- alcohol_fixture()
+  hd <- f$health_daily
+  idx <- hd$metric == "heart_rate_variability"
+  set.seed(13)
+  hd$value[idx] <- round(stats::rnorm(sum(idx), 52, 4), 1)
+  hd$value[idx & hd$date == f$on_date] <- 75
+
+  line <- traning:::.insight_alcohol_line(f$alcohol, hd, f$on_date)
+  expect_match(line, "ligger inte sämre än vanligt")
+  expect_false(grepl("normala nivåer", line))
 })
 
 test_that("a computed kcal figure is labelled as computed", {
