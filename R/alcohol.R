@@ -896,3 +896,181 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   if (nrow(out) == 0) return(empty)
   out
 }
+
+# --- Prose -------------------------------------------------------------------
+
+#' Format a kcal figure for Swedish prose
+#'
+#' Whole kilocalories with a space as thousands separator. False
+#' precision is worse than none here: the input is a self-reported drink
+#' count run through an app's constant.
+#'
+#' @param x Numeric.
+#' @return Character scalar, NA_character_ when x is not finite.
+#' @keywords internal
+.fmt_kcal <- function(x) {
+  if (!is.finite(x)) return(NA_character_)
+  format(round(x), big.mark = " ", trim = TRUE, scientific = FALSE)
+}
+
+#' Render the deviation table as a Swedish clause list
+#'
+#' Only flagged measures are named. Measures without a reading are left
+#' out entirely rather than carried as a placeholder.
+#'
+#' @param dev Tibble from \code{compute_alcohol_deviation()}.
+#' @return Character vector of clauses (possibly empty).
+#' @keywords internal
+.alcohol_deviation_clauses <- function(dev) {
+  if (is.null(dev) || nrow(dev) == 0) return(character())
+  flagged <- dev[!is.na(dev$flagged) & dev$flagged, , drop = FALSE]
+  if (nrow(flagged) == 0) return(character())
+  vapply(seq_len(nrow(flagged)), function(i) {
+    r <- flagged[i, ]
+    if (identical(r$measure, "hrv")) {
+      sprintf("HRV %s ms mot %s på alkoholfria nätter",
+              fmt_dec_sv(r$value, digits = 0, trim_zero = TRUE),
+              fmt_dec_sv(r$baseline, digits = 0, trim_zero = TRUE))
+    } else {
+      direction <- if (identical(r$measure, "sleep")) {
+        if (r$delta < 0) "kortare" else "längre"
+      } else {
+        if (r$delta > 0) "högre" else "lägre"
+      }
+      sprintf("%s %s %s %s", r$label,
+              fmt_dec_sv(abs(r$delta), digits = 0, trim_zero = TRUE),
+              r$unit, direction)
+    }
+  }, character(1))
+}
+
+#' Daily alcohol line for the morning notification
+#'
+#' Energy the morning after a logged evening, plus a recovery comparison
+#' only when at least one measure clears the gate. When nothing moved,
+#' the line says so plainly: an honest null is the most trust-building
+#' output this feature can produce, and a sentence that only ever appears
+#' when something looks bad reads as an accusation hunting for evidence.
+#'
+#' Silent at zero drinks (praise for abstinence is moralising through the
+#' back door, and it would put an alcohol line in the notification every
+#' day of the year) and silent outside a logging-active stretch, where an
+#' absent sample means nothing was logged rather than nothing was drunk.
+#' No imperatives: the moment the text prescribes, it is a scold, and a
+#' scold is a strong reason to stop logging.
+#'
+#' @param alcohol Night table, raw or already through
+#'   \code{compute_alcohol_energy()}.
+#' @param health_daily Long health tibble.
+#' @param on_date Morning to render.
+#' @param summaries Optional session summaries, for the share guard.
+#' @return Character scalar, or NULL when there is nothing to say.
+#' @keywords internal
+.insight_alcohol_line <- function(alcohol, health_daily, on_date,
+                                   summaries = NULL) {
+  if (is.null(alcohol) || nrow(alcohol) == 0) return(NULL)
+  on_date <- as.Date(on_date)
+  if (!"alcohol_share" %in% names(alcohol)) {
+    alcohol <- compute_alcohol_energy(alcohol, health_daily, summaries)
+  }
+  row <- alcohol[!is.na(alcohol$date) & alcohol$date == on_date, , drop = FALSE]
+  if (nrow(row) != 1L) return(NULL)
+  if (!isTRUE(row$alcohol_logging_active)) return(NULL)
+
+  units <- row$alcohol_night_units
+  if (!is.finite(units) || units <= 0) return(NULL)
+
+  glas <- fmt_dec_sv(units, digits = 1, trim_zero = TRUE)
+  standard <- fmt_dec_sv(row$alcohol_standardglas, digits = 1, trim_zero = TRUE)
+  parts <- sprintf("I går: %s glas (%s standardglas)", glas, standard)
+
+  kcal <- row$alcohol_kcal
+  if (is.finite(kcal)) {
+    suffix <- if (isTRUE(row$alcohol_kcal_estimated)) " (beräknat)" else ""
+    parts <- paste0(parts, sprintf(", %s kcal från alkoholen%s.",
+                                   .fmt_kcal(kcal), suffix))
+  } else {
+    parts <- paste0(parts, ".")
+  }
+
+  share <- row$alcohol_share
+  if (is.finite(share)) {
+    parts <- paste0(parts, sprintf(
+      " Det motsvarar %d procent av din genomsnittliga dygnsförbrukning.",
+      as.integer(round(share * 100))))
+  }
+
+  dev <- tryCatch(
+    compute_alcohol_deviation(health_daily, alcohol, on_date = on_date),
+    error = function(e) NULL
+  )
+  if (!is.null(dev) && nrow(dev) > 0) {
+    clauses <- .alcohol_deviation_clauses(dev)
+    if (length(clauses) > 0) {
+      parts <- paste0(parts, " I dag: ", paste(clauses, collapse = ", "), ".")
+    } else {
+      present <- dev$label[dev$measure %in% c("hrv", "rhr")]
+      if (length(present) > 0) {
+        subject <- paste(present, collapse = " och ")
+        parts <- paste0(parts, sprintf(
+          " %s ligger på dina normala nivåer i dag.",
+          .capitalise_first(subject)))
+      }
+    }
+  }
+  parts
+}
+
+#' Upper-case the first character of a string
+#' @keywords internal
+.capitalise_first <- function(x) {
+  if (!nzchar(x)) return(x)
+  # HRV is already upper-case; toupper on the first character is a no-op
+  # there and does the right thing for "vilopuls".
+  paste0(toupper(substr(x, 1, 1)), substr(x, 2, nchar(x)))
+}
+
+#' Weekly alcohol line for the Monday recap
+#'
+#' Reports the week that just ended, alongside the training recap.
+#' Silent when no drinks were logged in it, and silent when the week's
+#' expenditure data is too thin for a share (the kcal and the evening
+#' count still stand on their own).
+#'
+#' @param alcohol Night table.
+#' @param health_daily Long health tibble.
+#' @param on_date Date being rendered; the recap covers the previous week.
+#' @param summaries Optional session summaries.
+#' @return Character scalar, or NULL.
+#' @keywords internal
+.alcohol_weekly_line <- function(alcohol, health_daily, on_date,
+                                  summaries = NULL) {
+  if (is.null(alcohol) || nrow(alcohol) == 0) return(NULL)
+  on_date <- as.Date(on_date)
+  if (as.POSIXlt(on_date)$wday != 1L) return(NULL)
+
+  target <- format(on_date - 7, "%G-W%V")
+  weeks <- tryCatch(
+    compute_alcohol_week(alcohol, health_daily, summaries),
+    error = function(e) NULL
+  )
+  if (is.null(weeks) || nrow(weeks) == 0) return(NULL)
+  w <- weeks[weeks$iso_week == target, , drop = FALSE]
+  if (nrow(w) != 1L) return(NULL)
+  if (!is.finite(w$drinking_days) || w$drinking_days == 0) return(NULL)
+
+  kvall <- if (w$drinking_days == 1) "kväll" else "kvällar"
+  line <- sprintf(
+    "Förra veckan: alkohol stod för %s kcal, fördelat på %d %s.",
+    .fmt_kcal(w$kcal), as.integer(w$drinking_days), kvall)
+  if (is.finite(w$share)) {
+    line <- paste0(line, sprintf(
+      " Det motsvarar %d procent av veckans energiförbrukning.",
+      as.integer(round(w$share * 100))))
+  }
+  if (is.finite(w$dry_days) && w$dry_days > 0) {
+    dag <- if (w$dry_days == 1) "alkoholfri dag" else "alkoholfria dagar"
+    line <- paste0(line, sprintf(" %d %s.", as.integer(w$dry_days), dag))
+  }
+  line
+}
