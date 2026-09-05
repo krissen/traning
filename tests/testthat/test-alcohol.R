@@ -589,6 +589,19 @@ test_that("deviation flags an adverse move and stays quiet on a normal one", {
   expect_gt(loud$delta[loud$measure == "rhr"], 0)
 })
 
+test_that("the thin-baseline return still carries its gate fields", {
+  a <- fake_nights(seq(as.Date("2026-09-01"), as.Date("2026-09-06"),
+                        by = "day"))
+  hd <- fake_health(seq(as.Date("2026-09-01"), as.Date("2026-09-06"),
+                         by = "day"))
+  b <- compute_alcohol_baseline(hd, a, on_date = as.Date("2026-09-06"))
+  expect_lt(b$n_nights, 14)
+  for (nm in names(traning:::.alcohol_measures)) {
+    expect_true(all(c("center", "spread", "n", "gate_center", "gate_spread")
+                    %in% names(b[[nm]])))
+  }
+})
+
 test_that("measures are ordered by standardized effect size", {
   # Grosicki et al. (2026): resting heart rate 0.61/0.52 per drink above
   # personal average, HRV 0.30/0.26. Resting heart rate leads.
@@ -821,6 +834,25 @@ test_that("the alcohol line survives a morning with no readiness verdict", {
 })
 
 # --- Reports -----------------------------------------------------------------
+
+test_that("report_alcohol reports the actual deviation, not NA", {
+  # The deviation columns used to come back silently NA on any R older
+  # than 4.3: vapply() stripped the Date class off the loop variable and
+  # the resulting as.Date(numeric) error was swallowed by a tryCatch.
+  # Column names alone did not catch that, so this pins a value.
+  on_date <- as.Date("2026-09-06")
+  dates <- seq(on_date - 40, on_date, by = "day")
+  hd <- fake_health(dates, rhr = 48)
+  hd$value[hd$metric == "resting_heart_rate" & hd$date == on_date] <- 55
+  a <- set_night(fake_nights(dates), on_date, units = 6, kcal = 422.6)
+  td <- traning_data(summaries = data.frame(sessionStart = as.POSIXct(NA)),
+                     health_daily = hd)
+
+  out <- report_alcohol(td, after = on_date, before = on_date, alcohol = a)
+  expect_equal(nrow(out), 1)
+  expect_equal(out$`VP avvik`, 7)
+  expect_false(is.na(out$`HRV avvik`))
+})
 
 test_that("report_alcohol returns Swedish columns, newest first", {
   f <- alcohol_fixture()

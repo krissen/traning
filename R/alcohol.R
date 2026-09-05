@@ -894,6 +894,11 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 #' @param on_date Date to build the baseline for. Default: latest night.
 #' @param window_days Rolling window length. Default 42.
 #' @param min_nights Qualifying nights required. Default 14.
+#' @param illness_dates Optional precomputed output of
+#'   \code{.alcohol_illness_dates()}. Scanning the whole health series
+#'   for illness is the expensive part of this function and its result
+#'   does not depend on \code{on_date}, so a caller evaluating many
+#'   dates should compute it once and pass it in.
 #' @return List with one entry per measure
 #'   (\code{center}, \code{spread}, \code{n}, on the reported scale) plus
 #'   \code{n_nights} and \code{on_date}. Entries are NA when the window
@@ -901,10 +906,16 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 #' @export
 compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
                                       window_days = .alcohol_baseline_window_days,
-                                      min_nights = .alcohol_baseline_min_nights) {
+                                      min_nights = .alcohol_baseline_min_nights,
+                                      illness_dates = NULL) {
+  # The gate fields belong here too. compute_alcohol_deviation() happens
+  # to test `center` first today, so their absence is unreachable — but
+  # is.finite(NULL) inside && is an error rather than FALSE, so the
+  # omission would become a crash the day the guard order changed.
   empty <- list(on_date = as.Date(NA), n_nights = 0L)
   for (nm in names(.alcohol_measures)) {
-    empty[[nm]] <- list(center = NA_real_, spread = NA_real_, n = 0L)
+    empty[[nm]] <- list(center = NA_real_, spread = NA_real_, n = 0L,
+                        gate_center = NA_real_, gate_spread = NA_real_)
   }
   if (is.null(alcohol) || nrow(alcohol) == 0 ||
       is.null(health_daily) || nrow(health_daily) == 0) {
@@ -920,7 +931,8 @@ compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
       !is.na(alcohol$alcohol_logging_active) & alcohol$alcohol_logging_active &
       alcohol$date < on_date & alcohol$date >= on_date - window_days
   ]
-  dry <- setdiff(as.character(dry), as.character(.alcohol_illness_dates(health_daily)))
+  if (is.null(illness_dates)) illness_dates <- .alcohol_illness_dates(health_daily)
+  dry <- setdiff(as.character(dry), as.character(illness_dates))
   dry <- as.Date(dry)
   if (length(dry) < min_nights) {
     empty$n_nights <- length(dry)
@@ -955,6 +967,8 @@ compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
 #' @param on_date Morning to evaluate.
 #' @param baseline Optional precomputed baseline from
 #'   \code{compute_alcohol_baseline()}.
+#' @param illness_dates Optional precomputed illness dates, passed
+#'   through to \code{compute_alcohol_baseline()}.
 #' @param z_threshold Robust z beyond which a measure is flagged.
 #'   Default 1.5.
 #' @param ... Passed to \code{compute_alcohol_baseline()}.
@@ -966,6 +980,7 @@ compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
 compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
                                        baseline = NULL,
                                        z_threshold = .alcohol_deviation_z,
+                                       illness_dates = NULL,
                                        ...) {
   empty <- tibble::tibble(
     measure = character(), label = character(), unit = character(),
@@ -975,7 +990,8 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   if (is.null(health_daily) || nrow(health_daily) == 0) return(empty)
   if (is.null(baseline)) {
     baseline <- compute_alcohol_baseline(health_daily, alcohol,
-                                          on_date = on_date, ...)
+                                          on_date = on_date,
+                                          illness_dates = illness_dates, ...)
   }
   on_date <- if (is.null(on_date)) baseline$on_date else as.Date(on_date)
   if (is.na(on_date) || baseline$n_nights == 0L) return(empty)
@@ -1301,18 +1317,32 @@ report_alcohol <- function(data, after = NULL, before = NULL,
                            date_col = "date", closed_upper = TRUE)
   if (nrow(a) == 0) return(empty)
 
-  # Deviations are computed per row, and only for the rows that survive
-  # the window filter — each one needs its own trailing baseline.
-  dev_col <- function(measure) {
-    vapply(a$date, function(d) {
-      dv <- tryCatch(
-        compute_alcohol_deviation(health_daily, alcohol, on_date = d),
-        error = function(e) NULL
-      )
-      if (is.null(dv) || nrow(dv) == 0) return(NA_real_)
-      hit <- dv$delta[dv$measure == measure]
-      if (length(hit) == 0) NA_real_ else hit[[1]]
-    }, numeric(1))
+  # One deviation pass per night, not one per night per measure, and one
+  # illness scan for the whole report rather than one per call. The old
+  # shape ran three full baselines per row, each rescanning thirteen
+  # years of wrist-temperature and respiratory-rate history.
+  #
+  # Indexing by position rather than iterating the Date column directly:
+  # vapply() coerces with as.list(), which has no Date method, so the
+  # loop variable arrived as a bare number. On R 4.3+ as.Date.numeric
+  # defaults its origin and it worked by luck; on older R it raised
+  # "origin must be supplied", the tryCatch swallowed it, and every
+  # deviation column came back silently NA.
+  illness <- tryCatch(.alcohol_illness_dates(health_daily),
+                      error = function(e) as.Date(character()))
+  measures <- names(.alcohol_measures)
+  deltas <- matrix(NA_real_, nrow = nrow(a), ncol = length(measures),
+                   dimnames = list(NULL, measures))
+  for (i in seq_along(a$date)) {
+    dv <- tryCatch(
+      compute_alcohol_deviation(health_daily, alcohol,
+                                 on_date = a$date[[i]],
+                                 illness_dates = illness),
+      error = function(e) NULL
+    )
+    if (is.null(dv) || nrow(dv) == 0) next
+    hit <- match(measures, dv$measure)
+    deltas[i, ] <- dv$delta[hit]
   }
 
   out <- tibble::tibble(
@@ -1322,9 +1352,9 @@ report_alcohol <- function(data, after = NULL, before = NULL,
     Gram              = round(a$alcohol_grams, 1),
     kcal              = round(a$alcohol_kcal),
     `Andel %`         = round(a$alcohol_share * 100, 1),
-    `HRV avvik`       = round(dev_col("hrv"), 1),
-    `VP avvik`        = round(dev_col("rhr"), 1),
-    `Sömn avvik`      = round(dev_col("sleep")),
+    `HRV avvik`       = round(unname(deltas[, "hrv"]), 1),
+    `VP avvik`        = round(unname(deltas[, "rhr"]), 1),
+    `Sömn avvik`      = round(unname(deltas[, "sleep"])),
     `Beräknad kcal`   = a$alcohol_kcal_estimated,
     `Avvikande enhet` = a$alcohol_unit_mismatch
   )
