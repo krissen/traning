@@ -464,10 +464,19 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 #' is a partially worn watch, and averaging it in would drag the
 #' denominator down.
 #'
+#' Days where a Garmin session was recorded but the watch reported
+#' rest-level active energy are dropped from the pool entirely. On those
+#' days the watch was not worn for the session, active energy
+#' undercounts, and leaving them in drags every window that contains
+#' them downwards. The coverage floors downstream then handle the case
+#' where too many days drop out.
+#'
 #' @param health_daily Long health tibble.
+#' @param summaries Optional session summaries. Without them no
+#'   contamination check is possible and every day is kept.
 #' @return Tibble with \code{date} and \code{tdee_kcal}, ascending.
 #' @keywords internal
-.alcohol_daily_energy <- function(health_daily) {
+.alcohol_daily_energy <- function(health_daily, summaries = NULL) {
   empty <- tibble::tibble(date = as.Date(character()), tdee_kcal = numeric())
   if (is.null(health_daily) || !is.data.frame(health_daily) ||
       nrow(health_daily) == 0 ||
@@ -498,6 +507,11 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
     dplyr::filter(.data$tdee_kcal >= .alcohol_tdee_plausible_kcal[1],
                   .data$tdee_kcal <= .alcohol_tdee_plausible_kcal[2]) |>
     dplyr::arrange(.data$date)
+
+  if (nrow(out) > 0) {
+    bad <- .alcohol_energy_contaminated(summaries, health_daily, out$date)
+    out <- out[!bad, , drop = FALSE]
+  }
   out
 }
 
@@ -528,13 +542,16 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 
 #' Dates where a Garmin session exists but the watch recorded rest-level energy
 #'
-#' On those days active energy undercounts, the denominator shrinks, and
-#' the alcohol share is inflated on exactly the days most likely to be
-#' read. The share is suppressed rather than printed inflated.
+#' On those days the watch was not worn for the session, so active energy
+#' undercounts. Used to drop the day from the expenditure pool rather
+#' than to suppress a night's output: the denominator is a 28-day mean or
+#' a weekly sum, so one suspect day is one input among many, and
+#' suppressing the output for it would leave the other days in the window
+#' unexamined while hiding a night that is otherwise fine.
 #'
 #' @param summaries Session summaries, or NULL.
 #' @param health_daily Long health tibble.
-#' @param dates Date vector to evaluate.
+#' @param dates Date vector of EXPENDITURE days to evaluate.
 #' @return Logical vector, TRUE where the day is untrustworthy.
 #' @keywords internal
 .alcohol_energy_contaminated <- function(summaries, health_daily, dates) {
@@ -610,14 +627,16 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
   alcohol$alcohol_kcal[needs_fallback] <-
     alcohol$alcohol_grams[needs_fallback] * .alcohol_kcal_per_g
 
-  energy <- .alcohol_daily_energy(health_daily)
+  # Contamination is handled where it does damage, inside the pool that
+  # feeds the mean, not by suppressing the output of a night whose own
+  # date happens to look suspect. The old per-day suppression also keyed
+  # off the morning date while the questionable energy reading sits on
+  # the evening before, so it fired on the wrong day in both directions.
+  energy <- .alcohol_daily_energy(health_daily, summaries)
   alcohol$tdee_kcal_28d <- .alcohol_tdee_baseline(
     energy, alcohol$date, window_days = window_days, min_days = min_days)
 
-  contaminated <- .alcohol_energy_contaminated(summaries, health_daily,
-                                                alcohol$date)
   share <- alcohol$alcohol_kcal / alcohol$tdee_kcal_28d
-  share[contaminated] <- NA_real_
   share[!is.finite(share)] <- NA_real_
   alcohol$alcohol_share <- share
 
@@ -670,7 +689,9 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
   a$drink_date <- a$date - 1L
   a$iso_week <- format(a$drink_date, "%G-W%V")
 
-  energy <- .alcohol_daily_energy(health_daily)
+  # Same pool as the daily share, so the two percentages cannot be
+  # computed under different rules and disagree about the same week.
+  energy <- .alcohol_daily_energy(health_daily, summaries)
   energy$iso_week <- format(energy$date, "%G-W%V")
   week_energy <- energy |>
     dplyr::group_by(.data$iso_week) |>

@@ -750,8 +750,8 @@ def get_alcohol(
     10 g ethanol), `Standardglas` (Swedish standard drinks, grams / 12),
     `Gram` (grams of ethanol), `kcal` (ethanol energy at 7 kcal/g, taken
     from DrinkControl's own energy record; `Beräknad kcal` is true when it
-    had to be derived from the count instead), `Andel %` (share of that
-    day's energy expenditure), and the next morning's deviation from the
+    had to be derived from the count instead), `Andel %` (share of the 28-day
+    mean daily energy expenditure), and the next morning's deviation from the
     alcohol-free baseline for HRV, resting heart rate (`VP avvik`) and
     sleep. A deviation column is empty when there is no reading or no
     baseline yet.

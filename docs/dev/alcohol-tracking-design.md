@@ -387,11 +387,21 @@ computing it from a thin denominator.
 
 **Garmin contamination.** `active_energy` comes from the Apple Watch. On
 a day when a run is recorded by Garmin and the watch is not worn for it,
-active energy undercounts, the denominator shrinks, and the share is
-inflated on exactly the day the reader is most likely to look. Flag days
-where a Garmin session exists but active energy sits at rest-day level,
-and suppress the share on those days rather than printing an inflated
-figure.
+active energy undercounts and the day reads as a low-expenditure day
+that it was not. Days where a Garmin session exists but active energy
+sits at rest-day level are therefore **dropped from the expenditure
+pool**, which is what feeds both the 28-day mean and the weekly sum. The
+coverage floors then handle the case where too many days drop out.
+
+An earlier version of this section said to suppress the share on those
+days. That was written for a same-day denominator and left standing
+after the denominator became a 28-day mean, where one suspect day is one
+input in twenty-eight: suppressing the output hid a night that was
+otherwise fine while leaving the other twenty-seven days unexamined. It
+also keyed the check to the morning date, while the questionable energy
+reading sits on the evening before, so it fired on the wrong day in both
+directions. Reinstate per-night suppression only if a same-day share is
+ever added.
 
 **Missing days.** No wear means no active and no basal figure. Do not
 impute, do not substitute a placeholder. Omit the share.

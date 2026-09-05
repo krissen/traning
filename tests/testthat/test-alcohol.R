@@ -362,27 +362,55 @@ test_that("an implausible daily total is dropped from the denominator", {
   expect_false(as.Date("2026-09-01") %in% e$date)
 })
 
-test_that("the share is suppressed when a Garmin day has rest-level energy", {
+test_that("a contaminated day is dropped from the expenditure pool", {
+  # A Garmin session with rest-level watch energy means the watch was
+  # not worn for it. The day is removed from the pool that feeds the
+  # 28-day mean, rather than suppressing the output of whichever night
+  # happens to share its date.
   dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
   hd <- fake_health(dates)
-  # Give active energy a spread so the 90th percentile is meaningful,
-  # and leave the drinking day at rest level despite a logged session.
+  hd$value[hd$metric == "active_energy"] <- rep(c(3000, 9000),
+                                                 length.out = length(dates))
+  bad_day <- as.Date("2026-09-01")
+  hd$value[hd$metric == "active_energy" & hd$date == bad_day] <- 1500
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2026-09-01 10:00:00", tz = "UTC"))
+
+  pool_all <- traning:::.alcohol_daily_energy(hd, NULL)
+  pool_clean <- traning:::.alcohol_daily_energy(hd, summaries)
+  expect_true(bad_day %in% pool_all$date)
+  expect_false(bad_day %in% pool_clean$date)
+  # Only that day goes; the rest of the window is untouched.
+  expect_equal(nrow(pool_clean), nrow(pool_all) - 1)
+})
+
+test_that("the daily and weekly shares use the same expenditure pool", {
+  dates <- seq(as.Date("2026-08-01"), as.Date("2026-09-06"), by = "day")
+  hd <- fake_health(dates)
   hd$value[hd$metric == "active_energy"] <- rep(c(3000, 9000),
                                                  length.out = length(dates))
   hd$value[hd$metric == "active_energy" &
-             hd$date == as.Date("2026-09-06")] <- 1500
+             hd$date == as.Date("2026-09-01")] <- 1500
+  summaries <- data.frame(
+    sessionStart = as.POSIXct("2026-09-01 10:00:00", tz = "UTC"))
 
   a <- fake_nights(dates)
   a <- set_night(a, as.Date("2026-09-06"), units = 6, kcal = 422.6)
-  summaries <- data.frame(
-    sessionStart = as.POSIXct("2026-09-06 10:00:00", tz = "UTC"))
 
-  with_session <- compute_alcohol_energy(a, hd, summaries)
-  without <- compute_alcohol_energy(a, hd, NULL)
-  expect_true(is.na(with_session$alcohol_share[
-    with_session$date == as.Date("2026-09-06")]))
-  expect_true(is.finite(without$alcohol_share[
-    without$date == as.Date("2026-09-06")]))
+  daily_with <- compute_alcohol_energy(a, hd, summaries)
+  daily_without <- compute_alcohol_energy(a, hd, NULL)
+  row <- daily_with$date == as.Date("2026-09-06")
+  # Dropping a low-energy day raises the mean rather than blanking the
+  # share: the night itself is still reportable.
+  expect_true(is.finite(daily_with$tdee_kcal_28d[row]))
+  expect_gt(daily_with$tdee_kcal_28d[row], daily_without$tdee_kcal_28d[row])
+  expect_true(is.finite(daily_with$alcohol_share[row]))
+
+  week_with <- compute_alcohol_week(a, hd, summaries)
+  week_without <- compute_alcohol_week(a, hd, NULL)
+  wk <- "2026-W36"
+  expect_lt(week_with$week_tdee_kcal[week_with$iso_week == wk],
+            week_without$week_tdee_kcal[week_without$iso_week == wk])
 })
 
 
