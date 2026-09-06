@@ -313,3 +313,17 @@ def test_unwritable_metric_group_does_not_abort_the_push(tmp_path):
 
     doc = _canonical(tmp_path, "alcohol_consumption", "2026-08-29")
     assert doc["daily_total"] == pytest.approx(8.1)
+
+
+def test_changed_files_are_not_repeated_across_inputs(tmp_path):
+    """Two input files covering the same day touch one canonical file."""
+    for i, qty in enumerate([381.40181416333013, 1386.9156878666547]):
+        (tmp_path / f"part{i}.json").write_text(json.dumps(
+            _payload("dietary_energy", "kJ",
+                     [_energy("2026-09-05 18:44:35 +0200", qty, f"beer {i}")])))
+
+    _, _, changed = canonicalize_paths(
+        [tmp_path / "part0.json", tmp_path / "part1.json"], data_dir=tmp_path)
+
+    assert len(changed) == len(set(changed)) == 1
+    assert len(_canonical(tmp_path, "dietary_energy", "2026-09-05")["samples"]) == 2

@@ -486,7 +486,12 @@ def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
         n_metrics += n
         changed.extend(files_changed)
 
-    return n_files, n_metrics, changed
+    # Several input files routinely touch the same canonical day, so the
+    # accumulated list holds repeats. Callers treat it as the set of
+    # files to hand downstream (import, git add), where a repeat is at
+    # best noise and at worst a double count. First occurrence wins, so
+    # the order still follows the input.
+    return n_files, n_metrics, list(dict.fromkeys(changed))
 
 
 def save_workout_push(payload: dict, data_dir: Path | None = None) -> int:
