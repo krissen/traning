@@ -78,8 +78,9 @@ def _canonical_sample_key(sample: dict) -> str:
     one dietary_energy sample per drink and stamps a whole logging
     session with the same second: three drinks logged at 23:50:53
     collapsed to one, taking two thirds of the evening's alcohol with
-    them.  Any per-event metric can do this; the timestamp is when the
-    export ran, not when the event happened.
+    them.  Any per-event metric can do this: the timestamp is when the
+    event was logged, and a whole evening entered in one sitting shares a
+    second.
 
     Two genuinely identical samples in one push (the same beer logged
     twice in the same second, seen 2026-08-28) are indistinguishable by
