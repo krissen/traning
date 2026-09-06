@@ -8,7 +8,10 @@ dietary_energy / alcohol_consumption (DrinkControl), 2026-08-21..09-05.
 import json
 
 import pytest
-from traning_cli.server.storage import save_health_push
+from traning_cli.server.storage import (
+    canonicalize_paths,
+    save_health_push,
+)
 
 
 def _energy(ts, qty, food_type=None, source="DrinkControl"):
@@ -223,3 +226,47 @@ def test_aggregate_from_other_source_is_kept(tmp_path):
 
     doc = _canonical(tmp_path, "dietary_energy", "2026-09-05")
     assert len(doc["samples"]) == 2
+
+
+# -- CLI-facing helper --------------------------------------------------------
+
+def test_canonicalize_paths_reads_a_directory(tmp_path):
+    src = tmp_path / "incoming"
+    src.mkdir()
+    (src / "dietary_energy_2026-08-21_2026-08-21.json").write_text(json.dumps(
+        _payload("dietary_energy", "kJ", [
+            _energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml 5,0%"),
+            _energy("2026-08-21 23:50:53 +0200", 346.7, "wine, 125ml 12,0%"),
+        ])))
+    (src / "not-hae.json").write_text('{"hello": "world"}')
+
+    n_files, n_metrics, changed = canonicalize_paths([src], data_dir=tmp_path)
+
+    assert (n_files, n_metrics, len(changed)) == (1, 1, 1)
+    assert len(_canonical(tmp_path, "dietary_energy", "2026-08-21")["samples"]) == 2
+
+
+def test_canonicalize_paths_dry_run_writes_nothing(tmp_path):
+    f = tmp_path / "one.json"
+    f.write_text(json.dumps(_payload("dietary_energy", "kJ", [
+        _energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml 5,0%")])))
+
+    n_files, n_metrics, changed = canonicalize_paths(
+        [f], data_dir=tmp_path, dry_run=True)
+
+    assert (n_files, n_metrics, changed) == (1, 1, [])
+    assert not (tmp_path / "kristian" / "health_export" / "canonical").exists()
+
+
+def test_canonicalize_paths_accepts_bare_metrics_envelope(tmp_path):
+    f = tmp_path / "bare.json"
+    f.write_text(json.dumps({"metrics": [
+        {"name": "alcohol_consumption", "units": "count",
+         "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)]}
+    ]}))
+
+    n_files, _, changed = canonicalize_paths([f], data_dir=tmp_path)
+
+    assert n_files == 1 and len(changed) == 1
+    assert _canonical(tmp_path, "alcohol_consumption",
+                      "2026-08-29")["daily_total"] == pytest.approx(8.1)

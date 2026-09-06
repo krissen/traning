@@ -402,6 +402,76 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, 
     return n_written, all_changed
 
 
+def _read_hae_payload(path: Path) -> dict | None:
+    """Load a HAE metric export file, normalized to push payload shape.
+
+    Accepts both the receiver's ``{"data": {"metrics": [...]}}`` envelope
+    and the bare ``{"metrics": [...]}`` some exports use. Returns None
+    for anything that is not a readable HAE metric file.
+    """
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        log.warning("Kunde inte läsa %s: %s", path, e)
+        return None
+    if not isinstance(raw, dict):
+        return None
+    metrics = raw.get("data", {}).get("metrics") if isinstance(
+        raw.get("data"), dict) else None
+    if metrics is None:
+        metrics = raw.get("metrics")
+    if not isinstance(metrics, list) or not metrics:
+        return None
+    return {"data": {"metrics": metrics}}
+
+
+def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
+                       dry_run: bool = False) -> tuple[int, int, list[Path]]:
+    """Canonicalize HAE metric JSON files that are already on disk.
+
+    Each path may be a file or a directory (searched non-recursively for
+    ``*.json``). Files run through the same ``save_health_push`` the
+    receiver uses, so a manual fetch is deduplicated by exactly the rules
+    a live push is — the alternative, ad hoc scripts calling
+    ``canonicalize_metric`` directly, is how the two paths drift apart.
+
+    Returns (n_files, n_metrics, changed_files).
+    """
+    if data_dir is None:
+        data_dir = get_data_dir()
+
+    files: list[Path] = []
+    for p in paths:
+        p = Path(p)
+        if p.is_dir():
+            files.extend(sorted(p.glob("*.json")))
+        elif p.is_file():
+            files.append(p)
+        else:
+            log.warning("Hoppar över, finns inte: %s", p)
+
+    n_files = 0
+    n_metrics = 0
+    changed: list[Path] = []
+    for f in files:
+        payload = _read_hae_payload(f)
+        if payload is None:
+            log.warning("Inte en HAE-metricfil, hoppar över: %s", f.name)
+            continue
+        n_files += 1
+        if dry_run:
+            names = [m.get("name") for m in payload["data"]["metrics"]]
+            log.info("Dry run: %s → %s", f.name, ", ".join(str(n) for n in names))
+            n_metrics += len(names)
+            continue
+        n, files_changed = save_health_push(payload, data_dir)
+        n_metrics += n
+        changed.extend(files_changed)
+
+    return n_files, n_metrics, changed
+
+
 def save_workout_push(payload: dict, data_dir: Path | None = None) -> int:
     """Save HAE workout JSON payload to workouts/ directory.
 

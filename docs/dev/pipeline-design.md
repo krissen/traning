@@ -351,6 +351,16 @@ than gain one.
 `daily_total` is recomputed from what survives, and a file is rewritten
 only when the merged sample list differs from what is on disk.
 
+### Canonicalizing files fetched out of band
+
+`traning import canonical PATH...` runs files already on disk through
+`save_health_push()`. PATH may be a file or a directory of HAE exports,
+in either the `{"data": {"metrics": [...]}}` envelope or a bare
+`{"metrics": [...]}`. It exists so a manual fetch (the app's HTTP/MCP
+server, a recovered export) is deduplicated by the same rules a live
+push is, instead of by a one-off script calling `canonicalize_metric()`
+directly.
+
 ### Commit deduplication
 
 `commit_health_data()` does:

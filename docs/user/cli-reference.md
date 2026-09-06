@@ -43,6 +43,7 @@ Rscript inst/cli.R --year-running --plot --after=2022
 | `traning fetch` | — | Fetch new activities from Garmin Connect |
 | `traning import garmin` | `--import` | Import Garmin TCX files into RData cache |
 | `traning import health` | `--import-health` | Import HAE health data (JSON) into RData cache |
+| `traning import canonical <path>...` | — | Merge HAE metric JSON files (or a directory of them) into canonical/ |
 | `traning import all` | — | Import everything (Garmin + Health) |
 | `traning backfill <zip>` | — | Backfill canonical metrics from export archive (Withings, etc.) |
 | `traning update` | — | Fetch + import in one step |
