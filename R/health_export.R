@@ -187,15 +187,37 @@
 #'   \item Sleep: nested fields (totalSleep, core, deep, rem, awake, etc.)
 #' }
 #'
+#' Empty long-format health tibble with the documented columns
+#'
+#' The parse and read paths all promise \code{date}, \code{metric},
+#' \code{value}, \code{source}, and several of them used to return a
+#' bare \code{tibble()} with no columns at all on the empty and
+#' unparseable branches. Callers that bind or select by name then behave
+#' differently depending on whether a file happened to parse, which is
+#' the kind of difference that only shows up on the day something is
+#' already wrong.
+#'
+#' @return A zero-row tibble with the four columns and their types.
+#' @keywords internal
+.empty_health_long <- function() {
+  tibble::tibble(
+    date   = as.Date(character()),
+    metric = character(),
+    value  = numeric(),
+    source = character()
+  )
+}
+
 #' @param metric_obj A list from the parsed JSON (one element of
 #'   \code{data$metrics}).
 #' @return A tibble with columns: \code{date}, \code{metric}, \code{value},
-#'   \code{source}.
+#'   \code{source}. Zero rows, but always those columns, when there is
+#'   nothing to parse.
 #' @keywords internal
 .parse_metric <- function(metric_obj) {
   name <- metric_obj$name
   samples <- metric_obj$data
-  if (length(samples) == 0) return(tibble::tibble())
+  if (length(samples) == 0) return(.empty_health_long())
 
   if (name == "sleep_analysis") {
     return(.parse_sleep(samples))
@@ -247,7 +269,7 @@
 #' @return Tibble in long format with sleep_* metrics
 #' @keywords internal
 .parse_sleep <- function(samples) {
-  if (length(samples) == 0) return(tibble::tibble())
+  if (length(samples) == 0) return(.empty_health_long())
 
   # Detect format: aggregated has "totalSleep", raw has "value"
   first <- samples[[1]]
@@ -258,7 +280,7 @@
     return(.parse_sleep_raw(samples))
   }
   warning("Okänt sömnformat — varken aggregerat eller rått")
-  tibble::tibble()
+  .empty_health_long()
 }
 
 #' Parse aggregated sleep samples (HAE daily export format)
@@ -500,7 +522,7 @@
       dplyr::filter(!is.na(parsed)) |>
       dplyr::select(date, metric, value, source)
   } else {
-    tibble::tibble()
+    .empty_health_long()
   }
 
   dplyr::bind_rows(numeric_long, time_long)
@@ -670,21 +692,36 @@
 #' Canonical files have the format:
 #' \code{{"metric": "...", "date": "...", "units": "...", "samples": [...]}}
 #'
+#' An unparseable file is skipped with a warning naming the file and the
+#' parse error, not raised. A full import sweeps thousands of canonical
+#' files; letting one truncated write abort the run would cost every
+#' other file in the sweep, and the failure mode is a partially flushed
+#' JSON document rather than anything the caller can act on mid-run.
+#'
 #' @param path Path to the canonical JSON file.
 #' @param verbose Logical, print progress. Default FALSE.
 #' @return A tibble with columns: \code{date}, \code{metric}, \code{value},
-#'   \code{source}.
+#'   \code{source}. Zero rows, but always those columns, when the file
+#'   cannot be parsed or carries no samples.
 #' @export
 read_canonical_file <- function(path, verbose = FALSE) {
   if (!file.exists(path)) stop("Filen finns inte: ", path)
 
-  raw <- jsonlite::fromJSON(path, simplifyVector = FALSE)
+  raw <- tryCatch(
+    jsonlite::fromJSON(path, simplifyVector = FALSE),
+    error = function(e) {
+      warning("Kunde inte l\u00e4sa canonical-fil, hoppar \u00f6ver: ", path,
+              " (", conditionMessage(e), ")", call. = FALSE)
+      NULL
+    }
+  )
+  if (is.null(raw)) return(.empty_health_long())
 
   # Canonical format: {metric, date, units, samples}
   metric_name <- raw$metric
   samples <- raw$samples
   if (is.null(metric_name) || is.null(samples) || length(samples) == 0) {
-    return(tibble::tibble())
+    return(.empty_health_long())
   }
 
   # Sum metrics produce one daily total. Two paths feed it:
@@ -767,7 +804,7 @@ read_health_export <- function(path, verbose = FALSE) {
       error = function(e) {
         warning("Kunde inte parsa '", m$name, "': ", conditionMessage(e),
                 call. = FALSE)
-        tibble::tibble()
+        .empty_health_long()
       }
     )
     if (verbose && nrow(result) > 0) {
@@ -973,6 +1010,12 @@ import_health_export <- function(path = NULL, cache_path = NULL,
       .compute_manifest_to_save(files, path, existing_manifest)
     )
     if (verbose) cat("Manifest uppdaterad\n")
+
+    # Alcohol derivations read the canonical files directly (clock times
+    # and per-sample sources, both lost in health_daily) and are enriched
+    # once here rather than by each consumer. Never fatal: a failure
+    # costs the alcohol table, not the health cache just written.
+    .refresh_alcohol_cache(cache_path, verbose = verbose)
   }
 
   invisible(health_daily)
@@ -1088,6 +1131,15 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   # expensive; the fast-path in read_canonical_file() makes inclusion
   # near-free for files written by the post-2026-05-11 storage layer.
   "step_count", "active_energy", "walking_running_distance",
+  # basal_energy_burned joins active_energy as the second half of total
+  # daily expenditure — the denominator the alcohol energy share is
+  # reported against (R/alcohol.R). Same daily_total fast-path, so the
+  # cost is one extra row per day.
+  "basal_energy_burned",
+  # Alcohol: per-drink counts from DrinkControl via HealthKit. Summed
+  # per day (see inst/metric_taxonomy.json) and classified tier 3 below
+  # so a logged drink never triggers a push on its own.
+  "alcohol_consumption",
   # Body composition
   "weight_body_mass"
 )
@@ -1129,6 +1181,11 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   "walking_speed", "walking_step_length",
   "walking_asymmetry_percentage", "walking_double_support_percentage",
   "walking_heart_rate_average",
+  # Alcohol is reported through the dedicated alcohol lines
+  # (.insight_alcohol_line in R/alcohol.R), never as a raw delta. Listing
+  # it here is not optional: an unclassified metric defaults to tier 1,
+  # which would fire a notification for every single logged drink.
+  "alcohol_consumption",
   # Nutritional
   "dietary_energy", "dietary_sugar", "dietary_water", "protein",
   "carbohydrates", "total_fat", "fiber", "saturated_fat",
@@ -1165,7 +1222,9 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   running_power                    = "l\u00f6peffekt",
   running_speed                    = "l\u00f6phastighet",
   running_stride_length            = "stegl\u00e4ngd",
-  running_vertical_oscillation     = "vertikal oscillation"
+  running_vertical_oscillation     = "vertikal oscillation",
+  alcohol_consumption              = "alkohol",
+  basal_energy_burned              = "basalf\u00f6rbr\u00e4nning"
 )
 
 # Units for metrics
@@ -1183,7 +1242,15 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
   running_power                    = "W",
   running_speed                    = "m/s",
   running_stride_length            = "m",
-  running_vertical_oscillation     = "cm"
+  running_vertical_oscillation     = "cm",
+  alcohol_consumption              = "glas",
+  # kJ, not kcal: health_daily stores the raw qty HAE wrote, and nothing
+  # converts energy at import. active_energy is handled the same way, by
+  # not being converted either. The label has to name what is actually
+  # in the column, or a future caller renders "1 900 kcal" for a 1 900 kJ
+  # day. The alcohol module needs kilocalories and gets them by reading
+  # the units field off the canonical documents, where it survives.
+  basal_energy_burned              = "kJ"
 )
 
 
@@ -1861,7 +1928,22 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   ctx <- .readiness_for_insight(health_daily, summaries, on_date,
                                  hr_max, hr_rest)
   if (is.null(ctx)) {
-    return(list(prosa = "", datum = NA, status = NA_character_,
+    # No readiness verdict is computable — but the alcohol account needs
+    # none. A morning where the watch uploaded nothing is exactly the
+    # morning where "you logged six drinks last night and here is what
+    # they cost" is still true, and dropping it there would quietly undo
+    # the decision that the energy line follows every logged evening.
+    fallback_date <- if (is.null(on_date)) {
+      if (!is.null(health_daily) && nrow(health_daily) > 0) {
+        max(as.Date(health_daily$date), na.rm = TRUE)
+      } else NA
+    } else as.Date(on_date)
+    alcohol_only <- if (!is.na(fallback_date)) {
+      .alcohol_notification_lines(health_daily, summaries, fallback_date)
+    } else character()
+    return(list(prosa = paste(alcohol_only, collapse = " "),
+                datum = if (length(alcohol_only) > 0) fallback_date else NA,
+                status = NA_character_,
                 score = NA_real_, kvalitet = NA_character_,
                 components = list(), components_present = list()))
   }
@@ -1938,6 +2020,16 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
     ctx_line <- .insight_context_line(summaries, health_daily, row$date)
     if (!is.null(ctx_line)) parts <- c(parts, ctx_line)
   }
+
+  # Alcohol lines are ADDITIVE, not candidates for the single slot above:
+  # an energy figure is due after every logged evening, and as a
+  # candidate it would fall silent whenever a training-state line had
+  # something to say. They also sit outside the context opt-out and
+  # carry their own, since silencing the streak and ACWR lines is a
+  # different decision from silencing the energy account. Both are
+  # silent on a dry night, so this cannot turn into a daily fixture.
+  parts <- c(parts, .alcohol_notification_lines(health_daily, summaries,
+                                                 row$date))
 
   prosa <- paste(parts, collapse = " ")
 

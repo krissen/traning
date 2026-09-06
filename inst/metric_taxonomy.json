@@ -10,6 +10,7 @@
     "walking_running_distance",
     "cycling_distance",
     "mindful_minutes",
-    "time_in_daylight"
+    "time_in_daylight",
+    "alcohol_consumption"
   ]
 }

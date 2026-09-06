@@ -1,5 +1,58 @@
 # tRäning — Changelog
 
+## 2026-09-05 — Vad kvällen kostade
+
+Alkohol loggas i DrinkControl och skrivs till Hälsa, och därifrån har den
+gått rakt igenom tRäning utan att synas någonstans. Nu läses den in, och
+morgonen efter en loggad kväll står det i dagsformen hur mycket energi
+alkoholen stod för och hur natten ser ut jämfört med dina alkoholfria
+nätter. Designen, inklusive vad som medvetet inte byggts, finns i
+`docs/dev/alcohol-tracking-design.md`.
+
+- **Gram etanol är det som sparas, inte antal glas.** Ett "glas" är
+  definierat av en inställning inne i DrinkControl, som erbjuder 8, 10,
+  13,45 och 14 gram beroende på land. Ändras den inställningen byter
+  varje historiskt antal betydelse utan att något syns. Grammen räknas
+  därför ur appens egen energisiffra vid 7 kcal per gram, vilket är
+  oberoende av inställningen, och gram delat med antal återvinner
+  inställningen som en gratis rimlighetskontroll. Avviker den mer än 15
+  procent flaggas natten och importen säger till. Svenska standardglas
+  visas som gram delat med 12, och båda måtten står i notisen: "6 glas
+  (5 standardglas)".
+- **Energin sätts i relation till din förbrukning.** Alkoholens kalorier
+  jämförs med summan av aktiv och basal energi från klockan, dagsraden
+  mot ett 28-dagarsmedel och veckoraden mot veckans egen summa. Andelen
+  utelämnas hellre än gissas: för tunt underlag, orimliga värden och
+  dygn där ett Garminpass finns men klockan inte burits ger ingen
+  procentsats alls. `basal_energy_burned` importeras nu, eftersom
+  nämnaren kräver den.
+- **Återhämtningen jämförs mot dina alkoholfria nätter.** En egen
+  baslinje, median över alkoholfria nätter i ett rullande
+  42-dagarsfönster, minst 14 nätter, med sjukdomsdagar bortsorterade.
+  Dagsformens egna baslinjer är orörda: de ska fortsätta beskriva ditt
+  faktiska tillstånd, även när det är påverkat. Vilopuls, HRV och sömn
+  nämns i den ordningen, efter hur stort avtryck de har i litteraturen.
+- **Raden säger ärligt när ingenting hänt.** Återhämtningsjämförelsen
+  skrivs bara ut när minst ett mått ligger tydligt sämre än vanligt.
+  Annars står det att måtten inte ligger sämre än vanligt, och saknas ett
+  mått utelämnas det helt i stället för att få en platshållare. Vid noll
+  glas är raden tyst, och utanför en period där du faktiskt loggar är den
+  också tyst, eftersom en utebliven registrering inte är samma sak som en
+  alkoholfri kväll.
+- **Måndagen får en veckorad.** Hur många kalorier alkoholen stod för,
+  fördelat på hur många kvällar, hur stor andel av veckans förbrukning
+  och hur många alkoholfria dagar veckan innehöll. Veckan räknas på
+  kvällarna, så en söndagskväll hamnar i den vecka den inträffade.
+- **Vayu svarar på frågor om alkohol.** `get_alcohol` ger en rad per natt
+  eller per vecka, med glas, standardglas, gram, kalorier, andel av
+  förbrukningen och morgonens avvikelser. Inga riskgränser, inga
+  rekommendationer och inga serier att hålla igång: den enda
+  jämförelsepunkten är dina egna alkoholfria nätter.
+- **En trasig exportfil stoppar inte längre inläsningen.** En avhuggen
+  JSON-fil under `canonical/` avbröt hela hälsoimporten och kostade alla
+  andra filer i samma svep. Nu hoppas den över med en varning som namnger
+  filen och felet, och resten läses in.
+
 ## 2026-08-11 — Vilopulsen kommer fram igen
 
 Sedan början av augusti saknades vilopuls i dagsformen, och orsaken låg

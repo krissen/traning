@@ -3,6 +3,55 @@
 > **Omfattning:** Framtida arbete (pipeline/produkt samt AUR-paketering).
 > Levererade ändringar dokumenteras i `docs/changelog.md`.
 
+## Alkohol: uppföljning
+
+Alkoholstödet är levererat (se `docs/changelog.md`). Det som medvetet
+lämnades utanför, och det som måste göras för att siffrorna ska bli
+tillförlitliga.
+
+- **Driftsteg efter merge.** Tre saker, i den ordningen. Kör
+  `Rscript inst/cli.R --import-health --force` på kailash, så att
+  `alcohol_consumption` och `basal_energy_burned` kommer in i cachen och
+  `alcohol_nights.RData` skrivs för första gången. Kör sedan
+  `deploy.sh code`. Starta till sist om vayu: den varma R-servern läser
+  `inst/mcp_bridge_shared.R` vid uppstart, så `get_alcohol` finns inte
+  förrän den startats om.
+- **Backfill av två veckor från anandavani.** Bara ett dygn har
+  exporterats hittills, eftersom exportfönstret står på "Idag". Historiken
+  finns kvar i Hälsa och behöver hämtas hem innan någon jämförelse går att
+  göra.
+- **Verifiera att kcal per glas är konstant över dagar.** Grammen räknas
+  ur DrinkControls energisiffra, vilket förutsätter att appen använder ett
+  fast värde per glas. Varierar kvoten mellan dygn räknar appen i stället
+  ur en dryckesdatabas, och då betyder `alcohol_g_per_unit` något annat än
+  vad koden antar. Kontrollen går att göra först när backfillen är på
+  plats.
+- **Dos-responsanalysen.** Specificerad i designdokumentets avsnitt
+  "Future: dose-response", ingen kod skriven. Veckodagsmatchad jämförelse,
+  inte en enkel regression mot dagsformen, eftersom drickskvällar och allt
+  annat som påverkar morgonen efter klumpar ihop sig på fredagar och
+  lördagar. Stoppregel: under ungefär 30 registrerade kvällar redovisas
+  bara beskrivande siffror och ingen effektskattning, och ingenting som
+  låter generellt får vila på den enkla alkoholfria baslinjen.
+- **Shiny-panel i tRanat.** Inte byggd. Notisen är den yta som betyder
+  något för den här funktionen, och en panel är meningsfull först när det
+  finns mer än några veckors historik att visa.
+- **R-testsviten skriver i den riktiga datakatalogen.** `devtools::test()`
+  skriver om `decoupling.RData` och `zone_distribution.RData` i den cache
+  `TRANING_DATA` pekar på, alltså användarens levande katalog vid en
+  vanlig körning på kedar. Beteendet är förbefintligt och båda filerna är
+  regenererbara, och sviten ger samma utfall mot en kopia som mot den
+  riktiga katalogen, så inget test hänger på det verkliga innehållet. Men
+  en testsvit ska inte röra produktionsdata. Egen PR: peka testerna på en
+  temporär katalog, eller låt de berörda testerna sätta `TRANING_DATA`
+  själva. Tills dess: kör sviten med `TRANING_DATA` pekad på en kopia.
+- **Avvikande glasenhet i notistexten.** Produktbeslut. Ändras
+  inställningen i DrinkControl skriver notisen standardglas härledda ur ett
+  värde som inte längre gäller, utan att antyda det. Flaggan finns redan i
+  rapportkolumnen `Avvikande enhet` och i importmeddelandet, så frågan är
+  om den också ska sägas rakt ut i prosan eller om det vore en rad som
+  sällan gäller och alltid oroar.
+
 ## Pipeline: HAE-hämtning och övervakning
 
 Uppföljningsspår från vilopuls-incidenten aug 2026

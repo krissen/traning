@@ -65,6 +65,8 @@ _KNOWN_FUNCTIONS = frozenset({
     "report_monotony", "report_pmc", "report_recovery_hr",
     "report_hr_zones", "report_decoupling", "report_readiness",
     "report_metric",
+    # Alcohol
+    "report_alcohol", "report_alcohol_weekly",
     # Report plots
     "plot_monthtop", "plot_runs_month", "plot_monthstatus",
     "plot_monthlast", "plot_yearstop", "plot_datesum",

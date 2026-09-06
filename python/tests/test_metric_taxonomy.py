@@ -14,6 +14,7 @@ EXPECTED_SUM_METRICS = frozenset({
     "flights_climbed", "apple_exercise_time", "apple_stand_time",
     "apple_stand_hour", "walking_running_distance",
     "cycling_distance", "mindful_minutes", "time_in_daylight",
+    "alcohol_consumption",
 })
 
 

@@ -9,6 +9,12 @@
 #   2. ACWR commentary: low (< 0.8) or elevated (> 1.3).
 #   3. HRV trend: 7-day linear slope < -0.5 ms/day.
 #
+# The alcohol line is deliberately NOT a candidate here. It is additive
+# and composed in health_insight_readiness(), because the product
+# decision is an energy line after every logged evening — as a candidate
+# it would fall silent whenever a training-state line had something to
+# say, which is most days.
+#
 # The first match wins; later helpers are only consulted if the
 # higher-priority one is silent. Keeps the notification readable —
 # no chance of three trend lines piling onto the morning push.
@@ -144,6 +150,12 @@
 #'   \item ACWR commentary (\code{.insight_acwr_line}).
 #'   \item HRV downtrend (\code{.insight_hrv_trend_line}).
 #' }
+#'
+#' The alcohol line is not among them. It carries an energy figure that
+#' is due after every logged evening, so it is attached additively by
+#' \code{health_insight_readiness()} rather than competing for this one
+#' slot.
+#'
 #' Returns \code{NULL} when no helper has anything to say.
 #'
 #' @keywords internal

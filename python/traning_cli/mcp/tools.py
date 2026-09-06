@@ -734,6 +734,56 @@ def get_vo2max(
     return r_report("report_readiness", args)
 
 
+def get_alcohol(
+    after: str | None = None,
+    before: str | None = None,
+    weekly: bool = False,
+) -> dict:
+    """Logged alcohol per night, its energy, and the next morning's readings.
+
+    One row per night with logged alcohol, newest first, restricted to the
+    period where logging was actually active. Nights without alcohol are
+    absent rather than reported as zero, and an inactive period returns no
+    rows at all.
+
+    Daily columns: `Glas` (drinks as DrinkControl counts them, in whatever
+    standard-drink size the app is configured for; in this installation
+    that works out at 10 g of ethanol), `Gram` (grams of ethanol, derived
+    from DrinkControl's own energy record rather than from the count, so
+    it does not depend on that setting), `Standardglas` (Swedish standard
+    drinks, grams / 12), `kcal` (ethanol energy at 7 kcal/g; `Beräknad
+    kcal` is true when it had to be derived from the count instead),
+    `Avvikande enhet` (true when grams per drink has drifted from the
+    expected setting, which means the figures on that night rest on a
+    different definition), `Andel %` (share of the 28-day mean daily
+    energy expenditure), and the next morning's deviation from the
+    alcohol-free baseline for resting heart rate (`VP avvik`), HRV and
+    sleep. A deviation column is empty when there is no reading or no
+    baseline yet.
+
+    Weekly columns: `Vecka`, `Start`, the same quantities summed, plus
+    `Kvällar` (evenings with alcohol) and `Alkoholfria dagar`.
+
+    No risk limits, guidelines, goals or streaks are reported. The only
+    reference frame is the reader's own alcohol-free nights.
+
+    Args:
+        after: Start date filter (e.g. '2026-01-01', '-6m').
+        before: End date filter, inclusive.
+        weekly: If True, return one row per ISO week instead of per night.
+    """
+    # _build_args() is deliberately not used here: it shifts an absolute
+    # `before` forward one day for the R functions that use an exclusive
+    # upper bound, and the alcohol reports use an inclusive one.
+    args: dict = {}
+    if after is not None:
+        args["from"] = after
+    if before is not None:
+        args["to"] = before
+    func = "report_alcohol_weekly" if weekly else "report_alcohol"
+    return r_report(func, args)
+
+
 def get_health_metric(
     metric: str,
     after: str | None = None,
@@ -913,7 +963,10 @@ _HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
         "Active energy burned; unit depends on HAE configuration "
         "(typically kJ for Apple Watch, kcal possible)"
     )),
-    "basal_energy_burned":    ("Activity", "Basal metabolic energy (kcal)"),
+    "basal_energy_burned":    ("Activity", (
+        "Basal metabolic energy; unit depends on HAE configuration "
+        "(typically kJ, same as active_energy)"
+    )),
     "step_count":             ("Activity", "Daily steps"),
     "walking_running_distance": ("Activity", "Walking + running distance (km)"),
     "flights_climbed":        ("Activity", "Flights of stairs climbed"),
@@ -931,6 +984,14 @@ _HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
     "running_speed":          ("Running", "Running speed (m/s)"),
     "running_stride_length":  ("Running", "Stride length (m)"),
     "running_vertical_oscillation": ("Running", "Vertical oscillation (cm)"),
+    # Lifestyle
+    "alcohol_consumption":    ("Lifestyle", (
+        "Alcohol, as counted by DrinkControl, in the standard-drink size "
+        "the app is configured for (10 g of ethanol in this installation; "
+        "the app offers 8 to 14 g by jurisdiction). Grams of ethanol are "
+        "derived from the app's energy record, not from this count. "
+        "Use get_alcohol for energy and next-morning comparison"
+    )),
     # Sleep
     "apple_sleeping_wrist_temperature": ("Sleep", "Wrist temperature deviation during sleep"),
     # Walking / Gait
@@ -1039,6 +1100,12 @@ _METRIC_ALIASES: dict[str, str] = {
     # Lean mass
     "lean_mass": "lean_body_mass",
     "muskelmassa": "lean_body_mass",
+    # Alcohol
+    "alcohol": "alcohol_consumption",
+    "alkohol": "alcohol_consumption",
+    "drinks": "alcohol_consumption",
+    "drinkar": "alcohol_consumption",
+    "glas": "alcohol_consumption",
     # Recovery
     "recovery": "cardio_recovery",
     "recovery_hr": "cardio_recovery",
@@ -1299,7 +1366,7 @@ def resource_metrics() -> str:
     lines.append("All metrics below are queried via `get_health_metric(metric='name')`.\n")
     for cat in [
         "Body", "Heart", "Respiratory", "Fitness", "Activity",
-        "Running", "Sleep", "Walking", "Environment", "Other",
+        "Lifestyle", "Running", "Sleep", "Walking", "Environment", "Other",
     ]:
         if cat in by_category:
             lines.append(f"## {cat}")

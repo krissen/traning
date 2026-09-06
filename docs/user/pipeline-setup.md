@@ -70,9 +70,10 @@ ssh kailash "cd ~/dev/traning && Rscript inst/cli.R --import-health"
 
 ### Import metric filter
 
-By default, only ~19 actively used metrics are imported into the health
-cache. High-volume metrics (active_energy, basal_energy_burned, etc.)
-are skipped to keep import fast (~5s instead of ~60s on kailash).
+By default, only the 23 actively used metrics are imported into the
+health cache. High-volume metrics are skipped to keep import fast (~5s
+instead of ~60s on kailash), except where the canonical file carries a
+precomputed daily total, which makes inclusion nearly free.
 
 To add a metric to the import:
 

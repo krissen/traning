@@ -1,7 +1,28 @@
-"""Shared pytest fixtures for the traning_cli test suite."""
+"""Shared pytest fixtures for the traning_cli test suite.
 
-import pytest
-from traning_cli.settings import get_settings
+Also pins which copy of the package the suite runs against. `traning_cli`
+is installed editable from the main checkout, so a bare `pytest` inside a
+git worktree collects the tests from here and runs them against the code
+over there: everything passes, and it says nothing about the branch under
+test. Inserting this directory's parent at the front of `sys.path` makes
+the import resolve to the sources beside these tests. This has to happen
+before the package is imported, hence at the top of the file.
+"""
+
+import sys
+from pathlib import Path
+
+_PYTHON_ROOT = str(Path(__file__).resolve().parent.parent)
+# Drop any existing entry before inserting, so the root ends up at the
+# front exactly once. Inserting on a "not already first" test alone left
+# a duplicate whenever the root was present further down the list, and
+# skipped the insert entirely when sys.path was empty, which is the one
+# case where the import would certainly have resolved elsewhere.
+sys.path[:] = [p for p in sys.path if p != _PYTHON_ROOT]
+sys.path.insert(0, _PYTHON_ROOT)
+
+import pytest  # noqa: E402
+from traning_cli.settings import get_settings  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
@@ -23,3 +44,4 @@ def traning_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("TRANING_DATA", str(tmp_path))
     get_settings.cache_clear()
     return tmp_path
+
