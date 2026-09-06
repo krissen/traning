@@ -386,13 +386,21 @@ def _save_legacy_metric(
 def _metric_is_writable(metric: object) -> bool:
     """Whether ``save_health_push`` would write this metric group.
 
-    A group needs a name and at least one sample. Non-dict entries are
-    rejected rather than allowed to raise: a hand-edited or truncated
-    export should cost its own group, not the whole push.
+    A group needs a name and a non-empty list of dict samples. The
+    sample shape is checked rather than assumed truthy: every consumer
+    downstream calls ``.get()`` on each element, so a group whose data
+    is a string, a number or a list of strings would raise halfway
+    through a push and take the metrics after it with it. Rejecting it
+    here costs one group and names it in the log.
     """
     if not isinstance(metric, dict):
         return False
-    return bool(metric.get("name")) and bool(metric.get("data"))
+    if not metric.get("name"):
+        return False
+    data = metric.get("data")
+    if not isinstance(data, list) or not data:
+        return False
+    return all(isinstance(s, dict) for s in data)
 
 
 def save_health_push(payload: dict, data_dir: Path | None = None,
@@ -431,6 +439,9 @@ def save_health_push(payload: dict, data_dir: Path | None = None,
 
     for m in metrics:
         if not _metric_is_writable(m):
+            name = m.get("name") if isinstance(m, dict) else None
+            log.warning("Hoppar över metrikgrupp utan namn eller giltiga "
+                        "samples: %s", name or "(namnlös)")
             continue
         name = m.get("name")
         samples = m.get("data", [])

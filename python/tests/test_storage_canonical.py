@@ -370,13 +370,16 @@ def test_canonicalize_paths_accepts_bare_metrics_envelope(tmp_path):
 
 
 def test_dry_run_counts_only_metrics_that_would_be_written(tmp_path):
-    """A nameless or empty group is skipped on the real run."""
+    """A nameless, empty or malformed group is skipped on the real run."""
     f = tmp_path / "mixed.json"
     f.write_text(json.dumps({"data": {"metrics": [
         {"name": "dietary_energy", "units": "kJ",
          "data": [_energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml")]},
         {"name": "", "units": "count", "data": [_aggregate("2026-08-21 23:50:53 +0200", 1)]},
         {"name": "alcohol_consumption", "units": "count", "data": []},
+        {"name": "step_count", "units": "count", "data": "1234"},
+        {"name": "flights_climbed", "units": "count", "data": ["nope"]},
+        {"name": "resting_heart_rate", "units": "count", "data": 7},
         "not a dict",
     ]}}))
 
@@ -424,3 +427,35 @@ def test_changed_files_are_not_repeated_across_inputs(tmp_path):
 
     assert len(changed) == len(set(changed)) == 1
     assert len(_canonical(tmp_path, "dietary_energy", "2026-09-05")["samples"]) == 2
+
+
+def test_non_dict_samples_do_not_reach_the_writer(tmp_path, caplog):
+    """A group whose data is not a list of dicts is skipped and named."""
+    with caplog.at_level("WARNING"):
+        n, changed = save_health_push({"data": {"metrics": [
+            {"name": "step_count", "units": "count", "data": "1234"},
+            {"name": "alcohol_consumption", "units": "count",
+             "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)]},
+        ]}}, tmp_path)
+
+    assert n == 1
+    assert len(changed) == 1
+    assert not (tmp_path / "kristian" / "health_export" / "canonical"
+                / "step_count").exists()
+    assert any("step_count" in r.getMessage() for r in caplog.records
+               if r.levelname == "WARNING")
+
+
+def test_partly_malformed_sample_list_is_skipped_whole(tmp_path):
+    """One bad element condemns its group, not the groups beside it."""
+    save_health_push({"data": {"metrics": [
+        {"name": "step_count", "units": "count",
+         "data": [{"date": "2026-08-29 10:00:00 +0200", "qty": 100}, "oops"]},
+        {"name": "alcohol_consumption", "units": "count",
+         "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)]},
+    ]}}, tmp_path)
+
+    canonical = tmp_path / "kristian" / "health_export" / "canonical"
+    assert not (canonical / "step_count").exists()
+    assert _canonical(tmp_path, "alcohol_consumption",
+                      "2026-08-29")["daily_total"] == pytest.approx(8.1)
