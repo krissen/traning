@@ -307,6 +307,95 @@ Reuses file-writing pattern from `health/tcp.py:158-186`:
   keyed on filename + mtime, so new files from FastAPI are picked up
   automatically
 
+### Canonical sample deduplication
+
+`canonicalize_metric()` merges every push into
+`canonical/{metric}/{YYYY-MM-DD}.json`. Two rules govern what survives.
+
+**Content keying with multiplicity.** A sample's dedup key is the whole
+sample serialized with sorted keys, not `(timestamp, source)`. Sources
+do write several samples in one second: DrinkControl stamps a logging
+session with a single second and writes one `dietary_energy` sample per
+drink. Keying on the timestamp collapsed those to one. Because two
+drinks can also be byte-identical (the same beer twice in the same
+second), the merge compares *counts* per key and keeps
+`max(existing, incoming)`. A repeated push therefore adds nothing, while
+identical-but-distinct samples both survive. Counts never shrink: a push
+covers a window and is not authoritative about what it omits.
+
+**Minute aggregates are reported, never removed.** HAE delivers the same
+day in two shapes. The push automation aggregates by minute: one sample
+per minute bucket, stamped at `:00`, with `foodType`/`start`/`end`
+stripped. A later per-sample fetch returns the same events individually
+at their real seconds. Both land in the file and the day reads double:
+2026-09-05 held a 6-unit `alcohol_consumption` aggregate at 18:44:00
+next to the 6-unit detail at 18:44:35.
+
+The automation stays aggregated. Per-sample mode cannot be set per
+metric, and turning it on makes heart-rate data unmanageable, so daily
+aggregates are what the pipeline receives by design.
+
+An earlier version of this branch deleted the aggregate when its `qty`
+equalled the sum of its same-minute peers. That was wrong. Arithmetic
+does not identify an aggregate: a real sample stamped at `:00` whose
+same-minute companions happen to sum to its value has exactly the same
+shape, and DrinkControl produces that shape routinely, several samples
+in one minute with repeated quantities. The rule also ran over the whole
+merged day on every write, so it could delete a sample that had been on
+disk for weeks, contradicting the append-only invariant a few paragraphs
+up. An over-counted evening is a number the reader can question; a
+deleted drink cannot be restored by re-pushing, because the same rule
+would delete it again.
+
+What remains is a warning. When exactly one sample in a `(source,
+minute)` bucket is stamped at `:00` and carries none of
+`foodType`/`start`/`end`, while a later sample in the same minute
+carries one, the bucket is named in the log with metric, date, minute
+and source. It fires on a write, so a suspected double is reported when
+it appears rather than on every push for the rest of the day. Nothing is
+removed. Bare against bare, which is what `alcohol_consumption` looks
+like in both shapes, is not reported at all: there is nothing to tell
+the two apart.
+
+Resolving a double is an operator action, `--replace-source-days` below.
+
+`daily_total` is recomputed from what survives, and a file is rewritten
+only when the merged sample list differs from what is on disk.
+
+### Canonicalizing files fetched out of band
+
+`traning import canonical PATH...` runs files already on disk through
+`save_health_push()`. PATH may be a file or a directory of HAE exports,
+in either the `{"data": {"metrics": [...]}}` envelope or a bare
+`{"metrics": [...]}`. It exists so a manual fetch (the app's HTTP/MCP
+server, a recovered export) is deduplicated by the same rules a live
+push is, instead of by a one-off script calling `canonicalize_metric()`
+directly.
+
+All input files are folded into one payload before anything is written,
+so a `(metric, date, source)` is written once per invocation however
+many files cover it. Range files overlap routinely — the metrics
+directory holds pairs like `active_energy_2026-04-03_2026-04-06.json`
+beside `active_energy_2026-04-05_2026-04-07.json` — and writing per file
+meant, under the flag below, that the second file replaced what the
+first had just written. The fold uses the same multiplicity rule as the
+merge onto disk, so a sample present in two files counts once while two
+identical samples inside one file both survive.
+
+`--replace-source-days` makes the input authoritative for every
+`(metric, date, source)` it covers: existing samples from those sources
+are discarded and replaced, other sources keep theirs. It is the
+supported way to resolve an aggregate sitting on top of detail. Nothing
+infers it, because the two are not distinguishable by content; the
+operator asserts that the file in hand is the better record for those
+days. Pair it with `--dry-run` first, which lists each combination and
+how many samples would be displaced.
+
+The receiver never sets the flag. A push that arrives on its own
+schedule is not authoritative about days it did not set out to correct.
+Legacy metrics (`sleep_analysis`) ignore it as well: their files span
+midnight and are merged by date range rather than per day.
+
 ### Commit deduplication
 
 `commit_health_data()` does:

@@ -1,5 +1,43 @@
 # tRäning — Changelog
 
+## 2026-09-06 — Kvällarna kommer fram hela
+
+Alkoholsiffrorna från den första veckan var för låga, och några dygn var
+för höga. Båda felen låg i hur hälsodata sparas: samples som delade
+sekund skrevs över varandra, och samma dygn kunde landa två gånger i två
+olika former. Nu kommer varje glas fram en gång.
+
+- **Flera glas i samma sekund överlever.** DrinkControl skriver ett
+  energisample per glas och stämplar en hel inmatning med samma sekund.
+  Lagringen behöll ett av dem, så en kväll med tre glas registrerad i ett
+  svep blev ett glas. Kvällar med två identiska glas — samma öl två
+  gånger — kommer också fram som två. Uppmätt på de sexton backfillade
+  dygnen gav felet 1,7 till 10 gram per glas där de verkliga siffrorna
+  ligger på 10,0.
+- **Hälsofiler som hämtats vid sidan om kan läsas in med ett kommando.**
+  `traning import canonical <fil eller katalog>` lägger in en export som
+  inte kommit via den vanliga vägen — en manuell hämtning ur appen, ett
+  återfunnet arkiv — och den dedupliceras precis som en automatisk push.
+  Tidigare krävde det ett engångsskript.
+- **En manuell hämtning kan uttryckligen ersätta ett dygns värden.** Den
+  automatiska exporten skickar ett hopslaget värde per minut, en manuell
+  hämtning skickar glasen var för sig, och båda hamnar i samma fil, så
+  dygnet räknas två gånger: 2026-09-05 blev tolv glas i stället för sex.
+  `traning import canonical --replace-source-days` låter den hämtade
+  filen gälla för de dygn och den källa den täcker, medan andra källor
+  lämnas orörda. `--dry-run` visar först exakt vad som skulle bytas ut.
+  Inget sådant sker automatiskt: ett hopslaget värde och ett verkligt går
+  inte att skilja på innehållet, så att gissa vore att riskera radera ett
+  riktigt glas. Ligger ett misstänkt hopslaget värde bland detaljerade
+  poster säger loggen till, med metrik, datum och minut, men rör
+  ingenting.
+- **Källan säger mer om drickandet än vad som antagits.** Varje
+  energipost bär drycktyp, volym och alkoholhalt, till exempel "beer,
+  660ml 5,0%", och tidsstämpeln är när glaset registrerades i appen — inte
+  när exporten kördes, vilket designen tidigare utgick från. Ingenting av
+  det visas ännu någonstans; det som ändras är vad som går att bygga
+  härnäst, och det står i `docs/roadmap.md`.
+
 ## 2026-09-05 — Vad kvällen kostade
 
 Alkohol loggas i DrinkControl och skrivs till Hälsa, och därifrån har den

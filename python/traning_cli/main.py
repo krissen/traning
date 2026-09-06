@@ -360,6 +360,57 @@ def import_health(force, verbose):
     sys.exit(result.returncode)
 
 
+@import_group.command(name="canonical")
+@click.argument("paths", nargs=-1, required=True,
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--replace-source-days", is_flag=True,
+              help="Let the input replace existing samples for every "
+                   "(metric, date, source) it covers, instead of merging")
+@click.option("--dry-run", is_flag=True,
+              help="Show what would be canonicalized without writing")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+def import_canonical(paths, replace_source_days, dry_run, verbose):
+    """Canonicalize HAE metric JSON files already on disk.
+
+    PATHS may be files or directories of HAE exports (the shape
+    `traning fetch health` writes to health_export/metrics/). Each file
+    is merged into canonical/ through the same deduplication the live
+    receiver uses, so a manual or out-of-band fetch does not need its
+    own script.
+
+    The merge is append-only. The push automation delivers minute
+    aggregates, so a later per-sample fetch of the same days adds the
+    same drinks a second time and the day reads double.
+    --replace-source-days says the input wins for every (metric, date,
+    source) it covers: those samples are replaced, other sources are
+    left alone. Nothing detects this on your behalf, because an
+    aggregate and a real sample are not distinguishable by content.
+    Combine with --dry-run first to see what would be displaced.
+    """
+    from .garmin.utils import get_data_dir, setup_logging
+    from .server.storage import canonicalize_paths
+
+    setup_logging(verbose=verbose)
+
+    try:
+        data_dir = get_data_dir()
+    except (OSError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+
+    n_files, n_metrics, changed = canonicalize_paths(
+        list(paths), data_dir=data_dir, dry_run=dry_run,
+        replace_source_days=replace_source_days)
+
+    if n_files == 0:
+        click.echo("Inga HAE-metricfiler hittades")
+        return
+    if dry_run:
+        click.echo(f"Dry run: {n_files} filer, {n_metrics} metrics")
+        return
+    click.echo(f"{n_files} filer, {n_metrics} metrics, "
+               f"{len(changed)} canonical-filer uppdaterade")
+
+
 @import_group.command(name="all")
 @click.option("--force", is_flag=True,
               help="Re-import all health files (bypass manifest)")

@@ -2,13 +2,15 @@
 
 Incoming pushes are canonicalized into per-metric-per-day files under
 canonical/{metric}/{YYYY-MM-DD}.json.  All known samples for a given
-(metric, date) are merged and deduplicated by (timestamp, source).
+(metric, date) are merged and deduplicated on the full sample content,
+with multiplicity preserved (see ``_merge_samples``).
 """
 
 import json
 import logging
+import re
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from ..garmin.utils import get_data_dir
@@ -49,10 +51,14 @@ def _daily_total(samples: list[dict]) -> float | None:
 # --- Canonical deduplication ------------------------------------------------
 
 def _sample_key(sample: dict) -> str:
-    """Return a dedup key for a single HAE sample.
+    """Return a dedup key for a legacy (sleep_analysis) HAE sample.
 
-    Standard metrics: (full_timestamp, source).
-    Sleep raw segments: (full_timestamp, stage_value, source).
+    Sleep segments are keyed on (full_timestamp, stage_value, source).
+    A night is a chain of non-overlapping segments, so a timestamp plus
+    a stage identifies one of them; the remaining fields (durations HAE
+    recomputes between exports) would only make identical segments look
+    distinct.  Canonical metrics use ``_canonical_sample_key`` instead —
+    they can and do carry several samples for the same second.
     """
     ts = sample.get("date", sample.get("startDate", ""))
     src = sample.get("source", "")
@@ -60,13 +66,140 @@ def _sample_key(sample: dict) -> str:
     return f"{ts}|{stage}|{src}"
 
 
+def _canonical_sample_key(sample: dict) -> str:
+    """Return a dedup key for a single canonical HAE sample.
+
+    The key is the whole sample, canonicalized: every field, keys sorted
+    so that HAE's varying key order cannot make one sample look like two.
+
+    Keying on (timestamp, source) alone — what this did until 2026-09-06
+    — silently dropped samples that share a second.  DrinkControl writes
+    one dietary_energy sample per drink and stamps a whole logging
+    session with the same second: three drinks logged at 23:50:53
+    collapsed to one, taking two thirds of the evening's alcohol with
+    them.  Any per-event metric can do this: the timestamp is when the
+    event was logged, and a whole evening entered in one sitting shares a
+    second.
+
+    Two genuinely identical samples in one push (the same beer logged
+    twice in the same second, seen 2026-08-28) are indistinguishable by
+    content, so multiplicity rather than the key carries them; see
+    ``_merge_samples``.
+    """
+    return json.dumps(sample, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def _merge_samples(existing: list[dict],
+                   incoming: list[dict]) -> tuple[list[dict], int]:
+    """Merge incoming samples into existing ones, preserving multiplicity.
+
+    Deduplication is by *count* per content key, not by presence: a key
+    seen twice in one push yields two samples, while pushing that same
+    payload again adds nothing.  Idempotence therefore survives without
+    forcing identical-but-distinct samples to collapse into one.
+
+    Counts never shrink.  A push covering a window is not authoritative
+    about what it omits, and canonical files are append-only for the
+    same reason: a short push must not delete a longer one's history.
+
+    Returns (merged, n_added).
+    """
+    existing_counts = Counter(_canonical_sample_key(s) for s in existing)
+    merged = list(existing)
+    seen: Counter[str] = Counter()
+    n_added = 0
+    for s in incoming:
+        key = _canonical_sample_key(s)
+        seen[key] += 1
+        if seen[key] > existing_counts[key]:
+            merged.append(s)
+            n_added += 1
+    return merged, n_added
+
+
+# Timestamp shape HAE writes: "2026-09-05 18:44:35 +0200".  Group 1 is
+# the minute bucket, group 2 the seconds.
+_TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{2})")
+
+# Fields a per-sample export carries and a minute aggregate does not.
+_DETAIL_FIELDS = ("foodType", "start", "end")
+
+
+def _has_detail(sample: dict) -> bool:
+    return any(sample.get(f) is not None for f in _DETAIL_FIELDS)
+
+
+def _suspected_aggregates(samples: list[dict]) -> list[tuple[str, str]]:
+    """Find buckets where a minute aggregate looks to sit beside detail.
+
+    HAE's push automation aggregates by minute: one sample per minute
+    bucket, stamped at :00 and carrying none of the per-sample fields.
+    A manual per-sample fetch of the same day returns the events
+    individually at their real seconds.  When both reach the canonical
+    file the day is counted twice — 2026-09-05 held a 6-unit aggregate
+    at 18:44:00 beside the 6-unit detail at 18:44:35.
+
+    This reports and never removes.  An earlier version of this branch
+    deleted the suspected aggregate when its qty equalled the sum of its
+    same-minute peers, and that was wrong: arithmetic does not identify
+    an aggregate.  A real sample stamped at :00 whose companions happen
+    to sum to its value is the same shape, DrinkControl produces exactly
+    that shape, and the deletion also removed samples that had been on
+    disk for weeks.  An over-counted evening is a number the reader can
+    question; a deleted drink cannot be restored by re-pushing, because
+    the same rule would delete it again.  Removing a day's samples is
+    now an explicit operator action instead; see
+    ``canonicalize_paths(replace_source_days=True)``.
+
+    A bucket is reported when, for one source and one minute, exactly
+    one sample is stamped at :00, it carries none of ``_DETAIL_FIELDS``,
+    and at least one sample later in the same minute carries one.
+
+    Returns (source, minute) pairs.
+    """
+    buckets: dict[tuple[str, str], list[int]] = defaultdict(list)
+    for i, s in enumerate(samples):
+        ts = str(s.get("date", s.get("startDate", "")))
+        m = _TS_RE.match(ts)
+        if m:
+            buckets[(str(s.get("source", "")), m.group(1))].append(i)
+
+    found: list[tuple[str, str]] = []
+    for (source, minute), idx in buckets.items():
+        bare_zeros = []
+        detailed_peers = 0
+        for i in idx:
+            sec = _TS_RE.match(str(samples[i].get(
+                "date", samples[i].get("startDate", "")))).group(2)
+            if sec == "00":
+                bare_zeros.append(i)
+            elif _has_detail(samples[i]):
+                detailed_peers += 1
+        if len(bare_zeros) == 1 and detailed_peers and not _has_detail(
+                samples[bare_zeros[0]]):
+            found.append((source, minute))
+    return found
+
+
 def canonicalize_metric(
     metric_name: str,
     units: str,
     samples: list[dict],
     data_dir: Path,
+    replace_source_days: bool = False,
 ) -> list[Path]:
     """Merge incoming samples into per-day canonical files.
+
+    The merge is append-only: a day's sample count never shrinks, since
+    a push covers a window and says nothing about what it omits.
+
+    ``replace_source_days`` overrides that for the (metric, date, source)
+    combinations the incoming samples cover: existing samples from those
+    sources are discarded and replaced by the incoming ones, while other
+    sources keep theirs. It is off by default and is meant to be set by
+    an operator who knows the incoming data is authoritative — a manual
+    per-sample fetch of days the automation had already delivered as
+    aggregates. It is a decision, not an inference.
 
     Returns list of canonical file paths that were created or updated.
     """
@@ -91,19 +224,36 @@ def canonicalize_metric(
                 doc = json.load(f)
             existing_samples = doc.get("samples", [])
 
-        # Merge: existing keys take precedence, new samples added
-        seen = {_sample_key(s) for s in existing_samples}
-        merged = list(existing_samples)
-        n_added = 0
-        for s in new_samples:
-            key = _sample_key(s)
-            if key not in seen:
-                seen.add(key)
-                merged.append(s)
-                n_added += 1
+        if replace_source_days:
+            sources = {str(s.get("source", "")) for s in new_samples}
+            kept = [s for s in existing_samples
+                    if str(s.get("source", "")) not in sources]
+            merged = kept + list(new_samples)
+            n_added = len(new_samples)
+            n_replaced = len(existing_samples) - len(kept)
+            if n_replaced or not existing_samples:
+                log.info("  %s %s: ersätter %d sample från %s med %d",
+                         metric_name, date_str, n_replaced,
+                         ", ".join(sorted(sources)), len(new_samples))
+        else:
+            merged, n_added = _merge_samples(existing_samples, new_samples)
 
-        if n_added == 0 and existing_samples:
-            continue  # no change
+        if merged == existing_samples:
+            continue  # nothing on disk would change
+
+        # Reported on a write, so a suspected double is named when it
+        # appears rather than on every push for the rest of the day.
+        for source, minute in _suspected_aggregates(merged):
+            log.warning(
+                "%s %s: bart sample vid %s:00 (%s) ligger i samma minut "
+                "som samples med per-sample-fält. Sannolikt ett "
+                "minutaggregat ovanpå detaljdata — dygnet kan vara "
+                "dubbelräknat. Inget raderas; kör "
+                "'traning import canonical --replace-source-days' med en "
+                "per-sample-hämtning för att ersätta dygnet.",
+                metric_name, date_str, minute, source)
+        log.debug("  %s %s: +%d nya, %d totalt",
+                  metric_name, date_str, n_added, len(merged))
 
         doc = {
             "metric": metric_name,
@@ -233,11 +383,38 @@ def _save_legacy_metric(
 
 # --- Public API -------------------------------------------------------------
 
-def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, list[Path]]:
+def _metric_is_writable(metric: object) -> bool:
+    """Whether ``save_health_push`` would write this metric group.
+
+    A group needs a name and a non-empty list of dict samples. The
+    sample shape is checked rather than assumed truthy: every consumer
+    downstream calls ``.get()`` on each element, so a group whose data
+    is a string, a number or a list of strings would raise halfway
+    through a push and take the metrics after it with it. Rejecting it
+    here costs one group and names it in the log.
+    """
+    if not isinstance(metric, dict):
+        return False
+    if not metric.get("name"):
+        return False
+    data = metric.get("data")
+    if not isinstance(data, list) or not data:
+        return False
+    return all(isinstance(s, dict) for s in data)
+
+
+def save_health_push(payload: dict, data_dir: Path | None = None,
+                     replace_source_days: bool = False) -> tuple[int, list[Path]]:
     """Save HAE JSON payload via canonical deduplication.
 
     1. Canonicalize each metric into per-day files under canonical/.
     2. Track changed files for downstream import.
+
+    ``replace_source_days`` is passed through to ``canonicalize_metric``;
+    see there. The receiver never sets it — a push that arrives on its
+    own schedule is not authoritative about days it did not intend to
+    correct. Legacy metrics (sleep_analysis) ignore it: their files span
+    midnight and are merged by date range rather than per day.
 
     Returns (n_metrics, changed_files).
     """
@@ -261,18 +438,22 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, 
     metrics_dir.mkdir(parents=True, exist_ok=True)
 
     for m in metrics:
+        if not _metric_is_writable(m):
+            name = m.get("name") if isinstance(m, dict) else None
+            log.warning("Hoppar över metrikgrupp utan namn eller giltiga "
+                        "samples: %s", name or "(namnlös)")
+            continue
         name = m.get("name")
         samples = m.get("data", [])
-        if not name or not samples:
-            continue
-
         units = m.get("units", "")
 
         if name in _LEGACY_METRICS:
             changed = _save_legacy_metric(name, units, samples, metrics_dir)
             all_changed.extend(changed)
         else:
-            changed = canonicalize_metric(name, units, samples, data_dir)
+            changed = canonicalize_metric(
+                name, units, samples, data_dir,
+                replace_source_days=replace_source_days)
             all_changed.extend(changed)
             log.info("  %s: %d samples, %d canonical files updated",
                      name, len(samples), len(changed))
@@ -280,6 +461,188 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, 
         n_written += 1
 
     return n_written, all_changed
+
+
+def _read_hae_payload(path: Path) -> dict | None:
+    """Load a HAE metric export file, normalized to push payload shape.
+
+    Accepts both the receiver's ``{"data": {"metrics": [...]}}`` envelope
+    and the bare ``{"metrics": [...]}`` some exports use. Returns None
+    for anything that is not a readable HAE metric file.
+    """
+    try:
+        with open(path) as f:
+            raw = json.load(f)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as e:
+        log.warning("Kunde inte läsa %s: %s", path, e)
+        return None
+    if not isinstance(raw, dict):
+        return None
+    metrics = raw.get("data", {}).get("metrics") if isinstance(
+        raw.get("data"), dict) else None
+    if metrics is None:
+        metrics = raw.get("metrics")
+    if not isinstance(metrics, list) or not metrics:
+        return None
+    return {"data": {"metrics": metrics}}
+
+
+def plan_replacements(payload: dict,
+                      data_dir: Path) -> list[tuple[str, str, str, int, int]]:
+    """What ``replace_source_days`` would displace, without writing.
+
+    Returns (metric, date, source, n_existing, n_incoming) per
+    combination that already has samples on disk from the same source.
+    Combinations that would only add are left out: nothing is replaced
+    there.
+
+    Accurate only because the caller passes the payload it is about to
+    write, folded across every input file. Computing it per file would
+    model each file against the original state and so miss one input
+    displacing another.
+    """
+    plan: list[tuple[str, str, str, int, int]] = []
+    canonical_base = health_canonical_dir(data_dir)
+    for m in payload.get("data", {}).get("metrics", []):
+        if not _metric_is_writable(m):
+            continue
+        name = str(m["name"])
+        by_date: dict[str, list[dict]] = defaultdict(list)
+        for sample in m["data"]:
+            date_str = str(sample.get("date", sample.get("startDate", "")))[:10]
+            if date_str:
+                by_date[date_str].append(sample)
+        for date_str, incoming in sorted(by_date.items()):
+            path = canonical_base / name / f"{date_str}.json"
+            if not path.exists():
+                continue
+            try:
+                with open(path) as f:
+                    existing = json.load(f).get("samples", [])
+            except (json.JSONDecodeError, OSError) as e:
+                log.warning("Kunde inte läsa %s: %s", path, e)
+                continue
+            for source in sorted({str(s.get("source", "")) for s in incoming}):
+                n_existing = sum(1 for s in existing
+                                 if str(s.get("source", "")) == source)
+                if not n_existing:
+                    continue
+                n_incoming = sum(1 for s in incoming
+                                 if str(s.get("source", "")) == source)
+                plan.append((name, date_str, source, n_existing, n_incoming))
+    return plan
+
+
+def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
+                       dry_run: bool = False,
+                       replace_source_days: bool = False,
+                       ) -> tuple[int, int, list[Path]]:
+    """Canonicalize HAE metric JSON files that are already on disk.
+
+    Each path may be a file or a directory (searched non-recursively for
+    ``*.json``). Files run through the same ``save_health_push`` the
+    receiver uses, so a manual fetch is deduplicated by exactly the rules
+    a live push is — the alternative, ad hoc scripts calling
+    ``canonicalize_metric`` directly, is how the two paths drift apart.
+
+    All input files are folded into a single payload before anything is
+    written, so a (metric, date, source) is written once per call no
+    matter how many of the files cover it.
+
+    ``replace_source_days`` makes the incoming files authoritative for
+    every (metric, date, source) they cover: existing samples from those
+    sources are replaced rather than merged, other sources untouched.
+    Use it when a manual per-sample fetch supersedes what the automation
+    delivered as minute aggregates for the same days. The default merge
+    is append-only and will otherwise leave both, which double-counts.
+    Nothing infers this; it is the operator asserting that the file in
+    hand is the better record.
+
+    Returns (n_files, n_metrics, changed_files).
+    """
+    if data_dir is None:
+        data_dir = get_data_dir()
+
+    files: list[Path] = []
+    for p in paths:
+        p = Path(p)
+        if p.is_dir():
+            files.extend(sorted(p.glob("*.json")))
+        elif p.is_file():
+            files.append(p)
+        else:
+            log.warning("Hoppar över, finns inte: %s", p)
+
+    # One payload for the whole invocation, not one per file. Range
+    # files overlap as a matter of course — the metrics directory this
+    # command is pointed at holds pairs like
+    # active_energy_2026-04-03_2026-04-06 beside
+    # active_energy_2026-04-05_2026-04-07 — and under
+    # replace_source_days a per-file write meant the second file
+    # replaced what the first had just written, leaving whichever file
+    # came last in sorted order as the whole of that day. Folding the
+    # files together first makes each (metric, date, source) replaced
+    # once, by the union of everything supplied, and lets the dry run be
+    # computed on exactly what the real run would write.
+    #
+    # The fold uses the same multiplicity rule as the merge onto disk,
+    # so a sample present in two overlapping files counts once while two
+    # identical samples inside one file both survive. For the
+    # append-only default this is equivalent to the old file-by-file
+    # sequence, since per-key counts fold the same way whichever order
+    # they are combined in.
+    n_files = 0
+    merged: dict[str, dict] = {}
+    for f in files:
+        payload = _read_hae_payload(f)
+        if payload is None:
+            log.warning("Inte en HAE-metricfil, hoppar över: %s", f.name)
+            continue
+        n_files += 1
+        names: list[str] = []
+        for m in payload["data"]["metrics"]:
+            if not _metric_is_writable(m):
+                log.warning("%s: hoppar över metrikgrupp utan namn eller "
+                            "giltiga samples", f.name)
+                continue
+            name = str(m["name"])
+            names.append(name)
+            units = str(m.get("units", "") or "")
+            entry = merged.get(name)
+            if entry is None:
+                merged[name] = {"name": name, "units": units,
+                                "data": list(m["data"])}
+                continue
+            if units and not entry["units"]:
+                entry["units"] = units
+            elif units and units != entry["units"]:
+                log.warning("%s: %s anges i %s men %s sedan tidigare — "
+                            "behåller %s", f.name, name, units,
+                            entry["units"], entry["units"])
+            entry["data"], _ = _merge_samples(entry["data"], m["data"])
+        log.info("%s → %s", f.name,
+                 ", ".join(names) if names else "inget att skriva")
+
+    if not merged:
+        return n_files, 0, []
+
+    payload = {"data": {"metrics": list(merged.values())}}
+
+    if dry_run:
+        if replace_source_days:
+            for metric, date_str, source, n_old, n_new in plan_replacements(
+                    payload, data_dir):
+                log.info("  ersätter %s %s (%s): %d sample → %d",
+                         metric, date_str, source, n_old, n_new)
+        return n_files, len(merged), []
+
+    n_metrics, changed = save_health_push(
+        payload, data_dir, replace_source_days=replace_source_days)
+
+    # One metric can still touch many canonical days, and a caller reads
+    # this as the set of files to hand downstream (import, git add).
+    # First occurrence wins, so the order still follows the input.
+    return n_files, n_metrics, list(dict.fromkeys(changed))
 
 
 def save_workout_push(payload: dict, data_dir: Path | None = None) -> int:
