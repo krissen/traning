@@ -148,7 +148,8 @@ def _suspected_aggregates(samples: list[dict]) -> list[tuple[str, str]]:
     disk for weeks.  An over-counted evening is a number the reader can
     question; a deleted drink cannot be restored by re-pushing, because
     the same rule would delete it again.  Removing a day's samples is
-    now an explicit operator action instead.
+    now an explicit operator action instead; see
+    ``canonicalize_paths(replace_source_days=True)``.
 
     A bucket is reported when, for one source and one minute, exactly
     one sample is stamped at :00, it carries none of ``_DETAIL_FIELDS``,
@@ -185,11 +186,20 @@ def canonicalize_metric(
     units: str,
     samples: list[dict],
     data_dir: Path,
+    replace_source_days: bool = False,
 ) -> list[Path]:
     """Merge incoming samples into per-day canonical files.
 
     The merge is append-only: a day's sample count never shrinks, since
     a push covers a window and says nothing about what it omits.
+
+    ``replace_source_days`` overrides that for the (metric, date, source)
+    combinations the incoming samples cover: existing samples from those
+    sources are discarded and replaced by the incoming ones, while other
+    sources keep theirs. It is off by default and is meant to be set by
+    an operator who knows the incoming data is authoritative — a manual
+    per-sample fetch of days the automation had already delivered as
+    aggregates. It is a decision, not an inference.
 
     Returns list of canonical file paths that were created or updated.
     """
@@ -214,7 +224,19 @@ def canonicalize_metric(
                 doc = json.load(f)
             existing_samples = doc.get("samples", [])
 
-        merged, n_added = _merge_samples(existing_samples, new_samples)
+        if replace_source_days:
+            sources = {str(s.get("source", "")) for s in new_samples}
+            kept = [s for s in existing_samples
+                    if str(s.get("source", "")) not in sources]
+            merged = kept + list(new_samples)
+            n_added = len(new_samples)
+            n_replaced = len(existing_samples) - len(kept)
+            if n_replaced or not existing_samples:
+                log.info("  %s %s: ersätter %d sample från %s med %d",
+                         metric_name, date_str, n_replaced,
+                         ", ".join(sorted(sources)), len(new_samples))
+        else:
+            merged, n_added = _merge_samples(existing_samples, new_samples)
 
         if merged == existing_samples:
             continue  # nothing on disk would change
@@ -226,7 +248,9 @@ def canonicalize_metric(
                 "%s %s: bart sample vid %s:00 (%s) ligger i samma minut "
                 "som samples med per-sample-fält. Sannolikt ett "
                 "minutaggregat ovanpå detaljdata — dygnet kan vara "
-                "dubbelräknat. Inget raderas.",
+                "dubbelräknat. Inget raderas; kör "
+                "'traning import canonical --replace-source-days' med en "
+                "per-sample-hämtning för att ersätta dygnet.",
                 metric_name, date_str, minute, source)
         log.debug("  %s %s: +%d nya, %d totalt",
                   metric_name, date_str, n_added, len(merged))
@@ -371,11 +395,18 @@ def _metric_is_writable(metric: object) -> bool:
     return bool(metric.get("name")) and bool(metric.get("data"))
 
 
-def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, list[Path]]:
+def save_health_push(payload: dict, data_dir: Path | None = None,
+                     replace_source_days: bool = False) -> tuple[int, list[Path]]:
     """Save HAE JSON payload via canonical deduplication.
 
     1. Canonicalize each metric into per-day files under canonical/.
     2. Track changed files for downstream import.
+
+    ``replace_source_days`` is passed through to ``canonicalize_metric``;
+    see there. The receiver never sets it — a push that arrives on its
+    own schedule is not authoritative about days it did not intend to
+    correct. Legacy metrics (sleep_analysis) ignore it: their files span
+    midnight and are merged by date range rather than per day.
 
     Returns (n_metrics, changed_files).
     """
@@ -409,7 +440,9 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, 
             changed = _save_legacy_metric(name, units, samples, metrics_dir)
             all_changed.extend(changed)
         else:
-            changed = canonicalize_metric(name, units, samples, data_dir)
+            changed = canonicalize_metric(
+                name, units, samples, data_dir,
+                replace_source_days=replace_source_days)
             all_changed.extend(changed)
             log.info("  %s: %d samples, %d canonical files updated",
                      name, len(samples), len(changed))
@@ -443,8 +476,51 @@ def _read_hae_payload(path: Path) -> dict | None:
     return {"data": {"metrics": metrics}}
 
 
+def plan_replacements(payload: dict,
+                      data_dir: Path) -> list[tuple[str, str, str, int, int]]:
+    """What ``replace_source_days`` would displace, without writing.
+
+    Returns (metric, date, source, n_existing, n_incoming) per
+    combination that already has samples on disk from the same source.
+    Combinations that would only add are left out: nothing is replaced
+    there.
+    """
+    plan: list[tuple[str, str, str, int, int]] = []
+    canonical_base = health_canonical_dir(data_dir)
+    for m in payload.get("data", {}).get("metrics", []):
+        if not _metric_is_writable(m):
+            continue
+        name = str(m["name"])
+        by_date: dict[str, list[dict]] = defaultdict(list)
+        for sample in m["data"]:
+            date_str = str(sample.get("date", sample.get("startDate", "")))[:10]
+            if date_str:
+                by_date[date_str].append(sample)
+        for date_str, incoming in sorted(by_date.items()):
+            path = canonical_base / name / f"{date_str}.json"
+            if not path.exists():
+                continue
+            try:
+                with open(path) as f:
+                    existing = json.load(f).get("samples", [])
+            except (json.JSONDecodeError, OSError) as e:
+                log.warning("Kunde inte läsa %s: %s", path, e)
+                continue
+            for source in sorted({str(s.get("source", "")) for s in incoming}):
+                n_existing = sum(1 for s in existing
+                                 if str(s.get("source", "")) == source)
+                if not n_existing:
+                    continue
+                n_incoming = sum(1 for s in incoming
+                                 if str(s.get("source", "")) == source)
+                plan.append((name, date_str, source, n_existing, n_incoming))
+    return plan
+
+
 def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
-                       dry_run: bool = False) -> tuple[int, int, list[Path]]:
+                       dry_run: bool = False,
+                       replace_source_days: bool = False,
+                       ) -> tuple[int, int, list[Path]]:
     """Canonicalize HAE metric JSON files that are already on disk.
 
     Each path may be a file or a directory (searched non-recursively for
@@ -452,6 +528,15 @@ def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
     receiver uses, so a manual fetch is deduplicated by exactly the rules
     a live push is — the alternative, ad hoc scripts calling
     ``canonicalize_metric`` directly, is how the two paths drift apart.
+
+    ``replace_source_days`` makes the incoming files authoritative for
+    every (metric, date, source) they cover: existing samples from those
+    sources are replaced rather than merged, other sources untouched.
+    Use it when a manual per-sample fetch supersedes what the automation
+    delivered as minute aggregates for the same days. The default merge
+    is append-only and will otherwise leave both, which double-counts.
+    Nothing infers this; it is the operator asserting that the file in
+    hand is the better record.
 
     Returns (n_files, n_metrics, changed_files).
     """
@@ -486,8 +571,14 @@ def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
             log.info("Dry run: %s → %s", f.name,
                      ", ".join(names) if names else "inget att skriva")
             n_metrics += len(names)
+            if replace_source_days:
+                for metric, date_str, source, n_old, n_new in plan_replacements(
+                        payload, data_dir):
+                    log.info("  ersätter %s %s (%s): %d sample → %d",
+                             metric, date_str, source, n_old, n_new)
             continue
-        n, files_changed = save_health_push(payload, data_dir)
+        n, files_changed = save_health_push(
+            payload, data_dir, replace_source_days=replace_source_days)
         n_metrics += n
         changed.extend(files_changed)
 

@@ -231,6 +231,100 @@ def test_daily_total_matches_surviving_samples(tmp_path):
     assert doc["daily_total"] == pytest.approx(7.4)
 
 
+# -- replacing a day on operator instruction ---------------------------------
+
+def test_replace_source_days_supersedes_the_aggregate(tmp_path):
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-05 18:44:00 +0200", 5.999999761581421)]),
+        tmp_path)
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-05 18:44:35 +0200", 5.999999761581421)]),
+        tmp_path, replace_source_days=True)
+
+    doc = _canonical(tmp_path, "alcohol_consumption", "2026-09-05")
+    assert [s["date"] for s in doc["samples"]] == ["2026-09-05 18:44:35 +0200"]
+    assert doc["daily_total"] == pytest.approx(6.0)
+
+
+def test_replace_source_days_leaves_other_sources_alone(tmp_path):
+    save_health_push(
+        _payload("dietary_energy", "kJ", [
+            _aggregate("2026-09-05 12:00:00 +0200", 900.0, source="Lifesum"),
+            _aggregate("2026-09-05 18:44:00 +0200", 500.0),
+        ]),
+        tmp_path)
+    save_health_push(
+        _payload("dietary_energy", "kJ",
+                 [_energy("2026-09-05 18:44:35 +0200", 500.0, "beer, 440ml 5,0%")]),
+        tmp_path, replace_source_days=True)
+
+    doc = _canonical(tmp_path, "dietary_energy", "2026-09-05")
+    sources = sorted(s["source"] for s in doc["samples"])
+    assert sources == ["DrinkControl", "Lifesum"]
+    assert all(s["date"] != "2026-09-05 18:44:00 +0200" for s in doc["samples"])
+
+
+def test_replace_source_days_leaves_untouched_days_alone(tmp_path):
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-04 23:17:05 +0200", 9.0)]),
+        tmp_path)
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-05 18:44:35 +0200", 6.0)]),
+        tmp_path, replace_source_days=True)
+
+    assert _canonical(tmp_path, "alcohol_consumption",
+                      "2026-09-04")["daily_total"] == pytest.approx(9.0)
+
+
+def test_replace_source_days_keeps_identical_samples_verbatim(tmp_path):
+    """The input is authoritative, duplicates and all."""
+    ts = "2026-08-28 17:49:12 +0200"
+    beer = _energy(ts, 462.30522928888485, "beer, 400ml 5,0%")
+    save_health_push(_payload("dietary_energy", "kJ", [beer, dict(beer)]),
+                     tmp_path, replace_source_days=True)
+
+    assert len(_canonical(tmp_path, "dietary_energy", "2026-08-28")["samples"]) == 2
+
+
+def test_replace_is_off_by_default(tmp_path):
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-05 18:44:00 +0200", 6.0)]),
+        tmp_path)
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-05 18:44:35 +0200", 6.0)]),
+        tmp_path)
+
+    assert len(_canonical(tmp_path, "alcohol_consumption",
+                          "2026-09-05")["samples"]) == 2
+
+
+def test_dry_run_lists_what_replace_would_displace(tmp_path, caplog):
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-05 18:44:00 +0200", 6.0)]),
+        tmp_path)
+    f = tmp_path / "fetch.json"
+    f.write_text(json.dumps(_payload("alcohol_consumption", "count", [
+        _aggregate("2026-09-05 18:44:35 +0200", 4.0),
+        _aggregate("2026-09-05 19:10:02 +0200", 2.0),
+    ])))
+
+    with caplog.at_level("INFO"):
+        canonicalize_paths([f], data_dir=tmp_path, dry_run=True,
+                           replace_source_days=True)
+    lines = [r.getMessage() for r in caplog.records]
+    assert any("alcohol_consumption 2026-09-05 (DrinkControl): 1 sample → 2"
+               in m for m in lines)
+    assert _canonical(tmp_path, "alcohol_consumption",
+                      "2026-09-05")["daily_total"] == pytest.approx(6.0)
+
+
 # -- CLI-facing helper --------------------------------------------------------
 
 def test_canonicalize_paths_reads_a_directory(tmp_path):
