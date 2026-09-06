@@ -61,9 +61,17 @@ tillförlitliga.
 ## Pipeline: HAE-hämtning och övervakning
 
 Uppföljningsspår från vilopuls-incidenten aug 2026
-(`docs/dev/incidents/2026-08-07-resting-hr-export-gap.md`) och
-MCP-backfillen 2026-08-10.
+(`docs/dev/incidents/2026-08-07-resting-hr-export-gap.md`),
+MCP-backfillen 2026-08-10, och bortfallsincidenten för dygnssammanfattnings-
+metriker aug-sep 2026 (`docs/dev/incidents/2026-08-10-daily-summary-metrics-dropout.md`).
 
+- **Per-metrik-staleness-larm i `traning doctor`.** Enskilda metriker kan
+  tyst falla ur HAE:s automatiska pushar utan att någon freshness-check
+  reagerar. Detta är nu det andra dokumenterade fallet på en månad
+  (vilopuls aug 2026, dygnssammanfattningsmetriker aug-sep 2026) och båda
+  gick oupptäckta tills något nedströms gick sönder. Okända/utblivna
+  metriker filtreras dessutom tyst av `.import_metrics`-vitlistan (loggas
+  bara vid `verbose=TRUE`). Prioriterad.
 - **Bevakningspunkt 2026-08-12: "Idag"-fönstrets täckning.** Automationens
   exportfönster står på "Idag" som workaround för
   `Lybron/health-auto-export#61`. Verifiera att retroaktivt skrivna
@@ -87,10 +95,6 @@ MCP-backfillen 2026-08-10.
   legacy-skrivaren bredvid använder temporär fil plus rename. En avbruten
   skrivning förlorar ett helt dygn och förgiftar varje senare läsning av
   det. Förbefintligt; egen commit mot master.
-- **Per-metrik-staleness-larm i `traning doctor`.** Enskilda metriker kan
-  tyst falla ur HAE:s automatiska pushar (vilopuls aug 2026) utan att någon
-  freshness-check reagerar; okända/utblivna metriker filtreras dessutom tyst
-  av `.import_metrics`-vitlistan (loggas bara vid `verbose=TRUE`).
 
 ## AUR-paketering (pausad 2026-05-18)
 
