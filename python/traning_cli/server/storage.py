@@ -8,7 +8,6 @@ with multiplicity preserved (see ``_merge_samples``).
 
 import json
 import logging
-import math
 import re
 import unicodedata
 from collections import Counter, defaultdict
@@ -122,67 +121,63 @@ def _merge_samples(existing: list[dict],
 # the minute bucket, group 2 the seconds.
 _TS_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}):(\d{2})")
 
-# How far an aggregate may differ from the sum it claims to be.  Both
-# sides are IEEE doubles that came through JSON, so only rounding noise
-# is tolerated — this is an identity check, not a similarity check.
-_AGG_REL_TOL = 1e-6
+# Fields a per-sample export carries and a minute aggregate does not.
+_DETAIL_FIELDS = ("foodType", "start", "end")
 
 
-def _drop_aggregate_shadows(samples: list[dict]) -> tuple[list[dict], int]:
-    """Drop minute-level aggregates that duplicate per-sample detail.
+def _has_detail(sample: dict) -> bool:
+    return any(sample.get(f) is not None for f in _DETAIL_FIELDS)
 
-    HAE can deliver the same day twice in two shapes.  The automation
-    that pushes to the receiver aggregates by minute: one sample per
-    minute bucket, timestamped at :00 with the per-sample fields
-    (foodType, start, end) stripped.  A later per-sample fetch returns
-    the same drinks individually at their real seconds.  Both land in
-    the canonical file and the day doubles — 2026-09-05 held both a
-    6-unit aggregate at 18:44:00 and the 6-unit detail at 18:44:35.
 
-    A sample is treated as an aggregate shadow only when all of the
-    following hold within one (source, minute) bucket:
+def _suspected_aggregates(samples: list[dict]) -> list[tuple[str, str]]:
+    """Find buckets where a minute aggregate looks to sit beside detail.
 
-      * it is the only sample in the bucket stamped at :00 seconds;
-      * at least one other sample in the bucket has non-zero seconds;
-      * its qty equals the sum of those others to within rounding.
+    HAE's push automation aggregates by minute: one sample per minute
+    bucket, stamped at :00 and carrying none of the per-sample fields.
+    A manual per-sample fetch of the same day returns the events
+    individually at their real seconds.  When both reach the canonical
+    file the day is counted twice — 2026-09-05 held a 6-unit aggregate
+    at 18:44:00 beside the 6-unit detail at 18:44:35.
 
-    The last condition is what makes this safe rather than heuristic:
-    the aggregate is dropped only when the samples that remain add up to
-    exactly what it claimed, so no quantity leaves the file.  The
-    non-zero-seconds requirement keeps metrics whose samples are all
-    minute-stamped by construction (step_count and the other hourly sum
-    metrics) out of the rule entirely.
+    This reports and never removes.  An earlier version of this branch
+    deleted the suspected aggregate when its qty equalled the sum of its
+    same-minute peers, and that was wrong: arithmetic does not identify
+    an aggregate.  A real sample stamped at :00 whose companions happen
+    to sum to its value is the same shape, DrinkControl produces exactly
+    that shape, and the deletion also removed samples that had been on
+    disk for weeks.  An over-counted evening is a number the reader can
+    question; a deleted drink cannot be restored by re-pushing, because
+    the same rule would delete it again.  Removing a day's samples is
+    now an explicit operator action instead.
 
-    Returns (kept, n_dropped).
+    A bucket is reported when, for one source and one minute, exactly
+    one sample is stamped at :00, it carries none of ``_DETAIL_FIELDS``,
+    and at least one sample later in the same minute carries one.
+
+    Returns (source, minute) pairs.
     """
-    buckets: dict[tuple[str, str], list[tuple[int, str]]] = defaultdict(list)
+    buckets: dict[tuple[str, str], list[int]] = defaultdict(list)
     for i, s in enumerate(samples):
         ts = str(s.get("date", s.get("startDate", "")))
         m = _TS_RE.match(ts)
         if m:
-            buckets[(str(s.get("source", "")), m.group(1))].append((i, m.group(2)))
+            buckets[(str(s.get("source", "")), m.group(1))].append(i)
 
-    drop: set[int] = set()
-    for (source, bucket), items in buckets.items():
-        zeros = [i for i, sec in items if sec == "00"]
-        peers = [i for i, sec in items if sec != "00"]
-        if len(zeros) != 1 or not peers:
-            continue
-        cand_qty = samples[zeros[0]].get("qty")
-        if not isinstance(cand_qty, (int, float)):
-            continue
-        peer_qtys = [samples[i].get("qty") for i in peers]
-        if any(not isinstance(q, (int, float)) for q in peer_qtys):
-            continue
-        if math.isclose(cand_qty, sum(peer_qtys),
-                        rel_tol=_AGG_REL_TOL, abs_tol=1e-9):
-            drop.add(zeros[0])
-            log.info("  aggregat vid %s:00 (%s) ersätts av %d detaljsample",
-                     bucket, source, len(peers))
-
-    if not drop:
-        return samples, 0
-    return [s for i, s in enumerate(samples) if i not in drop], len(drop)
+    found: list[tuple[str, str]] = []
+    for (source, minute), idx in buckets.items():
+        bare_zeros = []
+        detailed_peers = 0
+        for i in idx:
+            sec = _TS_RE.match(str(samples[i].get(
+                "date", samples[i].get("startDate", "")))).group(2)
+            if sec == "00":
+                bare_zeros.append(i)
+            elif _has_detail(samples[i]):
+                detailed_peers += 1
+        if len(bare_zeros) == 1 and detailed_peers and not _has_detail(
+                samples[bare_zeros[0]]):
+            found.append((source, minute))
+    return found
 
 
 def canonicalize_metric(
@@ -192,6 +187,9 @@ def canonicalize_metric(
     data_dir: Path,
 ) -> list[Path]:
     """Merge incoming samples into per-day canonical files.
+
+    The merge is append-only: a day's sample count never shrinks, since
+    a push covers a window and says nothing about what it omits.
 
     Returns list of canonical file paths that were created or updated.
     """
@@ -216,15 +214,22 @@ def canonicalize_metric(
                 doc = json.load(f)
             existing_samples = doc.get("samples", [])
 
-        # Merge on full sample content, then discard any aggregate that
-        # the per-sample detail already accounts for.
         merged, n_added = _merge_samples(existing_samples, new_samples)
-        merged, n_dropped = _drop_aggregate_shadows(merged)
 
         if merged == existing_samples:
             continue  # nothing on disk would change
-        log.debug("  %s %s: +%d nya, -%d aggregat, %d totalt",
-                  metric_name, date_str, n_added, n_dropped, len(merged))
+
+        # Reported on a write, so a suspected double is named when it
+        # appears rather than on every push for the rest of the day.
+        for source, minute in _suspected_aggregates(merged):
+            log.warning(
+                "%s %s: bart sample vid %s:00 (%s) ligger i samma minut "
+                "som samples med per-sample-fält. Sannolikt ett "
+                "minutaggregat ovanpå detaljdata — dygnet kan vara "
+                "dubbelräknat. Inget raderas.",
+                metric_name, date_str, minute, source)
+        log.debug("  %s %s: +%d nya, %d totalt",
+                  metric_name, date_str, n_added, len(merged))
 
         doc = {
             "metric": metric_name,
