@@ -19,6 +19,11 @@ def _energy(ts, qty, food_type=None, source="DrinkControl"):
     return s
 
 
+def _aggregate(ts, qty, source="DrinkControl"):
+    """One minute-aggregated sample: no foodType, no start/end."""
+    return {"date": ts, "source": source, "qty": qty}
+
+
 def _payload(metric, units, samples):
     return {"data": {"metrics": [
         {"name": metric, "units": units, "data": samples}
@@ -111,3 +116,110 @@ def test_key_order_does_not_create_duplicates(tmp_path):
     save_health_push(_payload("dietary_energy", "kJ", [b]), tmp_path)
 
     assert len(_canonical(tmp_path, "dietary_energy", "2026-09-04")["samples"]) == 1
+
+
+# -- aggregate vs per-sample --------------------------------------------------
+
+def test_detailed_samples_supersede_minute_aggregate(tmp_path):
+    """The 2026-09-05 case: pushed aggregate at :00, fetched detail at :35."""
+    save_health_push(
+        _payload("dietary_energy", "kJ",
+                 [_aggregate("2026-09-05 18:44:00 +0200", 1768.3175020299848)]),
+        tmp_path)
+    save_health_push(
+        _payload("dietary_energy", "kJ", [
+            _energy("2026-09-05 18:44:35 +0200", 381.40181416333013,
+                    "beer, 330ml 5,0%"),
+            _energy("2026-09-05 18:44:35 +0200", 1386.9156878666547,
+                    "wine, 500ml 12,0%"),
+        ]),
+        tmp_path)
+
+    doc = _canonical(tmp_path, "dietary_energy", "2026-09-05")
+    assert len(doc["samples"]) == 2
+    assert all("foodType" in s for s in doc["samples"])
+    assert sum(s["qty"] for s in doc["samples"]) == pytest.approx(1768.32, abs=0.01)
+
+
+def test_aggregate_arriving_after_detail_is_not_kept(tmp_path):
+    """Order of arrival must not change the outcome."""
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-05 18:44:35 +0200", 5.999999761581421)]),
+        tmp_path)
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-05 18:44:00 +0200", 5.999999761581421)]),
+        tmp_path)
+
+    doc = _canonical(tmp_path, "alcohol_consumption", "2026-09-05")
+    assert [s["date"] for s in doc["samples"]] == ["2026-09-05 18:44:35 +0200"]
+    assert doc["daily_total"] == pytest.approx(6.0)
+
+
+def test_daily_total_matches_surviving_samples(tmp_path):
+    save_health_push(
+        _payload("alcohol_consumption", "count", [
+            _aggregate("2026-08-28 17:49:12 +0200", 3.2),
+            _aggregate("2026-08-28 18:10:59 +0200", 1.7),
+            _aggregate("2026-08-28 18:44:42 +0200", 2.5),
+        ]),
+        tmp_path)
+
+    doc = _canonical(tmp_path, "alcohol_consumption", "2026-08-28")
+    assert len(doc["samples"]) == 3
+    assert doc["daily_total"] == pytest.approx(7.4)
+
+
+def test_real_sample_at_whole_minute_is_kept(tmp_path):
+    """A drink logged at exactly :00 has no peers to be shadowed by."""
+    save_health_push(
+        _payload("alcohol_consumption", "count",
+                 [_aggregate("2026-09-02 20:00:00 +0200", 4.3),
+                  _aggregate("2026-09-02 19:18:22 +0200", 1.7)]),
+        tmp_path)
+
+    doc = _canonical(tmp_path, "alcohol_consumption", "2026-09-02")
+    assert len(doc["samples"]) == 2
+    assert doc["daily_total"] == pytest.approx(6.0)
+
+
+def test_minute_stamped_sum_metric_is_untouched(tmp_path):
+    """step_count samples are all minute-stamped; the rule must not fire."""
+    save_health_push(
+        _payload("step_count", "count", [
+            {"date": "2026-09-05 13:00:00 +0200", "source": "iPhone", "qty": 300},
+            {"date": "2026-09-05 14:00:00 +0200", "source": "iPhone", "qty": 200},
+            {"date": "2026-09-05 15:00:00 +0200", "source": "iPhone", "qty": 500},
+        ]),
+        tmp_path)
+
+    doc = _canonical(tmp_path, "step_count", "2026-09-05")
+    assert len(doc["samples"]) == 3
+    assert doc["daily_total"] == pytest.approx(1000)
+
+
+def test_mismatched_total_is_not_treated_as_aggregate(tmp_path):
+    """Without exact sum equality the :00 sample stays put."""
+    save_health_push(
+        _payload("dietary_energy", "kJ", [
+            _aggregate("2026-09-05 18:44:00 +0200", 999.0),
+            _energy("2026-09-05 18:44:35 +0200", 381.4, "beer, 330ml 5,0%"),
+        ]),
+        tmp_path)
+
+    doc = _canonical(tmp_path, "dietary_energy", "2026-09-05")
+    assert len(doc["samples"]) == 2
+
+
+def test_aggregate_from_other_source_is_kept(tmp_path):
+    """Buckets are per source; a coincidence across apps is not a shadow."""
+    save_health_push(
+        _payload("dietary_energy", "kJ", [
+            _aggregate("2026-09-05 18:44:00 +0200", 381.4, source="Lifesum"),
+            _energy("2026-09-05 18:44:35 +0200", 381.4, "beer, 330ml 5,0%"),
+        ]),
+        tmp_path)
+
+    doc = _canonical(tmp_path, "dietary_energy", "2026-09-05")
+    assert len(doc["samples"]) == 2

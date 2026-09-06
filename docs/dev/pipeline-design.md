@@ -307,6 +307,50 @@ Reuses file-writing pattern from `health/tcp.py:158-186`:
   keyed on filename + mtime, so new files from FastAPI are picked up
   automatically
 
+### Canonical sample deduplication
+
+`canonicalize_metric()` merges every push into
+`canonical/{metric}/{YYYY-MM-DD}.json`. Two rules govern what survives.
+
+**Content keying with multiplicity.** A sample's dedup key is the whole
+sample serialized with sorted keys, not `(timestamp, source)`. Sources
+do write several samples in one second: DrinkControl stamps a logging
+session with a single second and writes one `dietary_energy` sample per
+drink. Keying on the timestamp collapsed those to one. Because two
+drinks can also be byte-identical (the same beer twice in the same
+second), the merge compares *counts* per key and keeps
+`max(existing, incoming)`. A repeated push therefore adds nothing, while
+identical-but-distinct samples both survive. Counts never shrink: a push
+covers a window and is not authoritative about what it omits.
+
+**Minute aggregates yield to per-sample detail.** HAE delivers the same
+day in two shapes. The push automation aggregates by minute — one sample
+per minute bucket, stamped at `:00`, with `foodType`/`start`/`end`
+stripped. A later per-sample fetch returns the same events individually
+at their real seconds. Both used to land in the file and the day
+doubled: 2026-09-05 held a 6-unit `alcohol_consumption` aggregate at
+18:44:00 next to the 6-unit detail at 18:44:35.
+
+`_drop_aggregate_shadows()` removes the aggregate, but only when all of
+the following hold inside one `(source, minute)` bucket:
+
+- it is the only sample in the bucket stamped at `:00` seconds;
+- at least one other sample in the bucket has non-zero seconds;
+- its `qty` equals the sum of those others to within rounding.
+
+The sum check is what makes this safe rather than heuristic: the
+aggregate goes only when the remaining samples add up to exactly what it
+claimed, so no quantity leaves the file. Requiring peers with non-zero
+seconds keeps metrics whose samples are minute-stamped by construction
+(`step_count` and the other hourly sum metrics) out of the rule
+entirely, and a real event logged at exactly `:00` has no peers to be
+shadowed by. The rule runs on the merged set, so arrival order does not
+matter, and it is the one place canonical files lose a sample rather
+than gain one.
+
+`daily_total` is recomputed from what survives, and a file is rewritten
+only when the merged sample list differs from what is on disk.
+
 ### Commit deduplication
 
 `commit_health_data()` does:
