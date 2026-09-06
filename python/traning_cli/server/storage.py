@@ -495,6 +495,11 @@ def plan_replacements(payload: dict,
     combination that already has samples on disk from the same source.
     Combinations that would only add are left out: nothing is replaced
     there.
+
+    Accurate only because the caller passes the payload it is about to
+    write, folded across every input file. Computing it per file would
+    model each file against the original state and so miss one input
+    displacing another.
     """
     plan: list[tuple[str, str, str, int, int]] = []
     canonical_base = health_canonical_dir(data_dir)
@@ -540,6 +545,10 @@ def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
     a live push is — the alternative, ad hoc scripts calling
     ``canonicalize_metric`` directly, is how the two paths drift apart.
 
+    All input files are folded into a single payload before anything is
+    written, so a (metric, date, source) is written once per call no
+    matter how many of the files cover it.
+
     ``replace_source_days`` makes the incoming files authoritative for
     every (metric, date, source) they cover: existing samples from those
     sources are replaced rather than merged, other sources untouched.
@@ -564,40 +573,75 @@ def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
         else:
             log.warning("Hoppar över, finns inte: %s", p)
 
+    # One payload for the whole invocation, not one per file. Range
+    # files overlap as a matter of course — the metrics directory this
+    # command is pointed at holds pairs like
+    # active_energy_2026-04-03_2026-04-06 beside
+    # active_energy_2026-04-05_2026-04-07 — and under
+    # replace_source_days a per-file write meant the second file
+    # replaced what the first had just written, leaving whichever file
+    # came last in sorted order as the whole of that day. Folding the
+    # files together first makes each (metric, date, source) replaced
+    # once, by the union of everything supplied, and lets the dry run be
+    # computed on exactly what the real run would write.
+    #
+    # The fold uses the same multiplicity rule as the merge onto disk,
+    # so a sample present in two overlapping files counts once while two
+    # identical samples inside one file both survive. For the
+    # append-only default this is equivalent to the old file-by-file
+    # sequence, since per-key counts fold the same way whichever order
+    # they are combined in.
     n_files = 0
-    n_metrics = 0
-    changed: list[Path] = []
+    merged: dict[str, dict] = {}
     for f in files:
         payload = _read_hae_payload(f)
         if payload is None:
             log.warning("Inte en HAE-metricfil, hoppar över: %s", f.name)
             continue
         n_files += 1
-        if dry_run:
-            # Count what would actually be written, not what the file
-            # contains: a nameless or empty metric group is skipped on
-            # the real run, and a dry run that promised it would lie.
-            names = [str(m["name"]) for m in payload["data"]["metrics"]
-                     if _metric_is_writable(m)]
-            log.info("Dry run: %s → %s", f.name,
-                     ", ".join(names) if names else "inget att skriva")
-            n_metrics += len(names)
-            if replace_source_days:
-                for metric, date_str, source, n_old, n_new in plan_replacements(
-                        payload, data_dir):
-                    log.info("  ersätter %s %s (%s): %d sample → %d",
-                             metric, date_str, source, n_old, n_new)
-            continue
-        n, files_changed = save_health_push(
-            payload, data_dir, replace_source_days=replace_source_days)
-        n_metrics += n
-        changed.extend(files_changed)
+        names: list[str] = []
+        for m in payload["data"]["metrics"]:
+            if not _metric_is_writable(m):
+                log.warning("%s: hoppar över metrikgrupp utan namn eller "
+                            "giltiga samples", f.name)
+                continue
+            name = str(m["name"])
+            names.append(name)
+            units = str(m.get("units", "") or "")
+            entry = merged.get(name)
+            if entry is None:
+                merged[name] = {"name": name, "units": units,
+                                "data": list(m["data"])}
+                continue
+            if units and not entry["units"]:
+                entry["units"] = units
+            elif units and units != entry["units"]:
+                log.warning("%s: %s anges i %s men %s sedan tidigare — "
+                            "behåller %s", f.name, name, units,
+                            entry["units"], entry["units"])
+            entry["data"], _ = _merge_samples(entry["data"], m["data"])
+        log.info("%s → %s", f.name,
+                 ", ".join(names) if names else "inget att skriva")
 
-    # Several input files routinely touch the same canonical day, so the
-    # accumulated list holds repeats. Callers treat it as the set of
-    # files to hand downstream (import, git add), where a repeat is at
-    # best noise and at worst a double count. First occurrence wins, so
-    # the order still follows the input.
+    if not merged:
+        return n_files, 0, []
+
+    payload = {"data": {"metrics": list(merged.values())}}
+
+    if dry_run:
+        if replace_source_days:
+            for metric, date_str, source, n_old, n_new in plan_replacements(
+                    payload, data_dir):
+                log.info("  ersätter %s %s (%s): %d sample → %d",
+                         metric, date_str, source, n_old, n_new)
+        return n_files, len(merged), []
+
+    n_metrics, changed = save_health_push(
+        payload, data_dir, replace_source_days=replace_source_days)
+
+    # One metric can still touch many canonical days, and a caller reads
+    # this as the set of files to hand downstream (import, git add).
+    # First occurrence wins, so the order still follows the input.
     return n_files, n_metrics, list(dict.fromkeys(changed))
 
 

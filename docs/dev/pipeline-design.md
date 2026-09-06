@@ -372,6 +372,16 @@ server, a recovered export) is deduplicated by the same rules a live
 push is, instead of by a one-off script calling `canonicalize_metric()`
 directly.
 
+All input files are folded into one payload before anything is written,
+so a `(metric, date, source)` is written once per invocation however
+many files cover it. Range files overlap routinely — the metrics
+directory holds pairs like `active_energy_2026-04-03_2026-04-06.json`
+beside `active_energy_2026-04-05_2026-04-07.json` — and writing per file
+meant, under the flag below, that the second file replaced what the
+first had just written. The fold uses the same multiplicity rule as the
+merge onto disk, so a sample present in two files counts once while two
+identical samples inside one file both survive.
+
 `--replace-source-days` makes the input authoritative for every
 `(metric, date, source)` it covers: existing samples from those sources
 are discarded and replaced, other sources keep theirs. It is the

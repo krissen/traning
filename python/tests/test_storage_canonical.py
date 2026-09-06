@@ -459,3 +459,109 @@ def test_partly_malformed_sample_list_is_skipped_whole(tmp_path):
     assert not (canonical / "step_count").exists()
     assert _canonical(tmp_path, "alcohol_consumption",
                       "2026-08-29")["daily_total"] == pytest.approx(8.1)
+
+
+# -- overlapping input files --------------------------------------------------
+
+def _write_metric_file(path, metric, units, samples):
+    path.write_text(json.dumps(_payload(metric, units, samples)))
+
+
+def test_overlapping_files_do_not_replace_each_other(tmp_path):
+    """Two files covering one day: the union survives, not the last file.
+
+    Range files overlap as a matter of course. Applying the replacement
+    once per file let the second discard what the first had written.
+    """
+    src = tmp_path / "in"
+    src.mkdir()
+    drinks = [
+        _energy("2026-09-01 20:10:00 +0200", 500.0, "beer, 440ml 5,0%"),
+        _energy("2026-09-01 20:40:00 +0200", 700.0, "wine, 250ml 12,0%"),
+        _energy("2026-09-01 21:15:00 +0200", 300.0, "beer, 250ml 5,0%"),
+    ]
+    _write_metric_file(src / "dietary_energy_2026-08-21_2026-09-05.json",
+                       "dietary_energy", "kJ", drinks)
+    _write_metric_file(src / "dietary_energy_2026-09-01_2026-09-05.json",
+                       "dietary_energy", "kJ", [drinks[0]])
+
+    canonicalize_paths([src], data_dir=tmp_path, replace_source_days=True)
+
+    doc = _canonical(tmp_path, "dietary_energy", "2026-09-01")
+    assert len(doc["samples"]) == 3
+    assert sorted(s["qty"] for s in doc["samples"]) == [300.0, 500.0, 700.0]
+
+
+def test_dry_run_models_the_folded_input(tmp_path, caplog):
+    """The plan must describe the union, not one file against disk."""
+    save_health_push(
+        _payload("dietary_energy", "kJ",
+                 [_aggregate("2026-09-01 20:00:00 +0200", 1500.0)]),
+        tmp_path)
+
+    src = tmp_path / "in"
+    src.mkdir()
+    drinks = [
+        _energy("2026-09-01 20:10:00 +0200", 500.0, "beer, 440ml 5,0%"),
+        _energy("2026-09-01 20:40:00 +0200", 700.0, "wine, 250ml 12,0%"),
+        _energy("2026-09-01 21:15:00 +0200", 300.0, "beer, 250ml 5,0%"),
+    ]
+    _write_metric_file(src / "a_2026-08-21_2026-09-05.json",
+                       "dietary_energy", "kJ", drinks)
+    _write_metric_file(src / "b_2026-09-01_2026-09-05.json",
+                       "dietary_energy", "kJ", [drinks[0]])
+
+    with caplog.at_level("INFO"):
+        canonicalize_paths([src], data_dir=tmp_path, dry_run=True,
+                           replace_source_days=True)
+    lines = [r.getMessage() for r in caplog.records]
+    assert any("dietary_energy 2026-09-01 (DrinkControl): 1 sample → 3" in m
+               for m in lines)
+
+    # And the real run does what the plan said.
+    canonicalize_paths([src], data_dir=tmp_path, replace_source_days=True)
+    assert len(_canonical(tmp_path, "dietary_energy",
+                          "2026-09-01")["samples"]) == 3
+
+
+def test_overlapping_files_do_not_duplicate_on_the_merge_path(tmp_path):
+    """A sample present in two files is stored once by default."""
+    src = tmp_path / "in"
+    src.mkdir()
+    beer = _energy("2026-09-01 20:10:00 +0200", 500.0, "beer, 440ml 5,0%")
+    _write_metric_file(src / "a.json", "dietary_energy", "kJ", [beer])
+    _write_metric_file(src / "b.json", "dietary_energy", "kJ", [dict(beer)])
+
+    canonicalize_paths([src], data_dir=tmp_path)
+
+    assert len(_canonical(tmp_path, "dietary_energy",
+                          "2026-09-01")["samples"]) == 1
+
+
+def test_identical_samples_within_one_file_still_both_survive(tmp_path):
+    """Folding files must not collapse a file's own multiplicity."""
+    src = tmp_path / "in"
+    src.mkdir()
+    beer = _energy("2026-08-28 17:49:12 +0200", 462.30522928888485,
+                   "beer, 400ml 5,0%")
+    _write_metric_file(src / "a.json", "dietary_energy", "kJ",
+                       [beer, dict(beer)])
+    _write_metric_file(src / "b.json", "dietary_energy", "kJ", [dict(beer)])
+
+    canonicalize_paths([src], data_dir=tmp_path)
+
+    assert len(_canonical(tmp_path, "dietary_energy",
+                          "2026-08-28")["samples"]) == 2
+
+
+def test_metrics_from_different_files_are_all_written(tmp_path):
+    src = tmp_path / "in"
+    src.mkdir()
+    _write_metric_file(src / "a.json", "dietary_energy", "kJ",
+                       [_energy("2026-09-01 20:10:00 +0200", 500.0, "beer")])
+    _write_metric_file(src / "b.json", "alcohol_consumption", "count",
+                       [_aggregate("2026-09-01 20:10:00 +0200", 1.7)])
+
+    n_files, n_metrics, changed = canonicalize_paths([src], data_dir=tmp_path)
+
+    assert (n_files, n_metrics, len(changed)) == (2, 2, 2)
