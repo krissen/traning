@@ -26,15 +26,29 @@ Health Auto Export publishes HealthKit's alcohol record as
 **DrinkControl**, which logs drinks on the phone and writes them to
 Health.
 
-DrinkControl writes a second record at the same timestamp:
-`dietary_energy`, in kJ. Observed on 2026-09-05, the first exported day:
+DrinkControl writes a second record alongside it at the same timestamp:
+`dietary_energy`, in kJ. One `dietary_energy` sample is written **per
+drink**, and it carries a `foodType` string naming the drink, its volume
+and its strength. `alcohol_consumption` is coarser: one sample per
+logging occasion, holding the units logged on that occasion.
 
-| Record | Value | Time | Source |
+An unaggregated fetch of 2026-08-28 shows the shape:
+
+| Time | `alcohol_consumption` | `dietary_energy` | `foodType` |
 |---|---|---|---|
-| `alcohol_consumption` | 5.9999 count | 18:44 | DrinkControl |
-| `dietary_energy` | 1768.3 kJ | 18:44 | DrinkControl |
+| 17:49:12 | 3.2 count | 462.3 kJ | beer, 400ml 5,0% |
+| 18:10:59 | 1.7 count | 508.5 kJ | beer, 440ml 5,0% |
+| 18:44:42 | 2.5 count | 724.7 kJ | beer, 330ml 9,5% |
 
-1768.3 kJ is 422.6 kcal, which over six drinks is 70.4 kcal per drink.
+An earlier draft of this document recorded 2026-09-05 as a single
+aggregated row, `5.9999 count` and `1768.3 kJ` both at 18:44. That row
+was an artefact of the export path, not of the source: the push
+automation aggregates by minute and truncates the seconds. The day in
+fact holds two drinks, at 18:44:35, and the aggregation happens in
+Health Auto Export rather than in DrinkControl. See "Canonical sample
+deduplication" in `docs/dev/pipeline-design.md`.
+
+1768.3 kJ is 422.6 kcal, which over six units is 70.4 kcal per unit.
 
 ### DrinkControl's unit and its energy
 
@@ -94,48 +108,70 @@ history independent of the setting, and `grams / count` recovers the
 setting itself as an integrity check: a drift beyond 15 % sets
 `alcohol_unit_mismatch` and prints a message at import.
 
-### What the source does not provide
+### What the source provides, and what it does not
 
-HealthKit's alcohol record is a bare count. Apple's own definition is
-qualitative: a quantity type measuring "the number of standard alcoholic
-drinks that the user has consumed", where "A standard drink is one beer,
-glass of wine, or mixed drink made with spirits". There is **no drink
-type, no volume and no alcohol percentage** in the type, no gram-ethanol
-equivalence, and DrinkControl exports none of them even though it holds
-them internally. This constrains the design more than anything else and
-is the reason for decision 2.
+**Type, volume and strength are exported.** HealthKit's alcohol record
+itself is a bare count: Apple's definition is qualitative, "the number
+of standard alcoholic drinks that the user has consumed", where "A
+standard drink is one beer, glass of wine, or mixed drink made with
+spirits", and it carries no drink type, no volume, no percentage and no
+gram-ethanol equivalence.
 
-**Nor is there a drink time.** The alcohol record arrived as a single
-aggregated row for the day, not one row per drink, and the timestamp on
-it is the time the export ran rather than the time anything was drunk.
-The 18:44 in the table above is an export clock reading. Nothing in the
-current feed carries when a drink was actually taken, and it is not yet
-established whether the aggregation happens inside DrinkControl or
-inside Health Auto Export. Logging two drinks several hours apart and
-re-exporting would settle it.
+But DrinkControl does not stop at that record. Every `dietary_energy`
+sample it writes carries a `foodType` string of the form
+`beer, 660ml 5,0%`, and Health stores it as sample metadata. Type,
+volume and strength are therefore all present per drink, in an
+unaggregated export. An earlier draft of this document asserted the
+opposite, that DrinkControl "exports none of them even though it holds
+them internally", and built decision 2 on it. That was wrong; the field
+was invisible because the aggregated export path drops it. See decision
+2 for what follows.
 
-This matters because timing is one of the few things the literature
-identifies as actionable. Grosicki et al. (2026) found that drinking 60
-minutes earlier than usual, compared with 60 minutes later, was
-associated with a 0.87 bpm lower resting heart rate and a 1.5 ms higher
-HRV in females, and with a 1.2 bpm and 3.7 ms difference in 20 to 29
-year olds. That lever cannot be offered from this feed.
+The strings are free-form and localized (a decimal comma, a lowercase
+category), so anything reading them needs a parser and a fallback for
+unrecognized categories. They are not a structured field.
 
-Consequence for the data model: no timestamp is stored at all. An
-earlier draft kept the latest sample time within a night, but under this
-feed that is an export time, so it could not be shown to the reader as
-when the drinking stopped, nor used to sort drinks across a noon
-boundary. Storing it would have invited both. Attribution is by calendar
-date instead; see "Import-time derived values". If per-drink timestamps
-ever appear in the feed, the timing lever above becomes available and
-this decision should be revisited.
+**Drink times exist, at the resolution of a logging occasion.** A fetch
+run on 2026-09-06 returned 2026-08-21 samples stamped 23:50:53, so the
+timestamp is when the drink was logged, not when the export ran. Drinks
+logged in separate sittings get separate seconds: 2026-08-28 carries
+three occasions between 17:49 and 18:44. Drinks entered in one sitting
+share a second, so a whole evening logged at bedtime collapses to one
+timestamp, and the time is when the user reached for the phone rather
+than when the glass was poured.
+
+That resolution matters because timing is one of the few things the
+literature identifies as actionable. Grosicki et al. (2026) found that
+drinking 60 minutes earlier than usual, compared with 60 minutes later,
+was associated with a 0.87 bpm lower resting heart rate and a 1.5 ms
+higher HRV in females, and with a 1.2 bpm and 3.7 ms difference in 20 to
+29 year olds. A logging time is a noisy proxy for a drinking time, so
+this lever is available in principle but would need the noise
+characterized before anything is built on it.
+
+Consequence for the data model, unchanged: no timestamp is stored.
+Attribution is by calendar date; see "Import-time derived values". The
+reason is no longer that the timestamp is meaningless but that it is a
+logging time whose distance from the drinking time is unquantified, and
+showing it to the reader as "when you stopped" would overstate it.
 
 ### Data availability
 
-At the time of writing only 2026-09-05 has been exported, because the
-export window was set to "today". Roughly two weeks sit in Health and
-need a backfill from the phone before any of the aggregate surfaces
-produce meaningful output.
+2026-08-21 through 2026-09-05 have been backfilled from the phone, 16
+days, of which 12 carry at least one logged drink. Earlier history is
+not in Health: DrinkControl was installed on 2026-08-21.
+
+**The unit check is done.** Grams of ethanol are derived from
+DrinkControl's energy figure, which only holds if the app uses a fixed
+gram value per unit rather than a per-beverage database. Across the 12
+days with a drink, grams per logged unit runs from 9.92 to 10.21 against
+the configured 10 g, a spread of 2.1 % that the one-decimal rounding of
+`alcohol_consumption` fully accounts for. The app computes with a fixed
+unit, and `alcohol_g_per_unit` means what the code assumes it means.
+
+| Days backfilled | Days with a drink | g/unit, min | g/unit, max |
+|---|---|---|---|
+| 16 | 12 | 9.92 | 10.21 |
 
 ## Decisions
 
@@ -162,10 +198,13 @@ drink's energy including residual carbohydrate in beer, sugar in wine
 and cider, and mixers in cocktails, derived from templates per drink
 type.
 
-This is dropped because the inputs do not exist. Type, volume and
-strength are not exported by any source available to us, so a template
-estimate would have to assume the drink category, and the assumption
-would be the entire content of the answer. Systembolaget's published
+This stays dropped in this delivery, but not for the reason first
+given. The original reasoning was that the inputs do not exist; they do.
+`foodType` gives type, volume and strength per drink (see "What the
+source provides"), which is enough to compute residual energy from a
+per-category template rather than from an assumed category. What
+survives of the objection is the width of the estimate, not the absence
+of the inputs. Systembolaget's published
 per-10-cl figures, set against the ethanol energy computed from the EU
 factor, put the spread at roughly 1.0× for spirits and dry wine, where
 essentially all the energy is ethanol, to about 1.5× for strong beer,
@@ -179,7 +218,8 @@ avoid.
 
 If the figure is ever wanted, the only honest form is a range rather
 than a point. Even then it changes no decision, and it dilutes the one
-energy figure that is solid.
+energy figure that is solid. It is now buildable, so it sits in the
+roadmap rather than in this list of things the feed forecloses.
 
 ### 3. Alcohol does not become a readiness component
 
@@ -293,17 +333,19 @@ Keyed by `date`, the morning a night is attributed to.
 Standardglas is **not** stored. It is `alcohol_grams / 12`, computed at
 query time, because it is a display conversion of a stored quantity
 rather than a fact about the night. `alcohol_last_sample_time` is not
-stored either: the only timestamp available is the export time.
+stored either: the only timestamp available is a logging time, and the
+distance between it and the drinking it records is unquantified.
 
 **Attribution is by calendar date**, with a day's drinking credited to
 the following morning. An earlier version of this section specified a
 noon-to-noon boundary on the sample timestamp and called calendar
-grouping a bug. That was written before the feed was seen. The feed
-delivers one aggregated row per day, and its timestamp is when the
-export ran, so there is no drink time to put on either side of a noon
-boundary: applying one would sort by an artefact of the export schedule.
-The section "Nor is there a drink time" above says the same thing, and
-the two paragraphs used to contradict each other.
+grouping a bug, then a later one said no timestamp existed at all.
+Neither holds. Per-occasion timestamps do exist, but an evening logged
+in one sitting collapses to a single second, so a noon boundary applied
+to them would sort by when the phone was picked up. Calendar date is the
+resolution the feed actually supports. Should the noise between logging
+time and drinking time ever be characterized, this is the decision to
+revisit; see "What the source provides".
 
 ### Computed at query time
 

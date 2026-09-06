@@ -109,10 +109,11 @@
 #' would silently invert every comparison the module produces.
 #'
 #' Attribution is by calendar date, not by clock time, and deliberately
-#' so. The timestamp on a canonical alcohol sample is when the export
-#' ran, not when the drink was had: the day arrives as a single
-#' aggregated row. Reading an hour off that timestamp would be building
-#' on a number that does not mean what it looks like.
+#' so. The timestamp on a canonical alcohol sample is when the drinks
+#' were entered in DrinkControl, not when they were drunk: an evening
+#' logged in one sitting arrives with every drink stamped at the same
+#' second. Reading an hour off that timestamp would sort nights by when
+#' the phone was picked up.
 #'
 #' @param date Date vector of the days drinks were logged for.
 #' @return Date vector of the mornings they are attributed to.
@@ -129,8 +130,9 @@
 #' collapses a sum metric to one daily total and drops the clock time and
 #' the per-sample source, both of which the alcohol derivation needs.
 #'
-#' The date comes from the canonical document, not from the samples: the
-#' sample timestamp is when the export ran.
+#' The date comes from the canonical document, not from the samples: a
+#' sample timestamp is a logging time, and a drink logged after midnight
+#' would otherwise land on the wrong day.
 #'
 #' @param dir Path to \code{canonical/<metric>/}.
 #' @return Tibble with \code{date} (Date), \code{qty}, \code{source},

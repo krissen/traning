@@ -16,16 +16,22 @@ tillförlitliga.
   `deploy.sh code`. Starta till sist om vayu: den varma R-servern läser
   `inst/mcp_bridge_shared.R` vid uppstart, så `get_alcohol` finns inte
   förrän den startats om.
-- **Backfill av två veckor från anandavani.** Bara ett dygn har
-  exporterats hittills, eftersom exportfönstret står på "Idag". Historiken
-  finns kvar i Hälsa och behöver hämtas hem innan någon jämförelse går att
-  göra.
-- **Verifiera att kcal per glas är konstant över dagar.** Grammen räknas
-  ur DrinkControls energisiffra, vilket förutsätter att appen använder ett
-  fast värde per glas. Varierar kvoten mellan dygn räknar appen i stället
-  ur en dryckesdatabas, och då betyder `alcohol_g_per_unit` något annat än
-  vad koden antar. Kontrollen går att göra först när backfillen är på
-  plats.
+- **Uppskattad total dryckesenergi (nivå 2).** Var struken för att
+  indata saknades. De finns: DrinkControl skriver `foodType` per
+  energipost (`beer, 660ml 5,0%`), alltså typ, volym och halt per glas i
+  en oaggregerad export. Kvar av invändningen är bredden på skattningen,
+  inte avsaknaden av indata, så en siffra ska redovisas som intervall och
+  aldrig som punkt. Kräver en parser för fritextsträngen (decimalkomma,
+  gemena kategorinamn) med fallback för okända kategorier, plus
+  restenergi per kategori. Se beslut 2 i designdokumentet.
+- **Dryckestyp i notis och rapport.** Följdfråga till nivå 2, men
+  billigare: `foodType` räcker för att säga *vad* som dracks utan att
+  skatta någon energi. Produktbeslut om det tillför något utöver mängden.
+- **Loggningstid som tidsmarkör.** `foodType`-fyndet visade att
+  tidsstämpeln är loggningstid, inte exporttid. Grosicki et al. (2026)
+  gör drickstiden till en av få åtgärdbara variabler, men en kväll som
+  loggas vid läggdags får alla glas på samma sekund. Innan något byggs på
+  detta måste avståndet mellan loggningstid och drickstid kvantifieras.
 - **Dos-responsanalysen.** Specificerad i designdokumentets avsnitt
   "Future: dose-response", ingen kod skriven. Veckodagsmatchad jämförelse,
   inte en enkel regression mot dagsformen, eftersom drickskvällar och allt
