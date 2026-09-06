@@ -1,5 +1,37 @@
 # tRäning — Changelog
 
+## 2026-09-06 — Kvällarna kommer fram hela
+
+Alkoholsiffrorna från den första veckan var för låga, och några dygn var
+för höga. Båda felen låg i hur hälsodata sparas: samples som delade
+sekund skrevs över varandra, och samma dygn kunde landa två gånger i två
+olika former. Nu kommer varje glas fram en gång.
+
+- **Flera glas i samma sekund överlever.** DrinkControl skriver ett
+  energisample per glas och stämplar en hel inmatning med samma sekund.
+  Lagringen behöll ett av dem, så en kväll med tre glas registrerad i ett
+  svep blev ett glas. Kvällar med två identiska glas — samma öl två
+  gånger — kommer också fram som två. Uppmätt på de sexton backfillade
+  dygnen gav felet 1,7 till 10 gram per glas där de verkliga siffrorna
+  ligger på 10,0.
+- **Dygn dubbleras inte längre när samma data kommer två vägar.** Den
+  automatiska exporten skickar ett hopslaget värde per minut, en manuell
+  hämtning skickar glasen var för sig, och båda hamnade i samma fil.
+  2026-09-05 blev tolv glas i stället för sex. Det hopslagna värdet
+  stryks nu när glasen bakom det summerar till exakt detsamma, alltså
+  bara när ingenting kan gå förlorat.
+- **Hälsofiler som hämtats vid sidan om kan läsas in med ett kommando.**
+  `traning import canonical <fil eller katalog>` lägger in en export som
+  inte kommit via den vanliga vägen — en manuell hämtning ur appen, ett
+  återfunnet arkiv — och den dedupliceras precis som en automatisk push.
+  Tidigare krävde det ett engångsskript.
+- **Källan säger mer om drickandet än vad som antagits.** Varje
+  energipost bär drycktyp, volym och alkoholhalt, till exempel "beer,
+  660ml 5,0%", och tidsstämpeln är när glaset registrerades i appen — inte
+  när exporten kördes, vilket designen tidigare utgick från. Ingenting av
+  det visas ännu någonstans; det som ändras är vad som går att bygga
+  härnäst, och det står i `docs/roadmap.md`.
+
 ## 2026-09-05 — Vad kvällen kostade
 
 Alkohol loggas i DrinkControl och skrivs till Hälsa, och därifrån har den
