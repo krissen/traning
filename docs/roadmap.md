@@ -72,6 +72,14 @@ metriker aug-sep 2026 (`docs/dev/incidents/2026-08-10-daily-summary-metrics-drop
   gick oupptäckta tills något nedströms gick sönder. Okända/utblivna
   metriker filtreras dessutom tyst av `.import_metrics`-vitlistan (loggas
   bara vid `verbose=TRUE`). Prioriterad.
+- **Upstream-issue till `Lybron/health-auto-export`: automationsurval kan
+  nollställas vid uppdatering.** Enligt dygnssammanfattningsincidenten
+  (`docs/dev/incidents/2026-08-10-daily-summary-metrics-dropout.md`)
+  nollställde/utökade en app-uppdatering troligen automationens egna
+  metrikurval (från "alla" till "19 valda") utan att meddela användaren,
+  skilt från appens globala exporturval som manuell export läser. Ej
+  postad; kräver verifiering av App Store-uppdateringshistorik runt
+  2026-08-09 innan issuen skrivs.
 - **Bevakningspunkt 2026-08-12: "Idag"-fönstrets täckning.** Automationens
   exportfönster står på "Idag" som workaround för
   `Lybron/health-auto-export#61`. Verifiera att retroaktivt skrivna

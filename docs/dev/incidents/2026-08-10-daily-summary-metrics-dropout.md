@@ -2,9 +2,11 @@
 
 **Status:** Recovered. Manual export 5 Sep 2026 21:10 restored all affected
 metrics; automation has delivered them normally again since 6 Sep 2026.
-Root cause not confirmed; mechanism ruled out against the resting-hr
-incident below. Two metrics (running_power, stair_speed_up) still absent
-from automatic pushes as of 6 Sep and need separate watching.
+Most likely root cause identified from the product owner's account below
+(an app update silently narrowing the automation's own metric selection);
+remaining verification is listed under Follow-ups. Two metrics
+(running_power, stair_speed_up) still absent from automatic pushes as of
+6 Sep and need separate watching.
 **Discovered:** 2026-09-06
 **Severity:** Low to moderate. Degraded data quality for a subset of
 daily-summary metrics over 26 days; no incorrect values, and the gap was
@@ -102,7 +104,7 @@ rate, heart rate variability, step count, blood oxygen saturation,
 physical effort, walking/running distance) or already covered by the
 "Today" window fix (resting heart rate, sleep_analysis).
 
-## Hypothesis
+## Most likely root cause
 
 That both the manual export on 2026-08-07 22:33 (35 metrics, from the
 resting-hr incident) and the one on 2026-09-05 21:10 (36 metrics)
@@ -116,6 +118,25 @@ drops a segment behind a hidden flag") than to issues #56/#61
 (window/back-dating), which explain the earlier resting-hr gap but not
 this one.
 
+The product owner's account on 2026-09-06 confirms and narrows this
+hypothesis. He made no changes in HAE between 5 and 6 Sep. On 6 Sep he
+opened the app and found the automation's export selection set to "19
+selected" metrics, where he had previously chosen "all." He switched it
+back to "all" himself. He always updates HAE as soon as an update is
+offered, so the leading explanation is that an HAE update reset or
+expanded the automation's metric list, leaving newly added or reordered
+metrics unselected while the app's global export selection (the one
+manual export reads) stayed on "all." The break point between the
+2026-08-09 20:20 and 20:23 pushes lines up with when such an update most
+likely landed.
+
+The number "19 selected" also matches the data: automatic pushes during
+the dropout carried between 13 and 19 metrics each, consistent with the
+automation's selection having narrowed to roughly that set rather than
+the full metric list.
+
+Remaining verification, not yet done, is listed under Follow-ups.
+
 ## Discovery
 
 Found on 2026-09-06, 27 days after the gap started, while investigating
@@ -127,9 +148,9 @@ building an unrelated feature.
 
 ## Remediation
 
-Backfill via the HAE MCP server from kedar, at minute-level aggregation,
-covering the affected metrics and date range. In progress as of
-2026-09-06.
+Backfill completed 2026-09-06 via the HAE MCP server from kedar, at
+minute-level aggregation, covering 24 metrics for 2026-08-08 through
+2026-09-06, limited to the days actually missing each metric.
 
 ## Follow-ups
 
@@ -137,17 +158,24 @@ covering the affected metrics and date range. In progress as of
    `docs/roadmap.md`; now raised to the top of the HAE pipeline section
    because this is the second metric-scoped silent dropout in a month
    (resting heart rate in August, this one in September) and both went
-   undetected until something downstream broke.
+   undetected until something downstream broke. This is also the safety
+   net against a recurrence of the root cause identified above: if a
+   future HAE update narrows the automation's selection again, the alarm
+   should catch it long before 26 days pass.
 2. **Watch `running_power` and `stair_speed_up` specifically.** Both were
    already missing before the main 2026-08-10 group started
    (`running_power` since 2026-08-06) and neither had reappeared in
    automatic pushes as of 2026-09-06, unlike the rest of the group.
-3. **Upstream issue to `Lybron/health-auto-export`.** Not yet filed. This
-   report's hypothesis (a hidden per-automation metric-type list losing
-   entries, distinct from the window bug behind issue #61) should be
-   written up and posted once confirmed.
-4. **Open question for the product owner:** did anything change in the
-   automation's settings on the evening of 2026-09-05? The recovery lines
-   up exactly with the manual export at 21:10 that evening, which raises
-   the possibility that whatever fixed it was a manual settings change
-   rather than an upstream app fix.
+3. **Verify HAE's App Store update history around 2026-08-09.** Confirms
+   or refutes the timing part of the most-likely root cause above.
+4. **Verify the automation's selection stays on "all" after the next HAE
+   update.** If it narrows again, the update-resets-selection hypothesis
+   is confirmed and the staleness alarm becomes the only protection
+   against it recurring.
+5. **Upstream issue to `Lybron/health-auto-export`.** Not yet filed.
+   Report that an app update appears to have reset or expanded the
+   automation's own metric selection, separately from the app's global
+   export selection, silently narrowing it to a subset ("19 selected"
+   instead of "all") without notifying the user. Distinct from the
+   window/back-dating bug behind issue #61, and closer to the precedent
+   in issue #51.
