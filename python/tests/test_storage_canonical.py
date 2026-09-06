@@ -270,3 +270,46 @@ def test_canonicalize_paths_accepts_bare_metrics_envelope(tmp_path):
     assert n_files == 1 and len(changed) == 1
     assert _canonical(tmp_path, "alcohol_consumption",
                       "2026-08-29")["daily_total"] == pytest.approx(8.1)
+
+
+def test_dry_run_counts_only_metrics_that_would_be_written(tmp_path):
+    """A nameless or empty group is skipped on the real run."""
+    f = tmp_path / "mixed.json"
+    f.write_text(json.dumps({"data": {"metrics": [
+        {"name": "dietary_energy", "units": "kJ",
+         "data": [_energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml")]},
+        {"name": "", "units": "count", "data": [_aggregate("2026-08-21 23:50:53 +0200", 1)]},
+        {"name": "alcohol_consumption", "units": "count", "data": []},
+        "not a dict",
+    ]}}))
+
+    n_files, n_metrics, _ = canonicalize_paths(
+        [f], data_dir=tmp_path, dry_run=True)
+
+    assert (n_files, n_metrics) == (1, 1)
+
+
+def test_dry_run_count_matches_the_real_run(tmp_path):
+    f = tmp_path / "mixed.json"
+    f.write_text(json.dumps({"data": {"metrics": [
+        {"name": "dietary_energy", "units": "kJ",
+         "data": [_energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml")]},
+        {"name": None, "units": "count", "data": [_aggregate("2026-08-21 23:50:53 +0200", 1)]},
+    ]}}))
+
+    _, dry_metrics, _ = canonicalize_paths([f], data_dir=tmp_path, dry_run=True)
+    _, real_metrics, _ = canonicalize_paths([f], data_dir=tmp_path)
+
+    assert dry_metrics == real_metrics == 1
+
+
+def test_unwritable_metric_group_does_not_abort_the_push(tmp_path):
+    """A truncated group costs itself, not the file it travelled in."""
+    save_health_push({"data": {"metrics": [
+        "not a dict",
+        {"name": "alcohol_consumption", "units": "count",
+         "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)]},
+    ]}}, tmp_path)
+
+    doc = _canonical(tmp_path, "alcohol_consumption", "2026-08-29")
+    assert doc["daily_total"] == pytest.approx(8.1)

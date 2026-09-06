@@ -354,6 +354,18 @@ def _save_legacy_metric(
 
 # --- Public API -------------------------------------------------------------
 
+def _metric_is_writable(metric: object) -> bool:
+    """Whether ``save_health_push`` would write this metric group.
+
+    A group needs a name and at least one sample. Non-dict entries are
+    rejected rather than allowed to raise: a hand-edited or truncated
+    export should cost its own group, not the whole push.
+    """
+    if not isinstance(metric, dict):
+        return False
+    return bool(metric.get("name")) and bool(metric.get("data"))
+
+
 def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, list[Path]]:
     """Save HAE JSON payload via canonical deduplication.
 
@@ -382,11 +394,10 @@ def save_health_push(payload: dict, data_dir: Path | None = None) -> tuple[int, 
     metrics_dir.mkdir(parents=True, exist_ok=True)
 
     for m in metrics:
+        if not _metric_is_writable(m):
+            continue
         name = m.get("name")
         samples = m.get("data", [])
-        if not name or not samples:
-            continue
-
         units = m.get("units", "")
 
         if name in _LEGACY_METRICS:
@@ -462,8 +473,13 @@ def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
             continue
         n_files += 1
         if dry_run:
-            names = [m.get("name") for m in payload["data"]["metrics"]]
-            log.info("Dry run: %s → %s", f.name, ", ".join(str(n) for n in names))
+            # Count what would actually be written, not what the file
+            # contains: a nameless or empty metric group is skipped on
+            # the real run, and a dry run that promised it would lie.
+            names = [str(m["name"]) for m in payload["data"]["metrics"]
+                     if _metric_is_writable(m)]
+            log.info("Dry run: %s → %s", f.name,
+                     ", ".join(names) if names else "inget att skriva")
             n_metrics += len(names)
             continue
         n, files_changed = save_health_push(payload, data_dir)
