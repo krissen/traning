@@ -2,13 +2,14 @@
 
 Incoming pushes are canonicalized into per-metric-per-day files under
 canonical/{metric}/{YYYY-MM-DD}.json.  All known samples for a given
-(metric, date) are merged and deduplicated by (timestamp, source).
+(metric, date) are merged and deduplicated on the full sample content,
+with multiplicity preserved (see ``_merge_samples``).
 """
 
 import json
 import logging
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 
 from ..garmin.utils import get_data_dir
@@ -49,15 +50,69 @@ def _daily_total(samples: list[dict]) -> float | None:
 # --- Canonical deduplication ------------------------------------------------
 
 def _sample_key(sample: dict) -> str:
-    """Return a dedup key for a single HAE sample.
+    """Return a dedup key for a legacy (sleep_analysis) HAE sample.
 
-    Standard metrics: (full_timestamp, source).
-    Sleep raw segments: (full_timestamp, stage_value, source).
+    Sleep segments are keyed on (full_timestamp, stage_value, source).
+    A night is a chain of non-overlapping segments, so a timestamp plus
+    a stage identifies one of them; the remaining fields (durations HAE
+    recomputes between exports) would only make identical segments look
+    distinct.  Canonical metrics use ``_canonical_sample_key`` instead —
+    they can and do carry several samples for the same second.
     """
     ts = sample.get("date", sample.get("startDate", ""))
     src = sample.get("source", "")
     stage = sample.get("value", "")  # sleep stage name, empty for others
     return f"{ts}|{stage}|{src}"
+
+
+def _canonical_sample_key(sample: dict) -> str:
+    """Return a dedup key for a single canonical HAE sample.
+
+    The key is the whole sample, canonicalized: every field, keys sorted
+    so that HAE's varying key order cannot make one sample look like two.
+
+    Keying on (timestamp, source) alone — what this did until 2026-09-06
+    — silently dropped samples that share a second.  DrinkControl writes
+    one dietary_energy sample per drink and stamps a whole logging
+    session with the same second: three drinks logged at 23:50:53
+    collapsed to one, taking two thirds of the evening's alcohol with
+    them.  Any per-event metric can do this; the timestamp is when the
+    export ran, not when the event happened.
+
+    Two genuinely identical samples in one push (the same beer logged
+    twice in the same second, seen 2026-08-28) are indistinguishable by
+    content, so multiplicity rather than the key carries them; see
+    ``_merge_samples``.
+    """
+    return json.dumps(sample, sort_keys=True, ensure_ascii=False, default=str)
+
+
+def _merge_samples(existing: list[dict],
+                   incoming: list[dict]) -> tuple[list[dict], int]:
+    """Merge incoming samples into existing ones, preserving multiplicity.
+
+    Deduplication is by *count* per content key, not by presence: a key
+    seen twice in one push yields two samples, while pushing that same
+    payload again adds nothing.  Idempotence therefore survives without
+    forcing identical-but-distinct samples to collapse into one.
+
+    Counts never shrink.  A push covering a window is not authoritative
+    about what it omits, and canonical files are append-only for the
+    same reason: a short push must not delete a longer one's history.
+
+    Returns (merged, n_added).
+    """
+    existing_counts = Counter(_canonical_sample_key(s) for s in existing)
+    merged = list(existing)
+    seen: Counter[str] = Counter()
+    n_added = 0
+    for s in incoming:
+        key = _canonical_sample_key(s)
+        seen[key] += 1
+        if seen[key] > existing_counts[key]:
+            merged.append(s)
+            n_added += 1
+    return merged, n_added
 
 
 def canonicalize_metric(
@@ -91,16 +146,7 @@ def canonicalize_metric(
                 doc = json.load(f)
             existing_samples = doc.get("samples", [])
 
-        # Merge: existing keys take precedence, new samples added
-        seen = {_sample_key(s) for s in existing_samples}
-        merged = list(existing_samples)
-        n_added = 0
-        for s in new_samples:
-            key = _sample_key(s)
-            if key not in seen:
-                seen.add(key)
-                merged.append(s)
-                n_added += 1
+        merged, n_added = _merge_samples(existing_samples, new_samples)
 
         if n_added == 0 and existing_samples:
             continue  # no change

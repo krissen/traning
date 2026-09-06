@@ -360,6 +360,44 @@ def import_health(force, verbose):
     sys.exit(result.returncode)
 
 
+@import_group.command(name="canonical")
+@click.argument("paths", nargs=-1, required=True,
+                type=click.Path(exists=True, path_type=Path))
+@click.option("--dry-run", is_flag=True,
+              help="Show what would be canonicalized without writing")
+@click.option("-v", "--verbose", is_flag=True, help="Verbose output")
+def import_canonical(paths, dry_run, verbose):
+    """Canonicalize HAE metric JSON files already on disk.
+
+    PATHS may be files or directories of HAE exports (the shape
+    `traning fetch health` writes to health_export/metrics/). Each file
+    is merged into canonical/ through the same deduplication the live
+    receiver uses, so a manual or out-of-band fetch does not need its
+    own script.
+    """
+    from .garmin.utils import get_data_dir, setup_logging
+    from .server.storage import canonicalize_paths
+
+    setup_logging(verbose=verbose)
+
+    try:
+        data_dir = get_data_dir()
+    except (OSError, FileNotFoundError) as e:
+        raise click.ClickException(str(e))
+
+    n_files, n_metrics, changed = canonicalize_paths(
+        list(paths), data_dir=data_dir, dry_run=dry_run)
+
+    if n_files == 0:
+        click.echo("Inga HAE-metricfiler hittades")
+        return
+    if dry_run:
+        click.echo(f"Dry run: {n_files} filer, {n_metrics} metrics")
+        return
+    click.echo(f"{n_files} filer, {n_metrics} metrics, "
+               f"{len(changed)} canonical-filer uppdaterade")
+
+
 @import_group.command(name="all")
 @click.option("--force", is_flag=True,
               help="Re-import all health files (bypass manifest)")
