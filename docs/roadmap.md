@@ -82,6 +82,11 @@ MCP-backfillen 2026-08-10.
   `.connect_contaminated_metrics` inte kan rensa — filtret kräver separerade
   per-källa-samples. Inkluderar audit av historiskt TCP-hämtade
   vilopulsvärden i canonical.
+- **Atomiska canonical-skrivningar.** `canonicalize_metric` i
+  `server/storage.py` trunkerar och skriver om filen på plats, medan
+  legacy-skrivaren bredvid använder temporär fil plus rename. En avbruten
+  skrivning förlorar ett helt dygn och förgiftar varje senare läsning av
+  det. Förbefintligt; egen commit mot master.
 - **Per-metrik-staleness-larm i `traning doctor`.** Enskilda metriker kan
   tyst falla ur HAE:s automatiska pushar (vilopuls aug 2026) utan att någon
   freshness-check reagerar; okända/utblivna metriker filtreras dessutom tyst
