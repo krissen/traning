@@ -14,17 +14,23 @@ olika former. Nu kommer varje glas fram en gång.
   gånger — kommer också fram som två. Uppmätt på de sexton backfillade
   dygnen gav felet 1,7 till 10 gram per glas där de verkliga siffrorna
   ligger på 10,0.
-- **Dygn dubbleras inte längre när samma data kommer två vägar.** Den
-  automatiska exporten skickar ett hopslaget värde per minut, en manuell
-  hämtning skickar glasen var för sig, och båda hamnade i samma fil.
-  2026-09-05 blev tolv glas i stället för sex. Det hopslagna värdet
-  stryks nu när glasen bakom det summerar till exakt detsamma, alltså
-  bara när ingenting kan gå förlorat.
 - **Hälsofiler som hämtats vid sidan om kan läsas in med ett kommando.**
   `traning import canonical <fil eller katalog>` lägger in en export som
   inte kommit via den vanliga vägen — en manuell hämtning ur appen, ett
   återfunnet arkiv — och den dedupliceras precis som en automatisk push.
   Tidigare krävde det ett engångsskript.
+- **En manuell hämtning kan uttryckligen ersätta ett dygns värden.** Den
+  automatiska exporten skickar ett hopslaget värde per minut, en manuell
+  hämtning skickar glasen var för sig, och båda hamnar i samma fil, så
+  dygnet räknas två gånger: 2026-09-05 blev tolv glas i stället för sex.
+  `traning import canonical --replace-source-days` låter den hämtade
+  filen gälla för de dygn och den källa den täcker, medan andra källor
+  lämnas orörda. `--dry-run` visar först exakt vad som skulle bytas ut.
+  Inget sådant sker automatiskt: ett hopslaget värde och ett verkligt går
+  inte att skilja på innehållet, så att gissa vore att riskera radera ett
+  riktigt glas. Ligger ett misstänkt hopslaget värde bland detaljerade
+  poster säger loggen till, med metrik, datum och minut, men rör
+  ingenting.
 - **Källan säger mer om drickandet än vad som antagits.** Varje
   energipost bär drycktyp, volym och alkoholhalt, till exempel "beer,
   660ml 5,0%", och tidsstämpeln är när glaset registrerades i appen — inte

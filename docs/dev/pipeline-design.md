@@ -323,30 +323,41 @@ second), the merge compares *counts* per key and keeps
 identical-but-distinct samples both survive. Counts never shrink: a push
 covers a window and is not authoritative about what it omits.
 
-**Minute aggregates yield to per-sample detail.** HAE delivers the same
-day in two shapes. The push automation aggregates by minute — one sample
+**Minute aggregates are reported, never removed.** HAE delivers the same
+day in two shapes. The push automation aggregates by minute: one sample
 per minute bucket, stamped at `:00`, with `foodType`/`start`/`end`
 stripped. A later per-sample fetch returns the same events individually
-at their real seconds. Both used to land in the file and the day
-doubled: 2026-09-05 held a 6-unit `alcohol_consumption` aggregate at
-18:44:00 next to the 6-unit detail at 18:44:35.
+at their real seconds. Both land in the file and the day reads double:
+2026-09-05 held a 6-unit `alcohol_consumption` aggregate at 18:44:00
+next to the 6-unit detail at 18:44:35.
 
-`_drop_aggregate_shadows()` removes the aggregate, but only when all of
-the following hold inside one `(source, minute)` bucket:
+The automation stays aggregated. Per-sample mode cannot be set per
+metric, and turning it on makes heart-rate data unmanageable, so daily
+aggregates are what the pipeline receives by design.
 
-- it is the only sample in the bucket stamped at `:00` seconds;
-- at least one other sample in the bucket has non-zero seconds;
-- its `qty` equals the sum of those others to within rounding.
+An earlier version of this branch deleted the aggregate when its `qty`
+equalled the sum of its same-minute peers. That was wrong. Arithmetic
+does not identify an aggregate: a real sample stamped at `:00` whose
+same-minute companions happen to sum to its value has exactly the same
+shape, and DrinkControl produces that shape routinely, several samples
+in one minute with repeated quantities. The rule also ran over the whole
+merged day on every write, so it could delete a sample that had been on
+disk for weeks, contradicting the append-only invariant a few paragraphs
+up. An over-counted evening is a number the reader can question; a
+deleted drink cannot be restored by re-pushing, because the same rule
+would delete it again.
 
-The sum check is what makes this safe rather than heuristic: the
-aggregate goes only when the remaining samples add up to exactly what it
-claimed, so no quantity leaves the file. Requiring peers with non-zero
-seconds keeps metrics whose samples are minute-stamped by construction
-(`step_count` and the other hourly sum metrics) out of the rule
-entirely, and a real event logged at exactly `:00` has no peers to be
-shadowed by. The rule runs on the merged set, so arrival order does not
-matter, and it is the one place canonical files lose a sample rather
-than gain one.
+What remains is a warning. When exactly one sample in a `(source,
+minute)` bucket is stamped at `:00` and carries none of
+`foodType`/`start`/`end`, while a later sample in the same minute
+carries one, the bucket is named in the log with metric, date, minute
+and source. It fires on a write, so a suspected double is reported when
+it appears rather than on every push for the rest of the day. Nothing is
+removed. Bare against bare, which is what `alcohol_consumption` looks
+like in both shapes, is not reported at all: there is nothing to tell
+the two apart.
+
+Resolving a double is an operator action, `--replace-source-days` below.
 
 `daily_total` is recomputed from what survives, and a file is rewritten
 only when the merged sample list differs from what is on disk.
@@ -360,6 +371,20 @@ in either the `{"data": {"metrics": [...]}}` envelope or a bare
 server, a recovered export) is deduplicated by the same rules a live
 push is, instead of by a one-off script calling `canonicalize_metric()`
 directly.
+
+`--replace-source-days` makes the input authoritative for every
+`(metric, date, source)` it covers: existing samples from those sources
+are discarded and replaced, other sources keep theirs. It is the
+supported way to resolve an aggregate sitting on top of detail. Nothing
+infers it, because the two are not distinguishable by content; the
+operator asserts that the file in hand is the better record for those
+days. Pair it with `--dry-run` first, which lists each combination and
+how many samples would be displaced.
+
+The receiver never sets the flag. A push that arrives on its own
+schedule is not authoritative about days it did not set out to correct.
+Legacy metrics (`sleep_analysis`) ignore it as well: their files span
+midnight and are merged by date range rather than per day.
 
 ### Commit deduplication
 
