@@ -46,3 +46,6 @@ renv/library/
 renv/staging/
 tmp
 Rplots.pdf
+
+# make check output
+.check.log
