@@ -17,28 +17,37 @@
     stringsAsFactors = FALSE
   )
   if (!is.data.frame(summaries) || nrow(summaries) == 0 ||
-      !"source" %in% names(summaries)) {
+    !"source" %in% names(summaries)) {
     return(empty)
   }
 
   src <- summaries$source
   hae_idx <- which(!is.na(src) & src == "hae")
   tcx_idx <- which(!is.na(src) & src == "tcx")
-  if (length(hae_idx) == 0 || length(tcx_idx) == 0) return(empty)
+  if (length(hae_idx) == 0 || length(tcx_idx) == 0) {
+    return(empty)
+  }
 
   tcx <- summaries[tcx_idx, , drop = FALSE]
   hits <- lapply(hae_idx, function(i) {
     row <- summaries[i, , drop = FALSE]
     m <- .which_same_workout(row, tcx, ...)
-    if (length(m) == 0) return(NULL)
+    if (length(m) == 0) {
+      return(NULL)
+    }
     # Several Garmin rows can match; the closest one is what the report
     # quotes, but the removal below uses all of them.
     dt <- abs(as.numeric(difftime(tcx$sessionStart[m], row$sessionStart,
-                                  units = "secs")))
+      units = "secs"
+    )))
     best <- m[which.min(dt)]
-    end_gap <- if ("sessionEnd" %in% names(summaries))
+    end_gap <- if ("sessionEnd" %in% names(summaries)) {
       abs(as.numeric(difftime(tcx$sessionEnd[best], row$sessionEnd,
-                              units = "secs"))) else NA_real_
+        units = "secs"
+      )))
+    } else {
+      NA_real_
+    }
     # Garmin keeps the session unless everything it recorded for it adds
     # up to less than half the Apple Watch distance — the same test the
     # two import paths apply, against the same total.
@@ -50,7 +59,9 @@
     # a distance nobody recorded, and the pair is then left alone.
     distinct <- m[.distinct_recordings(tcx$sessionStart[m])]
     verdict <- .garmin_verdict(row$distance, tcx$distance[distinct])
-    if (is.na(verdict)) return(NULL)
+    if (is.na(verdict)) {
+      return(NULL)
+    }
     garmin <- verdict
     # When the watch wins, *every* fragment goes. A Garmin watch stopped
     # and restarted leaves two of them against one session, and removing
@@ -69,9 +80,13 @@
       dt_seconds = min(dt),
       end_gap_seconds = end_gap,
       file = as.character(row$file),
-      tcx_file = if (garmin) basename(as.character(tcx$file[best]))
-                 else paste(basename(as.character(tcx$file[m])),
-                            collapse = ";"),
+      tcx_file = if (garmin) {
+        basename(as.character(tcx$file[best]))
+      } else {
+        paste(basename(as.character(tcx$file[m])),
+          collapse = ";"
+        )
+      },
       winner = if (garmin) "garmin" else "aw",
       # Positions in `summaries` of every Garmin row that loses when the
       # Apple Watch row wins; empty otherwise. A list column so one
@@ -81,7 +96,9 @@
     )
   })
   hits <- hits[!vapply(hits, is.null, logical(1))]
-  if (length(hits) == 0) return(empty)
+  if (length(hits) == 0) {
+    return(empty)
+  }
   do.call(rbind, hits)
 }
 
@@ -103,10 +120,13 @@
 # neither grouping nor .best_copy() depends on order.
 .surplus_aw_copies <- function(dups, summaries) {
   aw <- which(dups$winner == "aw")
-  if (length(aw) < 2) return(integer(0))
+  if (length(aw) < 2) {
+    return(integer(0))
+  }
 
   groups <- .session_groups(summaries[dups$idx[aw], , drop = FALSE],
-                            same_sport = TRUE)
+    same_sport = TRUE
+  )
   surplus <- integer(0)
   for (g in groups) {
     if (length(g) < 2) next
@@ -134,7 +154,9 @@
     return(integer(0))
   }
   idx <- which(!is.na(summaries$source) & summaries$source == "hae")
-  if (length(idx) < 2) return(integer(0))
+  if (length(idx) < 2) {
+    return(integer(0))
+  }
 
   idx <- idx[order(summaries$sessionStart[idx])]
   starts <- as.numeric(summaries$sessionStart[idx])
@@ -218,13 +240,23 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   n_aw <- sum(dups$winner == "aw")
   if (verbose) {
     cat("Dubblettsökning: ", nrow(summaries), " rader, ",
-        nrow(dups), " Apple Watch-rader har en Garmin-tvilling",
-        if (n_aw > 0) paste0(" (", n_aw, " där Garmin bara fångade ",
-                             "ett fragment — AW-raden behålls)") else "",
-        ".\n", sep = "")
+      nrow(dups), " Apple Watch-rader har en Garmin-tvilling",
+      if (n_aw > 0) {
+        paste0(
+          " (", n_aw, " där Garmin bara fångade ",
+          "ett fragment — AW-raden behålls)"
+        )
+      } else {
+        ""
+      },
+      ".\n",
+      sep = ""
+    )
     if (length(hae_copies) > 0) {
       cat("HAE-kopior utan Garmin-tvilling: ", length(hae_copies),
-          " rader att ta bort.\n", sep = "")
+        " rader att ta bort.\n",
+        sep = ""
+      )
     }
     if (nrow(dups) > 0) {
       shown <- if (is.null(limit)) dups else utils::head(dups, limit)
@@ -255,7 +287,9 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   if (dry_run) {
     if (verbose) {
       cat("Torrkörning — inget skrivet. Kör med dry_run = FALSE ",
-          "(CLI: traning dedup --apply) för att ta bort.\n", sep = "")
+        "(CLI: traning dedup --apply) för att ta bort.\n",
+        sep = ""
+      )
     }
     return(invisible(dups))
   }
@@ -351,18 +385,22 @@ dedup_summaries <- function(db_summaries = NULL, db_myruns = NULL,
   myruns <- myruns[-drop]
 
   if (length(myruns) != nrow(summaries)) {
-    stop("dedup_summaries: myruns (", length(myruns),
-         ") matchar inte summaries (", nrow(summaries),
-         ") efter borttagning — inget sparat.")
+    stop(
+      "dedup_summaries: myruns (", length(myruns),
+      ") matchar inte summaries (", nrow(summaries),
+      ") efter borttagning — inget sparat."
+    )
   }
 
   my_dbs_save(db_summaries, db_myruns, summaries, myruns)
   if (verbose) {
     cat("Borttaget: ", length(drop_hae), " Apple Watch-rader (varav ",
-        length(hae_copies), " kopior utan Garmin-tvilling) och ",
-        length(drop_tcx), " Garmin-fragment (från ", n_aw,
-        " pass). Kvar: ", nrow(summaries), " rader, ", length(myruns),
-        " run-objekt.\n", sep = "")
+      length(hae_copies), " kopior utan Garmin-tvilling) och ",
+      length(drop_tcx), " Garmin-fragment (från ", n_aw,
+      " pass). Kvar: ", nrow(summaries), " rader, ", length(myruns),
+      " run-objekt.\n",
+      sep = ""
+    )
   }
   invisible(dups)
 }

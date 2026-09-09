@@ -6,32 +6,48 @@
 .metrics_summaries <- function() {
   base <- as.POSIXct("2026-01-01 08:00:00", tz = "UTC")
   data.frame(
-    sessionStart       = base + (0:11) * 86400,
-    sport              = c("running", "cycling", "running", "cycling",
-                           "walking", "running", "cycling", "walking",
-                           "running", "cycling", "walking", "running"),
-    distance           = c(8000, 25000, 6000, 15000,
-                           3000, 10000, 30000, 4000,
-                           7000, 20000, 5500, 8500),
-    durationMoving     = as.difftime(
-      c(40, 60, 31, 38,
+    sessionStart = base + (0:11) * 86400,
+    sport = c(
+      "running", "cycling", "running", "cycling",
+      "walking", "running", "cycling", "walking",
+      "running", "cycling", "walking", "running"
+    ),
+    distance = c(
+      8000, 25000, 6000, 15000,
+      3000, 10000, 30000, 4000,
+      7000, 20000, 5500, 8500
+    ),
+    durationMoving = as.difftime(
+      c(
+        40, 60, 31, 38,
         36, 48, 70, 46,
-        36, 50, 50, 42),
-      units = "mins"),
-    avgSpeedMoving     = c(3.33, 6.94, 3.22, 6.58,
-                           1.39, 3.47, 7.14, 1.45,
-                           3.24, 6.67, 1.83, 3.37),
-    avgPaceMoving      = c(5.0, 2.4, 5.2, 2.5,
-                           12.0, 4.8, 2.3, 11.5,
-                           5.1, 2.4, 9.1, 5.0),
-    avgHeartRateMoving = c(140, 130, 142, 135,
-                           95, 138, 132, 100,
-                           145, 128, 105, 140),
-    duration           = as.difftime(
-      c(40, 60, 31, 38,
+        36, 50, 50, 42
+      ),
+      units = "mins"
+    ),
+    avgSpeedMoving = c(
+      3.33, 6.94, 3.22, 6.58,
+      1.39, 3.47, 7.14, 1.45,
+      3.24, 6.67, 1.83, 3.37
+    ),
+    avgPaceMoving = c(
+      5.0, 2.4, 5.2, 2.5,
+      12.0, 4.8, 2.3, 11.5,
+      5.1, 2.4, 9.1, 5.0
+    ),
+    avgHeartRateMoving = c(
+      140, 130, 142, 135,
+      95, 138, 132, 100,
+      145, 128, 105, 140
+    ),
+    duration = as.difftime(
+      c(
+        40, 60, 31, 38,
         36, 48, 70, 46,
-        36, 50, 50, 42),
-      units = "mins"),
+        36, 50, 50, 42
+      ),
+      units = "mins"
+    ),
     stringsAsFactors = FALSE
   )
 }
@@ -55,14 +71,14 @@ test_that("compute_efficiency_factor min_distance is configurable", {
   # Add an explicit short run so the threshold actually changes the count.
   base <- as.POSIXct("2026-02-01 08:00:00", tz = "UTC")
   short <- data.frame(
-    sessionStart       = base,
-    sport              = "running",
-    distance           = 3000,  # < 5 km
-    durationMoving     = as.difftime(20, units = "mins"),
-    avgSpeedMoving     = 2.5,
-    avgPaceMoving      = 6.7,
+    sessionStart = base,
+    sport = "running",
+    distance = 3000, # < 5 km
+    durationMoving = as.difftime(20, units = "mins"),
+    avgSpeedMoving = 2.5,
+    avgPaceMoving = 6.7,
     avgHeartRateMoving = 130,
-    duration           = as.difftime(20, units = "mins"),
+    duration = as.difftime(20, units = "mins"),
     stringsAsFactors = FALSE
   )
   df <- rbind(.metrics_summaries(), short)
@@ -79,16 +95,20 @@ test_that("compute_efficiency_factor returns empty tibble when no rows match", {
   # No "swimming" rows in fixture → no qualifying sessions
   res <- compute_efficiency_factor(df, sport = "swimming")
   expect_equal(nrow(res), 0)
-  expect_named(res, c("sessionStart", "distance_km", "avgSpeedMoving",
-                      "avgHeartRateMoving", "ef", "ef_rolling28"))
+  expect_named(res, c(
+    "sessionStart", "distance_km", "avgSpeedMoving",
+    "avgHeartRateMoving", "ef", "ef_rolling28"
+  ))
 })
 
 test_that("compute_hre returns empty tibble when no rows match", {
   df <- .metrics_summaries()
   res <- compute_hre(df, sport = "swimming")
   expect_equal(nrow(res), 0)
-  expect_named(res, c("sessionStart", "distance_km", "avgHeartRateMoving",
-                      "avgPaceMoving", "hre", "hre_rolling28"))
+  expect_named(res, c(
+    "sessionStart", "distance_km", "avgHeartRateMoving",
+    "avgPaceMoving", "hre", "hre_rolling28"
+  ))
 })
 
 test_that("compute_acwr returns empty tibble when no rows match", {
@@ -134,8 +154,10 @@ test_that("compute_trimp sport='cycling' computes from cycling HR data", {
   trimp_run <- compute_trimp(df, sport = "running")
   trimp_cyc <- compute_trimp(df, sport = "cycling")
   # Different sports → different daily_trimp (assuming HR differs)
-  expect_false(identical(sort(trimp_run$daily_trimp),
-                         sort(trimp_cyc$daily_trimp)))
+  expect_false(identical(
+    sort(trimp_run$daily_trimp),
+    sort(trimp_cyc$daily_trimp)
+  ))
 })
 
 test_that("compute_pmc with sport='all' gives larger CTL than running-only", {
@@ -144,8 +166,10 @@ test_that("compute_pmc with sport='all' gives larger CTL than running-only", {
   pmc_all <- compute_pmc(df, sport = "all")
   # 'all' includes more TRIMP sources → CTL/ATL not lower than running-only
   if (nrow(pmc_run) > 0 && nrow(pmc_all) > 0) {
-    expect_gte(max(pmc_all$ctl, na.rm = TRUE),
-               max(pmc_run$ctl, na.rm = TRUE))
+    expect_gte(
+      max(pmc_all$ctl, na.rm = TRUE),
+      max(pmc_run$ctl, na.rm = TRUE)
+    )
   }
 })
 

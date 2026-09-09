@@ -14,16 +14,20 @@ page_sport_mix_ui <- function(id) {
         bslib::layout_columns(
           col_widths = bslib::breakpoints(sm = 12, md = c(4, 4)),
           shiny::selectInput(ns("period"), "Period",
-            choices = c("Månad" = "month",
-                        "Vecka" = "week",
-                        "År"    = "year"),
+            choices = c(
+              "Månad" = "month",
+              "Vecka" = "week",
+              "År" = "year"
+            ),
             selected = "month",
             width = "100%"
           ),
           shiny::radioButtons(ns("metric"), "Mätare",
-            choices = c("TRIMP"        = "trimp",
-                        "Distans (km)" = "distance",
-                        "Tid (min)"    = "duration"),
+            choices = c(
+              "TRIMP" = "trimp",
+              "Distans (km)" = "distance",
+              "Tid (min)" = "duration"
+            ),
             selected = "trimp",
             inline = TRUE
           )
@@ -61,8 +65,8 @@ page_sport_mix_server <- function(id, data, dates, is_mobile, sport) {
 
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
-    dr_to   <- shiny::reactive(dates()$to)
-    sp      <- shiny::reactive(sport())
+    dr_to <- shiny::reactive(dates()$to)
+    sp <- shiny::reactive(sport())
 
     ply <- function(p) {
       pp <- plotly::ggplotly(p) |>
@@ -90,8 +94,11 @@ page_sport_mix_server <- function(id, data, dates, is_mobile, sport) {
     # show the full running/cycling/walking CTL overlay.
     scoped_summaries <- shiny::reactive({
       pop <- population_sport()
-      if (identical(pop, "all")) summaries
-      else traning::filter_sport(summaries, pop)
+      if (identical(pop, "all")) {
+        summaries
+      } else {
+        traning::filter_sport(summaries, pop)
+      }
     })
 
     # CTL overlay: derive selectable sports from the active bucket so
@@ -112,7 +119,8 @@ page_sport_mix_server <- function(id, data, dates, is_mobile, sport) {
             # Keep the panel readable — pick the 12 most common
             # sports by row count.
             counts <- sort(table(scoped_summaries()$sport),
-                           decreasing = TRUE)
+              decreasing = TRUE
+            )
             present <- names(counts)[seq_len(min(12, length(counts)))]
           }
           sort(present)
@@ -126,7 +134,7 @@ page_sport_mix_server <- function(id, data, dates, is_mobile, sport) {
         members <- c("running", "cycling", "walking", "swimming")
       }
       labels <- vapply(members, traning::sport_label, character(1))
-      vals   <- c(members, "all")
+      vals <- c(members, "all")
       names(vals) <- c(labels, "Totalt")
       vals
     })
@@ -137,8 +145,10 @@ page_sport_mix_server <- function(id, data, dates, is_mobile, sport) {
       # the five sports the user actually wants to see overlaid by
       # default. Fall back to the first four available choices when the
       # active bucket strips any of them out.
-      preferred <- c("cycling", "walking", "running",
-                     "paddelsporter", "strength")
+      preferred <- c(
+        "cycling", "walking", "running",
+        "paddelsporter", "strength"
+      )
       preselect <- intersect(preferred, choices)
       if (length(preselect) == 0) preselect <- utils::head(choices, 4)
       shiny::checkboxGroupInput(session$ns("ctl_sports"),
@@ -151,23 +161,27 @@ page_sport_mix_server <- function(id, data, dates, is_mobile, sport) {
 
     output$plot_mix <- plotly::renderPlotly({
       shiny::req(input$period, input$metric)
-      ply(plot_sport_mix(scoped_summaries(), period = input$period,
-                          metric = input$metric,
-                          from = dr_from(), to = dr_to(),
-                          sport = "all"))  # already scoped
+      ply(plot_sport_mix(scoped_summaries(),
+        period = input$period,
+        metric = input$metric,
+        from = dr_from(), to = dr_to(),
+        sport = "all"
+      )) # already scoped
     })
 
     output$plot_ctl <- plotly::renderPlotly({
       shiny::req(input$ctl_sports)
       ply(plot_sport_ctl_overlay(scoped_summaries(),
-                                  sports = input$ctl_sports,
-                                  from = dr_from(), to = dr_to()))
+        sports = input$ctl_sports,
+        from = dr_from(), to = dr_to()
+      ))
     })
 
     output$plot_calendar <- shiny::renderPlot({
       plot_sport_calendar(scoped_summaries(),
-                           from = dr_from(), to = dr_to(),
-                           sport = "all")  # already scoped
+        from = dr_from(), to = dr_to(),
+        sport = "all"
+      ) # already scoped
     })
   })
 }

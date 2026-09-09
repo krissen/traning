@@ -41,9 +41,13 @@
 # vector or NULL when no zone data is present.
 .session_zone_seconds <- function(session) {
   cols <- paste0("garmin_hrTimeInZone_", 1:5)
-  if (!all(cols %in% names(session))) return(NULL)
+  if (!all(cols %in% names(session))) {
+    return(NULL)
+  }
   v <- as.numeric(unlist(session[1, cols]))
-  if (all(is.na(v)) || sum(v, na.rm = TRUE) <= 0) return(NULL)
+  if (all(is.na(v)) || sum(v, na.rm = TRUE) <= 0) {
+    return(NULL)
+  }
   v[is.na(v)] <- 0
   v
 }
@@ -51,9 +55,13 @@
 # Collapse Garmin 5-zone seconds → 3-zone fractions (Z1, Z2, Z3 research).
 # Source: hr-zone-distribution__primer.md §5 (Treff 2019 mapping).
 .collapse_zones_3 <- function(zone_seconds) {
-  if (is.null(zone_seconds)) return(NULL)
+  if (is.null(zone_seconds)) {
+    return(NULL)
+  }
   total <- sum(zone_seconds)
-  if (total <= 0) return(NULL)
+  if (total <= 0) {
+    return(NULL)
+  }
   list(
     z1 = (zone_seconds[1] + zone_seconds[2]) / total,
     z2 = zone_seconds[3] / total,
@@ -113,7 +121,9 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
 
   duration_min <- if (!is.null(s$durationMoving)) {
     as.numeric(s$durationMoving, units = "mins")
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   if (!is.finite(duration_min) || duration_min <= 0) {
     return(.classify_unknown())
   }
@@ -121,7 +131,9 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
   # 1. RPE-primary
   rpe_raw <- if ("garmin_directWorkoutRpe" %in% names(s)) {
     as.numeric(s$garmin_directWorkoutRpe[1])
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   rpe_cr10 <- if (is.finite(rpe_raw)) rpe_raw / 10 else NA_real_
 
   zone_sec <- .session_zone_seconds(s)
@@ -139,13 +151,18 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
   # 3. HR-average fallback (least precise — flagged "low" confidence)
   hr_avg <- if (!is.null(s$avgHeartRateMoving)) {
     as.numeric(s$avgHeartRateMoving[1])
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   if (is.finite(hr_avg)) {
     if (is.null(hr_max) && !is.null(summaries)) {
       hr_max <- tryCatch(get_hr_max(summaries, sport = "running"),
-                         error = function(e) NULL)
+        error = function(e) NULL
+      )
     }
-    if (is.null(hr_max) || !is.finite(hr_max)) return(.classify_unknown())
+    if (is.null(hr_max) || !is.finite(hr_max)) {
+      return(.classify_unknown())
+    }
     return(.classify_from_hr_avg(hr_avg / hr_max, duration_min))
   }
 
@@ -179,31 +196,41 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
     zone = .type_to_zone(type),
     recovery_cost = .type_to_recovery_cost(type),
     confidence = "high",
-    signals = list(rpe_cr10 = rpe_cr10, duration_min = duration_min,
-                   zones = zones),
-    sources = c("Foster2001",  # session RPE validated
-                "Seiler2009", "Seiler2010",
-                "EsteveLanao2005")  # running-specific distribution data
+    signals = list(
+      rpe_cr10 = rpe_cr10, duration_min = duration_min,
+      zones = zones
+    ),
+    sources = c(
+      "Foster2001", # session RPE validated
+      "Seiler2009", "Seiler2010",
+      "EsteveLanao2005"
+    ) # running-specific distribution data
   )
 }
 
 # Zone fractions + duration → type. Heuristic order per
 # research/_analys/session-taxonomy__implications.md §What is missing #2.
 .classify_from_zones <- function(zones, duration_min) {
-  z1 <- zones$z1; z2 <- zones$z2; z3 <- zones$z3
+  z1 <- zones$z1
+  z2 <- zones$z2
+  z3 <- zones$z3
 
   type <- if (z3 >= 0.40) {
-    "race_pace"             # Z3-dominant → race / race-pace effort
+    "race_pace" # Z3-dominant → race / race-pace effort
   } else if (z3 >= 0.20) {
-    "vo2max"                # short Z3 bouts dominate → VO2max work
+    "vo2max" # short Z3 bouts dominate → VO2max work
   } else if (z2 + z3 >= 0.30 && z2 < 0.40) {
-    "threshold_intervals"   # mixed Z2/Z3 with Z1 recovery → intervals
+    "threshold_intervals" # mixed Z2/Z3 with Z1 recovery → intervals
   } else if (z2 >= 0.40) {
-    "tempo"                 # sustained Z2 → continuous tempo/threshold
+    "tempo" # sustained Z2 → continuous tempo/threshold
   } else if (z3 < 0.10 && z2 < 0.20) {
-    if (duration_min > 90)       "long"
-    else if (duration_min >= 40) "endurance"
-    else                          "recovery"
+    if (duration_min > 90) {
+      "long"
+    } else if (duration_min >= 40) {
+      "endurance"
+    } else {
+      "recovery"
+    }
   } else {
     # Mixed signature without clear dominant zone — treat as endurance
     # with note. Source: implications doc — "favour lower intensity
@@ -215,12 +242,16 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
     zone = .type_to_zone(type),
     recovery_cost = .type_to_recovery_cost(type),
     confidence = "medium",
-    signals = list(z1 = z1, z2 = z2, z3 = z3,
-                   duration_min = duration_min),
-    sources = c("Seiler2009", "Seiler2010", "Treff2019",
-                "EsteveLanao2005",  # running-specific 71/21/8 distribution
-                "EsteveLanao2007",  # RCT comparing Z1- vs Z2-heavy programs
-                "Neal2013")         # POL > THR crossover RCT
+    signals = list(
+      z1 = z1, z2 = z2, z3 = z3,
+      duration_min = duration_min
+    ),
+    sources = c(
+      "Seiler2009", "Seiler2010", "Treff2019",
+      "EsteveLanao2005", # running-specific 71/21/8 distribution
+      "EsteveLanao2007", # RCT comparing Z1- vs Z2-heavy programs
+      "Neal2013"
+    ) # POL > THR crossover RCT
   )
 }
 
@@ -232,9 +263,13 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
 # Used only when neither RPE nor zone data exist.
 .classify_from_hr_avg <- function(hr_pct, duration_min) {
   type <- if (hr_pct < 0.72) {
-    if (duration_min > 90)       "long"
-    else if (duration_min >= 40) "endurance"
-    else                          "recovery"
+    if (duration_min > 90) {
+      "long"
+    } else if (duration_min >= 40) {
+      "endurance"
+    } else {
+      "recovery"
+    }
   } else if (hr_pct < .HR_PCT_VT1) {
     if (duration_min >= 90) "long" else "endurance"
   } else if (hr_pct < .HR_PCT_VT2) {
@@ -255,20 +290,29 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
 }
 
 .classify_unknown <- function() {
-  list(type = "unknown", zone = NA_character_,
-       recovery_cost = NA_character_, confidence = "unknown",
-       signals = list(), sources = character())
+  list(
+    type = "unknown", zone = NA_character_,
+    recovery_cost = NA_character_, confidence = "unknown",
+    signals = list(), sources = character()
+  )
 }
 
 # Type → research zone. Source: session-taxonomy primer cross-cutting
 # synthesis table (intensity column).
 .type_to_zone <- function(type) {
   switch(type,
-    recovery = "Z1", endurance = "Z1", long = "Z1",
-    tempo = "Z2", threshold_intervals = "Z2",
-    vo2max = "Z3", race_pace = "Z3", race = "Z3", hill = "Z3",
+    recovery = "Z1",
+    endurance = "Z1",
+    long = "Z1",
+    tempo = "Z2",
+    threshold_intervals = "Z2",
+    vo2max = "Z3",
+    race_pace = "Z3",
+    race = "Z3",
+    hill = "Z3",
     fartlek = "Z1",
-    NA_character_)
+    NA_character_
+  )
 }
 
 # Type → recovery-cost tag. Source:
@@ -278,11 +322,18 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
 # leave volume-based fatigue distinct from intensity (recovery-window primer).
 .type_to_recovery_cost <- function(type) {
   switch(type,
-    recovery = "low", endurance = "low", fartlek = "low",
+    recovery = "low",
+    endurance = "low",
+    fartlek = "low",
     long = "moderate",
-    tempo = "moderate", threshold_intervals = "moderate",
-    vo2max = "high", race_pace = "high", race = "high", hill = "high",
-    NA_character_)
+    tempo = "moderate",
+    threshold_intervals = "moderate",
+    vo2max = "high",
+    race_pace = "high",
+    race = "high",
+    hill = "high",
+    NA_character_
+  )
 }
 
 # ---- Rolling counters ------------------------------------------------------
@@ -308,20 +359,27 @@ classify_session <- function(session, hr_max = NULL, summaries = NULL) {
 #' @return Integer count of Z3-classified sessions in the window.
 #' @export
 session_z3_count <- function(summaries, on_date = Sys.Date(), days = 7,
-                              hr_max = NULL) {
-  if (is.null(summaries) || nrow(summaries) == 0) return(0L)
+                             hr_max = NULL) {
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    return(0L)
+  }
   on_date <- as.Date(on_date)
   start <- on_date - (days - 1)
 
   runs <- summaries %>%
     dplyr::filter(stringr::str_detect(tolower(.data$sport), "running")) %>%
-    dplyr::filter(as.Date(.data$sessionStart) >= start,
-                  as.Date(.data$sessionStart) <= on_date)
-  if (nrow(runs) == 0) return(0L)
+    dplyr::filter(
+      as.Date(.data$sessionStart) >= start,
+      as.Date(.data$sessionStart) <= on_date
+    )
+  if (nrow(runs) == 0) {
+    return(0L)
+  }
 
   zones <- vapply(seq_len(nrow(runs)), function(i) {
     res <- classify_session(runs[i, , drop = FALSE],
-                            hr_max = hr_max, summaries = summaries)
+      hr_max = hr_max, summaries = summaries
+    )
     res$zone %||% NA_character_
   }, character(1))
   sum(zones == "Z3", na.rm = TRUE)
@@ -355,21 +413,31 @@ session_z3_count <- function(summaries, on_date = Sys.Date(), days = 7,
 #' @return Numeric in [0,1], or NA when no zone data exists in window.
 #' @export
 session_z2_fraction <- function(summaries, on_date = Sys.Date(), days = 90) {
-  if (is.null(summaries) || nrow(summaries) == 0) return(NA_real_)
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    return(NA_real_)
+  }
   cols <- paste0("garmin_hrTimeInZone_", 1:5)
-  if (!all(cols %in% names(summaries))) return(NA_real_)
+  if (!all(cols %in% names(summaries))) {
+    return(NA_real_)
+  }
 
   on_date <- as.Date(on_date)
   start <- on_date - (days - 1)
 
   runs <- summaries %>%
     dplyr::filter(stringr::str_detect(tolower(.data$sport), "running")) %>%
-    dplyr::filter(as.Date(.data$sessionStart) >= start,
-                  as.Date(.data$sessionStart) <= on_date)
-  if (nrow(runs) == 0) return(NA_real_)
+    dplyr::filter(
+      as.Date(.data$sessionStart) >= start,
+      as.Date(.data$sessionStart) <= on_date
+    )
+  if (nrow(runs) == 0) {
+    return(NA_real_)
+  }
 
   total <- sum(unlist(runs[, cols]), na.rm = TRUE)
-  if (total <= 0) return(NA_real_)
+  if (total <= 0) {
+    return(NA_real_)
+  }
   z3_garmin <- sum(as.numeric(runs$garmin_hrTimeInZone_3), na.rm = TRUE)
   z3_garmin / total
 }

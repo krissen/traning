@@ -33,18 +33,19 @@
 }
 summary.winnertable <- function(object, ...) object$the_summary
 registerS3method("summary", "winnertable", summary.winnertable,
-                 envir = environment())
+  envir = environment()
+)
 .fake_parsed <- function(start, distance, file, span = 3600) {
   structure(list(the_summary = .fake_summary(start, distance, file, span)),
-            class = "winnertable")
+    class = "winnertable"
+  )
 }
 
 # A cached row, by role. "full" and "short" are the two HAE copies.
 .row_for <- function(role) {
-  spec <- switch(
-    role,
-    full  = list(d = 10000, src = "hae", file = "hae:native.json",   off = 0),
-    short = list(d = 6000,  src = "hae", file = "hae:connect.json",  off = 3),
+  spec <- switch(role,
+    full = list(d = 10000, src = "hae", file = "hae:native.json", off = 0),
+    short = list(d = 6000, src = "hae", file = "hae:connect.json", off = 3),
     fragment = list(d = 620, src = "tcx", file = "/tcx/fragment.tcx", off = 1),
     covering = list(d = 9500, src = "tcx", file = "/tcx/covering.tcx", off = 1)
   )
@@ -61,7 +62,9 @@ registerS3method("summary", "winnertable", summary.winnertable,
 }
 
 .cache_of <- function(roles) {
-  if (length(roles) == 0) return(data.frame())
+  if (length(roles) == 0) {
+    return(data.frame())
+  }
   do.call(rbind, lapply(roles, .row_for))
 }
 
@@ -77,7 +80,9 @@ registerS3method("summary", "winnertable", summary.winnertable,
     .package = "trackeR"
   )
   res <- get_new_workouts(path, cache,
-                          vector("list", nrow(cache)), verbose = FALSE)
+    vector("list", nrow(cache)),
+    verbose = FALSE
+  )
   sort(round(as.numeric(res$summaries$distance)))
 }
 
@@ -118,12 +123,16 @@ test_that("an empty cache takes whatever arrives", {
     duration = duration,
     # A strength session records no distance at all; HAE omits the block
     # rather than writing a zero.
-    distance = if (is.null(distance_km)) NULL else
-      list(qty = distance_km, units = "km"),
+    distance = if (is.null(distance_km)) {
+      NULL
+    } else {
+      list(qty = distance_km, units = "km")
+    },
     avgHeartRate = list(qty = 140, units = "count/min")
   ))))
   jsonlite::write_json(payload, file.path(dir, paste0(name, ".json")),
-                       auto_unbox = TRUE, null = "null")
+    auto_unbox = TRUE, null = "null"
+  )
 }
 
 .after_hae <- function(roles, incoming_km) {
@@ -131,8 +140,10 @@ test_that("an empty cache takes whatever arrives", {
   .write_session_json(dir, "incoming", incoming_km)
   cache <- .cache_of(roles)
   res <- import_hae_workouts(dir, cache, vector("list", nrow(cache)))
-  list(distances = sort(round(as.numeric(res$summaries$distance))),
-       sources = sort(res$summaries$source))
+  list(
+    distances = sort(round(as.numeric(res$summaries$distance))),
+    sources = sort(res$summaries$source)
+  )
 }
 
 test_that("an HAE file turned away leaves the Garmin row where it was", {
@@ -247,7 +258,8 @@ test_that("the import counts two cached copies of a fragment once", {
   )
 
   res <- get_new_workouts(path, summaries, list(NULL, "a", "b"),
-                          verbose = FALSE)
+    verbose = FALSE
+  )
 
   # Nothing new imported and the Apple Watch row survives.
   expect_equal(res$n_imported, 0)
@@ -301,7 +313,8 @@ test_that("a cached leg is found through whichever copy recognises it", {
   )
 
   res <- get_new_workouts(path, cache, list(NULL, NULL, "leg1"),
-                          verbose = FALSE)
+    verbose = FALSE
+  )
 
   # 2600 + 2700 is 53 % of the fuller copy, so the legs take the
   # session and both Apple Watch rows go.
@@ -389,7 +402,8 @@ test_that("an unmeasured Garmin leg does not shrink a known session", {
   )
 
   res <- get_new_workouts(path, cache, list(NULL, "unmeasured"),
-                          verbose = FALSE)
+    verbose = FALSE
+  )
 
   expect_true("hae" %in% res$summaries$source)
   expect_equal(max(as.numeric(res$summaries$distance), na.rm = TRUE), 10000)
@@ -462,16 +476,21 @@ test_that("one Garmin file cannot evict two different sessions at once", {
   )
 
   res <- get_new_workouts(path, cache, list(NULL, NULL, "leg"),
-                          verbose = FALSE)
+    verbose = FALSE
+  )
 
   # The midday session is covered — 3000 m arriving plus its own cached
   # 4000 m leg against 6000 m — so its wrist row goes. The morning
   # session is not: 3000 m against 10 km, with nothing else of its own.
   expect_true("hae" %in% res$summaries$source)
-  expect_equal(as.numeric(res$summaries$distance[res$summaries$source == "hae"]),
-               10000)
-  expect_setequal(round(as.numeric(res$summaries$distance)),
-                  c(10000, 4000, 3000))
+  expect_equal(
+    as.numeric(res$summaries$distance[res$summaries$source == "hae"]),
+    10000
+  )
+  expect_setequal(
+    round(as.numeric(res$summaries$distance)),
+    c(10000, 4000, 3000)
+  )
   expect_equal(res$n_hae_removed, 1)
 })
 
@@ -506,16 +525,20 @@ test_that("duration decides between copies that record no distance", {
   #
   # (a) the shorter copy is cached and the fuller one arrives
   dir <- withr::local_tempdir()
-  .write_session_json(dir, "incoming", NULL, duration = 3600,
-                      workout = "Funktionell Styrketräning")
+  .write_session_json(dir, "incoming", NULL,
+    duration = 3600,
+    workout = "Funktionell Styrketräning"
+  )
   res <- import_hae_workouts(dir, .strength_row(0, 3400), list(NULL))
   expect_equal(nrow(res$summaries), 1)
   expect_equal(as.numeric(res$summaries$duration, units = "secs"), 3600)
 
   # (b) the other way round: the fuller one is cached already
   dir2 <- withr::local_tempdir()
-  .write_session_json(dir2, "incoming", NULL, duration = 3400,
-                      workout = "Funktionell Styrketräning")
+  .write_session_json(dir2, "incoming", NULL,
+    duration = 3400,
+    workout = "Funktionell Styrketräning"
+  )
   res2 <- import_hae_workouts(dir2, .strength_row(0, 3600), list(NULL))
   expect_equal(nrow(res2$summaries), 1)
   expect_equal(as.numeric(res2$summaries$duration, units = "secs"), 3600)
@@ -534,8 +557,10 @@ test_that("a copy that recorded a distance beats one that did not", {
   cached <- .strength_row(0, 3600)
   cached$sport <- "walking"
   dir <- withr::local_tempdir()
-  .write_session_json(dir, "incoming", 5, duration = 3400,
-                      workout = "Utomhus Gång")
+  .write_session_json(dir, "incoming", 5,
+    duration = 3400,
+    workout = "Utomhus Gång"
+  )
   res <- import_hae_workouts(dir, cached, list(NULL))
   expect_equal(nrow(res$summaries), 1)
   expect_equal(as.numeric(res$summaries$distance), 5000)
@@ -574,7 +599,8 @@ test_that("an ambiguous HAE file is turned away untouched", {
     avgHeartRate = list(qty = 140, units = "count/min")
   ))))
   jsonlite::write_json(payload, file.path(dir, "spanning.json"),
-                       auto_unbox = TRUE, null = "null")
+    auto_unbox = TRUE, null = "null"
+  )
 
   res <- import_hae_workouts(dir, cache, list("a", "b"))
 
@@ -632,7 +658,8 @@ test_that("a ride and a run that touch at the edges are two sessions", {
     avgHeartRate = list(qty = 130, units = "count/min")
   ))))
   jsonlite::write_json(payload, file.path(dir, "ride-home.json"),
-                       auto_unbox = TRUE, null = "null")
+    auto_unbox = TRUE, null = "null"
+  )
   res <- import_hae_workouts(dir, commute[2, ], list("run"))
   expect_equal(res$n_imported, 1)
   expect_equal(res$n_skipped_dup_hae, 0)
@@ -706,32 +733,41 @@ test_that("consecutive logs with no distance are not copies of each other", {
   # Recordings of one session share the clock and overlap; these have a
   # gap between them.
   day <- function(hms) as.POSIXct(paste("2020-04-04", hms), tz = "UTC")
-  set_row <- function(from, to) data.frame(
-    sessionStart = day(from), sessionEnd = day(to), sport = "strength",
-    distance = NA_real_,
-    duration = as.difftime(as.numeric(difftime(day(to), day(from),
-                                               units = "secs")),
-                           units = "secs"),
-    file = paste0("hae:set-", from, ".json"), source = "hae",
-    stringsAsFactors = FALSE)
+  set_row <- function(from, to) {
+    data.frame(
+      sessionStart = day(from), sessionEnd = day(to), sport = "strength",
+      distance = NA_real_,
+      duration = as.difftime(
+        as.numeric(difftime(day(to), day(from),
+          units = "secs"
+        )),
+        units = "secs"
+      ),
+      file = paste0("hae:set-", from, ".json"), source = "hae",
+      stringsAsFactors = FALSE
+    )
+  }
 
   first <- set_row("23:10:55", "23:11:19")
-  second <- set_row("23:12:03", "23:12:29")   # 44 s after the first ends
+  second <- set_row("23:12:03", "23:12:29") # 44 s after the first ends
   third <- set_row("23:13:25", "23:13:52")
   expect_false(.is_same_workout(first, second, same_sport = TRUE))
   expect_false(.is_same_workout(second, third, same_sport = TRUE))
   expect_length(.session_groups(rbind(first, second, third),
-                                same_sport = TRUE), 3)
+    same_sport = TRUE
+  ), 3)
 
   # Even a four-second gap is a gap.
   expect_false(.is_same_workout(set_row("07:56:26", "07:57:47"),
-                                set_row("07:57:51", "07:59:09"),
-                                same_sport = TRUE))
+    set_row("07:57:51", "07:59:09"),
+    same_sport = TRUE
+  ))
 
   # Two recordings of one set do overlap, and those are copies.
   expect_true(.is_same_workout(set_row("23:10:55", "23:11:19"),
-                               set_row("23:10:57", "23:11:21"),
-                               same_sport = TRUE))
+    set_row("23:10:57", "23:11:21"),
+    same_sport = TRUE
+  ))
 })
 
 test_that("a measured session is unaffected by the overlap requirement", {
@@ -782,8 +818,10 @@ test_that("a row with no sport field answers once per pair", {
   expect_length(verdict, 2)
   expect_false(any(verdict))
   # And the call path that indexes on it copes.
-  expect_equal(.which_same_workout(no_sport, candidates, same_sport = TRUE),
-               integer(0))
+  expect_equal(
+    .which_same_workout(no_sport, candidates, same_sport = TRUE),
+    integer(0)
+  )
 
   # Without the sport requirement the same pair still matches, so the
   # missing field is what decided it and not the fixture.

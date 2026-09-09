@@ -31,9 +31,11 @@ compute_fun_facts <- function(summaries) {
       sprintf("%s %d", sport_label(per_sport$sport[i]), per_sport$n[i])
     }, character(1))
     out$total_per_sport <- list(
-      string = paste0("Topp 5 sporter (antal pass): ",
-                      paste(parts, collapse = ", "), "."),
-      value  = per_sport
+      string = paste0(
+        "Topp 5 sporter (antal pass): ",
+        paste(parts, collapse = ", "), "."
+      ),
+      value = per_sport
     )
   }
 
@@ -50,21 +52,25 @@ compute_fun_facts <- function(summaries) {
       sport_label(first$sport)
     }
     out$first_session <- list(
-      string = sprintf("Första registrerade passet: %s (%s).",
-                       format(first$sessionStart, "%Y-%m-%d"),
-                       first_sport),
-      value  = first$sessionStart
+      string = sprintf(
+        "Första registrerade passet: %s (%s).",
+        format(first$sessionStart, "%Y-%m-%d"),
+        first_sport
+      ),
+      value = first$sessionStart
     )
   }
 
   # Longest gap between runs
   running <- summaries %>%
-    dplyr::filter(stringr::str_detect(.data$sport, "running"),
-                  !is.na(.data$sessionStart)) %>%
+    dplyr::filter(
+      stringr::str_detect(.data$sport, "running"),
+      !is.na(.data$sessionStart)
+    ) %>%
     dplyr::arrange(.data$sessionStart)
   if (nrow(running) >= 2) {
     starts <- as.Date(running$sessionStart)
-    gaps   <- as.numeric(diff(starts), units = "days")
+    gaps <- as.numeric(diff(starts), units = "days")
     if (length(gaps) > 0 && any(is.finite(gaps))) {
       g_max <- max(gaps, na.rm = TRUE)
       g_idx <- which.max(gaps)
@@ -72,9 +78,10 @@ compute_fun_facts <- function(summaries) {
         string = sprintf(
           "Längsta uppehåll mellan löpturer: %d dagar (%s → %s).",
           as.integer(g_max),
-          format(starts[g_idx],   "%Y-%m-%d"),
-          format(starts[g_idx + 1], "%Y-%m-%d")),
-        value  = g_max
+          format(starts[g_idx], "%Y-%m-%d"),
+          format(starts[g_idx + 1], "%Y-%m-%d")
+        ),
+        value = g_max
       )
     }
   }
@@ -85,14 +92,15 @@ compute_fun_facts <- function(summaries) {
     months <- months[!is.na(months)]
     if (length(months) > 0) {
       first_d <- as.Date(paste0(min(months), "-01"))
-      last_d  <- as.Date(paste0(max(months), "-01"))
-      spine   <- format(seq(first_d, last_d, by = "month"), "%Y-%m")
-      empty   <- setdiff(spine, unique(months))
+      last_d <- as.Date(paste0(max(months), "-01"))
+      spine <- format(seq(first_d, last_d, by = "month"), "%Y-%m")
+      empty <- setdiff(spine, unique(months))
       out$empty_months <- list(
         string = sprintf(
           "Hela kalendermånader utan ett enda pass: %d (av %d totalt).",
-          length(empty), length(spine)),
-        value  = empty
+          length(empty), length(spine)
+        ),
+        value = empty
       )
     }
   }
@@ -105,16 +113,19 @@ compute_fun_facts <- function(summaries) {
       string = sprintf(
         "Längsta löpningen: %s km (%s).",
         fmt_dec_sv(longest$distance / 1000),
-        format(longest$sessionStart, "%Y-%m-%d")),
-      value  = as.numeric(longest$distance) / 1000
+        format(longest$sessionStart, "%Y-%m-%d")
+      ),
+      value = as.numeric(longest$distance) / 1000
     )
   }
 
   # Fastest run > 5 km (avgPaceMoving column)
   fast_pool <- running %>%
-    dplyr::filter(.data$distance > 5000,
-                  !is.na(.data$avgPaceMoving),
-                  .data$avgPaceMoving > 2.5)
+    dplyr::filter(
+      .data$distance > 5000,
+      !is.na(.data$avgPaceMoving),
+      .data$avgPaceMoving > 2.5
+    )
   if (nrow(fast_pool) > 0) {
     fastest <- fast_pool %>%
       dplyr::slice_min(.data$avgPaceMoving, n = 1, with_ties = FALSE)
@@ -123,8 +134,9 @@ compute_fun_facts <- function(summaries) {
         "Snabbaste löpturen (>5 km): %s/km på %s km (%s).",
         dec_to_mmss(fastest$avgPaceMoving),
         fmt_dec_sv(fastest$distance / 1000),
-        format(fastest$sessionStart, "%Y-%m-%d")),
-      value  = as.numeric(fastest$avgPaceMoving)
+        format(fastest$sessionStart, "%Y-%m-%d")
+      ),
+      value = as.numeric(fastest$avgPaceMoving)
     )
   }
 

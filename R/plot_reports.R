@@ -6,7 +6,9 @@
 # sample plus the last level so the most recent period stays labelled.
 .thin_discrete_breaks <- function(target = 12) {
   function(x) {
-    if (length(x) <= target) return(x)
+    if (length(x) <= target) {
+      return(x)
+    }
     idx <- unique(round(seq(1, length(x), length.out = target)))
     if (utils::tail(idx, 1) != length(x)) idx <- c(idx, length(x))
     x[idx]
@@ -62,7 +64,7 @@ plot_monthtop <- function(data, from = NULL, to = NULL,
   plot_data <- plot_data %>%
     dplyr::mutate(
       `År-mån` = factor(`År-mån`, levels = `År-mån`),
-      year      = substr(`År-mån`, 1, 4)
+      year = substr(`År-mån`, 1, 4)
     )
 
   # Interpolate the brown sequence palette to span the actual number
@@ -106,12 +108,14 @@ plot_monthtop <- function(data, from = NULL, to = NULL,
 plot_runs_month <- function(data, from = NULL, to = NULL,
                             sport = "running") {
   td <- .as_traning_data(data)
-  plot_data <- report_runs_year_month(td, from = from, to = to,
-                                 sport = sport)
+  plot_data <- report_runs_year_month(td,
+    from = from, to = to,
+    sport = sport
+  )
 
-  ref_date  <- if (!is.null(from)) as.Date(from) else Sys.Date()
-  do_year   <- format(ref_date, "%Y")
-  do_month  <- as.integer(format(ref_date, "%m"))
+  ref_date <- if (!is.null(from)) as.Date(from) else Sys.Date()
+  do_year <- format(ref_date, "%Y")
+  do_month <- as.integer(format(ref_date, "%m"))
   title <- stringr::str_glue(
     "Löpturer {.swedish_months[do_month]} {do_year}"
   )
@@ -228,9 +232,9 @@ plot_datesum <- function(data, do_datesum_from, do_datesum_to,
   td <- .as_traning_data(data)
   summaries <- td@summaries
   from <- as.Date(do_datesum_from)
-  to   <- as.Date(do_datesum_to)
+  to <- as.Date(do_datesum_to)
 
-  span_days   <- as.numeric(to - from)
+  span_days <- as.numeric(to - from)
   span_months <- span_days / 30.44
 
   period_fmt <- if (span_days < 60) {
@@ -252,7 +256,7 @@ plot_datesum <- function(data, do_datesum_from, do_datesum_to,
   plot_data <- .filter_sport(summaries, sport) %>%
     dplyr::filter(
       sessionStart >= from,
-      sessionStart <  to
+      sessionStart < to
     ) %>%
     dplyr::mutate(period = format(sessionStart, period_fmt)) %>%
     dplyr::group_by(period) %>%

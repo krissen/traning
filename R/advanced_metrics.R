@@ -87,10 +87,10 @@ compute_efficiency_factor <- function(summaries, sport = "running",
     dplyr::filter(distance > min_distance) %>%
     dplyr::mutate(
       sessionStart = as.Date(sessionStart),
-      distance_km  = distance / 1000,
+      distance_km = distance / 1000,
       # avgSpeedMoving is in m/s — convert to m/min for EF
       speed_m_per_min = as.numeric(avgSpeedMoving) * 60,
-      hr              = as.numeric(avgHeartRateMoving)
+      hr = as.numeric(avgHeartRateMoving)
     ) %>%
     dplyr::filter(!is.na(hr), hr > 0, !is.na(speed_m_per_min)) %>%
     dplyr::arrange(sessionStart) %>%
@@ -98,7 +98,9 @@ compute_efficiency_factor <- function(summaries, sport = "running",
       ef = speed_m_per_min / hr
     )
 
-  if (nrow(runs) == 0) return(empty)
+  if (nrow(runs) == 0) {
+    return(empty)
+  }
 
   # 28-day rolling mean: work on per-day values (use last run of the day
   # when multiple runs share a date), then join back
@@ -184,7 +186,9 @@ compute_hre <- function(summaries, sport = "running",
       hre = hr * pace
     )
 
-  if (nrow(runs) == 0) return(empty)
+  if (nrow(runs) == 0) {
+    return(empty)
+  }
 
   daily_hre <- runs %>%
     dplyr::group_by(sessionStart) %>%
@@ -278,8 +282,8 @@ compute_hre <- function(summaries, sport = "running",
 #'   reads.
 #' @export
 compute_acwr <- function(summaries, sport = "running", mode = NULL,
-                          hr_max = NULL, hr_rest = NULL,
-                          health_daily = NULL) {
+                         hr_max = NULL, hr_rest = NULL,
+                         health_daily = NULL) {
   if (is.null(mode)) {
     # Resolve the sport argument through the same bucket resolver
     # .filter_sport() uses, so case variants ("All"), Swedish aliases
@@ -315,19 +319,29 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
     daily <- .filter_sport(summaries, sport) %>%
       dplyr::mutate(date = as.Date(sessionStart)) %>%
       dplyr::group_by(date) %>%
-      dplyr::summarise(daily_load = sum(distance, na.rm = TRUE) / 1000,
-                       .groups = "drop")
+      dplyr::summarise(
+        daily_load = sum(distance, na.rm = TRUE) / 1000,
+        .groups = "drop"
+      )
   } else {
-    trimp_tbl <- compute_trimp(summaries, hr_max = hr_max,
-                                hr_rest = hr_rest, sport = sport,
-                                health_daily = health_daily)
-    if (nrow(trimp_tbl) == 0) return(empty)
+    trimp_tbl <- compute_trimp(summaries,
+      hr_max = hr_max,
+      hr_rest = hr_rest, sport = sport,
+      health_daily = health_daily
+    )
+    if (nrow(trimp_tbl) == 0) {
+      return(empty)
+    }
     daily <- trimp_tbl %>%
-      dplyr::transmute(date = .data$date,
-                       daily_load = .data$daily_trimp)
+      dplyr::transmute(
+        date = .data$date,
+        daily_load = .data$daily_trimp
+      )
   }
 
-  if (nrow(daily) == 0) return(empty)
+  if (nrow(daily) == 0) {
+    return(empty)
+  }
 
   # Full date spine with rest days as 0; extend to today
   spine_end <- max(max(daily$date), Sys.Date())
@@ -338,7 +352,8 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
   daily_full <- date_spine %>%
     dplyr::left_join(daily, by = "date") %>%
     dplyr::mutate(daily_load = dplyr::if_else(is.na(.data$daily_load),
-                                               0, .data$daily_load))
+      0, .data$daily_load
+    ))
 
   # Acute load: 7-day rolling sum
   # Chronic load (coupled): 28-day rolling mean of daily load * 7
@@ -348,7 +363,7 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
   x <- daily_full$daily_load
   n <- length(x)
 
-  acute  <- .rolling_sum(x, window = 7)
+  acute <- .rolling_sum(x, window = 7)
   # Coupled chronic: mean over 28 days * 7
   chronic_coupled <- .rolling_mean(x, window = 28) * 7
 
@@ -357,7 +372,7 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
   chronic_uncoupled <- rep(NA_real_, n)
   for (i in seq_len(n)) {
     start_idx <- i - 35
-    end_idx   <- i - 8
+    end_idx <- i - 8
     if (start_idx >= 1) {
       chronic_uncoupled[i] <- mean(x[start_idx:end_idx], na.rm = TRUE) * 7
     }
@@ -365,13 +380,15 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
 
   result <- daily_full %>%
     dplyr::mutate(
-      weekly_load       = acute,
-      acute_load        = acute,
-      chronic_load      = chronic_coupled,
-      acwr              = dplyr::if_else(
-        chronic_load > 0, acute_load / chronic_load, NA_real_),
-      acwr_uncoupled    = dplyr::if_else(
-        chronic_uncoupled > 0, acute_load / chronic_uncoupled, NA_real_),
+      weekly_load = acute,
+      acute_load = acute,
+      chronic_load = chronic_coupled,
+      acwr = dplyr::if_else(
+        chronic_load > 0, acute_load / chronic_load, NA_real_
+      ),
+      acwr_uncoupled = dplyr::if_else(
+        chronic_uncoupled > 0, acute_load / chronic_uncoupled, NA_real_
+      ),
       # Week-over-week percentage change (Nielsen 2014: >30% = injury risk)
       weekly_pct_change = dplyr::if_else(
         dplyr::lag(weekly_load, 7) > 0,
@@ -381,13 +398,13 @@ compute_acwr <- function(summaries, sport = "running", mode = NULL,
     )
 
   if (mode == "km") {
-    result$daily_km  <- result$daily_load
+    result$daily_km <- result$daily_load
     result$weekly_km <- result$weekly_load
   } else {
     # In TRIMP mode the legacy km columns aren't meaningful; emit NA so
     # callers that grab them get an obvious "not applicable" instead of
     # a TRIMP value masquerading as km.
-    result$daily_km  <- NA_real_
+    result$daily_km <- NA_real_
     result$weekly_km <- NA_real_
   }
 
@@ -448,10 +465,14 @@ compute_monotony_strain <- function(summaries, sport = "running") {
   daily <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(date = as.Date(sessionStart)) %>%
     dplyr::group_by(date) %>%
-    dplyr::summarise(daily_km = sum(distance, na.rm = TRUE) / 1000,
-                     .groups = "drop")
+    dplyr::summarise(
+      daily_km = sum(distance, na.rm = TRUE) / 1000,
+      .groups = "drop"
+    )
 
-  if (nrow(daily) == 0) return(empty)
+  if (nrow(daily) == 0) {
+    return(empty)
+  }
 
   spine_end <- max(max(daily$date), Sys.Date())
   date_spine <- tibble::tibble(
@@ -464,20 +485,20 @@ compute_monotony_strain <- function(summaries, sport = "running") {
 
   x <- daily_full$daily_km
 
-  weekly_km <- .rolling_sum(x,  window = 7)
+  weekly_km <- .rolling_sum(x, window = 7)
   roll_mean <- .rolling_mean(x, window = 7)
-  roll_sd   <- .rolling_sd(x,   window = 7)
+  roll_sd <- .rolling_sd(x, window = 7)
 
   daily_full %>%
     dplyr::mutate(
       weekly_km = weekly_km,
       # Guard against division by zero on weeks with constant load
-      monotony  = dplyr::if_else(
+      monotony = dplyr::if_else(
         !is.na(roll_sd) & roll_sd > 0,
         roll_mean / roll_sd,
         NA_real_
       ),
-      strain    = dplyr::if_else(
+      strain = dplyr::if_else(
         !is.na(monotony), weekly_km * monotony, NA_real_
       )
     ) %>%
@@ -549,12 +570,16 @@ compute_recovery_hr <- function(summaries, sport = "all") {
   if ("avgHeartRate" %in% names(runs)) {
     result %>%
       dplyr::mutate(avg_hr = as.numeric(avgHeartRate)) %>%
-      dplyr::select(sessionStart, distance_km, recovery_hr,
-                    recovery_hr_rolling28, avg_hr)
+      dplyr::select(
+        sessionStart, distance_km, recovery_hr,
+        recovery_hr_rolling28, avg_hr
+      )
   } else {
     result %>%
-      dplyr::select(sessionStart, distance_km, recovery_hr,
-                    recovery_hr_rolling28)
+      dplyr::select(
+        sessionStart, distance_km, recovery_hr,
+        recovery_hr_rolling28
+      )
   }
 }
 
@@ -564,12 +589,16 @@ compute_recovery_hr <- function(summaries, sport = "all") {
 # Returns NA for the first element; the second element seeds the EWMA.
 .ewma <- function(x, window) {
   n <- length(x)
-  if (n == 0) return(numeric(0))
+  if (n == 0) {
+    return(numeric(0))
+  }
   lambda <- 2 / (window + 1)
   result <- rep(NA_real_, n)
   # Seed with first non-NA value
   seed_idx <- which(!is.na(x))[1]
-  if (is.na(seed_idx)) return(result)
+  if (is.na(seed_idx)) {
+    return(result)
+  }
   # No room to iterate forward (e.g. background-only PMC seeded by a
   # single day of step data): seed sits at the end, the EWMA reduces
   # to that one value. Without this guard the (seed_idx+1):n loop
@@ -660,20 +689,28 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
     dplyr::filter(duration_min > 10) %>%
     dplyr::arrange(date)
 
-  empty_daily <- tibble::tibble(date = as.Date(character(0)),
-                                 daily_trimp = numeric(0),
-                                 trimp_type = character(0))
+  empty_daily <- tibble::tibble(
+    date = as.Date(character(0)),
+    daily_trimp = numeric(0),
+    trimp_type = character(0)
+  )
 
   if (nrow(runs) == 0) {
     # No qualifying HR workouts. The high-step / no-workout case is
     # exactly the user-facing scenario this branch protects: a day with
     # 30k steps and no logged run still has to land in CTL. Fall through
     # to the background-fold-in path so the daily total is non-zero.
-    if (!add_background) return(empty_daily)
-    bg <- compute_background_trimp(health_daily, hr_max = hr_max,
-                                    hr_rest = hr_rest,
-                                    summaries = summaries)
-    if (nrow(bg) == 0) return(empty_daily)
+    if (!add_background) {
+      return(empty_daily)
+    }
+    bg <- compute_background_trimp(health_daily,
+      hr_max = hr_max,
+      hr_rest = hr_rest,
+      summaries = summaries
+    )
+    if (nrow(bg) == 0) {
+      return(empty_daily)
+    }
     return(
       bg %>%
         dplyr::transmute(
@@ -715,9 +752,11 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
   # `add_background` was already resolved above (we needed it for the
   # nrow(runs) == 0 path).
   if (add_background) {
-    bg <- compute_background_trimp(health_daily, hr_max = hr_max,
-                                    hr_rest = hr_rest,
-                                    summaries = summaries)
+    bg <- compute_background_trimp(health_daily,
+      hr_max = hr_max,
+      hr_rest = hr_rest,
+      summaries = summaries
+    )
     if (nrow(bg) > 0) {
       daily_trimp <- dplyr::full_join(daily_trimp, bg, by = "date") %>%
         dplyr::mutate(
@@ -783,30 +822,38 @@ compute_trimp <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #' @return Tibble with columns \code{date} and \code{background_trimp}.
 #' @export
 compute_background_trimp <- function(health_daily,
-                                      hr_max = NULL, hr_rest = NULL,
-                                      summaries = NULL,
-                                      min_per_km = 12,
-                                      hr_ratio = 0.30,
-                                      meters_per_step_fallback = 0.7) {
+                                     hr_max = NULL, hr_rest = NULL,
+                                     summaries = NULL,
+                                     min_per_km = 12,
+                                     hr_ratio = 0.30,
+                                     meters_per_step_fallback = 0.7) {
   empty <- tibble::tibble(
     date             = as.Date(character(0)),
     background_trimp = numeric(0)
   )
 
-  if (is.null(health_daily) || nrow(health_daily) == 0) return(empty)
+  if (is.null(health_daily) || nrow(health_daily) == 0) {
+    return(empty)
+  }
   required_cols <- c("date", "metric", "value")
-  if (!all(required_cols %in% names(health_daily))) return(empty)
+  if (!all(required_cols %in% names(health_daily))) {
+    return(empty)
+  }
 
   bg_metrics <- c("walking_running_distance", "step_count")
   bg <- health_daily %>%
     dplyr::filter(.data$metric %in% bg_metrics, !is.na(.data$value)) %>%
     dplyr::mutate(date = as.Date(.data$date)) %>%
     dplyr::group_by(date, .data$metric) %>%
-    dplyr::summarise(value = sum(.data$value, na.rm = TRUE),
-                     .groups = "drop") %>%
+    dplyr::summarise(
+      value = sum(.data$value, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
     tidyr::pivot_wider(names_from = "metric", values_from = "value")
 
-  if (nrow(bg) == 0) return(empty)
+  if (nrow(bg) == 0) {
+    return(empty)
+  }
 
   if (!"walking_running_distance" %in% names(bg)) {
     bg$walking_running_distance <- NA_real_
@@ -828,9 +875,9 @@ compute_background_trimp <- function(health_daily,
     has_non_walking_workout = logical(0)
   )
   has_summaries <- !is.null(summaries) && is.data.frame(summaries) &&
-                   nrow(summaries) > 0 &&
-                   all(c("sessionStart", "sport", "distance") %in%
-                       names(summaries))
+    nrow(summaries) > 0 &&
+    all(c("sessionStart", "sport", "distance") %in%
+      names(summaries))
   if (has_summaries) {
     # Per-day classification:
     #  - walking_run_qual: running/walking workouts that compute_trimp
@@ -843,7 +890,7 @@ compute_background_trimp <- function(health_daily,
     #    load). On those days we skip the fallback rather than
     #    back-derive walking km from cross-sport step counts.
     has_required <- all(c("avgHeartRateMoving", "durationMoving") %in%
-                         names(summaries))
+      names(summaries))
     qmask <- if (has_required) {
       !is.na(summaries$avgHeartRateMoving) &
         as.numeric(summaries$avgHeartRateMoving) > 0 &
@@ -860,7 +907,7 @@ compute_background_trimp <- function(health_daily,
     # of whether the workout has the HR / duration data that would
     # qualify it for compute_trimp(). Use the full set of non-walking
     # workouts to gate the fallback, not just the qualifying ones.
-    other_sport_any  <- summaries[!walking_mask, , drop = FALSE]
+    other_sport_any <- summaries[!walking_mask, , drop = FALSE]
 
     workout_km <- if (nrow(walking_run_qual) > 0) {
       walking_run_qual %>%
@@ -869,11 +916,15 @@ compute_background_trimp <- function(health_daily,
           workout_km = as.numeric(.data$distance) / 1000
         ) %>%
         dplyr::group_by(date) %>%
-        dplyr::summarise(workout_km = sum(.data$workout_km, na.rm = TRUE),
-                         .groups = "drop")
+        dplyr::summarise(
+          workout_km = sum(.data$workout_km, na.rm = TRUE),
+          .groups = "drop"
+        )
     } else {
-      tibble::tibble(date = as.Date(character(0)),
-                     workout_km = numeric(0))
+      tibble::tibble(
+        date = as.Date(character(0)),
+        workout_km = numeric(0)
+      )
     }
     other_days <- if (nrow(other_sport_any) > 0) {
       other_sport_any %>%
@@ -881,19 +932,23 @@ compute_background_trimp <- function(health_daily,
         dplyr::distinct(date) %>%
         dplyr::mutate(has_non_walking_workout = TRUE)
     } else {
-      tibble::tibble(date = as.Date(character(0)),
-                     has_non_walking_workout = logical(0))
+      tibble::tibble(
+        date = as.Date(character(0)),
+        has_non_walking_workout = logical(0)
+      )
     }
     workout_summary <- dplyr::full_join(workout_km, other_days,
-                                          by = "date")
+      by = "date"
+    )
   }
 
   bg <- bg %>%
     dplyr::left_join(workout_summary, by = "date") %>%
     dplyr::mutate(
-      workout_km             = dplyr::coalesce(.data$workout_km, 0),
+      workout_km = dplyr::coalesce(.data$workout_km, 0),
       has_non_walking_workout = dplyr::coalesce(
-        .data$has_non_walking_workout, FALSE),
+        .data$has_non_walking_workout, FALSE
+      ),
       # Prefer walking_running_distance; fall back to
       # step_count × meters_per_step when wrd is missing. Steps are
       # unit-unambiguous so we don't risk silently mis-scaling on HAE
@@ -901,7 +956,7 @@ compute_background_trimp <- function(health_daily,
       # on cycling days because step count drifts up during indoor
       # cycling too, and crediting that as "walking" would inflate
       # background load.
-      wrd_km                 = dplyr::if_else(
+      wrd_km = dplyr::if_else(
         !is.na(.data$walking_running_distance),
         .data$walking_running_distance,
         dplyr::if_else(
@@ -910,13 +965,15 @@ compute_background_trimp <- function(health_daily,
           .data$step_count * meters_per_step_fallback / 1000
         )
       ),
-      bg_km                  = pmax(0, .data$wrd_km - .data$workout_km),
-      bg_minutes             = .data$bg_km * min_per_km,
-      background_trimp       = .data$bg_minutes * hr_ratio * 0.64 *
-                                 exp(1.92 * hr_ratio)
+      bg_km = pmax(0, .data$wrd_km - .data$workout_km),
+      bg_minutes = .data$bg_km * min_per_km,
+      background_trimp = .data$bg_minutes * hr_ratio * 0.64 *
+        exp(1.92 * hr_ratio)
     ) %>%
-    dplyr::filter(is.finite(.data$background_trimp),
-                  .data$background_trimp > 0) %>%
+    dplyr::filter(
+      is.finite(.data$background_trimp),
+      .data$background_trimp > 0
+    ) %>%
     dplyr::select(date, background_trimp) %>%
     dplyr::arrange(date)
 
@@ -951,15 +1008,19 @@ compute_background_trimp <- function(health_daily,
 #' @export
 compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
                         sport = "all", health_daily = NULL) {
-  daily_trimp <- compute_trimp(summaries, hr_max = hr_max,
-                               hr_rest = hr_rest, sport = sport,
-                               health_daily = health_daily)
+  daily_trimp <- compute_trimp(summaries,
+    hr_max = hr_max,
+    hr_rest = hr_rest, sport = sport,
+    health_daily = health_daily
+  )
 
   if (nrow(daily_trimp) == 0) {
-    return(tibble::tibble(date = as.Date(character(0)),
-                          daily_trimp = numeric(0),
-                          atl = numeric(0), ctl = numeric(0),
-                          tsb = numeric(0)))
+    return(tibble::tibble(
+      date = as.Date(character(0)),
+      daily_trimp = numeric(0),
+      atl = numeric(0), ctl = numeric(0),
+      tsb = numeric(0)
+    ))
   }
 
   # Build full date spine — rest days = 0 TRIMP.
@@ -971,7 +1032,8 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 
   daily_full <- date_spine %>%
     dplyr::left_join(daily_trimp %>% dplyr::select(date, daily_trimp),
-                     by = "date") %>%
+      by = "date"
+    ) %>%
     dplyr::mutate(daily_trimp = dplyr::if_else(is.na(daily_trimp), 0, daily_trimp))
 
   # EWMA computation
@@ -1007,12 +1069,12 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
   # walking_running_distance / step_count entirely, where the
   # function silently contributes nothing.
   bg_gate <- !is.null(health_daily) &&
-             (is.null(resolved) || "walking" %in% resolved)
+    (is.null(resolved) || "walking" %in% resolved)
   bg_on <- bg_gate &&
-           inherits(health_daily, "data.frame") &&
-           "metric" %in% names(health_daily) &&
-           any(health_daily$metric %in%
-                 c("walking_running_distance", "step_count"))
+    inherits(health_daily, "data.frame") &&
+    "metric" %in% names(health_daily) &&
+    any(health_daily$metric %in%
+      c("walking_running_distance", "step_count"))
   scope <- if (is.null(sport) || length(sport) == 0L) {
     "alla sporter"
   } else if (is.null(resolved)) {
@@ -1109,28 +1171,28 @@ compute_pmc <- function(summaries, hr_max = NULL, hr_rest = NULL,
 #'   \code{decoupling_pct}, \code{decoupling_rolling28}, \code{temperature}.
 #' @export
 compute_decoupling <- function(summaries, myruns,
-                               min_duration_min        = 45,
-                               max_pace_min_km         = NULL,
-                               warmup_sec              = 600L,
-                               smooth_window           = 30L,
+                               min_duration_min = 45,
+                               max_pace_min_km = NULL,
+                               warmup_sec = 600L,
+                               smooth_window = 30L,
                                max_half_speed_diff_pct = 10,
-                               cap_pct                 = 25,
-                               sport                   = "running") {
+                               cap_pct = 25,
+                               sport = "running") {
   if (is.null(max_pace_min_km)) {
     max_pace_min_km <- .resolve_max_pace_min_km(sport)
   }
   empty <- tibble::tibble(
-    sessionStart       = as.Date(character(0)),
-    distance_km        = numeric(0),
-    duration_min       = numeric(0),
-    avg_pace           = numeric(0),
-    avg_hr             = numeric(0),
-    ratio_first        = numeric(0),
-    ratio_second       = numeric(0),
-    decoupling_pct     = numeric(0),
+    sessionStart = as.Date(character(0)),
+    distance_km = numeric(0),
+    duration_min = numeric(0),
+    avg_pace = numeric(0),
+    avg_hr = numeric(0),
+    ratio_first = numeric(0),
+    ratio_second = numeric(0),
+    decoupling_pct = numeric(0),
     decoupling_rolling28 = numeric(0),
-    temperature        = numeric(0),
-    capped             = logical(0)
+    temperature = numeric(0),
+    capped = logical(0)
   )
 
   # Filter qualifying sessions at summary level. We work with row indices
@@ -1138,16 +1200,18 @@ compute_decoupling <- function(summaries, myruns,
   # summaries — losing positions would break the [[i]] lookup.
   run_idx <- which(
     .sport_match_mask(summaries, sport) &
-    as.numeric(summaries$durationMoving, units = "mins") > min_duration_min &
-    as.numeric(summaries$avgPaceMoving) > max_pace_min_km
+      as.numeric(summaries$durationMoving, units = "mins") > min_duration_min &
+      as.numeric(summaries$avgPaceMoving) > max_pace_min_km
   )
 
-  if (length(run_idx) == 0) return(empty)
+  if (length(run_idx) == 0) {
+    return(empty)
+  }
 
   has_temp <- "garmin_averageTemperature" %in% names(summaries)
 
-  n_runs  <- length(run_idx)
-  n_skip  <- 0L
+  n_runs <- length(run_idx)
+  n_skip <- 0L
   n_capped <- 0L
   results <- vector("list", n_runs)
 
@@ -1159,30 +1223,45 @@ compute_decoupling <- function(summaries, myruns,
     }
 
     session <- tryCatch(myruns[[i]], error = function(e) NULL)
-    if (is.null(session)) { n_skip <- n_skip + 1L; next }
+    if (is.null(session)) {
+      n_skip <- n_skip + 1L
+      next
+    }
 
     session_df <- tryCatch(as.data.frame(session), error = function(e) NULL)
     if (is.null(session_df) ||
-        !all(c("speed", "heart_rate") %in% names(session_df))) {
-      n_skip <- n_skip + 1L; next
+      !all(c("speed", "heart_rate") %in% names(session_df))) {
+      n_skip <- n_skip + 1L
+      next
     }
 
     # Clean: remove NA/zero rows, require time column
-    if (!"time" %in% names(session_df)) { n_skip <- n_skip + 1L; next }
-    session_df$speed      <- as.numeric(session_df$speed)
+    if (!"time" %in% names(session_df)) {
+      n_skip <- n_skip + 1L
+      next
+    }
+    session_df$speed <- as.numeric(session_df$speed)
     session_df$heart_rate <- as.numeric(session_df$heart_rate)
     valid <- !is.na(session_df$speed) & session_df$speed > 0 &
-             !is.na(session_df$heart_rate) & session_df$heart_rate > 0
+      !is.na(session_df$heart_rate) & session_df$heart_rate > 0
     session_df <- session_df[valid, ]
 
-    if (nrow(session_df) < 10) { n_skip <- n_skip + 1L; next }
+    if (nrow(session_df) < 10) {
+      n_skip <- n_skip + 1L
+      next
+    }
 
     # Time-based warmup exclusion (handles variable sampling intervals)
     elapsed_sec <- as.numeric(difftime(session_df$time,
-                                       session_df$time[1], units = "secs"))
+      session_df$time[1],
+      units = "secs"
+    ))
     session_df <- session_df[elapsed_sec >= warmup_sec, ]
 
-    if (nrow(session_df) < 10) { n_skip <- n_skip + 1L; next }
+    if (nrow(session_df) < 10) {
+      n_skip <- n_skip + 1L
+      next
+    }
 
     # Determine sampling interval for adaptive smoothing window
     time_diffs <- as.numeric(diff(session_df$time), units = "secs")
@@ -1199,19 +1278,23 @@ compute_decoupling <- function(summaries, myruns,
     speed_smooth <- speed_smooth[valid_smooth]
     hr <- hr[valid_smooth]
 
-    if (length(speed_smooth) < 10) { n_skip <- n_skip + 1L; next }
+    if (length(speed_smooth) < 10) {
+      n_skip <- n_skip + 1L
+      next
+    }
 
     # Split at temporal midpoint (not row midpoint — important because
     # older devices log at 3-7s intervals, not per-second)
     elapsed <- as.numeric(difftime(session_df$time[valid_smooth],
-                                   session_df$time[valid_smooth][1],
-                                   units = "secs"))
+      session_df$time[valid_smooth][1],
+      units = "secs"
+    ))
     total_time <- elapsed[length(elapsed)]
     mid_time <- total_time / 2
     mid <- max(which(elapsed <= mid_time))
 
     n_pts <- length(speed_smooth)
-    speed_first  <- speed_smooth[1:mid]
+    speed_first <- speed_smooth[1:mid]
     speed_second <- speed_smooth[(mid + 1):n_pts]
     mean_speed_1 <- mean(speed_first, na.rm = TRUE)
     mean_speed_2 <- mean(speed_second, na.rm = TRUE)
@@ -1221,16 +1304,18 @@ compute_decoupling <- function(summaries, myruns,
     # splits) produce misleading decoupling values that reflect pacing
     # strategy, not cardiac drift.
     half_speed_diff <- abs(mean_speed_1 - mean_speed_2) /
-                       max(mean_speed_1, mean_speed_2) * 100
+      max(mean_speed_1, mean_speed_2) * 100
     if (half_speed_diff > max_half_speed_diff_pct) {
-      n_skip <- n_skip + 1L; next
+      n_skip <- n_skip + 1L
+      next
     }
 
     ratio_1 <- mean(speed_first / hr[1:mid], na.rm = TRUE)
     ratio_2 <- mean(speed_second / hr[(mid + 1):n_pts], na.rm = TRUE)
 
     if (is.na(ratio_1) || is.na(ratio_2) || ratio_1 == 0) {
-      n_skip <- n_skip + 1L; next
+      n_skip <- n_skip + 1L
+      next
     }
 
     decoupling_pct <- 100 * (ratio_1 - ratio_2) / ratio_1
@@ -1251,37 +1336,43 @@ compute_decoupling <- function(summaries, myruns,
     if (is_capped) n_capped <- n_capped + 1L
 
     results[[k]] <- tibble::tibble(
-      sessionStart   = as.Date(summaries$sessionStart[[i]]),
-      distance_km    = as.numeric(summaries$distance[[i]]) / 1000,
-      duration_min   = as.numeric(summaries$durationMoving[[i]], units = "mins"),
-      avg_pace       = as.numeric(summaries$avgPaceMoving[[i]]),
-      avg_hr         = as.numeric(summaries$avgHeartRateMoving[[i]]),
-      ratio_first    = ratio_1,
-      ratio_second   = ratio_2,
+      sessionStart = as.Date(summaries$sessionStart[[i]]),
+      distance_km = as.numeric(summaries$distance[[i]]) / 1000,
+      duration_min = as.numeric(summaries$durationMoving[[i]], units = "mins"),
+      avg_pace = as.numeric(summaries$avgPaceMoving[[i]]),
+      avg_hr = as.numeric(summaries$avgHeartRateMoving[[i]]),
+      ratio_first = ratio_1,
+      ratio_second = ratio_2,
       decoupling_pct = decoupling_pct,
-      temperature    = if (has_temp) {
+      temperature = if (has_temp) {
         as.numeric(summaries$garmin_averageTemperature[[i]])
       } else {
         NA_real_
       },
-      capped         = is_capped
+      capped = is_capped
     )
   }
 
   if (n_skip > 0) {
     warning(n_skip, " sessioner hoppades \u00f6ver (NULL, saknar speed/HR, ",
-            "eller f\u00f6r kort efter uppv\u00e4rmning).", call. = FALSE)
+      "eller f\u00f6r kort efter uppv\u00e4rmning).",
+      call. = FALSE
+    )
   }
   if (n_capped > 0) {
     warning(n_capped, " sessioner flaggade som outliers (|decoupling| > ",
-            cap_pct, " %) \u2014 m\u00e4rks visuellt men exkluderas fr\u00e5n ",
-            "rullande medel. H\u00f6j cap_pct f\u00f6r att inkludera \u00e4kta extremer ",
-            "som hetta eller under-fueling.", call. = FALSE)
+      cap_pct, " %) \u2014 m\u00e4rks visuellt men exkluderas fr\u00e5n ",
+      "rullande medel. H\u00f6j cap_pct f\u00f6r att inkludera \u00e4kta extremer ",
+      "som hetta eller under-fueling.",
+      call. = FALSE
+    )
   }
 
   per_run <- dplyr::bind_rows(results)
 
-  if (nrow(per_run) == 0) return(empty)
+  if (nrow(per_run) == 0) {
+    return(empty)
+  }
 
   per_run <- dplyr::arrange(per_run, sessionStart)
 
@@ -1290,8 +1381,10 @@ compute_decoupling <- function(summaries, myruns,
   daily <- per_run %>%
     dplyr::filter(!.data$capped) %>%
     dplyr::group_by(sessionStart) %>%
-    dplyr::summarise(daily_dc = mean(decoupling_pct, na.rm = TRUE),
-                     .groups = "drop") %>%
+    dplyr::summarise(
+      daily_dc = mean(decoupling_pct, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
     dplyr::arrange(sessionStart)
 
   if (nrow(daily) == 0) {
@@ -1308,7 +1401,8 @@ compute_decoupling <- function(summaries, myruns,
 
   date_spine <- tibble::tibble(
     sessionStart = seq(min(daily$sessionStart), max(daily$sessionStart),
-                       by = "day")
+      by = "day"
+    )
   )
 
   rolling <- date_spine %>%
@@ -1330,9 +1424,12 @@ compute_decoupling <- function(summaries, myruns,
 # Default cache path for decoupling
 .decoupling_cache_path <- function() {
   traning_data <- Sys.getenv("TRANING_DATA")
-  if (traning_data == "") return(NULL)
+  if (traning_data == "") {
+    return(NULL)
+  }
   normalizePath(file.path(traning_data, "cache", "decoupling.RData"),
-                mustWork = FALSE)
+    mustWork = FALSE
+  )
 }
 
 #' Resolve the sport-aware easy-pace gate for decoupling
@@ -1370,7 +1467,8 @@ compute_decoupling <- function(summaries, myruns,
       cycling  = 1.5,
       walking  = 6.0,
       swimming = 15.0,
-      NA_real_)
+      NA_real_
+    )
   }
   resolved <- .resolve_sport_bucket(sport)
   if (is.null(resolved) || length(resolved) == 0 || length(resolved) > 1) {
@@ -1393,16 +1491,16 @@ compute_decoupling <- function(summaries, myruns,
 #' @return Tibble — same as \code{compute_decoupling()}.
 #' @export
 load_decoupling <- function(summaries, myruns,
-                            min_duration_min        = 45,
-                            max_pace_min_km         = NULL,
-                            warmup_sec              = 600L,
-                            smooth_window           = 30L,
+                            min_duration_min = 45,
+                            max_pace_min_km = NULL,
+                            warmup_sec = 600L,
+                            smooth_window = 30L,
                             max_half_speed_diff_pct = 10,
-                            cap_pct                 = 25,
-                            force                   = FALSE,
-                            cache_path              = NULL,
-                            sport                   = "running",
-                            read_only               = FALSE) {
+                            cap_pct = 25,
+                            force = FALSE,
+                            cache_path = NULL,
+                            sport = "running",
+                            read_only = FALSE) {
   # Mirror compute_decoupling's sport-aware default so non-running
   # callers (CLI/Vayu/Shiny with sport="cycling"/"endurance"/"all")
   # don't silently filter to an empty cache by inheriting the old
@@ -1419,26 +1517,30 @@ load_decoupling <- function(summaries, myruns,
   cache_valid <- FALSE
 
   if (!force && !is.null(cache_path) && file.exists(cache_path)) {
-    load(cache_path)  # loads: decoupling_cache
+    load(cache_path) # loads: decoupling_cache
     # Cache must also match `sport` — without that, a cache produced for
     # one sport could be reused (or merged with) a request for another
     # and return cross-sport results. Older caches (pre-sport-key) are
     # treated as invalid and recomputed.
     if (exists("decoupling_cache") &&
-        identical(decoupling_cache$min_duration_min, min_duration_min) &&
-        identical(decoupling_cache$max_pace_min_km, max_pace_min_km) &&
-        identical(decoupling_cache$warmup_sec, warmup_sec) &&
-        identical(decoupling_cache$smooth_window, smooth_window) &&
-        identical(decoupling_cache$max_half_speed_diff_pct,
-                  max_half_speed_diff_pct) &&
-        identical(decoupling_cache$cap_pct, cap_pct) &&
-        identical(decoupling_cache$sport %||% NULL, sport)) {
+      identical(decoupling_cache$min_duration_min, min_duration_min) &&
+      identical(decoupling_cache$max_pace_min_km, max_pace_min_km) &&
+      identical(decoupling_cache$warmup_sec, warmup_sec) &&
+      identical(decoupling_cache$smooth_window, smooth_window) &&
+      identical(
+        decoupling_cache$max_half_speed_diff_pct,
+        max_half_speed_diff_pct
+      ) &&
+      identical(decoupling_cache$cap_pct, cap_pct) &&
+      identical(decoupling_cache$sport %||% NULL, sport)) {
       cached <- decoupling_cache$per_run
       cached_skipped_dates <- decoupling_cache$skipped_dates %||%
         as.Date(character(0))
       cache_valid <- TRUE
-      message("Decoupling-cache: ", nrow(cached), " sessioner (",
-              length(cached_skipped_dates), " utan data).")
+      message(
+        "Decoupling-cache: ", nrow(cached), " sessioner (",
+        length(cached_skipped_dates), " utan data)."
+      )
     } else {
       message("Decoupling-cache: parametrar \u00e4ndrade, r\u00e4knar om allt.")
     }
@@ -1447,8 +1549,8 @@ load_decoupling <- function(summaries, myruns,
   # Find qualifying sessions not already cached
   run_idx <- which(
     .sport_match_mask(summaries, sport) &
-    as.numeric(summaries$durationMoving, units = "mins") > min_duration_min &
-    as.numeric(summaries$avgPaceMoving) > max_pace_min_km
+      as.numeric(summaries$durationMoving, units = "mins") > min_duration_min &
+      as.numeric(summaries$avgPaceMoving) > max_pace_min_km
   )
   run_dates <- as.Date(summaries$sessionStart[run_idx])
 
@@ -1466,20 +1568,22 @@ load_decoupling <- function(summaries, myruns,
   } else {
     # Build a subset summaries + myruns for only the new sessions
     if (cache_valid && length(new_run_idx) > 0) {
-      message("Ber\u00e4knar decoupling f\u00f6r ", length(new_run_idx),
-              " nya sessioner ...")
+      message(
+        "Ber\u00e4knar decoupling f\u00f6r ", length(new_run_idx),
+        " nya sessioner ..."
+      )
     }
 
     # Full recompute — compute_decoupling handles iteration internally
     new_data <- compute_decoupling(
       summaries, myruns,
-      min_duration_min        = min_duration_min,
-      max_pace_min_km         = max_pace_min_km,
-      warmup_sec              = warmup_sec,
-      smooth_window           = smooth_window,
+      min_duration_min = min_duration_min,
+      max_pace_min_km = max_pace_min_km,
+      warmup_sec = warmup_sec,
+      smooth_window = smooth_window,
       max_half_speed_diff_pct = max_half_speed_diff_pct,
-      cap_pct                 = cap_pct,
-      sport                   = sport
+      cap_pct = cap_pct,
+      sport = sport
     )
 
     if (cache_valid && nrow(cached) > 0) {
@@ -1509,14 +1613,17 @@ load_decoupling <- function(summaries, myruns,
     daily <- per_run %>%
       dplyr::filter(!.data$capped) %>%
       dplyr::group_by(sessionStart) %>%
-      dplyr::summarise(daily_dc = mean(decoupling_pct, na.rm = TRUE),
-                       .groups = "drop") %>%
+      dplyr::summarise(
+        daily_dc = mean(decoupling_pct, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
       dplyr::arrange(sessionStart)
 
     if (nrow(daily) > 0) {
       date_spine <- tibble::tibble(
         sessionStart = seq(min(daily$sessionStart), max(daily$sessionStart),
-                           by = "day")
+          by = "day"
+        )
       )
 
       rolling <- date_spine %>%
@@ -1560,9 +1667,12 @@ load_decoupling <- function(summaries, myruns,
 # Default cache path for the overview-page precache
 .overview_cache_path <- function() {
   traning_data <- Sys.getenv("TRANING_DATA")
-  if (traning_data == "") return(NULL)
+  if (traning_data == "") {
+    return(NULL)
+  }
   normalizePath(file.path(traning_data, "cache", "overview.RData"),
-                mustWork = FALSE)
+    mustWork = FALSE
+  )
 }
 
 # mtime of one of the two source caches the overview precache depends on
@@ -1575,9 +1685,13 @@ load_decoupling <- function(summaries, myruns,
 # comparisons are still well-defined (NA identical to NA is TRUE).
 .overview_source_mtime <- function(filename) {
   traning_data <- Sys.getenv("TRANING_DATA")
-  if (traning_data == "") return(NA)
+  if (traning_data == "") {
+    return(NA)
+  }
   path <- file.path(traning_data, "cache", filename)
-  if (!file.exists(path)) return(NA)
+  if (!file.exists(path)) {
+    return(NA)
+  }
   file.info(path)$mtime
 }
 
@@ -1633,32 +1747,41 @@ load_overview_metrics <- function(summaries, health_daily = NULL,
   if (is.null(cache_path)) cache_path <- .overview_cache_path()
 
   summaries_mtime <- .overview_source_mtime("summaries.RData")
-  health_mtime    <- .overview_source_mtime("health_daily.RData")
+  health_mtime <- .overview_source_mtime("health_daily.RData")
 
   if (!force && !is.null(cache_path) && file.exists(cache_path)) {
     # A corrupt/truncated file must be treated as a miss, never an error
     # — worst case is a cold recompute (today's pre-cache behaviour).
-    cache_fresh <- tryCatch({
-      suppressWarnings(load(cache_path))  # loads: overview_cache
-      exists("overview_cache") &&
-        identical(overview_cache$summaries_mtime, summaries_mtime) &&
-        identical(overview_cache$health_mtime, health_mtime) &&
-        identical(overview_cache$built_date, Sys.Date())
-    }, error = function(e) FALSE)
+    cache_fresh <- tryCatch(
+      {
+        suppressWarnings(load(cache_path)) # loads: overview_cache
+        exists("overview_cache") &&
+          identical(overview_cache$summaries_mtime, summaries_mtime) &&
+          identical(overview_cache$health_mtime, health_mtime) &&
+          identical(overview_cache$built_date, Sys.Date())
+      },
+      error = function(e) FALSE
+    )
 
     if (isTRUE(cache_fresh)) {
-      message("Overview-cache: fräsch (byggd ",
-              format(overview_cache$built_date), ").")
-      return(overview_cache[c("pmc", "acwr_all", "volume_running",
-                              "readiness")])
+      message(
+        "Overview-cache: fräsch (byggd ",
+        format(overview_cache$built_date), ")."
+      )
+      return(overview_cache[c(
+        "pmc", "acwr_all", "volume_running",
+        "readiness"
+      )])
     }
   }
 
   # Miss (or force) — recompute. compute_readiness() reuses `pmc` so
   # this pays for two TRIMP scans (pmc + whole-system acwr), not three.
   pmc <- compute_pmc(summaries, health_daily = health_daily)
-  acwr_all <- compute_acwr(summaries, sport = "all",
-                           health_daily = health_daily)
+  acwr_all <- compute_acwr(summaries,
+    sport = "all",
+    health_daily = health_daily
+  )
   volume_running <- compute_acwr(summaries, sport = "running", mode = "km")
   readiness <- compute_readiness(health_daily, summaries, pmc = pmc)
 
@@ -1674,8 +1797,10 @@ load_overview_metrics <- function(summaries, health_daily = NULL,
 
   if (!is.null(cache_path) && !read_only) {
     save_atomic(overview_cache, file = cache_path)
-    message("Overview-cache sparad (byggd ",
-            format(overview_cache$built_date), ").")
+    message(
+      "Overview-cache sparad (byggd ",
+      format(overview_cache$built_date), ")."
+    )
   }
 
   overview_cache[c("pmc", "acwr_all", "volume_running", "readiness")]
@@ -1699,7 +1824,9 @@ load_overview_metrics <- function(summaries, health_daily = NULL,
 #'
 #' @keywords internal
 .recent_baseline_km <- function(summaries, lookback_weeks = 4L) {
-  if (is.null(summaries) || nrow(summaries) == 0L) return(0)
+  if (is.null(summaries) || nrow(summaries) == 0L) {
+    return(0)
+  }
   runs <- .filter_sport(summaries, "running")
 
   lookback_weeks <- as.integer(lookback_weeks)
@@ -1714,7 +1841,7 @@ load_overview_metrics <- function(summaries, health_daily = NULL,
   # contributes 0 to the median through the spine, not by being
   # dropped from the grouping.
   week_starts <- start + 7L * (seq_len(lookback_weeks) - 1L)
-  spine_keys  <- iso_week_key(week_starts)
+  spine_keys <- iso_week_key(week_starts)
 
   km_per_week <- setNames(rep(0, lookback_weeks), spine_keys)
   if (nrow(runs) > 0L) {
@@ -1722,7 +1849,7 @@ load_overview_metrics <- function(summaries, health_daily = NULL,
     recent <- runs[!is.na(d) & d >= start & d < this_monday, , drop = FALSE]
     if (nrow(recent) > 0L) {
       keys <- iso_week_key(as.Date(recent$sessionStart))
-      km   <- as.numeric(recent$distance) / 1000
+      km <- as.numeric(recent$distance) / 1000
       observed <- tapply(km, keys, function(x) sum(x, na.rm = TRUE))
       hit <- intersect(names(observed), names(km_per_week))
       km_per_week[hit] <- observed[hit]
@@ -1754,8 +1881,8 @@ load_overview_metrics <- function(summaries, health_daily = NULL,
 #'   as an attribute on the tibble.
 #' @export
 compute_taper_plan <- function(data, race_date,
-                                distance_km = NA_real_,
-                                taper_weeks = 2L) {
+                               distance_km = NA_real_,
+                               taper_weeks = 2L) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   race_date <- as.Date(race_date)
@@ -1803,7 +1930,8 @@ compute_taper_plan <- function(data, race_date,
     taper_floor + (1 - taper_floor) * weeks_until / (taper_weeks + 1L)
   )
   phase <- ifelse(weeks_until == 0L, "race",
-                   ifelse(weeks_until <= taper_weeks, "taper", "build"))
+    ifelse(weeks_until <= taper_weeks, "taper", "build")
+  )
 
   plan <- tibble::tibble(
     week_start           = weeks,
@@ -1814,7 +1942,7 @@ compute_taper_plan <- function(data, race_date,
     target_km            = round(baseline_km * rel, 1),
     relative_to_baseline = round(rel, 3)
   )
-  attr(plan, "race_date")   <- race_date
+  attr(plan, "race_date") <- race_date
   attr(plan, "distance_km") <- distance_km
   plan
 }
@@ -1834,27 +1962,35 @@ compute_taper_plan <- function(data, race_date,
 render_taper_plan_prose <- function(plan) {
   if (is.null(plan) || nrow(plan) == 0L) {
     if (isTRUE(attr(plan, "insufficient_baseline"))) {
-      return(paste("Otillräcklig baseline — ingen löpning de senaste",
-                   "4 veckorna. Logga några pass innan taper-planen",
-                   "kan beräknas."))
+      return(paste(
+        "Otillräcklig baseline — ingen löpning de senaste",
+        "4 veckorna. Logga några pass innan taper-planen",
+        "kan beräknas."
+      ))
     }
     return("Ingen taper-plan att visa.")
   }
-  race_date   <- attr(plan, "race_date")
+  race_date <- attr(plan, "race_date")
   distance_km <- attr(plan, "distance_km")
-  baseline    <- plan$baseline_km[[1]]
+  baseline <- plan$baseline_km[[1]]
 
   header_bits <- character(0)
   if (!is.null(race_date)) {
-    header_bits <- c(header_bits,
-                     sprintf("Tävling: %s", format(race_date)))
+    header_bits <- c(
+      header_bits,
+      sprintf("Tävling: %s", format(race_date))
+    )
   }
   if (length(distance_km) && !is.na(distance_km)) {
     header_bits <- c(header_bits, sprintf("%s km", fmt_dec_sv(distance_km)))
   }
-  header_bits <- c(header_bits,
-                   sprintf("baseline %s km/v (4v median)",
-                           fmt_dec_sv(baseline)))
+  header_bits <- c(
+    header_bits,
+    sprintf(
+      "baseline %s km/v (4v median)",
+      fmt_dec_sv(baseline)
+    )
+  )
   lines <- paste(header_bits, collapse = " — ")
 
   for (i in seq_len(nrow(plan))) {
@@ -1863,12 +1999,16 @@ render_taper_plan_prose <- function(plan) {
     label <- switch(row$phase,
       race  = sprintf("Tävlingsvecka (%s)", week_iso),
       taper = sprintf("Taper -%d (%s)", row$weeks_until_race, week_iso),
-      build = sprintf("Bygg (%s)",      week_iso)
+      build = sprintf("Bygg (%s)", week_iso)
     )
-    lines <- c(lines,
-               sprintf("  %s: %s km (%.0f %% av baseline)",
-                       label, fmt_dec_sv(row$target_km),
-                       100 * row$relative_to_baseline))
+    lines <- c(
+      lines,
+      sprintf(
+        "  %s: %s km (%.0f %% av baseline)",
+        label, fmt_dec_sv(row$target_km),
+        100 * row$relative_to_baseline
+      )
+    )
   }
   paste(lines, collapse = "\n")
 }
@@ -1881,13 +2021,19 @@ render_taper_plan_prose <- function(plan) {
 # between. Sign convention: `direction = "lower-is-better"` flips the
 # delta (used for resting HR, where higher than baseline is bad).
 .score_stability <- function(delta, good_threshold, bad_threshold,
-                              direction = "higher-is-better") {
-  if (is.na(delta)) return(NA_real_)
+                             direction = "higher-is-better") {
+  if (is.na(delta)) {
+    return(NA_real_)
+  }
   if (identical(direction, "lower-is-better")) delta <- -delta
-  if (delta >= -abs(good_threshold)) return(100)
-  if (delta <= -abs(bad_threshold))  return(0)
+  if (delta >= -abs(good_threshold)) {
+    return(100)
+  }
+  if (delta <= -abs(bad_threshold)) {
+    return(0)
+  }
   100 * (delta + abs(bad_threshold)) /
-        (abs(bad_threshold) - abs(good_threshold))
+    (abs(bad_threshold) - abs(good_threshold))
 }
 
 
@@ -1912,7 +2058,7 @@ render_taper_plan_prose <- function(plan) {
 #'   "Otillräcklig data"), and \code{prose} (multi-line Swedish text).
 #' @export
 compute_race_readiness <- function(data, target_date,
-                                    taper_weeks = 2L) {
+                                   taper_weeks = 2L) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
@@ -1922,17 +2068,20 @@ compute_race_readiness <- function(data, target_date,
   }
   taper_weeks <- as.integer(taper_weeks)
   if (length(taper_weeks) != 1L || is.na(taper_weeks) ||
-      taper_weeks < 1L || taper_weeks > 4L) {
+    taper_weeks < 1L || taper_weeks > 4L) {
     stop("taper_weeks must be an integer between 1 and 4")
   }
-  days_until  <- as.integer(as.numeric(target_date - Sys.Date()))
+  days_until <- as.integer(as.numeric(target_date - Sys.Date()))
 
   components <- list()
 
   pmc <- if (!is.null(summaries) && nrow(summaries) > 0L) {
     tryCatch(compute_pmc(summaries, health_daily = health_daily),
-             error = function(e) NULL)
-  } else NULL
+      error = function(e) NULL
+    )
+  } else {
+    NULL
+  }
 
   if (!is.null(pmc) && nrow(pmc) > 0L) {
     ctl_today <- tail(pmc$ctl, 1L)
@@ -1942,9 +2091,13 @@ compute_race_readiness <- function(data, target_date,
     if (length(idx) == 1L) {
       ctl_baseline <- pmc$ctl[[idx]]
       delta_ctl <- ctl_today - ctl_baseline
-      score <- if (delta_ctl >= -2) 100
-               else if (delta_ctl <= -10) 0
-               else (delta_ctl + 10) * 100 / 8
+      score <- if (delta_ctl >= -2) {
+        100
+      } else if (delta_ctl <= -10) {
+        0
+      } else {
+        (delta_ctl + 10) * 100 / 8
+      }
       components$ctl_trend <- list(
         score = score, raw_today = ctl_today,
         raw_baseline = ctl_baseline, delta = delta_ctl
@@ -1963,11 +2116,15 @@ compute_race_readiness <- function(data, target_date,
       weeks_to <- min(days_until / 7, taper_weeks)
       ceiling_tsb <- ctl_today * 0.3
       tsb_proj <- tsb_today + (ceiling_tsb - tsb_today) * weeks_to /
-                                                          (taper_weeks + 1L)
+        (taper_weeks + 1L)
     }
-    score <- if (tsb_proj >= 5 && tsb_proj <= 15) 100
-             else if (tsb_proj >= 0 && tsb_proj <= 25) 50
-             else 0
+    score <- if (tsb_proj >= 5 && tsb_proj <= 15) {
+      100
+    } else if (tsb_proj >= 0 && tsb_proj <= 25) {
+      50
+    } else {
+      0
+    }
     components$tsb_projection <- list(
       score = score, raw_today = tsb_today,
       raw_projected = tsb_proj
@@ -1977,31 +2134,39 @@ compute_race_readiness <- function(data, target_date,
   # Health components
   if (!is.null(health_daily) && nrow(health_daily) > 0L) {
     .stability_component <- function(metric_name, good, bad,
-                                      direction = "higher-is-better") {
+                                     direction = "higher-is-better") {
       hd <- health_daily[health_daily$metric == metric_name, , drop = FALSE]
-      if (nrow(hd) < 7L) return(NULL)
+      if (nrow(hd) < 7L) {
+        return(NULL)
+      }
       hd$date <- as.Date(hd$date)
       hd <- hd[order(hd$date), ]
-      last7  <- tail(hd$value, 7L)
+      last7 <- tail(hd$value, 7L)
       last28 <- tail(hd$value, 28L)
-      if (sum(!is.na(last7)) < 3L || sum(!is.na(last28)) < 7L) return(NULL)
-      m7  <- mean(last7,  na.rm = TRUE)
+      if (sum(!is.na(last7)) < 3L || sum(!is.na(last28)) < 7L) {
+        return(NULL)
+      }
+      m7 <- mean(last7, na.rm = TRUE)
       m28 <- mean(last28, na.rm = TRUE)
       delta <- m7 - m28
       score <- .score_stability(delta, good, bad, direction = direction)
       # baseline_days is the actual length of last28, not always 28
       # — accounts for users with < 28 days of cached data. Carried
       # through so the prose label stays honest.
-      list(score = score, raw_today = m7, raw_baseline = m28, delta = delta,
-           baseline_days = length(last28))
+      list(
+        score = score, raw_today = m7, raw_baseline = m28, delta = delta,
+        baseline_days = length(last28)
+      )
     }
     hrv <- .stability_component("heart_rate_variability",
-                                 good = 0.5, bad = 3,
-                                 direction = "higher-is-better")
+      good = 0.5, bad = 3,
+      direction = "higher-is-better"
+    )
     if (!is.null(hrv)) components$hrv_stability <- hrv
     rhr <- .stability_component("resting_heart_rate",
-                                 good = 1, bad = 3,
-                                 direction = "lower-is-better")
+      good = 1, bad = 3,
+      direction = "lower-is-better"
+    )
     if (!is.null(rhr)) components$resting_hr_stability <- rhr
   }
 
@@ -2009,20 +2174,29 @@ compute_race_readiness <- function(data, target_date,
     return(list(
       target_date = target_date, days_until = days_until,
       components = list(), score = NA_real_, status = "Otillräcklig data",
-      prose = paste0("Inte tillräckligt med data för att bedöma ",
-                     "tävlingsberedskap.")
+      prose = paste0(
+        "Inte tillräckligt med data för att bedöma ",
+        "tävlingsberedskap."
+      )
     ))
   }
 
   scores <- vapply(components, function(c) c$score, numeric(1))
   total_score <- mean(scores, na.rm = TRUE)
-  status <- if (is.na(total_score)) "Otillräcklig data"
-            else if (total_score >= 70) "Klar"
-            else if (total_score >= 40) "Tveksam"
-            else "Inte klar"
+  status <- if (is.na(total_score)) {
+    "Otillräcklig data"
+  } else if (total_score >= 70) {
+    "Klar"
+  } else if (total_score >= 40) {
+    "Tveksam"
+  } else {
+    "Inte klar"
+  }
 
-  prose <- .render_race_readiness_prose(components, total_score, status,
-                                         days_until)
+  prose <- .render_race_readiness_prose(
+    components, total_score, status,
+    days_until
+  )
 
   list(
     target_date = target_date, days_until = days_until,
@@ -2033,16 +2207,22 @@ compute_race_readiness <- function(data, target_date,
 
 
 .render_race_readiness_prose <- function(components, total_score, status,
-                                          days_until) {
+                                         days_until) {
   hdr <- if (days_until > 0L) {
-    sprintf("Tävlingsberedskap (%d dagar kvar): %s — %d/100",
-            days_until, status, round(total_score))
+    sprintf(
+      "Tävlingsberedskap (%d dagar kvar): %s — %d/100",
+      days_until, status, round(total_score)
+    )
   } else if (days_until == 0L) {
-    sprintf("Tävlingsberedskap (idag): %s — %d/100",
-            status, round(total_score))
+    sprintf(
+      "Tävlingsberedskap (idag): %s — %d/100",
+      status, round(total_score)
+    )
   } else {
-    sprintf("Tävlingsberedskap (%d dagar sedan): %s — %d/100",
-            abs(days_until), status, round(total_score))
+    sprintf(
+      "Tävlingsberedskap (%d dagar sedan): %s — %d/100",
+      abs(days_until), status, round(total_score)
+    )
   }
 
   # Surface which components weren't measured (per the design doc:
@@ -2057,9 +2237,13 @@ compute_race_readiness <- function(data, target_date,
   )
   missing <- setdiff(names(all_components), names(components))
   missing_line <- if (length(missing) > 0L) {
-    sprintf("Saknade komponenter (ingår inte i snittet): %s",
-            paste(all_components[missing], collapse = ", "))
-  } else NULL
+    sprintf(
+      "Saknade komponenter (ingår inte i snittet): %s",
+      paste(all_components[missing], collapse = ", ")
+    )
+  } else {
+    NULL
+  }
 
   lines <- character(0)
   if (!is.null(components$ctl_trend)) {

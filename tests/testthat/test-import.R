@@ -44,8 +44,10 @@ registerS3method("summary", "faketrack", summary.faketrack, envir = environment(
 
 make_fake_parsed <- function(session_start, tag = NA_character_, ...) {
   structure(
-    list(the_summary = make_fake_summary(session_start, file = tag, ...),
-        tag = tag),
+    list(
+      the_summary = make_fake_summary(session_start, file = tag, ...),
+      tag = tag
+    ),
     class = "faketrack"
   )
 }
@@ -103,7 +105,8 @@ test_that("get_new_workouts myruns index survives multiple skipped files mid-bat
   # that myruns[[3]] is the f3 parse, not left NULL/wrong from a
   # loop-index vs. row-count mismatch within the loop itself.
   second <- get_new_workouts(c(f1, f2, f3), summaries, myruns,
-                             verbose = FALSE)
+    verbose = FALSE
+  )
 
   expect_equal(nrow(second$summaries), 3)
   expect_length(second$myruns, 3)
@@ -131,7 +134,8 @@ test_that("get_new_workouts does not misalign myruns when a parse failure preced
 
   expect_warning(
     res <- get_new_workouts(c(corrupt, good), data.frame(), list(),
-                            verbose = FALSE),
+      verbose = FALSE
+    ),
     "Kunde inte läsa"
   )
 
@@ -159,7 +163,8 @@ test_that("get_new_workouts skips a file whose basename already exists", {
   )
 
   res <- get_new_workouts(c(fixture_path("sample1.tcx")), existing, list(),
-                          verbose = FALSE)
+    verbose = FALSE
+  )
 
   expect_equal(n_calls, 0) # never even attempted to parse
   expect_equal(nrow(res$summaries), 1) # unchanged
@@ -319,10 +324,12 @@ test_that("get_new_workouts checkpoints every batch_size imports", {
     .package = "traning"
   )
 
-  res <- get_new_workouts(files, data.frame(), list(), verbose = FALSE,
-                          batch_size = 2,
-                          db_summaries = "dummy_summaries.RData",
-                          db_myruns = "dummy_myruns.RData")
+  res <- get_new_workouts(files, data.frame(), list(),
+    verbose = FALSE,
+    batch_size = 2,
+    db_summaries = "dummy_summaries.RData",
+    db_myruns = "dummy_myruns.RData"
+  )
 
   expect_equal(nrow(res$summaries), 5)
   # 5 imports at batch_size=2 -> checkpoints after the 2nd and 4th import.
@@ -346,8 +353,10 @@ test_that("get_new_workouts does not checkpoint when db paths are NULL", {
     .package = "traning"
   )
 
-  res <- get_new_workouts(files, data.frame(), list(), verbose = FALSE,
-                          batch_size = 1)
+  res <- get_new_workouts(files, data.frame(), list(),
+    verbose = FALSE,
+    batch_size = 1
+  )
 
   expect_equal(n_save_calls, 0)
   expect_equal(nrow(res$summaries), 3)
@@ -356,8 +365,10 @@ test_that("get_new_workouts does not checkpoint when db paths are NULL", {
 # --- get_new_workouts(): parse failure is skipped, not fatal ---------------
 
 test_that("get_new_workouts warns and continues past a file that fails to parse", {
-  files <- c(file.path(tempdir(), "corrupt.tcx"),
-            fixture_path("sample1.tcx"))
+  files <- c(
+    file.path(tempdir(), "corrupt.tcx"),
+    fixture_path("sample1.tcx")
+  )
   # Real parsing for the valid file, forced failure for the "corrupt" one.
   real_read_container <- getNamespace("trackeR")$read_container
   testthat::local_mocked_bindings(
@@ -427,8 +438,10 @@ test_that("repair_myruns skips hae rows silently and leaves them NULL", {
 })
 
 test_that("repair_myruns reports 'inga saknade poster' when nothing is NULL", {
-  summaries <- data.frame(file = "a.tcx", source = "tcx",
-                          stringsAsFactors = FALSE)
+  summaries <- data.frame(
+    file = "a.tcx", source = "tcx",
+    stringsAsFactors = FALSE
+  )
   myruns <- list("present")
 
   expect_message(
@@ -538,8 +551,10 @@ test_that(".onLoad copies trackeR's unit-conversion helpers into the package nam
   }
 
   # Copied functions are callable and behave like the trackeR originals.
-  expect_equal(get("km2mi", envir = pkg_ns)(1),
-              get("km2mi", envir = trackeR_ns)(1))
+  expect_equal(
+    get("km2mi", envir = pkg_ns)(1),
+    get("km2mi", envir = trackeR_ns)(1)
+  )
 })
 
 # --- get_new_workouts(): the Garmin-fragment exception ----------------------
@@ -615,7 +630,8 @@ test_that("a cleaned-up fragment does not come back on the next fetch", {
   )
 
   after <- get_new_workouts(tcx_path, cleaned$summaries, cleaned$myruns,
-                            verbose = FALSE)
+    verbose = FALSE
+  )
 
   expect_equal(nrow(after$summaries), 1)
   expect_equal(after$summaries$source, "hae")
@@ -625,7 +641,8 @@ test_that("a cleaned-up fragment does not come back on the next fetch", {
 
   # And again, to show the outcome is stable rather than alternating.
   third <- get_new_workouts(tcx_path, after$summaries, after$myruns,
-                            verbose = FALSE)
+    verbose = FALSE
+  )
   expect_equal(third$summaries, after$summaries)
 })
 
@@ -660,7 +677,8 @@ test_that("repeated imports of the same files leave the cache unchanged", {
 
   first <- get_new_workouts(files, existing, list(NULL, NULL), verbose = FALSE)
   second <- get_new_workouts(files, first$summaries, first$myruns,
-                             verbose = FALSE)
+    verbose = FALSE
+  )
 
   expect_equal(nrow(first$summaries), 2)
   expect_equal(second$summaries, first$summaries)
@@ -797,8 +815,10 @@ test_that("two copies of one fragment count as one recording", {
     source = "hae",
     stringsAsFactors = FALSE
   )
-  copies <- file.path(tempdir(),
-                      c("20230410-154142.tcx", "20230410-154142-copy.tcx"))
+  copies <- file.path(
+    tempdir(),
+    c("20230410-154142.tcx", "20230410-154142-copy.tcx")
+  )
 
   testthat::local_mocked_bindings(
     read_container = function(file, ...) {

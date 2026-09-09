@@ -78,7 +78,9 @@ test_that("report_acwr gives identical output for bundle and bare-summaries call
 test_that("report_acwr threads health_daily from the bundle into TRIMP mode", {
   hd <- tibble::tibble(
     date = seq(min(as.Date(test_summaries$sessionStart)),
-               max(as.Date(test_summaries$sessionStart)), by = "day"),
+      max(as.Date(test_summaries$sessionStart)),
+      by = "day"
+    ),
     metric = "step_count",
     value = 5000,
     source = "test"
@@ -97,7 +99,7 @@ test_that("report_monotony returns tibble with expected columns", {
   result <- report_monotony(test_summaries)
   expect_s3_class(result, "tbl_df")
   expect_true(all(c("Datum", "Km/dag", "Km/vecka", "Monotoni", "Belastning")
-                   %in% names(result)))
+  %in% names(result)))
 })
 
 # --- report_pmc ---
@@ -118,14 +120,18 @@ test_that("report_pmc gives identical output for bundle and bare-summaries calls
 test_that("report_readiness gives identical output via a traning_data bundle", {
   withr::local_envvar(HR_MAX = "185")
   dates <- seq(min(as.Date(test_summaries$sessionStart)),
-               max(as.Date(test_summaries$sessionStart)), by = "day")
+    max(as.Date(test_summaries$sessionStart)),
+    by = "day"
+  )
   metric_base <- c(
     heart_rate_variability = 70, sleep_totalSleep = 7,
     sleep_deep = 1.0, sleep_rem = 1.5, resting_heart_rate = 55
   )
   hd <- do.call(rbind, lapply(names(metric_base), function(m) {
-    tibble::tibble(date = dates, metric = m, value = metric_base[[m]],
-                   source = "test")
+    tibble::tibble(
+      date = dates, metric = m, value = metric_base[[m]],
+      source = "test"
+    )
   })) |> tibble::as_tibble()
   bundle <- traning_data(summaries = test_summaries, health_daily = hd)
   result <- report_readiness(bundle)
@@ -151,19 +157,27 @@ test_that("report_recovery_hr works with enriched data", {
 
 # --- save_plot ---
 test_that("save_plot creates file with auto-generated name", {
-  p <- ggplot2::ggplot(data.frame(x = 1:10, y = 1:10),
-                       ggplot2::aes(x, y)) + ggplot2::geom_point()
+  p <- ggplot2::ggplot(
+    data.frame(x = 1:10, y = 1:10),
+    ggplot2::aes(x, y)
+  ) +
+    ggplot2::geom_point()
   tmp_dir <- tempdir()
-  output <- save_plot(p, default_name = "test",
-                      output = file.path(tmp_dir, "test_out.pdf"),
-                      open = FALSE)
+  output <- save_plot(p,
+    default_name = "test",
+    output = file.path(tmp_dir, "test_out.pdf"),
+    open = FALSE
+  )
   expect_true(file.exists(output))
   unlink(output)
 })
 
 test_that("save_plot infers format from extension", {
-  p <- ggplot2::ggplot(data.frame(x = 1:10, y = 1:10),
-                       ggplot2::aes(x, y)) + ggplot2::geom_point()
+  p <- ggplot2::ggplot(
+    data.frame(x = 1:10, y = 1:10),
+    ggplot2::aes(x, y)
+  ) +
+    ggplot2::geom_point()
   tmp_png <- file.path(tempdir(), "test_out.png")
   save_plot(p, output = tmp_png, open = FALSE)
   expect_true(file.exists(tmp_png))

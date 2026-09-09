@@ -4,7 +4,7 @@ test_that("add_my_columns computes avgStrideMoving and avgStride correctly", {
   # avgStride formulas: (60 * speed) / (cadence * 2). Using round numbers
   # so the expected values are easy to hand-verify.
   summarydata <- tibble::tibble(
-    avgSpeedMoving = 3.0,       # m/s
+    avgSpeedMoving = 3.0, # m/s
     avgCadenceRunningMoving = 90, # steps/min
     avgSpeed = 2.4,
     avgCadenceRunning = 80
@@ -44,12 +44,16 @@ test_that("add_my_columns vectorizes over multiple rows independently", {
 
   res <- add_my_columns(summarydata)
 
-  expect_equal(res$avgStrideMoving,
-              (60 * summarydata$avgSpeedMoving) /
-                (summarydata$avgCadenceRunningMoving * 2))
-  expect_equal(res$avgStride,
-              (60 * summarydata$avgSpeed) /
-                (summarydata$avgCadenceRunning * 2))
+  expect_equal(
+    res$avgStrideMoving,
+    (60 * summarydata$avgSpeedMoving) /
+      (summarydata$avgCadenceRunningMoving * 2)
+  )
+  expect_equal(
+    res$avgStride,
+    (60 * summarydata$avgSpeed) /
+      (summarydata$avgCadenceRunning * 2)
+  )
 })
 
 test_that("add_my_columns produces NaN/Inf, not an error, for zero cadence", {

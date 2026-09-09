@@ -44,10 +44,13 @@ test_that(".filter_readiness_range avgränsar med from/to (inklusiv övre gräns
 test_that(".filter_readiness_range hanterar tom/NULL input", {
   expect_null(traning:::.filter_readiness_range(NULL))
   empty <- data.frame(date = as.Date(character()), readiness_score = numeric())
-  expect_equal(nrow(traning:::.filter_readiness_range(empty,
-                                                     from = as.Date("2026-05-01"),
-                                                     to   = as.Date("2026-05-16"))),
-               0)
+  expect_equal(
+    nrow(traning:::.filter_readiness_range(empty,
+      from = as.Date("2026-05-01"),
+      to   = as.Date("2026-05-16")
+    )),
+    0
+  )
 })
 
 test_that("NA-gränser hanteras som NULL (rensad custom dateRangeInput)", {
@@ -71,9 +74,9 @@ test_that("NA-gränser hanteras som NULL (rensad custom dateRangeInput)", {
 
   s <- data.frame(
     sessionStart = as.POSIXct("2026-05-16 06:00:00", tz = "UTC") -
-                   as.difftime(0:9, units = "days"),
-    sport        = rep("running", 10),
-    distance     = rep(10000, 10)
+      as.difftime(0:9, units = "days"),
+    sport = rep("running", 10),
+    distance = rep(10000, 10)
   )
   out <- traning:::.filter_running_range(s, from = NA, to = NA)
   expect_equal(nrow(out), nrow(s))
@@ -106,11 +109,13 @@ test_that("NA-datum droppas även när inga bounds är satta", {
   expect_false(any(is.na(out$date)))
 
   s <- data.frame(
-    sessionStart = c(as.POSIXct("2026-05-15 06:00:00", tz = "UTC"),
-                     NA,
-                     as.POSIXct("2026-05-10 06:00:00", tz = "UTC")),
-    sport        = rep("running", 3),
-    distance     = c(10000, 5000, 8000)
+    sessionStart = c(
+      as.POSIXct("2026-05-15 06:00:00", tz = "UTC"),
+      NA,
+      as.POSIXct("2026-05-10 06:00:00", tz = "UTC")
+    ),
+    sport = rep("running", 3),
+    distance = c(10000, 5000, 8000)
   )
   out <- traning:::.filter_running_range(s, from = NULL, to = NULL)
   expect_equal(nrow(out), 2)
@@ -144,10 +149,13 @@ test_that(".filter_running_range avgränsar via sessionStart (halvöppet)", {
 test_that(".filter_running_range hanterar tom/NULL input", {
   expect_null(traning:::.filter_running_range(NULL))
   empty <- data.frame(sessionStart = as.POSIXct(character()), sport = character())
-  expect_equal(nrow(traning:::.filter_running_range(empty,
-                                                   from = as.Date("2026-05-01"),
-                                                   to   = as.Date("2026-05-16"))),
-               0)
+  expect_equal(
+    nrow(traning:::.filter_running_range(empty,
+      from = as.Date("2026-05-01"),
+      to   = as.Date("2026-05-16")
+    )),
+    0
+  )
 })
 
 # --- Regressionstester: KPI vs mini-graf ska matcha ------------------------
@@ -156,13 +164,15 @@ test_that(".filter_readiness_range inkluderar today när to = Sys.Date()", {
   today <- Sys.Date()
   rd <- tibble::tibble(
     date = seq(today - 6, today, by = "day"),
-    readiness_score = c(60, 65, 70, 72, 68, 74, 76)  # today = 76
+    readiness_score = c(60, 65, 70, 72, 68, 74, 76) # today = 76
   )
   out <- traning:::.filter_readiness_range(rd, from = today - 7, to = today)
   expect_equal(max(out$date), today)
   expect_true(today %in% out$date)
   # KPI:s slice_max(date) och grafens max(date) ska matcha
-  kpi_today  <- rd |> dplyr::slice_max(date, n = 1) |> dplyr::pull(date)
+  kpi_today <- rd |>
+    dplyr::slice_max(date, n = 1) |>
+    dplyr::pull(date)
   graph_today <- max(out$date)
   expect_equal(kpi_today, graph_today)
 })
@@ -175,16 +185,26 @@ test_that("compute_readiness inkluderar today när before = Sys.Date()", {
   dates <- seq(today - 13, today, by = "day")
   n <- length(dates)
   hd <- dplyr::bind_rows(
-    tibble::tibble(date = dates, metric = "heart_rate_variability",
-                   value = rnorm(n, 50, 10), source = "AW"),
-    tibble::tibble(date = dates, metric = "resting_heart_rate",
-                   value = rnorm(n, 52, 3), source = "AW"),
-    tibble::tibble(date = dates, metric = "sleep_totalSleep",
-                   value = rnorm(n, 7.2, 0.8), source = "AW"),
-    tibble::tibble(date = dates, metric = "sleep_deep",
-                   value = pmax(0, rnorm(n, 0.8, 0.2)), source = "AW"),
-    tibble::tibble(date = dates, metric = "sleep_rem",
-                   value = pmax(0, rnorm(n, 1.5, 0.3)), source = "AW")
+    tibble::tibble(
+      date = dates, metric = "heart_rate_variability",
+      value = rnorm(n, 50, 10), source = "AW"
+    ),
+    tibble::tibble(
+      date = dates, metric = "resting_heart_rate",
+      value = rnorm(n, 52, 3), source = "AW"
+    ),
+    tibble::tibble(
+      date = dates, metric = "sleep_totalSleep",
+      value = rnorm(n, 7.2, 0.8), source = "AW"
+    ),
+    tibble::tibble(
+      date = dates, metric = "sleep_deep",
+      value = pmax(0, rnorm(n, 0.8, 0.2)), source = "AW"
+    ),
+    tibble::tibble(
+      date = dates, metric = "sleep_rem",
+      value = pmax(0, rnorm(n, 1.5, 0.3)), source = "AW"
+    )
   )
   run_dates <- seq(today - 13, today - 1, by = "day")
   s <- tibble::tibble(
@@ -204,6 +224,7 @@ test_that("compute_readiness inkluderar today när before = Sys.Date()", {
   # compute_readiness ska inkludera today i resultatet när before = today
   if (nrow(result) > 0) {
     expect_true(today %in% result$date,
-      info = "compute_readiness ska inkludera today när before = today")
+      info = "compute_readiness ska inkludera today när before = today"
+    )
   }
 })

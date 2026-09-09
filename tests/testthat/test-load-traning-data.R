@@ -34,7 +34,7 @@ test_that("load_traning_data defaults (slots = NULL) load both optional slots", 
   # slots are not skipped outright as they are with slots = character(0).
   expect_true(inherits(bundle@health_daily, "data.frame"))
   expect_true(is.null(bundle@decoupling_data) ||
-              inherits(bundle@decoupling_data, "data.frame"))
+    inherits(bundle@decoupling_data, "data.frame"))
 })
 
 test_that("load_traning_data(slots = character(0)) skips optional slots", {

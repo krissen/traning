@@ -21,14 +21,20 @@ if (length(script_path) == 0) script_path <- "scripts/compute_config_digests.R"
 repo_root <- normalizePath(file.path(dirname(script_path), ".."))
 
 opts <- parse_args(OptionParser(option_list = list(
-  make_option("--caddy", type = "character", default = NULL,
-    help = "Local path to caddy override.conf (default: scp from kailash)"),
-  make_option("--remote", type = "character", default = "kailash",
-    help = "Remote host for SSH-based caddy fetch (default %default)")
+  make_option("--caddy",
+    type = "character", default = NULL,
+    help = "Local path to caddy override.conf (default: scp from kailash)"
+  ),
+  make_option("--remote",
+    type = "character", default = "kailash",
+    help = "Remote host for SSH-based caddy fetch (default %default)"
+  )
 )))
 
-pacman_hook <- file.path(repo_root,
-  "python/traning_cli/server/deploy/traning-r-postupgrade.hook")
+pacman_hook <- file.path(
+  repo_root,
+  "python/traning_cli/server/deploy/traning-r-postupgrade.hook"
+)
 if (!file.exists(pacman_hook)) {
   stop("Cannot find pacman-hook source: ", pacman_hook)
 }
@@ -42,18 +48,25 @@ if (!is.null(opts$caddy)) {
   message("Fetching caddy override SHA from ", opts$remote, " via ssh ...")
   # Merge stderr into stdout so ssh/journalctl errors surface in the
   # stop() message rather than disappearing into a generic "no output".
-  out <- suppressWarnings(system2("ssh", c(opts$remote,
-    "sha256sum /etc/systemd/system/caddy.service.d/override.conf"),
-    stdout = TRUE, stderr = TRUE))
+  out <- suppressWarnings(system2("ssh", c(
+    opts$remote,
+    "sha256sum /etc/systemd/system/caddy.service.d/override.conf"
+  ),
+  stdout = TRUE, stderr = TRUE
+  ))
   status <- attr(out, "status")
   if (!is.null(status) && status != 0L) {
-    stop("ssh ", opts$remote, " failed (exit ", status, "): ",
-         paste(out, collapse = "\n"))
+    stop(
+      "ssh ", opts$remote, " failed (exit ", status, "): ",
+      paste(out, collapse = "\n")
+    )
   }
   if (length(out) == 0L) stop("ssh ", opts$remote, " returned no output")
   caddy_sha <- strsplit(trimws(out[1]), "\\s+")[[1]][1]
 }
 
 cat("Paste into R/doctor.R::.EXPECTED_CONFIG_DIGESTS:\n\n")
-cat(sprintf('.EXPECTED_CONFIG_DIGESTS <- list(\n  "/etc/pacman.d/hooks/traning-r-postupgrade.hook" = "%s",\n  "/etc/systemd/system/caddy.service.d/override.conf" = "%s"\n)\n',
-            hook_sha, caddy_sha))
+cat(sprintf(
+  '.EXPECTED_CONFIG_DIGESTS <- list(\n  "/etc/pacman.d/hooks/traning-r-postupgrade.hook" = "%s",\n  "/etc/systemd/system/caddy.service.d/override.conf" = "%s"\n)\n',
+  hook_sha, caddy_sha
+))

@@ -24,7 +24,7 @@ fetch.plot.resting_hr <- function(data, from = NULL, to = NULL) {
     dplyr::filter(metric == "resting_heart_rate")
 
   if (!is.null(from)) rhr <- rhr |> dplyr::filter(date >= as.Date(from))
-  if (!is.null(to))   rhr <- rhr |> dplyr::filter(date <= as.Date(to))
+  if (!is.null(to)) rhr <- rhr |> dplyr::filter(date <= as.Date(to))
 
   if (nrow(rhr) == 0) {
     message("Ingen vilopulsdata i intervallet")
@@ -36,40 +36,52 @@ fetch.plot.resting_hr <- function(data, from = NULL, to = NULL) {
   rhr$year <- factor(format(rhr$date, "%Y"))
 
   # Adapt point size and loess span to date range
-  pt_size  <- if (span_days <= 30) 2 else 0.8
+  pt_size <- if (span_days <= 30) 2 else 0.8
   pt_alpha <- if (span_days <= 30) 0.5 else 0.15
   loess_span <- if (span_days <= 30) 0.75 else if (span_days <= 90) 0.3 else 0.1
 
   # Annual means for reference lines (only meaningful for longer spans)
   annual <- rhr |>
     dplyr::group_by(year) |>
-    dplyr::summarise(mean_rhr = mean(value, na.rm = TRUE),
-                     mid_date = mean(date), .groups = "drop")
+    dplyr::summarise(
+      mean_rhr = mean(value, na.rm = TRUE),
+      mid_date = mean(date), .groups = "drop"
+    )
 
   p <- ggplot2::ggplot(rhr, ggplot2::aes(x = date, y = value)) +
     ggplot2::geom_point(alpha = pt_alpha, size = pt_size, colour = "grey50")
 
   if (nrow(rhr) >= 5) {
-    p <- p + ggplot2::geom_smooth(method = "loess", span = loess_span,
-                                   se = FALSE, colour = traning_palette$status[["red"]],
-                                   linewidth = 1)
+    p <- p + ggplot2::geom_smooth(
+      method = "loess", span = loess_span,
+      se = FALSE, colour = traning_palette$status[["red"]],
+      linewidth = 1
+    )
   }
 
   if (span_days > 90) {
     p <- p +
-      ggplot2::geom_point(data = annual,
-                          ggplot2::aes(x = mid_date, y = mean_rhr),
-                          size = 3, colour = traning_palette$status[["red"]], shape = 18) +
-      ggplot2::geom_text(data = annual,
-                         ggplot2::aes(x = mid_date, y = mean_rhr,
-                                      label = round(mean_rhr, 0)),
-                         vjust = -1, size = 3, colour = traning_palette$status[["red"]])
+      ggplot2::geom_point(
+        data = annual,
+        ggplot2::aes(x = mid_date, y = mean_rhr),
+        size = 3, colour = traning_palette$status[["red"]], shape = 18
+      ) +
+      ggplot2::geom_text(
+        data = annual,
+        ggplot2::aes(
+          x = mid_date, y = mean_rhr,
+          label = round(mean_rhr, 0)
+        ),
+        vjust = -1, size = 3, colour = traning_palette$status[["red"]]
+      )
   }
 
   p <- p +
     .adaptive_date_scale(span_days) +
-    ggplot2::labs(title = "Vilopuls (Apple Watch)",
-                  x = NULL, y = "bpm") +
+    ggplot2::labs(
+      title = "Vilopuls (Apple Watch)",
+      x = NULL, y = "bpm"
+    ) +
     ggplot2::theme_minimal()
 
   p
@@ -95,7 +107,7 @@ fetch.plot.hrv <- function(data, from = NULL, to = NULL) {
     dplyr::mutate(ln_rmssd = log(value))
 
   if (!is.null(from)) hrv <- hrv |> dplyr::filter(date >= as.Date(from))
-  if (!is.null(to))   hrv <- hrv |> dplyr::filter(date <= as.Date(to))
+  if (!is.null(to)) hrv <- hrv |> dplyr::filter(date <= as.Date(to))
 
   if (nrow(hrv) == 0) {
     message("Ingen HRV-data i intervallet")
@@ -103,7 +115,7 @@ fetch.plot.hrv <- function(data, from = NULL, to = NULL) {
   }
 
   span_days <- .compute_span_days(from, to)
-  pt_size  <- if (span_days <= 30) 2 else 0.8
+  pt_size <- if (span_days <= 30) 2 else 0.8
   pt_alpha <- if (span_days <= 30) 0.5 else 0.2
 
   # 7-day rolling mean and SD
@@ -117,14 +129,19 @@ fetch.plot.hrv <- function(data, from = NULL, to = NULL) {
 
   p <- ggplot2::ggplot(hrv, ggplot2::aes(x = date)) +
     ggplot2::geom_ribbon(ggplot2::aes(ymin = lower, ymax = upper),
-                         fill = traning_palette$status[["blue"]], alpha = 0.2, na.rm = TRUE) +
+      fill = traning_palette$status[["blue"]], alpha = 0.2, na.rm = TRUE
+    ) +
     ggplot2::geom_point(ggplot2::aes(y = ln_rmssd),
-                        alpha = pt_alpha, size = pt_size, colour = "grey50") +
+      alpha = pt_alpha, size = pt_size, colour = "grey50"
+    ) +
     ggplot2::geom_line(ggplot2::aes(y = roll_mean),
-                       colour = traning_palette$status[["blue"]], linewidth = 0.8, na.rm = TRUE) +
+      colour = traning_palette$status[["blue"]], linewidth = 0.8, na.rm = TRUE
+    ) +
     .adaptive_date_scale(span_days) +
-    ggplot2::labs(title = "HRV — Ln(RMSSD) med 7-dagars baseline",
-                  x = NULL, y = "Ln(RMSSD)") +
+    ggplot2::labs(
+      title = "HRV — Ln(RMSSD) med 7-dagars baseline",
+      x = NULL, y = "Ln(RMSSD)"
+    ) +
     ggplot2::theme_minimal()
 
   p
@@ -149,7 +166,7 @@ fetch.plot.sleep <- function(data, from = NULL, to = NULL) {
     dplyr::filter(metric %in% c(sleep_metrics, "sleep_totalSleep"))
 
   if (!is.null(from)) sleep <- sleep |> dplyr::filter(date >= as.Date(from))
-  if (!is.null(to))   sleep <- sleep |> dplyr::filter(date <= as.Date(to))
+  if (!is.null(to)) sleep <- sleep |> dplyr::filter(date <= as.Date(to))
 
   if (nrow(sleep) == 0) {
     message("Ingen sömndata i intervallet")
@@ -181,7 +198,8 @@ fetch.plot.sleep <- function(data, from = NULL, to = NULL) {
   )
 
   stages$stage <- factor(stage_labels[stages$metric],
-                          levels = c("Vaken", "Kärnsömn", "REM", "Djupsömn"))
+    levels = c("Vaken", "Kärnsömn", "REM", "Djupsömn")
+  )
 
   # Adapt loess span to date range
   loess_span <- if (span_days <= 30) 0.75 else if (span_days <= 90) 0.3 else 0.15
@@ -189,10 +207,12 @@ fetch.plot.sleep <- function(data, from = NULL, to = NULL) {
   p <- ggplot2::ggplot()
 
   if (nrow(total) >= 5) {
-    p <- p + ggplot2::geom_smooth(data = total,
-                                   ggplot2::aes(x = date, y = value),
-                                   method = "loess", span = loess_span,
-                                   se = FALSE, colour = "grey30", linewidth = 1)
+    p <- p + ggplot2::geom_smooth(
+      data = total,
+      ggplot2::aes(x = date, y = value),
+      method = "loess", span = loess_span,
+      se = FALSE, colour = "grey30", linewidth = 1
+    )
   }
 
   if (nrow(stages) > 0) {
@@ -221,21 +241,29 @@ fetch.plot.sleep <- function(data, from = NULL, to = NULL) {
     }
 
     p <- p +
-      ggplot2::geom_col(data = stages_agg,
-                        ggplot2::aes(x = period, y = value, fill = stage),
-                        width = bar_width, alpha = 0.7) +
+      ggplot2::geom_col(
+        data = stages_agg,
+        ggplot2::aes(x = period, y = value, fill = stage),
+        width = bar_width, alpha = 0.7
+      ) +
       ggplot2::scale_fill_manual(values = stage_colours)
   }
 
   p <- p +
     .adaptive_date_scale(span_days) +
-    ggplot2::labs(title = "Sömn — total och faser",
-                  x = NULL, y = "Timmar", fill = NULL) +
-    ggplot2::geom_hline(yintercept = 7, linetype = "dashed",
-                        colour = "darkgreen", alpha = 0.5) +
-    ggplot2::annotate("text", x = min(total$date), y = 7.15,
-                      label = "7h mål", hjust = 0, size = 3,
-                      colour = "darkgreen") +
+    ggplot2::labs(
+      title = "Sömn — total och faser",
+      x = NULL, y = "Timmar", fill = NULL
+    ) +
+    ggplot2::geom_hline(
+      yintercept = 7, linetype = "dashed",
+      colour = "darkgreen", alpha = 0.5
+    ) +
+    ggplot2::annotate("text",
+      x = min(total$date), y = 7.15,
+      label = "7h mål", hjust = 0, size = 3,
+      colour = "darkgreen"
+    ) +
     ggplot2::theme_minimal()
 
   p
@@ -265,7 +293,7 @@ fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
     dplyr::filter(metric == "vo2_max")
 
   if (!is.null(from)) vo2 <- vo2 |> dplyr::filter(date >= as.Date(from))
-  if (!is.null(to))   vo2 <- vo2 |> dplyr::filter(date <= as.Date(to))
+  if (!is.null(to)) vo2 <- vo2 |> dplyr::filter(date <= as.Date(to))
 
   # Extract Garmin VO2max from summaries if available
   garmin_vo2 <- NULL
@@ -277,7 +305,7 @@ fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
         value = garmin_vO2MaxValue
       )
     if (!is.null(from)) garmin_vo2 <- garmin_vo2 |> dplyr::filter(date >= as.Date(from))
-    if (!is.null(to))   garmin_vo2 <- garmin_vo2 |> dplyr::filter(date <= as.Date(to))
+    if (!is.null(to)) garmin_vo2 <- garmin_vo2 |> dplyr::filter(date <= as.Date(to))
     if (nrow(garmin_vo2) == 0) garmin_vo2 <- NULL
   }
 
@@ -287,7 +315,7 @@ fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
   }
 
   span_days <- .compute_span_days(from, to)
-  pt_size  <- if (span_days <= 30) 2.5 else 0.8
+  pt_size <- if (span_days <= 30) 2.5 else 0.8
   pt_alpha <- if (span_days <= 30) 0.6 else 0.15
   loess_span <- if (span_days <= 30) 0.75 else if (span_days <= 90) 0.3 else 0.15
   has_both <- nrow(vo2) > 0 && !is.null(garmin_vo2)
@@ -305,32 +333,40 @@ fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
   if (nrow(vo2) > 0) {
     aw_colour <- if (has_both) aw_smooth_colour else "grey50"
     p <- p +
-      ggplot2::geom_point(data = vo2,
-                          ggplot2::aes(x = date, y = value, colour = "Apple Watch"),
-                          alpha = pt_alpha, size = pt_size)
+      ggplot2::geom_point(
+        data = vo2,
+        ggplot2::aes(x = date, y = value, colour = "Apple Watch"),
+        alpha = pt_alpha, size = pt_size
+      )
     if (nrow(vo2) >= 5) {
-      p <- p + ggplot2::geom_smooth(data = vo2,
-                                     ggplot2::aes(x = date, y = value),
-                                     method = "loess", span = loess_span,
-                                     se = FALSE, colour = aw_smooth_colour,
-                                     linewidth = 1)
+      p <- p + ggplot2::geom_smooth(
+        data = vo2,
+        ggplot2::aes(x = date, y = value),
+        method = "loess", span = loess_span,
+        se = FALSE, colour = aw_smooth_colour,
+        linewidth = 1
+      )
     }
   }
 
   # Garmin series
   if (!is.null(garmin_vo2)) {
     p <- p +
-      ggplot2::geom_point(data = garmin_vo2,
-                          ggplot2::aes(x = date, y = value, colour = "Garmin"),
-                          alpha = if (span_days <= 30) 0.7 else 0.4,
-                          size = if (span_days <= 30) 2.5 else 1.2,
-                          shape = 17)
+      ggplot2::geom_point(
+        data = garmin_vo2,
+        ggplot2::aes(x = date, y = value, colour = "Garmin"),
+        alpha = if (span_days <= 30) 0.7 else 0.4,
+        size = if (span_days <= 30) 2.5 else 1.2,
+        shape = 17
+      )
     if (nrow(garmin_vo2) >= 5) {
-      p <- p + ggplot2::geom_smooth(data = garmin_vo2,
-                                     ggplot2::aes(x = date, y = value),
-                                     method = "loess", span = loess_span,
-                                     se = FALSE, colour = garmin_smooth_colour,
-                                     linewidth = 1)
+      p <- p + ggplot2::geom_smooth(
+        data = garmin_vo2,
+        ggplot2::aes(x = date, y = value),
+        method = "loess", span = loess_span,
+        se = FALSE, colour = garmin_smooth_colour,
+        linewidth = 1
+      )
     }
   }
 
@@ -338,16 +374,20 @@ fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
 
   p <- p +
     .adaptive_date_scale(span_days) +
-    ggplot2::labs(title = title,
-                  x = NULL,
-                  y = "ml/(kg\u00b7min)") +
+    ggplot2::labs(
+      title = title,
+      x = NULL,
+      y = "ml/(kg\u00b7min)"
+    ) +
     ggplot2::theme_minimal()
 
   if (has_both) {
     p <- p +
       ggplot2::scale_colour_manual(
-        values = c("Apple Watch" = aw_smooth_colour,
-                   "Garmin" = garmin_smooth_colour),
+        values = c(
+          "Apple Watch" = aw_smooth_colour,
+          "Garmin" = garmin_smooth_colour
+        ),
         name = NULL
       ) +
       ggplot2::theme(legend.position = "bottom")
@@ -377,8 +417,8 @@ fetch.plot.readiness <- function(health_daily, days = 90) {
     summaries = tibble::tibble(sessionStart = as.POSIXct(character())),
     health_daily = health_daily
   )
-  p_rhr   <- fetch.plot.resting_hr(td, from = from)
-  p_hrv   <- fetch.plot.hrv(td, from = from)
+  p_rhr <- fetch.plot.resting_hr(td, from = from)
+  p_hrv <- fetch.plot.hrv(td, from = from)
   p_sleep <- fetch.plot.sleep(td, from = from)
 
   if (requireNamespace("patchwork", quietly = TRUE)) {
@@ -386,7 +426,8 @@ fetch.plot.readiness <- function(health_daily, days = 90) {
       patchwork::plot_annotation(
         title = paste("Readiness —", days, "dagar"),
         theme = ggplot2::theme(plot.title = ggplot2::element_text(
-          size = 16, face = "bold"))
+          size = 16, face = "bold"
+        ))
       )
   } else {
     message("Installera 'patchwork' f\u00f6r kombinerad vy. Visar HRV.")
@@ -408,13 +449,14 @@ fetch.plot.readiness <- function(health_daily, days = 90) {
 #' @return ggplot2 object (patchwork composite).
 #' @export
 fetch.plot.readiness_score <- function(data, hr_max = NULL, hr_rest = NULL,
-                                        from = NULL, to = NULL) {
+                                       from = NULL, to = NULL) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
   r <- compute_readiness(health_daily, summaries,
-                          hr_max = hr_max, hr_rest = hr_rest,
-                          after = from, before = to)
+    hr_max = hr_max, hr_rest = hr_rest,
+    after = from, before = to
+  )
 
   if (nrow(r) == 0) {
     message("Ingen readiness-data i intervallet")
@@ -428,37 +470,49 @@ fetch.plot.readiness_score <- function(data, hr_max = NULL, hr_rest = NULL,
 
   span_days <- .compute_span_days(from, to, data_dates = r$date)
   date_scale <- .adaptive_date_scale(span_days)
-  pt_size  <- if (span_days <= 30) 2.5 else 1.5
+  pt_size <- if (span_days <= 30) 2.5 else 1.5
 
   theme_panel <- ggplot2::theme_minimal() +
-    ggplot2::theme(axis.title.x = ggplot2::element_blank(),
-                   plot.title = ggplot2::element_text(size = 10, face = "bold"))
+    ggplot2::theme(
+      axis.title.x = ggplot2::element_blank(),
+      plot.title = ggplot2::element_text(size = 10, face = "bold")
+    )
 
   # Panel 1: Readiness score (traffic-light bands + matching point colour)
-  readiness_green  <- "#4CAF50"
+  readiness_green <- "#4CAF50"
   readiness_yellow <- "#FFC107"
-  readiness_red    <- "#F44336"
+  readiness_red <- "#F44336"
   # AVVIKELSE FRÅN TEMA: this dashboard panel uses the brighter
   # Material readiness palette (matches the on-device Garmin watch UI
   # that owns the readiness_status categorisation); the muted
   # traning_palette$traffic_bg would understate the alarm state.
   r_score <- r |> dplyr::filter(!is.na(readiness_score))
   p1 <- ggplot2::ggplot(r_score, ggplot2::aes(x = date, y = readiness_score)) +
-    ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
-                      ymin = 70, ymax = 100, fill = readiness_green, alpha = 0.1) +
-    ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
-                      ymin = 40, ymax = 70, fill = readiness_yellow, alpha = 0.1) +
-    ggplot2::annotate("rect", xmin = min(r$date), xmax = max(r$date),
-                      ymin = 0, ymax = 40, fill = readiness_red, alpha = 0.1) +
+    ggplot2::annotate("rect",
+      xmin = min(r$date), xmax = max(r$date),
+      ymin = 70, ymax = 100, fill = readiness_green, alpha = 0.1
+    ) +
+    ggplot2::annotate("rect",
+      xmin = min(r$date), xmax = max(r$date),
+      ymin = 40, ymax = 70, fill = readiness_yellow, alpha = 0.1
+    ) +
+    ggplot2::annotate("rect",
+      xmin = min(r$date), xmax = max(r$date),
+      ymin = 0, ymax = 40, fill = readiness_red, alpha = 0.1
+    ) +
     ggplot2::geom_line(colour = "grey40", linewidth = 0.4) +
     ggplot2::geom_point(ggplot2::aes(colour = readiness_status), size = pt_size) +
     ggplot2::scale_colour_manual(
-      values = c("Grön" = readiness_green, "Gul" = readiness_yellow,
-                 "Röd" = readiness_red),
+      values = c(
+        "Grön" = readiness_green, "Gul" = readiness_yellow,
+        "Röd" = readiness_red
+      ),
       guide = "none"
     ) +
-    ggplot2::geom_hline(yintercept = c(40, 70), linetype = "dashed",
-                        alpha = 0.3) +
+    ggplot2::geom_hline(
+      yintercept = c(40, 70), linetype = "dashed",
+      alpha = 0.3
+    ) +
     ggplot2::scale_y_continuous(limits = c(0, 100)) +
     date_scale +
     ggplot2::labs(title = "Beredskap", y = "Po\u00e4ng") +
@@ -468,19 +522,25 @@ fetch.plot.readiness_score <- function(data, hr_max = NULL, hr_rest = NULL,
   r_hrv <- r |> dplyr::filter(!is.na(ln_rmssd))
   p2 <- ggplot2::ggplot(r_hrv, ggplot2::aes(x = date)) +
     ggplot2::geom_ribbon(
-      ggplot2::aes(ymin = ln_rmssd_7d_mean - ln_rmssd_7d_sd,
-                   ymax = ln_rmssd_7d_mean + ln_rmssd_7d_sd),
-      fill = traning_palette$status[["blue"]], alpha = 0.2, na.rm = TRUE) +
+      ggplot2::aes(
+        ymin = ln_rmssd_7d_mean - ln_rmssd_7d_sd,
+        ymax = ln_rmssd_7d_mean + ln_rmssd_7d_sd
+      ),
+      fill = traning_palette$status[["blue"]], alpha = 0.2, na.rm = TRUE
+    ) +
     ggplot2::geom_point(ggplot2::aes(y = ln_rmssd),
-                        alpha = if (span_days <= 30) 0.5 else 0.3,
-                        size = if (span_days <= 30) 2 else 0.8,
-                        colour = "grey50") +
+      alpha = if (span_days <= 30) 0.5 else 0.3,
+      size = if (span_days <= 30) 2 else 0.8,
+      colour = "grey50"
+    ) +
     ggplot2::geom_line(ggplot2::aes(y = ln_rmssd_7d_mean),
-                       colour = traning_palette$status[["blue"]], linewidth = 0.7, na.rm = TRUE) +
+      colour = traning_palette$status[["blue"]], linewidth = 0.7, na.rm = TRUE
+    ) +
     ggplot2::geom_point(
       data = r_hrv |> dplyr::filter(hrv_flag),
       ggplot2::aes(y = ln_rmssd), colour = traning_palette$status[["red"]],
-      shape = 17, size = 2) +
+      shape = 17, size = 2
+    ) +
     date_scale +
     ggplot2::labs(title = "HRV — Ln(RMSSD)", y = "Ln(RMSSD)") +
     theme_panel
@@ -490,13 +550,19 @@ fetch.plot.readiness_score <- function(data, hr_max = NULL, hr_rest = NULL,
   p3 <- ggplot2::ggplot(r_sleep, ggplot2::aes(x = date, y = sleep_total)) +
     ggplot2::geom_col(
       ggplot2::aes(fill = ifelse(sleep_flag, "Flaggad", "Normal")),
-      width = 0.8, alpha = 0.7) +
+      width = 0.8, alpha = 0.7
+    ) +
     ggplot2::scale_fill_manual(
-      values = c("Normal" = traning_palette$status[["blue"]],
-                 "Flaggad" = readiness_red),
-      guide = "none") +
-    ggplot2::geom_hline(yintercept = 7, linetype = "dashed",
-                        colour = "darkgreen", alpha = 0.5) +
+      values = c(
+        "Normal" = traning_palette$status[["blue"]],
+        "Flaggad" = readiness_red
+      ),
+      guide = "none"
+    ) +
+    ggplot2::geom_hline(
+      yintercept = 7, linetype = "dashed",
+      colour = "darkgreen", alpha = 0.5
+    ) +
     date_scale +
     ggplot2::labs(title = "S\u00f6mn", y = "Timmar") +
     theme_panel
@@ -505,32 +571,43 @@ fetch.plot.readiness_score <- function(data, hr_max = NULL, hr_rest = NULL,
   r_load <- r |> dplyr::filter(!is.na(daily_trimp) | !is.na(atl))
   p4 <- ggplot2::ggplot(r_load, ggplot2::aes(x = date)) +
     ggplot2::geom_col(ggplot2::aes(y = daily_trimp),
-                      fill = "grey70", alpha = 0.5, width = 0.8) +
+      fill = "grey70", alpha = 0.5, width = 0.8
+    ) +
     ggplot2::geom_line(ggplot2::aes(y = atl, colour = "ATL"),
-                       linewidth = 0.7, na.rm = TRUE) +
+      linewidth = 0.7, na.rm = TRUE
+    ) +
     ggplot2::geom_line(ggplot2::aes(y = ctl, colour = "CTL"),
-                       linewidth = 0.7, na.rm = TRUE) +
+      linewidth = 0.7, na.rm = TRUE
+    ) +
     # AVVIKELSE FRÅN TEMA: Allen/Coggan PMC convention — see plot.R
     # CTL/ATL legend for rationale. Saturated zones$Z1 / traffic_bg$red
     # give the high contrast that two overlapping series need.
     ggplot2::scale_colour_manual(values = c(
       "ATL" = traning_palette$traffic_bg[["red"]],
-      "CTL" = traning_palette$zones[["Z1"]])) +
+      "CTL" = traning_palette$zones[["Z1"]]
+    )) +
     date_scale +
-    ggplot2::labs(title = "Tr\u00e4ningsbelastning", y = "TRIMP",
-                  colour = NULL) +
+    ggplot2::labs(
+      title = "Tr\u00e4ningsbelastning", y = "TRIMP",
+      colour = NULL
+    ) +
     theme_panel +
-    ggplot2::theme(legend.position = "bottom",
-                   legend.key.size = ggplot2::unit(0.4, "cm"))
+    ggplot2::theme(
+      legend.position = "bottom",
+      legend.key.size = ggplot2::unit(0.4, "cm")
+    )
 
   # Combine
   p1 / p2 / p3 / p4 +
     patchwork::plot_layout(heights = c(2, 1.5, 1, 1.5)) +
     patchwork::plot_annotation(
-      title = paste("Readiness-dashboard —",
-                    format(from, "%Y-%m-%d"), "till",
-                    format(to, "%Y-%m-%d")),
+      title = paste(
+        "Readiness-dashboard —",
+        format(from, "%Y-%m-%d"), "till",
+        format(to, "%Y-%m-%d")
+      ),
       theme = ggplot2::theme(
-        plot.title = ggplot2::element_text(size = 14, face = "bold"))
+        plot.title = ggplot2::element_text(size = 14, face = "bold")
+      )
     )
 }

@@ -15,7 +15,8 @@
 #' @export
 report_mostrecent <- function(summaries, n_imported) {
   tot_km <- fmt_dec_sv(sum(summaries$distance, na.rm = TRUE) / 1000,
-                        trim_zero = TRUE)
+    trim_zero = TRUE
+  )
   dates <- range(as.Date(summaries$sessionStart))
   date_str <- if (dates[1] == dates[2]) {
     format(dates[1], "%d %b")
@@ -23,7 +24,9 @@ report_mostrecent <- function(summaries, n_imported) {
     paste(format(dates[1], "%d %b"), format(dates[2], "%d %b"), sep = "\u2013")
   }
   cat("Import: ", n_imported, " pass (", date_str, "), ",
-      tot_km, " km totalt.\n", sep = "")
+    tot_km, " km totalt.\n",
+    sep = ""
+  )
 }
 
 #' Generate a short insight text for the most recent session
@@ -67,14 +70,15 @@ report_datesum <- function(data, do_datesum_from, do_datesum_to,
 
   filtered_summaries %>%
     dplyr::summarise(
-      'Km, tot' = round(.na_safe(distance, sum) / 1000, 1),
-      'Km, max' = round(.na_safe(distance, max) / 1000, 1),
-      'Km, med' = round(.na_safe(distance, mean) / 1000, 1),
-      'Tempo, medel' = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
-      'Tempo, max' = dec_to_mmss(.na_safe(avgPaceMoving, min)),
-      'Puls, medel' = round(.na_safe(as.numeric(avgHeartRateMoving), mean), 0),
+      "Km, tot" = round(.na_safe(distance, sum) / 1000, 1),
+      "Km, max" = round(.na_safe(distance, max) / 1000, 1),
+      "Km, med" = round(.na_safe(distance, mean) / 1000, 1),
+      "Tempo, medel" = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
+      "Tempo, max" = dec_to_mmss(.na_safe(avgPaceMoving, min)),
+      "Puls, medel" = round(.na_safe(as.numeric(avgHeartRateMoving), mean), 0),
       Turer = dplyr::n(),
-      .groups = "keep") -> datesum
+      .groups = "keep"
+    ) -> datesum
   datesum
 }
 
@@ -98,11 +102,12 @@ report_monthtop <- function(data, n = 10, from = NULL, to = NULL,
     dplyr::select(`År-mån`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År-mån`) %>%
     dplyr::summarise(
-      'Km, tot' = round(.na_safe(distance, sum) / 1000, 1),
-      'Km, max' = round(.na_safe(distance, max) / 1000, 1),
-      'Tempo, medel' = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
+      "Km, tot" = round(.na_safe(distance, sum) / 1000, 1),
+      "Km, max" = round(.na_safe(distance, max) / 1000, 1),
+      "Tempo, medel" = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
       Turer = dplyr::n(),
-      .groups = "keep") %>%
+      .groups = "keep"
+    ) %>%
     dplyr::arrange(dplyr::desc(`Km, tot`)) %>%
     utils::head(n = n)
 }
@@ -146,12 +151,12 @@ report_runs_year_month <- function(data, n = NULL,
 
   result <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(
-      'År' = as.numeric(format(sessionStart, "%Y")),
-      'Mån' = as.numeric(format(sessionStart, "%m")),
-      'Dag' = as.numeric(format(sessionStart, "%d")),
-      'Km' = round(distance / 1000, digits = 1),
-      'Pace' = round(avgPaceMoving, digits = 2),
-      'HR' = round(avgHeartRateMoving, digits = 0)
+      "År" = as.numeric(format(sessionStart, "%Y")),
+      "Mån" = as.numeric(format(sessionStart, "%m")),
+      "Dag" = as.numeric(format(sessionStart, "%d")),
+      "Km" = round(distance / 1000, digits = 1),
+      "Pace" = round(avgPaceMoving, digits = 2),
+      "HR" = round(avgHeartRateMoving, digits = 0)
     ) %>%
     # Sort on the full timestamp, not the day-of-month: desc(Dag) alone
     # interleaves months when the range spans a boundary, so head(n)
@@ -167,7 +172,7 @@ report_runs_year_month <- function(data, n = NULL,
     # returned rows are formatted, via dec_to_mmss() — the single source
     # of pace formatting shared with the other reports.
     result <- result %>%
-      dplyr::mutate('Tempo' = vapply(Pace, dec_to_mmss, character(1))) %>%
+      dplyr::mutate("Tempo" = vapply(Pace, dec_to_mmss, character(1))) %>%
       dplyr::select(`År`, `Mån`, `Dag`, Km, Tempo, HR)
   }
   result
@@ -196,16 +201,17 @@ report_monthlast <- function(data, n = NULL, from = NULL, to = NULL,
   result <- summaries %>%
     dplyr::mutate(month = as.numeric(format(sessionStart, "%m"))) %>%
     dplyr::filter(month == do_month) %>%
-    dplyr::mutate('År' = as.numeric(format(sessionStart, "%Y"))) %>%
+    dplyr::mutate("År" = as.numeric(format(sessionStart, "%Y"))) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
-      'Km/dag' = round((.na_safe(distance, sum) / 1000) / my_day, 2),
-      'Km, tot' = round(.na_safe(distance, sum) / 1000, 1),
-      'Km, max' = round(.na_safe(distance, max) / 1000, 1),
-      'Tempo, medel' = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
+      "Km/dag" = round((.na_safe(distance, sum) / 1000) / my_day, 2),
+      "Km, tot" = round(.na_safe(distance, sum) / 1000, 1),
+      "Km, max" = round(.na_safe(distance, max) / 1000, 1),
+      "Tempo, medel" = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
       Turer = dplyr::n(),
-      .groups = "keep") %>%
+      .groups = "keep"
+    ) %>%
     dplyr::arrange(dplyr::desc(`År`))
 
   if (!is.null(n)) result <- utils::head(result, n)
@@ -230,16 +236,17 @@ report_yearstop <- function(data, n = NULL, from = NULL, to = NULL,
   my_dayyear <- as.numeric(format(Sys.time(), "%j"))
 
   result <- summaries %>%
-    dplyr::mutate('År' = as.numeric(format(sessionStart, "%Y"))) %>%
+    dplyr::mutate("År" = as.numeric(format(sessionStart, "%Y"))) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
-      'Km/dag' = round((.na_safe(distance, sum) / 1000) / my_dayyear, 2),
-      'Km, tot' = round(.na_safe(distance, sum) / 1000, 1),
-      'Km, max' = round(.na_safe(distance, max) / 1000, 1),
-      'Tempo, medel' = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
+      "Km/dag" = round((.na_safe(distance, sum) / 1000) / my_dayyear, 2),
+      "Km, tot" = round(.na_safe(distance, sum) / 1000, 1),
+      "Km, max" = round(.na_safe(distance, max) / 1000, 1),
+      "Tempo, medel" = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
       Turer = dplyr::n(),
-      .groups = "keep") %>%
+      .groups = "keep"
+    ) %>%
     dplyr::arrange(dplyr::desc(`År`))
 
   if (!is.null(n)) result <- utils::head(result, n)
@@ -266,18 +273,19 @@ report_yearstatus <- function(data, n = NULL, from = NULL, to = NULL,
   result <- summaries %>%
     dplyr::mutate(
       dayyear = as.numeric(format(sessionStart, "%j")),
-      'År' = as.numeric(format(sessionStart, "%Y"))
+      "År" = as.numeric(format(sessionStart, "%Y"))
     ) %>%
     dplyr::filter(dayyear <= my_dayyear) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
-      'Km/dag' = round((.na_safe(distance, sum) / 1000) / my_dayyear, 2),
-      'Km, tot' = round(.na_safe(distance, sum) / 1000, 1),
-      'Km, max' = round(.na_safe(distance, max) / 1000, 1),
-      'Tempo, medel' = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
+      "Km/dag" = round((.na_safe(distance, sum) / 1000) / my_dayyear, 2),
+      "Km, tot" = round(.na_safe(distance, sum) / 1000, 1),
+      "Km, max" = round(.na_safe(distance, max) / 1000, 1),
+      "Tempo, medel" = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
       Turer = dplyr::n(),
-      .groups = "keep") %>%
+      .groups = "keep"
+    ) %>%
     dplyr::arrange(dplyr::desc(`År`))
 
   if (!is.null(n)) result <- utils::head(result, n)
@@ -307,18 +315,19 @@ report_monthstatus <- function(data, n = NULL, from = NULL, to = NULL,
     dplyr::filter(month == my_month) %>%
     dplyr::mutate(
       day = as.numeric(format(sessionStart, "%d")),
-      'År' = as.numeric(format(sessionStart, "%Y"))
+      "År" = as.numeric(format(sessionStart, "%Y"))
     ) %>%
     dplyr::filter(day <= my_day) %>%
     dplyr::select(`År`, distance, avgPaceMoving, avgHeartRateMoving) %>%
     dplyr::group_by(`År`) %>%
     dplyr::summarise(
-      'Km/dag' = round((.na_safe(distance, sum) / 1000) / my_day, 2),
-      'Km, tot' = round(.na_safe(distance, sum) / 1000, 1),
-      'Km, max' = round(.na_safe(distance, max) / 1000, 1),
-      'Tempo, medel' = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
+      "Km/dag" = round((.na_safe(distance, sum) / 1000) / my_day, 2),
+      "Km, tot" = round(.na_safe(distance, sum) / 1000, 1),
+      "Km, max" = round(.na_safe(distance, max) / 1000, 1),
+      "Tempo, medel" = dec_to_mmss(.na_safe(avgPaceMoving, mean)),
       Turer = dplyr::n(),
-      .groups = "keep") %>%
+      .groups = "keep"
+    ) %>%
     dplyr::arrange(dplyr::desc(`År`))
 
   if (!is.null(n)) result <- utils::head(result, n)
@@ -409,8 +418,10 @@ report_acwr <- function(data, n = 28, from = NULL, to = NULL,
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
-  acwr <- compute_acwr(summaries, sport = sport, mode = mode,
-                       health_daily = health_daily)
+  acwr <- compute_acwr(summaries,
+    sport = sport, mode = mode,
+    health_daily = health_daily
+  )
   resolved_mode <- attr(acwr, "mode") %||% "km"
   if (resolved_mode == "trimp") {
     acwr %>%
@@ -474,8 +485,10 @@ report_pmc <- function(data, n = 28, from = NULL, to = NULL,
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
-  compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
-              sport = sport, health_daily = health_daily) %>%
+  compute_pmc(summaries,
+    hr_max = hr_max, hr_rest = hr_rest,
+    sport = sport, health_daily = health_daily
+  ) %>%
     dplyr::mutate(
       Datum = date,
       TRIMP = round(daily_trimp, 1),
@@ -503,7 +516,8 @@ report_recovery_hr <- function(data, n = 28, from = NULL, to = NULL,
   if (nrow(rhr) == 0) {
     return(tibble::tibble(
       Datum = as.Date(character(0)), Km = numeric(0),
-      `Recovery HR` = numeric(0), `RHR 28d` = numeric(0)))
+      `Recovery HR` = numeric(0), `RHR 28d` = numeric(0)
+    ))
   }
   rhr %>%
     dplyr::mutate(
@@ -536,14 +550,16 @@ report_hr_zones <- function(data, n = 12, from = NULL, to = NULL,
   td <- .as_traning_data(data)
   summaries <- td@summaries
   zone_data <- td@zone_data
-  if (is.null(zone_data))
+  if (is.null(zone_data)) {
     zone_data <- compute_zone_distribution(summaries, sport = sport)
+  }
 
   if (nrow(zone_data$monthly) == 0) {
     return(tibble::tibble(
       Datum = as.Date(character(0)),
       `Z1 %` = numeric(0), `Z2 %` = numeric(0), `Z3 %` = numeric(0),
-      PI = numeric(0), Turer = integer(0), `Tot min` = numeric(0)))
+      PI = numeric(0), Turer = integer(0), `Tot min` = numeric(0)
+    ))
   }
 
   pi_data <- compute_polarization_index(zone_data)
@@ -597,18 +613,19 @@ report_decoupling <- function(data, n = 28, from = NULL, to = NULL,
       Datum = as.Date(character(0)), Km = numeric(0),
       Tempo = character(0), HR = numeric(0),
       `Dekopp %` = numeric(0), `Dekopp 28d` = numeric(0),
-      Temp = numeric(0)))
+      Temp = numeric(0)
+    ))
   }
 
   decoupling_data %>%
     dplyr::mutate(
-      Datum       = sessionStart,
-      Km          = round(distance_km, 1),
-      Tempo       = vapply(avg_pace, dec_to_mmss, character(1)),
-      HR          = round(avg_hr, 0),
-      `Dekopp %`  = round(decoupling_pct, 1),
+      Datum = sessionStart,
+      Km = round(distance_km, 1),
+      Tempo = vapply(avg_pace, dec_to_mmss, character(1)),
+      HR = round(avg_hr, 0),
+      `Dekopp %` = round(decoupling_pct, 1),
       `Dekopp 28d` = round(decoupling_rolling28, 1),
-      Temp        = round(temperature, 0)
+      Temp = round(temperature, 0)
     ) %>%
     dplyr::select(Datum, Km, Tempo, HR, `Dekopp %`, `Dekopp 28d`, Temp) %>%
     .filter_or_tail(n, from, to, "Datum")
@@ -627,33 +644,36 @@ report_decoupling <- function(data, n = 28, from = NULL, to = NULL,
 #' @return Tibble with Swedish column names.
 #' @export
 report_readiness <- function(data, n = 14,
-                              from = NULL, to = NULL,
-                              hr_max = NULL, hr_rest = NULL) {
+                             from = NULL, to = NULL,
+                             hr_max = NULL, hr_rest = NULL) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
   r <- compute_readiness(health_daily, summaries,
-                          hr_max = hr_max, hr_rest = hr_rest)
+    hr_max = hr_max, hr_rest = hr_rest
+  )
   if (nrow(r) == 0) {
     return(tibble::tibble(Datum = as.Date(character(0))))
   }
   has_wt <- "wrist_temp" %in% names(r)
   out <- r |>
     dplyr::mutate(
-      Datum       = date,
-      Beredskap   = round(readiness_score, 0),
-      Status      = readiness_status,
-      `Ln RMSSD`  = round(ln_rmssd, 2),
-      `HRV z`     = round(hrv_z, 1),
-      Vilopuls    = round(resting_hr, 0),
-      `VP avvik`  = round(rhr_deviation, 1),
+      Datum = date,
+      Beredskap = round(readiness_score, 0),
+      Status = readiness_status,
+      `Ln RMSSD` = round(ln_rmssd, 2),
+      `HRV z` = round(hrv_z, 1),
+      Vilopuls = round(resting_hr, 0),
+      `VP avvik` = round(rhr_deviation, 1),
       `Sömn` = round(sleep_total, 1),
-      TRIMP       = round(daily_trimp, 0),
-      TSB         = round(tsb, 1),
-      Kvalitet    = data_quality
+      TRIMP = round(daily_trimp, 0),
+      TSB = round(tsb, 1),
+      Kvalitet = data_quality
     )
-  cols <- c("Datum", "Beredskap", "Status", "Ln RMSSD", "HRV z",
-            "Vilopuls", "VP avvik", "Sömn", "TRIMP", "TSB")
+  cols <- c(
+    "Datum", "Beredskap", "Status", "Ln RMSSD", "HRV z",
+    "Vilopuls", "VP avvik", "Sömn", "TRIMP", "TSB"
+  )
   if (has_wt) {
     out <- out |>
       dplyr::mutate(
@@ -681,19 +701,21 @@ report_readiness <- function(data, n = 14,
 #' @return Tibble with Datum, Värde columns, newest first.
 #' @export
 report_metric <- function(data, metric, n = 30,
-                           from = NULL, to = NULL) {
+                          from = NULL, to = NULL) {
   td <- .as_traning_data(data)
   health_daily <- td@health_daily
   df <- health_daily |>
     dplyr::filter(.data$metric == .env$metric) |>
     dplyr::transmute(
-      Datum  = date,
+      Datum = date,
       "V\u00e4rde" = round(value, 2)
     )
 
   if (nrow(df) == 0) {
-    return(tibble::tibble(Datum = as.Date(character(0)),
-                          "V\u00e4rde" = numeric(0)))
+    return(tibble::tibble(
+      Datum = as.Date(character(0)),
+      "V\u00e4rde" = numeric(0)
+    ))
   }
 
   .filter_or_tail(df, n, from, to, "Datum", closed_upper = TRUE)

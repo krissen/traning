@@ -20,12 +20,14 @@ NULL
 get_output_defaults <- function() {
   traning_data <- Sys.getenv("TRANING_DATA", "")
   list(
-    output_dir   = Sys.getenv("TRANING_OUTPUT_DIR",
-                              file.path(traning_data, "output")),
-    plot_format  = Sys.getenv("TRANING_PLOT_FORMAT", "pdf"),
+    output_dir = Sys.getenv(
+      "TRANING_OUTPUT_DIR",
+      file.path(traning_data, "output")
+    ),
+    plot_format = Sys.getenv("TRANING_PLOT_FORMAT", "pdf"),
     table_format = Sys.getenv("TRANING_TABLE_FORMAT", "csv"),
-    open         = tolower(Sys.getenv("TRANING_OPEN", "true")) %in%
-                     c("true", "1", "yes")
+    open = tolower(Sys.getenv("TRANING_OPEN", "true")) %in%
+      c("true", "1", "yes")
   )
 }
 
@@ -75,9 +77,13 @@ save_plot <- function(p, output = NULL, default_name = "plot",
   if (is.null(output)) {
     out_dir <- file.path(defaults$output_dir, "plots")
     if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-    output <- file.path(out_dir,
-      paste0(default_name, "_", format(Sys.time(), "%Y%m%d_%H%M%S"),
-             ".", format))
+    output <- file.path(
+      out_dir,
+      paste0(
+        default_name, "_", format(Sys.time(), "%Y%m%d_%H%M%S"),
+        ".", format
+      )
+    )
   }
 
   ggplot2::ggsave(output, plot = p, width = width, height = height)
@@ -116,9 +122,13 @@ save_table <- function(tbl, output = NULL, default_name = "table",
   if (is.null(output)) {
     out_dir <- file.path(defaults$output_dir, "tables")
     if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
-    output <- file.path(out_dir,
-      paste0(default_name, "_", format(Sys.time(), "%Y%m%d_%H%M%S"),
-             ".", format))
+    output <- file.path(
+      out_dir,
+      paste0(
+        default_name, "_", format(Sys.time(), "%Y%m%d_%H%M%S"),
+        ".", format
+      )
+    )
   }
 
   switch(format,
@@ -135,8 +145,10 @@ save_table <- function(tbl, output = NULL, default_name = "table",
     },
     xlsx = {
       if (!requireNamespace("writexl", quietly = TRUE)) {
-        stop("Paketet 'writexl' krävs för XLSX-export. ",
-             "Installera med: install.packages('writexl')")
+        stop(
+          "Paketet 'writexl' krävs för XLSX-export. ",
+          "Installera med: install.packages('writexl')"
+        )
       }
       writexl::write_xlsx(tbl, output)
     },
@@ -177,9 +189,11 @@ save_atomic <- function(..., file, envir = parent.frame()) {
 # Use these instead of month.name / format(..., "%B") in user-facing strings.
 # The systemd-launched Shiny renderer runs in C locale, where R's built-in
 # month.name is English ("May") even when the rest of the prose is Swedish.
-.swedish_months <- c("januari", "februari", "mars", "april", "maj", "juni",
-                     "juli", "augusti", "september", "oktober", "november",
-                     "december")
+.swedish_months <- c(
+  "januari", "februari", "mars", "april", "maj", "juni",
+  "juli", "augusti", "september", "oktober", "november",
+  "december"
+)
 
 # --- Utility -----------------------------------------------------------------
 

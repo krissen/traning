@@ -2,8 +2,10 @@
 
 .fixture <- function() {
   data.frame(
-    sport = c("running", "running", "cycling", "cycling", "walking",
-              "swimming", "strength", "badminton", "bordtennis", "ovrigt"),
+    sport = c(
+      "running", "running", "cycling", "cycling", "walking",
+      "swimming", "strength", "badminton", "bordtennis", "ovrigt"
+    ),
     distance = c(5000, 8000, 25000, 12000, 3000, 1500, 0, 0, 0, 0),
     stringsAsFactors = FALSE
   )
@@ -27,20 +29,34 @@ test_that(".resolve_sport_bucket handles Swedish aliases", {
 })
 
 test_that(".resolve_sport_bucket expands curated buckets", {
-  expect_setequal(traning:::.resolve_sport_bucket("endurance"),
-                  c("running", "cycling", "walking", "swimming",
-                    "paddelsporter", "rodd"))
-  expect_setequal(traning:::.resolve_sport_bucket("ballsport"),
-                  c("badminton", "bordtennis", "fotboll", "tennis",
-                    "hockey", "fitness-spel"))
-  expect_setequal(traning:::.resolve_sport_bucket("gym"),
-                  c("strength", "karntraning", "yoga", "sinne_&_kropp",
-                    "ovrigt"))
+  expect_setequal(
+    traning:::.resolve_sport_bucket("endurance"),
+    c(
+      "running", "cycling", "walking", "swimming",
+      "paddelsporter", "rodd"
+    )
+  )
+  expect_setequal(
+    traning:::.resolve_sport_bucket("ballsport"),
+    c(
+      "badminton", "bordtennis", "fotboll", "tennis",
+      "hockey", "fitness-spel"
+    )
+  )
+  expect_setequal(
+    traning:::.resolve_sport_bucket("gym"),
+    c(
+      "strength", "karntraning", "yoga", "sinne_&_kropp",
+      "ovrigt"
+    )
+  )
 })
 
 test_that("endurance captures paddling and rowing", {
-  df <- data.frame(sport = c("paddelsporter", "rodd", "tennis"),
-                   distance = c(4240, 6000, 0), stringsAsFactors = FALSE)
+  df <- data.frame(
+    sport = c("paddelsporter", "rodd", "tennis"),
+    distance = c(4240, 6000, 0), stringsAsFactors = FALSE
+  )
   result <- traning:::.filter_sport(df, "endurance")
   expect_equal(nrow(result), 2)
   expect_setequal(result$sport, c("paddelsporter", "rodd"))
@@ -50,8 +66,10 @@ test_that("ballsport no longer captures paddelsporter", {
   # Regression: HealthKit's `paddleSports` is canoeing / kayaking /
   # SUP, not padel — 16 paddling sessions used to be counted as
   # Bollsport in the sport-mix views.
-  df <- data.frame(sport = c("paddelsporter", "tennis"),
-                   distance = c(4240, 0), stringsAsFactors = FALSE)
+  df <- data.frame(
+    sport = c("paddelsporter", "tennis"),
+    distance = c(4240, 0), stringsAsFactors = FALSE
+  )
   result <- traning:::.filter_sport(df, "ballsport")
   expect_equal(nrow(result), 1)
   expect_equal(result$sport, "tennis")
@@ -65,13 +83,21 @@ test_that(".resolve_sport_bucket returns NULL for all/any/NULL", {
 })
 
 test_that(".resolve_sport_bucket combines vector inputs", {
-  expect_setequal(traning:::.resolve_sport_bucket(c("running", "cycling")),
-                  c("running", "cycling"))
-  expect_setequal(traning:::.resolve_sport_bucket(c("löpning", "cykling")),
-                  c("running", "cycling"))
-  expect_setequal(traning:::.resolve_sport_bucket(c("endurance", "strength")),
-                  c("running", "cycling", "walking", "swimming",
-                    "paddelsporter", "rodd", "strength"))
+  expect_setequal(
+    traning:::.resolve_sport_bucket(c("running", "cycling")),
+    c("running", "cycling")
+  )
+  expect_setequal(
+    traning:::.resolve_sport_bucket(c("löpning", "cykling")),
+    c("running", "cycling")
+  )
+  expect_setequal(
+    traning:::.resolve_sport_bucket(c("endurance", "strength")),
+    c(
+      "running", "cycling", "walking", "swimming",
+      "paddelsporter", "rodd", "strength"
+    )
+  )
 })
 
 test_that(".filter_sport keeps only matching rows", {
@@ -143,7 +169,8 @@ test_that(".sport_match_mask matches the same rows as .filter_sport", {
     mask <- traning:::.sport_match_mask(df, s)
     filtered <- traning:::.filter_sport(df, s)
     expect_equal(sum(mask), nrow(filtered),
-                 info = paste("sport=", deparse(s)))
+      info = paste("sport=", deparse(s))
+    )
   }
 })
 
@@ -184,10 +211,13 @@ test_that("sport_bucket_names returns curated buckets plus 'all'", {
 
 test_that("filter_sport (exported) matches .filter_sport (internal)", {
   df <- .fixture()
-  for (s in list("running", "cycling", "endurance", "all", NULL,
-                 c("running", "cycling"))) {
+  for (s in list(
+    "running", "cycling", "endurance", "all", NULL,
+    c("running", "cycling")
+  )) {
     expect_equal(filter_sport(df, s), traning:::.filter_sport(df, s),
-                 info = paste("sport=", deparse(s)))
+      info = paste("sport=", deparse(s))
+    )
   }
 })
 
@@ -216,33 +246,48 @@ test_that("bagskytte resolves to itself with no bucket, on purpose", {
   expect_equal(sport_bucket_members("bagskytte"), "bagskytte")
   for (b in names(traning:::.SPORT_BUCKETS)) {
     expect_false("bagskytte" %in% traning:::.SPORT_BUCKETS[[b]],
-                 info = b)
+      info = b
+    )
   }
 })
 
 test_that("sport_bucket_members returns curated bucket members", {
-  expect_setequal(sport_bucket_members("endurance"),
-                  c("running", "cycling", "walking", "swimming",
-                    "paddelsporter", "rodd"))
-  expect_setequal(sport_bucket_members("ballsport"),
-                  c("badminton", "bordtennis", "fotboll", "tennis",
-                    "hockey", "fitness-spel"))
-  expect_setequal(sport_bucket_members("gym"),
-                  c("strength", "karntraning", "yoga", "sinne_&_kropp",
-                    "ovrigt"))
+  expect_setequal(
+    sport_bucket_members("endurance"),
+    c(
+      "running", "cycling", "walking", "swimming",
+      "paddelsporter", "rodd"
+    )
+  )
+  expect_setequal(
+    sport_bucket_members("ballsport"),
+    c(
+      "badminton", "bordtennis", "fotboll", "tennis",
+      "hockey", "fitness-spel"
+    )
+  )
+  expect_setequal(
+    sport_bucket_members("gym"),
+    c(
+      "strength", "karntraning", "yoga", "sinne_&_kropp",
+      "ovrigt"
+    )
+  )
 })
 
 test_that("sport_bucket_members handles direct sports + 'all' + NULL", {
   expect_equal(sport_bucket_members("running"), "running")
-  expect_equal(sport_bucket_members("cykling"), "cycling")  # alias
+  expect_equal(sport_bucket_members("cykling"), "cycling") # alias
   expect_null(sport_bucket_members("all"))
   expect_null(sport_bucket_members("any"))
   expect_null(sport_bucket_members(NULL))
 })
 
 test_that("sport_bucket_members rejects vector input", {
-  expect_error(sport_bucket_members(c("running", "cycling")),
-               "single bucket name")
+  expect_error(
+    sport_bucket_members(c("running", "cycling")),
+    "single bucket name"
+  )
 })
 
 test_that("sport_bucket_members handles 'all'/'any' case-insensitively", {
@@ -303,8 +348,10 @@ test_that(".filter_sport handles values containing regex metacharacters", {
   # without escaping, so values like "running (treadmill)" would be parsed
   # as a regex group and fail to match a literal label.
   df <- data.frame(
-    sport = c("running (treadmill)", "running", "cycling.indoor",
-              "swimming|open"),
+    sport = c(
+      "running (treadmill)", "running", "cycling.indoor",
+      "swimming|open"
+    ),
     stringsAsFactors = FALSE
   )
   # "running" should match both literal "running" and the parenthesised one

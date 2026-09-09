@@ -1,10 +1,12 @@
 # Tests for compute_background_trimp() and compute_trimp()'s
 # health_daily integration.
 
-.bg_health <- function(dates = as.Date(c("2026-05-01", "2026-05-02",
-                                          "2026-05-03")),
+.bg_health <- function(dates = as.Date(c(
+                         "2026-05-01", "2026-05-02",
+                         "2026-05-03"
+                       )),
                        wrd = c(10, 5, 0),
-                       ae  = c(2500, 1250, 0),
+                       ae = c(2500, 1250, 0),
                        steps = c(15000, 8000, 0)) {
   rows <- list()
   for (i in seq_along(dates)) {
@@ -45,7 +47,7 @@ test_that("compute_background_trimp produces positive values from wrd", {
   hd <- .bg_health()
   result <- compute_background_trimp(hd)
   # 10 km × 12 min/km × 0.30 × 0.64 × exp(0.576) ≈ 41.04 TRIMP for day 1
-  expect_equal(nrow(result), 2L)  # day 3 has zero wrd → filtered out
+  expect_equal(nrow(result), 2L) # day 3 has zero wrd → filtered out
   expect_gt(result$background_trimp[1], 30)
   expect_lt(result$background_trimp[1], 50)
   expect_gt(result$background_trimp[1], result$background_trimp[2])
@@ -66,12 +68,17 @@ test_that("compute_background_trimp subtracts workout walking/running km", {
   )
   with_workout <- compute_background_trimp(hd, summaries = summaries)
   without_workout <- compute_background_trimp(hd)
-  expect_lt(with_workout$background_trimp[1],
-            without_workout$background_trimp[1])
+  expect_lt(
+    with_workout$background_trimp[1],
+    without_workout$background_trimp[1]
+  )
   # Should roughly halve (5/10 of original wrd remaining)
-  expect_equal(with_workout$background_trimp[1] /
-                 without_workout$background_trimp[1],
-               0.5, tolerance = 0.01)
+  expect_equal(
+    with_workout$background_trimp[1] /
+      without_workout$background_trimp[1],
+    0.5,
+    tolerance = 0.01
+  )
 })
 
 test_that("compute_background_trimp leaves short/HR-less workouts in bg", {
@@ -89,8 +96,10 @@ test_that("compute_background_trimp leaves short/HR-less workouts in bg", {
   )
   with_short <- compute_background_trimp(hd, summaries = short_walk)
   no_summary <- compute_background_trimp(hd)
-  expect_equal(with_short$background_trimp[1],
-               no_summary$background_trimp[1])
+  expect_equal(
+    with_short$background_trimp[1],
+    no_summary$background_trimp[1]
+  )
 })
 
 test_that("compute_background_trimp skips fallback on non-walking workout days", {
@@ -157,8 +166,10 @@ test_that("compute_pmc handles single-day background-only input", {
     source = "Apple Watch"
   )
   expect_no_error(
-    pmc <- compute_pmc(empty_summaries, hr_max = 185, hr_rest = 50,
-                       sport = "all", health_daily = hd)
+    pmc <- compute_pmc(empty_summaries,
+      hr_max = 185, hr_rest = 50,
+      sport = "all", health_daily = hd
+    )
   )
   expect_true(nrow(pmc) >= 1)
   # Length consistency: every output column matches the row count
@@ -173,7 +184,7 @@ test_that("compute_background_trimp falls back to step_count when wrd missing", 
   hd <- tibble::tibble(
     date = as.Date("2026-05-01"),
     metric = "step_count",
-    value = 14000,  # 14k steps * 0.7 m/step = 9.8 km ≈ same as wrd=10
+    value = 14000, # 14k steps * 0.7 m/step = 9.8 km ≈ same as wrd=10
     source = "Apple Watch"
   )
   result <- compute_background_trimp(hd)
@@ -205,14 +216,20 @@ test_that("compute_trimp adds background when sport='all' and health_daily given
     avgSpeedMoving     = 2.78,
     duration           = as.difftime(30, units = "mins")
   )
-  hd <- .bg_health()  # day 1 wrd = 10 km
+  hd <- .bg_health() # day 1 wrd = 10 km
   # Without health_daily: only workout TRIMP
-  base <- compute_trimp(summaries, hr_max = 185, hr_rest = 50,
-                        sport = "all")
-  augmented <- compute_trimp(summaries, hr_max = 185, hr_rest = 50,
-                             sport = "all", health_daily = hd)
-  expect_gt(augmented$daily_trimp[augmented$date == as.Date("2026-05-01")],
-            base$daily_trimp[base$date == as.Date("2026-05-01")])
+  base <- compute_trimp(summaries,
+    hr_max = 185, hr_rest = 50,
+    sport = "all"
+  )
+  augmented <- compute_trimp(summaries,
+    hr_max = 185, hr_rest = 50,
+    sport = "all", health_daily = hd
+  )
+  expect_gt(
+    augmented$daily_trimp[augmented$date == as.Date("2026-05-01")],
+    base$daily_trimp[base$date == as.Date("2026-05-01")]
+  )
 })
 
 test_that("compute_trimp folds background even when no qualifying workouts", {
@@ -229,9 +246,11 @@ test_that("compute_trimp folds background even when no qualifying workouts", {
     avgSpeedMoving     = numeric(0),
     duration           = as.difftime(numeric(0), units = "mins")
   )
-  hd <- .bg_health()  # day 1 wrd = 10 km → ~41 TRIMP
-  result <- compute_trimp(empty_summaries, hr_max = 185, hr_rest = 50,
-                          sport = "all", health_daily = hd)
+  hd <- .bg_health() # day 1 wrd = 10 km → ~41 TRIMP
+  result <- compute_trimp(empty_summaries,
+    hr_max = 185, hr_rest = 50,
+    sport = "all", health_daily = hd
+  )
   expect_gt(nrow(result), 0)
   expect_true(all(result$daily_trimp > 0))
   expect_true(any(result$daily_trimp > 30))
@@ -249,10 +268,14 @@ test_that("compute_trimp ignores health_daily for sport-specific buckets", {
     duration           = as.difftime(30, units = "mins")
   )
   hd <- .bg_health()
-  with_bg <- compute_trimp(summaries, hr_max = 185, hr_rest = 50,
-                            sport = "running", health_daily = hd)
-  no_bg   <- compute_trimp(summaries, hr_max = 185, hr_rest = 50,
-                            sport = "running")
+  with_bg <- compute_trimp(summaries,
+    hr_max = 185, hr_rest = 50,
+    sport = "running", health_daily = hd
+  )
+  no_bg <- compute_trimp(summaries,
+    hr_max = 185, hr_rest = 50,
+    sport = "running"
+  )
   # Same TRIMP either way — running bucket doesn't fold in background
   expect_equal(with_bg$daily_trimp, no_bg$daily_trimp)
 })

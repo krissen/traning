@@ -54,8 +54,10 @@
 # (R/sport_filter.R). Leaving it in `other` means figure skating never
 # inherits "bygger aerob bas".
 .SPORT_MODALITY <- list(
-  aerobic = c("running", "cycling", "walking", "swimming", "paddelsporter",
-              "rodd")
+  aerobic = c(
+    "running", "cycling", "walking", "swimming", "paddelsporter",
+    "rodd"
+  )
 )
 
 # Mean-HR reliability per modality. For intermittent work mean HR
@@ -67,8 +69,10 @@
 # `other` above: a low verdict on mixed skating shouldn't be trusted
 # enough to say "lugnt".
 .SPORT_HR_RELIABILITY <- list(
-  continuous = c("running", "cycling", "walking", "swimming",
-                 "paddelsporter", "rodd")
+  continuous = c(
+    "running", "cycling", "walking", "swimming",
+    "paddelsporter", "rodd"
+  )
 )
 
 #' Modality family for a sport value
@@ -77,7 +81,9 @@
 #' @return "aerobic" or "other" (unknown sports → "other").
 #' @keywords internal
 .sport_modality <- function(sport) {
-  if (is.null(sport) || length(sport) == 0 || is.na(sport[1])) return("other")
+  if (is.null(sport) || length(sport) == 0 || is.na(sport[1])) {
+    return("other")
+  }
   if (tolower(sport[1]) %in% .SPORT_MODALITY$aerobic) "aerobic" else "other"
 }
 
@@ -109,9 +115,15 @@
 #' @return "low", "moderate", "hard", or NA_character_.
 #' @keywords internal
 .alt_intensity_band <- function(hr_pct) {
-  if (!is.finite(hr_pct)) return(NA_character_)
-  if (hr_pct < .HR_PCT_VT1) return("low")
-  if (hr_pct < .HR_PCT_VT2) return("moderate")
+  if (!is.finite(hr_pct)) {
+    return(NA_character_)
+  }
+  if (hr_pct < .HR_PCT_VT1) {
+    return("low")
+  }
+  if (hr_pct < .HR_PCT_VT2) {
+    return("moderate")
+  }
   "hard"
 }
 
@@ -122,10 +134,18 @@
 #'   duration isn't usable.
 #' @keywords internal
 .alt_duration_band <- function(duration_min) {
-  if (!is.finite(duration_min) || duration_min <= 0) return(NA_character_)
-  if (duration_min < .ALT_DUR_SHORT) return("short")
-  if (duration_min < .ALT_DUR_LONG) return("medium")
-  if (duration_min < .ALT_DUR_VERY_LONG) return("long")
+  if (!is.finite(duration_min) || duration_min <= 0) {
+    return(NA_character_)
+  }
+  if (duration_min < .ALT_DUR_SHORT) {
+    return("short")
+  }
+  if (duration_min < .ALT_DUR_LONG) {
+    return("medium")
+  }
+  if (duration_min < .ALT_DUR_VERY_LONG) {
+    return("long")
+  }
   "very_long"
 }
 
@@ -154,20 +174,28 @@
   if (is.null(intensity) || length(intensity) == 0 || is.na(intensity)) {
     return(if (long_enough) "moderate" else NA_character_)
   }
-  if (identical(intensity, "hard")) return("high")
-  if (identical(intensity, "moderate")) return("moderate")
-  if (long_enough) return("moderate")
+  if (identical(intensity, "hard")) {
+    return("high")
+  }
+  if (identical(intensity, "moderate")) {
+    return("moderate")
+  }
+  if (long_enough) {
+    return("moderate")
+  }
   "low"
 }
 
 # ---- classify_alt_session ---------------------------------------------------
 
 .classify_alt_unknown <- function() {
-  list(class = NA_character_, intensity = NA_character_,
-       duration_band = NA_character_, duration_min = NA_real_,
-       recovery_cost = NA_character_, confidence = "unknown",
-       modality = "other", hr_reliability = "intermittent",
-       sport = NA_character_, signals = list(), sources = character())
+  list(
+    class = NA_character_, intensity = NA_character_,
+    duration_band = NA_character_, duration_min = NA_real_,
+    recovery_cost = NA_character_, confidence = "unknown",
+    modality = "other", hr_reliability = "intermittent",
+    sport = NA_character_, signals = list(), sources = character()
+  )
 }
 
 #' Classify a non-running session on duration and intensity
@@ -199,14 +227,16 @@
 #' @export
 classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
   if (is.null(session) || !inherits(session, "data.frame") ||
-      nrow(session) == 0) {
+    nrow(session) == 0) {
     return(.classify_alt_unknown())
   }
   s <- session[1, , drop = FALSE]
 
   duration_min <- if (!is.null(s$durationMoving)) {
     as.numeric(s$durationMoving, units = "mins")
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   if (!is.finite(duration_min) || duration_min <= 0) {
     return(.classify_alt_unknown())
   }
@@ -215,26 +245,37 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
 
   hr_avg <- if (!is.null(s$avgHeartRateMoving)) {
     as.numeric(s$avgHeartRateMoving[1])
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   if (is.finite(hr_avg) && hr_avg > 0 && is.null(hr_max) &&
-      !is.null(summaries)) {
+    !is.null(summaries)) {
     hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
-                       error = function(e) NULL)
+      error = function(e) NULL
+    )
   }
 
   # A single session is a one-segment unit — same definition as a
   # multi-segment sport-day, so a single row and a day of segments can
   # never disagree about what "a session" is.
-  .classify_alt_unit(seg_min = duration_min, seg_hr = hr_avg,
-                     sport = sport, hr_max = hr_max)
+  .classify_alt_unit(
+    seg_min = duration_min, seg_hr = hr_avg,
+    sport = sport, hr_max = hr_max
+  )
 }
 
 # Pick the hardest band present. low < moderate < hard.
 .hardest_intensity <- function(bands) {
   bands <- bands[!is.na(bands)]
-  if (length(bands) == 0) return(NA_character_)
-  if ("hard" %in% bands) return("hard")
-  if ("moderate" %in% bands) return("moderate")
+  if (length(bands) == 0) {
+    return(NA_character_)
+  }
+  if ("hard" %in% bands) {
+    return("hard")
+  }
+  if ("moderate" %in% bands) {
+    return("moderate")
+  }
   "low"
 }
 
@@ -283,13 +324,17 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
   total_min <- sum(seg_min)
 
   duration_band <- .alt_duration_band(total_min)
-  if (is.na(duration_band)) return(.classify_alt_unknown())
+  if (is.na(duration_band)) {
+    return(.classify_alt_unknown())
+  }
 
   pct_of <- function(hr) {
     if (is.finite(hr) && hr > 0 && !is.null(hr_max) &&
-        is.finite(hr_max) && hr_max > 0) {
+      is.finite(hr_max) && hr_max > 0) {
       max(0, min(1, hr / hr_max))
-    } else NA_real_
+    } else {
+      NA_real_
+    }
   }
 
   # Only segments compute_trimp() would count may set intensity —
@@ -312,14 +357,19 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
     bands <- vapply(pcts, .alt_intensity_band, character(1))
     intensity <- .hardest_intensity(bands)
     # Report the pct of the segment that set the verdict.
-    mean_hr_pct <- pcts[which.max(vapply(bands, .recovery_cost_rank_intensity,
-                                         integer(1)))]
+    mean_hr_pct <- pcts[which.max(vapply(
+      bands, .recovery_cost_rank_intensity,
+      integer(1)
+    ))]
   }
 
   has_intensity <- !is.na(intensity)
   list(
-    class = if (has_intensity) paste(intensity, duration_band, sep = "_")
-            else paste0("nohr_", duration_band),
+    class = if (has_intensity) {
+      paste(intensity, duration_band, sep = "_")
+    } else {
+      paste0("nohr_", duration_band)
+    },
     intensity = intensity,
     duration_band = duration_band,
     duration_min = total_min,
@@ -328,8 +378,10 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
     modality = .sport_modality(sport),
     hr_reliability = .sport_hr_reliability(sport),
     sport = sport,
-    signals = list(mean_hr_pct = mean_hr_pct, duration_min = total_min,
-                   n_segments = length(seg_min)),
+    signals = list(
+      mean_hr_pct = mean_hr_pct, duration_min = total_min,
+      n_segments = length(seg_min)
+    ),
     sources = c("Seiler2010", "Stanley2013", "Stoggl2014", "Coggan2003")
   )
 }
@@ -337,8 +389,15 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
 # Rank an intensity band (not a recovery cost) so "hardest" can be found
 # by which.max. low < moderate < hard; NA lowest.
 .recovery_cost_rank_intensity <- function(band) {
-  if (is.null(band) || length(band) == 0 || is.na(band)) return(0L)
-  switch(band, low = 1L, moderate = 2L, hard = 3L, 0L)
+  if (is.null(band) || length(band) == 0 || is.na(band)) {
+    return(0L)
+  }
+  switch(band,
+    low = 1L,
+    moderate = 2L,
+    hard = 3L,
+    0L
+  )
 }
 
 # Ordinal recovery cost, so "highest cost owns the day" comparisons can
@@ -346,6 +405,13 @@ classify_alt_session <- function(session, hr_max = NULL, summaries = NULL) {
 # session) ranks below "low" — it is an absence of evidence, not a
 # measured low cost.
 .recovery_cost_rank <- function(cost) {
-  if (is.null(cost) || length(cost) == 0 || is.na(cost)) return(0L)
-  switch(cost, low = 1L, moderate = 2L, high = 3L, 0L)
+  if (is.null(cost) || length(cost) == 0 || is.na(cost)) {
+    return(0L)
+  }
+  switch(cost,
+    low = 1L,
+    moderate = 2L,
+    high = 3L,
+    0L
+  )
 }

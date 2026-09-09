@@ -8,8 +8,10 @@ test_that(".parse_backfill_counts parses Wrote / Would write lines", {
     "Totalt: 19 nya filer"
   )
   counts <- traning:::.parse_backfill_counts(lines)
-  expect_named(counts, c("weight_body_mass", "body_fat_percentage",
-                          "lean_body_mass"))
+  expect_named(counts, c(
+    "weight_body_mass", "body_fat_percentage",
+    "lean_body_mass"
+  ))
   expect_equal(counts[["weight_body_mass"]], 12L)
   expect_equal(counts[["body_fat_percentage"]], 0L)
   expect_equal(counts[["lean_body_mass"]], 7L)
@@ -40,8 +42,10 @@ test_that("traning_cli_path honours TRANING_CLI override", {
   Sys.chmod(fake_bin, "0755")
   on.exit(unlink(fake_bin), add = TRUE)
   withr::with_envvar(c(TRANING_CLI = fake_bin), {
-    expect_equal(normalizePath(traning_cli_path()),
-                 normalizePath(fake_bin))
+    expect_equal(
+      normalizePath(traning_cli_path()),
+      normalizePath(fake_bin)
+    )
   })
 })
 
@@ -51,7 +55,7 @@ test_that("traning_cli_path rejects non-executable TRANING_CLI override", {
   # the structured error this helper guarantees. The exec check must
   # fall through to the next candidate (here: bundled venv if present,
   # otherwise NA).
-  skip_on_os("windows")  # see above re: chmod / exec-bit semantics
+  skip_on_os("windows") # see above re: chmod / exec-bit semantics
   fake_bin <- tempfile("fake_traning_noexec_")
   writeLines("not a real binary", fake_bin)
   # Explicitly strip execute bits in case the platform mounts the
@@ -60,8 +64,10 @@ test_that("traning_cli_path rejects non-executable TRANING_CLI override", {
   on.exit(unlink(fake_bin), add = TRUE)
   withr::with_envvar(c(TRANING_CLI = fake_bin), {
     out <- traning_cli_path()
-    expect_false(identical(normalizePath(out, mustWork = FALSE),
-                            normalizePath(fake_bin)))
+    expect_false(identical(
+      normalizePath(out, mustWork = FALSE),
+      normalizePath(fake_bin)
+    ))
   })
 })
 
@@ -71,8 +77,10 @@ test_that("traning_cli_path rejects a directory at TRANING_CLI", {
   on.exit(unlink(tmp_dir, recursive = TRUE), add = TRUE)
   withr::with_envvar(c(TRANING_CLI = tmp_dir), {
     out <- traning_cli_path()
-    expect_false(identical(normalizePath(out, mustWork = FALSE),
-                            normalizePath(tmp_dir)))
+    expect_false(identical(
+      normalizePath(out, mustWork = FALSE),
+      normalizePath(tmp_dir)
+    ))
   })
 })
 
@@ -85,7 +93,8 @@ test_that("traning_backfill returns clean error when CLI is missing", {
     # explicit cli_path = NA_character_; mirrors how a fresh host
     # without the venv installed would behave.
     out <- traning_backfill("/tmp/anything.zip",
-                            cli_path = NA_character_)
+      cli_path = NA_character_
+    )
     expect_false(out$success)
     expect_match(out$stderr, "traning")
   })
@@ -95,8 +104,10 @@ test_that("traning_backfill rejects missing archive", {
   # Resolve the CLI normally (assumes the dev venv is installed
   # locally) but point it at a non-existent zip — we should never
   # invoke system2 in that case.
-  skip_if(is.na(traning_cli_path()),
-          "TRANING_CLI / bundled venv not available on this host")
+  skip_if(
+    is.na(traning_cli_path()),
+    "TRANING_CLI / bundled venv not available on this host"
+  )
   fake_zip <- file.path(tempdir(), "this-does-not-exist.zip")
   out <- traning_backfill(fake_zip)
   expect_false(out$success)
@@ -107,8 +118,10 @@ test_that("traning_backfill rejects unusable zip_path inputs", {
   # The wrapper promises a structured envelope; a NULL / empty
   # vector / directory must fall back to that contract rather than
   # crashing inside file.exists() or the CLI.
-  skip_if(is.na(traning_cli_path()),
-          "TRANING_CLI / bundled venv not available on this host")
+  skip_if(
+    is.na(traning_cli_path()),
+    "TRANING_CLI / bundled venv not available on this host"
+  )
 
   # NULL
   out_null <- traning_backfill(NULL)
@@ -141,7 +154,9 @@ test_that("traning_backfill flags no_new_dates from CLI no-op line", {
     "Inga nya datum att backfilla."
   )
   no_new <- any(grepl("Inga nya datum att backfilla",
-                       stdout_lines, fixed = TRUE))
+    stdout_lines,
+    fixed = TRUE
+  ))
   counts <- traning:::.parse_backfill_counts(stdout_lines)
   expect_true(no_new)
   expect_equal(length(counts), 0L)

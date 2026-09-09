@@ -21,14 +21,18 @@ test_that(".parse_metric handles heart_rate Min/Avg/Max format", {
     name = "heart_rate",
     units = "count/min",
     data = list(
-      list(date = "2026-01-05 00:00:00 +0100", Min = 40, Avg = 60, Max = 150,
-           source = "AW")
+      list(
+        date = "2026-01-05 00:00:00 +0100", Min = 40, Avg = 60, Max = 150,
+        source = "AW"
+      )
     )
   )
   result <- traning:::.parse_metric(metric_obj)
   expect_equal(nrow(result), 3)
-  expect_setequal(result$metric,
-                  c("heart_rate_min", "heart_rate_avg", "heart_rate_max"))
+  expect_setequal(
+    result$metric,
+    c("heart_rate_min", "heart_rate_avg", "heart_rate_max")
+  )
   expect_equal(result$value[result$metric == "heart_rate_min"], 40)
   expect_equal(result$value[result$metric == "heart_rate_avg"], 60)
   expect_equal(result$value[result$metric == "heart_rate_max"], 150)
@@ -39,13 +43,15 @@ test_that(".parse_metric handles sleep_analysis nested format", {
     name = "sleep_analysis",
     units = "hr",
     data = list(
-      list(date = "2026-01-05 00:00:00 +0100", totalSleep = 7.0,
-           core = 4.3, deep = 0.5, rem = 2.2, awake = 0.1, inBed = 0,
-           asleep = 0, sleepStart = "2026-01-04 23:30:00 +0100",
-           sleepEnd = "2026-01-05 06:30:00 +0100",
-           inBedStart = "2026-01-04 23:30:00 +0100",
-           inBedEnd = "2026-01-05 06:30:00 +0100",
-           source = "AW")
+      list(
+        date = "2026-01-05 00:00:00 +0100", totalSleep = 7.0,
+        core = 4.3, deep = 0.5, rem = 2.2, awake = 0.1, inBed = 0,
+        asleep = 0, sleepStart = "2026-01-04 23:30:00 +0100",
+        sleepEnd = "2026-01-05 06:30:00 +0100",
+        inBedStart = "2026-01-04 23:30:00 +0100",
+        inBedEnd = "2026-01-05 06:30:00 +0100",
+        source = "AW"
+      )
     )
   )
   result <- traning:::.parse_metric(metric_obj)
@@ -127,11 +133,15 @@ test_that(".sum_metrics matches inst/metric_taxonomy.json", {
 
 test_that(".aggregate_daily sums step_count and takes min resting HR", {
   df <- tibble::tibble(
-    date   = as.Date(c("2026-04-01", "2026-04-01", "2026-04-01",
-                        "2026-04-01")),
-    metric = c("step_count", "step_count", "resting_heart_rate",
-               "resting_heart_rate"),
-    value  = c(3000, 7000, 48, 52),
+    date = as.Date(c(
+      "2026-04-01", "2026-04-01", "2026-04-01",
+      "2026-04-01"
+    )),
+    metric = c(
+      "step_count", "step_count", "resting_heart_rate",
+      "resting_heart_rate"
+    ),
+    value = c(3000, 7000, 48, 52),
     source = c("kankad", "anandavani", "kankad", "AW")
   )
   result <- traning:::.aggregate_daily(df)
@@ -156,10 +166,12 @@ test_that("read_health_export filters Connect and aggregates raw data", {
 
 test_that("get_readiness adds ln_rmssd column", {
   df <- tibble::tibble(
-    date   = as.Date(rep("2026-01-05", 3)),
-    metric = c("resting_heart_rate", "heart_rate_variability",
-               "sleep_totalSleep"),
-    value  = c(52, 60, 7.5),
+    date = as.Date(rep("2026-01-05", 3)),
+    metric = c(
+      "resting_heart_rate", "heart_rate_variability",
+      "sleep_totalSleep"
+    ),
+    value = c(52, 60, 7.5),
     source = rep("AW", 3)
   )
   result <- get_readiness(df)
@@ -172,7 +184,7 @@ test_that("get_readiness adds ln_rmssd column", {
 test_that(".filter_changed_files detects new files", {
   tmp <- tempfile(fileext = ".json")
   writeLines("{}", tmp)
-  manifest <- list()  # empty = first run
+  manifest <- list() # empty = first run
   result <- traning:::.filter_changed_files(tmp, manifest)
   expect_equal(result, tmp)
 })
@@ -232,7 +244,7 @@ test_that(".save_manifest and .load_manifest roundtrip", {
 
 # Helper: build a health tibble with 7 days of stable data
 .make_stable_history <- function(metric, value, n_days = 7,
-                                  start = as.Date("2026-04-01")) {
+                                 start = as.Date("2026-04-01")) {
   tibble::tibble(
     date   = start + seq_len(n_days) - 1,
     metric = metric,
@@ -243,10 +255,12 @@ test_that(".save_manifest and .load_manifest roundtrip", {
 
 test_that("health_insight_delta reports HRV change above threshold", {
   before <- .make_stable_history("heart_rate_variability", 60)
-  after  <- dplyr::bind_rows(
+  after <- dplyr::bind_rows(
     before,
-    tibble::tibble(date = as.Date("2026-04-08"),
-                   metric = "heart_rate_variability", value = 72, source = "AW")
+    tibble::tibble(
+      date = as.Date("2026-04-08"),
+      metric = "heart_rate_variability", value = 72, source = "AW"
+    )
   )
   result <- health_insight_delta(before, after)
   expect_match(result, "HRV")
@@ -256,10 +270,12 @@ test_that("health_insight_delta reports HRV change above threshold", {
 
 test_that("health_insight_delta ignores HRV change below threshold", {
   before <- .make_stable_history("heart_rate_variability", 60)
-  after  <- dplyr::bind_rows(
+  after <- dplyr::bind_rows(
     before,
-    tibble::tibble(date = as.Date("2026-04-08"),
-                   metric = "heart_rate_variability", value = 62, source = "AW")
+    tibble::tibble(
+      date = as.Date("2026-04-08"),
+      metric = "heart_rate_variability", value = 62, source = "AW"
+    )
   )
   result <- health_insight_delta(before, after)
   expect_equal(result, "")
@@ -267,10 +283,12 @@ test_that("health_insight_delta ignores HRV change below threshold", {
 
 test_that("health_insight_delta always reports tier 1 metrics", {
   before <- .make_stable_history("vo2_max", 57.0)
-  after  <- dplyr::bind_rows(
+  after <- dplyr::bind_rows(
     before,
-    tibble::tibble(date = as.Date("2026-04-08"),
-                   metric = "vo2_max", value = 57.5, source = "AW")
+    tibble::tibble(
+      date = as.Date("2026-04-08"),
+      metric = "vo2_max", value = 57.5, source = "AW"
+    )
   )
   result <- health_insight_delta(before, after)
   expect_match(result, "VO2max")
@@ -279,10 +297,12 @@ test_that("health_insight_delta always reports tier 1 metrics", {
 
 test_that("health_insight_delta ignores tier 3 metrics", {
   before <- .make_stable_history("step_count", 10000)
-  after  <- dplyr::bind_rows(
+  after <- dplyr::bind_rows(
     before,
-    tibble::tibble(date = as.Date("2026-04-08"),
-                   metric = "step_count", value = 15000, source = "AW")
+    tibble::tibble(
+      date = as.Date("2026-04-08"),
+      metric = "step_count", value = 15000, source = "AW"
+    )
   )
   result <- health_insight_delta(before, after)
   expect_equal(result, "")
@@ -306,10 +326,12 @@ test_that("health_insight_delta handles empty before (first import)", {
 
 test_that("health_insight_delta flags short sleep", {
   before <- .make_stable_history("sleep_totalSleep", 7.0)
-  after  <- dplyr::bind_rows(
+  after <- dplyr::bind_rows(
     before,
-    tibble::tibble(date = as.Date("2026-04-08"),
-                   metric = "sleep_totalSleep", value = 4.8, source = "AW")
+    tibble::tibble(
+      date = as.Date("2026-04-08"),
+      metric = "sleep_totalSleep", value = 4.8, source = "AW"
+    )
   )
   result <- health_insight_delta(before, after)
   expect_match(result, "kort natt")
@@ -361,8 +383,10 @@ test_that("import_health_export with force bypasses manifest", {
 
   # Second import with force — should still parse
   result2 <- suppressMessages(
-    import_health_export(path = tmp_file, cache_path = cache,
-                          force = TRUE, verbose = FALSE)
+    import_health_export(
+      path = tmp_file, cache_path = cache,
+      force = TRUE, verbose = FALSE
+    )
   )
   expect_equal(nrow(result2), 1)
 })
@@ -398,8 +422,10 @@ test_that("single-file import preserves entries it didn't touch", {
   tmp_file <- file.path(tmp_data, "touched.json")
   jsonlite::write_json(raw_json, tmp_file, auto_unbox = TRUE)
 
-  suppressMessages(import_health_export(path = tmp_file, cache_path = cache,
-                                         verbose = FALSE))
+  suppressMessages(import_health_export(
+    path = tmp_file, cache_path = cache,
+    verbose = FALSE
+  ))
 
   after <- traning:::.load_manifest()
   expect_true("step_count/2024-01-01.json" %in% names(after))
@@ -427,8 +453,10 @@ test_that("forced single-file import also preserves untouched entries", {
   tmp_file <- file.path(tmp_data, "force_me.json")
   jsonlite::write_json(raw_json, tmp_file, auto_unbox = TRUE)
 
-  suppressMessages(import_health_export(path = tmp_file, cache_path = cache,
-                                         force = TRUE, verbose = FALSE))
+  suppressMessages(import_health_export(
+    path = tmp_file, cache_path = cache,
+    force = TRUE, verbose = FALSE
+  ))
 
   after <- traning:::.load_manifest()
   expect_equal(after[["step_count/2024-01-01.json"]]$md5, "keep-me")
@@ -470,26 +498,34 @@ test_that(".load_manifest tolerates wrong-shape JSON (scalar / unnamed)", {
   tmp <- tempfile(fileext = ".json")
   # Valid JSON but not the named-list shape we expect.
   writeLines("42", tmp)
-  expect_warning(loaded <- traning:::.load_manifest(tmp),
-                 "wrong shape")
+  expect_warning(
+    loaded <- traning:::.load_manifest(tmp),
+    "wrong shape"
+  )
   expect_equal(loaded, list())
 
   # Unnamed array.
   writeLines('["a", "b"]', tmp)
-  expect_warning(loaded <- traning:::.load_manifest(tmp),
-                 "wrong shape")
+  expect_warning(
+    loaded <- traning:::.load_manifest(tmp),
+    "wrong shape"
+  )
   expect_equal(loaded, list())
 
   # JSON with at least one empty key — also rejected.
   writeLines('{"a": {"md5": "x"}, "": {"md5": "y"}}', tmp)
-  expect_warning(loaded <- traning:::.load_manifest(tmp),
-                 "wrong shape")
+  expect_warning(
+    loaded <- traning:::.load_manifest(tmp),
+    "wrong shape"
+  )
   expect_equal(loaded, list())
 
   # Unparseable JSON.
   writeLines("{ not json", tmp)
-  expect_warning(loaded <- traning:::.load_manifest(tmp),
-                 "unreadable")
+  expect_warning(
+    loaded <- traning:::.load_manifest(tmp),
+    "unreadable"
+  )
   expect_equal(loaded, list())
 })
 
@@ -504,8 +540,10 @@ test_that(".save_manifest writes atomically and survives stale temp files", {
   # Leave a stale .tmp file as if a previous writer crashed mid-write.
   # The next .save_manifest must still produce a valid file and not pick
   # up the stale temp content as its output.
-  writeLines("{ this is not json",
-             file.path(tmp_dir, "manifest.json.tmp.9999"))
+  writeLines(
+    "{ this is not json",
+    file.path(tmp_dir, "manifest.json.tmp.9999")
+  )
   traning:::.save_manifest(list(a = list(md5 = "222")), manifest_path)
   expect_equal(traning:::.load_manifest(manifest_path)[["a"]]$md5, "222")
 })
@@ -515,8 +553,10 @@ test_that("read_canonical_file skips an unparseable file with a warning", {
   bad <- file.path(tmp, "2026-09-05.json")
   writeLines("{ this was never flushed", bad)
 
-  expect_warning(out <- read_canonical_file(bad),
-                 "Kunde inte l\u00e4sa canonical-fil")
+  expect_warning(
+    out <- read_canonical_file(bad),
+    "Kunde inte l\u00e4sa canonical-fil"
+  )
   expect_equal(nrow(out), 0)
   # The warning names the file and carries the parser's own message, so
   # the offending write can be found without re-running the import. The
@@ -557,16 +597,20 @@ test_that("the empty branches keep the documented columns", {
   # A well-formed document with no samples takes a different branch and
   # must answer the same shape.
   empty_doc <- file.path(tmp, "2026-09-06.json")
-  writeLines('{"metric": "vo2_max", "date": "2026-09-06", "units": "ml/kg/min", "samples": []}',
-             empty_doc)
+  writeLines(
+    '{"metric": "vo2_max", "date": "2026-09-06", "units": "ml/kg/min", "samples": []}',
+    empty_doc
+  )
   out2 <- read_canonical_file(empty_doc)
   expect_equal(nrow(out2), 0)
   expect_equal(names(out2), cols)
 
   # And so must the parser underneath it, for both the no-samples and
   # the unknown-sleep-format branches.
-  expect_equal(names(traning:::.parse_metric(list(name = "vo2_max",
-                                                   data = list()))), cols)
+  expect_equal(names(traning:::.parse_metric(list(
+    name = "vo2_max",
+    data = list()
+  ))), cols)
   expect_warning(sleep <- traning:::.parse_sleep(list(list(qty = 1))))
   expect_equal(names(sleep), cols)
 
@@ -582,13 +626,21 @@ test_that("one corrupt canonical file does not abort a whole import", {
   dir.create(file.path(canonical, "vo2_max"), recursive = TRUE)
   dir.create(file.path(tmp_data, "cache"), recursive = TRUE)
 
-  writeLines("{ truncated mid-write",
-             file.path(canonical, "vo2_max", "2026-09-04.json"))
+  writeLines(
+    "{ truncated mid-write",
+    file.path(canonical, "vo2_max", "2026-09-04.json")
+  )
   jsonlite::write_json(
-    list(metric = "vo2_max", date = "2026-09-05", units = "ml/kg/min",
-         samples = list(list(qty = 57, source = "AW",
-                              date = "2026-09-05 06:00:00 +0200"))),
-    file.path(canonical, "vo2_max", "2026-09-05.json"), auto_unbox = TRUE)
+    list(
+      metric = "vo2_max", date = "2026-09-05", units = "ml/kg/min",
+      samples = list(list(
+        qty = 57, source = "AW",
+        date = "2026-09-05 06:00:00 +0200"
+      ))
+    ),
+    file.path(canonical, "vo2_max", "2026-09-05.json"),
+    auto_unbox = TRUE
+  )
 
   cache <- file.path(tmp_data, "cache", "health_daily.RData")
   suppressWarnings(
@@ -598,7 +650,7 @@ test_that("one corrupt canonical file does not abort a whole import", {
   health <- load_health_data(cache)
   # The readable day still lands; only the broken file is lost.
   expect_equal(health$value[health$date == as.Date("2026-09-05") &
-                              health$metric == "vo2_max"], 57)
+    health$metric == "vo2_max"], 57)
 })
 
 test_that("import refreshes manifest when .import_metrics filters out all changes", {
@@ -622,9 +674,12 @@ test_that("import refreshes manifest when .import_metrics filters out all change
 
   f <- file.path(canonical_dir, "ignored_metric", "2024-01-01.json")
   jsonlite::write_json(
-    list(metric = "ignored_metric", date = "2024-01-01",
-         units = "count", samples = list(list(qty = 1))),
-    f, auto_unbox = TRUE
+    list(
+      metric = "ignored_metric", date = "2024-01-01",
+      units = "count", samples = list(list(qty = 1))
+    ),
+    f,
+    auto_unbox = TRUE
   )
   expected_md5 <- unname(tools::md5sum(f))
 
@@ -634,7 +689,8 @@ test_that("import refreshes manifest when .import_metrics filters out all change
   manifest <- traning:::.load_manifest()
   key <- "ignored_metric/2024-01-01.json"
   expect_true(key %in% names(manifest),
-              info = "filter-emptied run must still record the file in manifest")
+    info = "filter-emptied run must still record the file in manifest"
+  )
   expect_equal(manifest[[key]]$md5, expected_md5)
 })
 
@@ -645,8 +701,10 @@ test_that("import recovers when on-disk manifest is corrupt", {
   cache <- file.path(tmp_data, "cache", "health_daily.RData")
 
   # Write garbage where the manifest should be.
-  writeLines("{ not valid json",
-             file.path(tmp_data, "cache", "health_import_manifest.json"))
+  writeLines(
+    "{ not valid json",
+    file.path(tmp_data, "cache", "health_import_manifest.json")
+  )
 
   raw_json <- list(data = list(metrics = list(
     list(name = "step_count", units = "count", data = list(
@@ -669,9 +727,12 @@ test_that("import recovers when on-disk manifest is corrupt", {
 
 test_that(".compute_manifest_to_save: full run replaces, single-file merges", {
   # Three temp files; pretend we're considering all of them as candidates.
-  a <- tempfile(fileext = ".json"); writeLines("{}", a)
-  b <- tempfile(fileext = ".json"); writeLines("{}", b)
-  c <- tempfile(fileext = ".json"); writeLines("{}", c)
+  a <- tempfile(fileext = ".json")
+  writeLines("{}", a)
+  b <- tempfile(fileext = ".json")
+  writeLines("{}", b)
+  c <- tempfile(fileext = ".json")
+  writeLines("{}", c)
   existing <- list("old_only.json" = list(md5 = "zzzz"))
   # A pre-existing entry for `a`. The full run should overwrite it with
   # the fresh md5; the single-file run should also overwrite it.

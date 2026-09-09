@@ -3,22 +3,31 @@
 .multisport_summaries <- function() {
   base <- as.POSIXct("2026-01-01 08:00:00", tz = "UTC")
   data.frame(
-    sessionStart = base + (0:11) * 86400,  # 12 daily sessions
-    sport = c("running", "cycling", "walking", "running",
-              "cycling", "running", "walking", "cycling",
-              "running", "cycling", "walking", "running"),
-    distance = c(8000, 25000, 3000, 6000,
-                 15000, 10000, 4000, 30000,
-                 7000, 20000, 2500, 8500),
-    avgPaceMoving = c(5.0, 2.4, 12.0, 5.2,
-                      2.5, 4.8, 11.5, 2.3,
-                      5.1, 2.4, 12.5, 5.0),
-    avgHeartRateMoving = c(140, 130, 95, 142,
-                           135, 138, 100, 132,
-                           145, 128, 92, 140),
+    sessionStart = base + (0:11) * 86400, # 12 daily sessions
+    sport = c(
+      "running", "cycling", "walking", "running",
+      "cycling", "running", "walking", "cycling",
+      "running", "cycling", "walking", "running"
+    ),
+    distance = c(
+      8000, 25000, 3000, 6000,
+      15000, 10000, 4000, 30000,
+      7000, 20000, 2500, 8500
+    ),
+    avgPaceMoving = c(
+      5.0, 2.4, 12.0, 5.2,
+      2.5, 4.8, 11.5, 2.3,
+      5.1, 2.4, 12.5, 5.0
+    ),
+    avgHeartRateMoving = c(
+      140, 130, 95, 142,
+      135, 138, 100, 132,
+      145, 128, 92, 140
+    ),
     durationMoving = as.difftime(
       c(40, 60, 36, 31, 38, 48, 46, 70, 36, 50, 31, 42),
-      units = "mins"),
+      units = "mins"
+    ),
     stringsAsFactors = FALSE
   )
 }
@@ -68,7 +77,7 @@ test_that("report_datesum honours sport filter", {
   result <- report_datesum(
     df,
     do_datesum_from = as.POSIXct("2026-01-01 00:00:00", tz = "UTC"),
-    do_datesum_to   = as.POSIXct("2026-01-13 00:00:00", tz = "UTC"),
+    do_datesum_to = as.POSIXct("2026-01-13 00:00:00", tz = "UTC"),
     sport = "walking"
   )
   # 3 walking entries: 3 + 4 + 2.5 = 9.5 km
@@ -79,7 +88,8 @@ test_that("report_datesum honours sport filter", {
 test_that("report_runs_year_month returns sessions for any sport", {
   df <- .multisport_summaries()
   result <- report_runs_year_month(
-    df, sport = "cycling",
+    df,
+    sport = "cycling",
     from = as.Date("2026-01-01"),
     to = as.Date("2026-02-01")
   )

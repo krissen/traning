@@ -31,8 +31,10 @@ test_that("intensity bands use the same anchors as the running classifier", {
   expect_equal(traning:::.classify_from_hr_avg(0.8199, 60)$type, "endurance")
   expect_equal(traning:::.classify_from_hr_avg(0.82, 60)$type, "tempo")
   expect_equal(traning:::.classify_from_hr_avg(0.8799, 60)$type, "tempo")
-  expect_equal(traning:::.classify_from_hr_avg(0.88, 60)$type,
-               "threshold_intervals")
+  expect_equal(
+    traning:::.classify_from_hr_avg(0.88, 60)$type,
+    "threshold_intervals"
+  )
 })
 
 # --- Duration bands ----------------------------------------------------------
@@ -70,7 +72,9 @@ test_that("the volume rule survives a missing HR reading", {
 test_that("classify_alt_session composes class from intensity and duration", {
   # 6 h paddling at 120 bpm against HRmax 185 → 0.65 → low_very_long
   res <- classify_alt_session(
-    .alt_session("paddelsporter", min = 360, hr = 120), hr_max = 185)
+    .alt_session("paddelsporter", min = 360, hr = 120),
+    hr_max = 185
+  )
   expect_equal(res$class, "low_very_long")
   expect_equal(res$intensity, "low")
   expect_equal(res$duration_band, "very_long")
@@ -82,7 +86,8 @@ test_that("classify_alt_session composes class from intensity and duration", {
 
 test_that("classify_alt_session flags hard intermittent sessions", {
   res <- classify_alt_session(.alt_session("fotboll", min = 60, hr = 165),
-                              hr_max = 185)
+    hr_max = 185
+  )
   expect_equal(res$class, "hard_medium")
   expect_equal(res$recovery_cost, "high")
   expect_equal(res$modality, "other")
@@ -91,7 +96,9 @@ test_that("classify_alt_session flags hard intermittent sessions", {
 
 test_that("classify_alt_session invents no intensity without HR", {
   res <- classify_alt_session(
-    .alt_session("strength", min = 45, hr = NA_real_), hr_max = 185)
+    .alt_session("strength", min = 45, hr = NA_real_),
+    hr_max = 185
+  )
   expect_equal(res$class, "nohr_medium")
   expect_true(is.na(res$intensity))
   expect_true(is.na(res$recovery_cost))
@@ -99,7 +106,9 @@ test_that("classify_alt_session invents no intensity without HR", {
 
   # But the volume rule still applies to a long session without HR
   long <- classify_alt_session(
-    .alt_session("paddelsporter", min = 360, hr = NA_real_), hr_max = 185)
+    .alt_session("paddelsporter", min = 360, hr = NA_real_),
+    hr_max = 185
+  )
   expect_equal(long$class, "nohr_very_long")
   expect_equal(long$recovery_cost, "moderate")
   expect_true(is.na(long$intensity))
@@ -107,15 +116,18 @@ test_that("classify_alt_session invents no intensity without HR", {
 
 test_that("classify_alt_session handles a zero HR reading as missing", {
   res <- classify_alt_session(.alt_session("cycling", min = 50, hr = 0),
-                              hr_max = 185)
+    hr_max = 185
+  )
   expect_equal(res$class, "nohr_medium")
   expect_true(is.na(res$intensity))
 })
 
 test_that("classify_alt_session returns unknown for unusable input", {
   expect_equal(classify_alt_session(NULL)$confidence, "unknown")
-  expect_equal(classify_alt_session(.alt_session(min = 0))$confidence,
-               "unknown")
+  expect_equal(
+    classify_alt_session(.alt_session(min = 0))$confidence,
+    "unknown"
+  )
 })
 
 test_that("classify_alt_session anchors HRmax on all sports, not running", {
@@ -123,20 +135,24 @@ test_that("classify_alt_session anchors HRmax on all sports, not running", {
   # ceiling. Anchoring on running would inflate hr_pct and report a
   # moderate cycling session as hard.
   summaries <- dplyr::bind_rows(
-    lapply(1:12, function(i) tibble::tibble(
-      sessionStart = as.POSIXct("2026-06-01 07:00", tz = "UTC") + i * 86400,
-      sport = "running", distance = 10000,
-      avgHeartRateMoving = 140, garmin_maxHR = 160,
-      duration = as.difftime(60, units = "mins"),
-      durationMoving = as.difftime(60, units = "mins")
-    )),
-    lapply(1:12, function(i) tibble::tibble(
-      sessionStart = as.POSIXct("2026-06-01 17:00", tz = "UTC") + i * 86400,
-      sport = "cycling", distance = 30000,
-      avgHeartRateMoving = 150, garmin_maxHR = 200,
-      duration = as.difftime(60, units = "mins"),
-      durationMoving = as.difftime(60, units = "mins")
-    ))
+    lapply(1:12, function(i) {
+      tibble::tibble(
+        sessionStart = as.POSIXct("2026-06-01 07:00", tz = "UTC") + i * 86400,
+        sport = "running", distance = 10000,
+        avgHeartRateMoving = 140, garmin_maxHR = 160,
+        duration = as.difftime(60, units = "mins"),
+        durationMoving = as.difftime(60, units = "mins")
+      )
+    }),
+    lapply(1:12, function(i) {
+      tibble::tibble(
+        sessionStart = as.POSIXct("2026-06-01 17:00", tz = "UTC") + i * 86400,
+        sport = "cycling", distance = 30000,
+        avgHeartRateMoving = 150, garmin_maxHR = 200,
+        duration = as.difftime(60, units = "mins"),
+        durationMoving = as.difftime(60, units = "mins")
+      )
+    })
   )
   all_max <- suppressMessages(get_hr_max(summaries, sport = "all"))
   run_max <- suppressMessages(get_hr_max(summaries, sport = "running"))
@@ -148,7 +164,8 @@ test_that("classify_alt_session anchors HRmax on all sports, not running", {
   session <- summaries[nrow(summaries), , drop = FALSE]
   session$avgHeartRateMoving <- 170
   res <- suppressMessages(
-    classify_alt_session(session, summaries = summaries))
+    classify_alt_session(session, summaries = summaries)
+  )
   expect_equal(res$intensity, "moderate")
 })
 
@@ -162,10 +179,12 @@ test_that("modality and HR reliability classify the known sports", {
   # skridskosporter is deliberately in the cautious branch: HealthKit's
   # "Skating Sports" mixes long-distance skating with figure/inline
   # skating, so figure skating must not inherit "bygger aerob bas".
-  for (s in c("strength", "karntraning", "yoga", "sinne_&_kropp",
-              "badminton", "bordtennis", "tennis", "fotboll", "hockey",
-              "fitness-spel", "bagskytte", "ovrigt", "snosporter",
-              "utforsakning", "skridskosporter")) {
+  for (s in c(
+    "strength", "karntraning", "yoga", "sinne_&_kropp",
+    "badminton", "bordtennis", "tennis", "fotboll", "hockey",
+    "fitness-spel", "bagskytte", "ovrigt", "snosporter",
+    "utforsakning", "skridskosporter"
+  )) {
     expect_equal(traning:::.sport_modality(s), "other", info = s)
     expect_equal(traning:::.sport_hr_reliability(s), "intermittent", info = s)
   }

@@ -29,17 +29,21 @@
 # `min_value = 0` keeps zero-buckets (useful for the calendar where
 # we want every training day coloured even if distance is 0).
 .sport_mix_data <- function(summaries, period_fmt = "%Y-%m",
-                             from = NULL, to = NULL,
-                             sport = NULL,
-                             min_value = 0.1,
-                             metric = c("distance", "duration", "trimp"),
-                             hr_max = NULL) {
+                            from = NULL, to = NULL,
+                            sport = NULL,
+                            min_value = 0.1,
+                            metric = c("distance", "duration", "trimp"),
+                            hr_max = NULL) {
   metric <- match.arg(metric)
-  empty <- tibble::tibble(period = character(0),
-                          sport = character(0),
-                          value = numeric(0),
-                          metric = character(0))
-  if (is.null(summaries) || nrow(summaries) == 0) return(empty)
+  empty <- tibble::tibble(
+    period = character(0),
+    sport = character(0),
+    value = numeric(0),
+    metric = character(0)
+  )
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    return(empty)
+  }
 
   # Resolve hr_max from the *unfiltered* input before any date/sport
   # narrowing so the TRIMP scale is comparable across windows.
@@ -50,21 +54,30 @@
   trimp_hr_max <- if (metric == "trimp") {
     if (is.null(hr_max)) {
       tryCatch(get_hr_max(summaries, sport = "all"),
-               error = function(e) NULL)
-    } else hr_max
-  } else NULL
+        error = function(e) NULL
+      )
+    } else {
+      hr_max
+    }
+  } else {
+    NULL
+  }
 
   filtered <- if (is.null(sport)) summaries else .filter_sport(summaries, sport)
-  if (nrow(filtered) == 0) return(empty)
+  if (nrow(filtered) == 0) {
+    return(empty)
+  }
   filtered <- filter_by_daterange(filtered, list(from = from, to = to))
 
   src_value <- switch(metric,
     distance = as.numeric(filtered$distance) / 1000,
     duration = {
       d_mov <- suppressWarnings(as.numeric(filtered$durationMoving,
-                                            units = "mins"))
+        units = "mins"
+      ))
       d_tot <- suppressWarnings(as.numeric(filtered$duration,
-                                            units = "mins"))
+        units = "mins"
+      ))
       ifelse(is.na(d_mov) | d_mov == 0, d_tot, d_mov)
     },
     trimp = .session_trimp(filtered, hr_max = trimp_hr_max)
@@ -72,9 +85,11 @@
 
   filtered$.value <- src_value
   filtered %>%
-    dplyr::filter(!is.na(sport),
-                  !is.na(.value),
-                  !is.na(sessionStart)) %>%
+    dplyr::filter(
+      !is.na(sport),
+      !is.na(.value),
+      !is.na(sessionStart)
+    ) %>%
     dplyr::mutate(period = format(sessionStart, period_fmt)) %>%
     dplyr::group_by(period, sport) %>%
     dplyr::summarise(value = sum(.value, na.rm = TRUE), .groups = "drop") %>%
@@ -90,13 +105,15 @@
 # (period, sport). Callers must pass a stable `hr_max` — picking the
 # window-local max would make TRIMP scale depend on the date range.
 .session_trimp <- function(df, hr_max = NULL) {
-  if (nrow(df) == 0) return(numeric(0))
+  if (nrow(df) == 0) {
+    return(numeric(0))
+  }
   hr_obs <- suppressWarnings(as.numeric(df$avgHeartRateMoving))
-  dur    <- suppressWarnings(as.numeric(df$durationMoving, units = "mins"))
+  dur <- suppressWarnings(as.numeric(df$durationMoving, units = "mins"))
   date_v <- suppressWarnings(as.Date(df$sessionStart))
   ok <- !is.na(hr_obs) & hr_obs > 0 &
-        !is.na(dur)    & dur > 10 &
-        !is.na(date_v)
+    !is.na(dur) & dur > 10 &
+    !is.na(date_v)
 
   if (is.null(hr_max)) {
     # Last-resort fallback: observed max over the frame. Documented
@@ -114,7 +131,8 @@
   hr_rest <- rep(NA_real_, nrow(df))
   if (any(ok)) {
     looked_up <- tryCatch(get_hr_rest(date_v[ok]),
-                          error = function(e) rep(50, sum(ok)))
+      error = function(e) rep(50, sum(ok))
+    )
     if (length(looked_up) != sum(ok)) looked_up <- rep(50, sum(ok))
     hr_rest[ok] <- looked_up
   }
@@ -132,7 +150,9 @@
 # .sport_label_sv().
 .relabel_sport <- function(x) {
   vapply(x, function(s) {
-    if (is.null(s) || (length(s) == 1 && is.na(s))) return(NA_character_)
+    if (is.null(s) || (length(s) == 1 && is.na(s))) {
+      return(NA_character_)
+    }
     .sport_label_sv(s)
   }, character(1))
 }
@@ -179,14 +199,17 @@ plot_sport_mix <- function(data, period = "month",
   # calendar year (%Y), or weeks straddling Jan 1 get bucketed under the
   # wrong year (e.g. 2026-01-01 falls in ISO year 2025).
   period_fmt <- switch(period,
-                       month = "%Y-%m",
-                       week  = "%G-W%V",
-                       year  = "%Y",
-                       stop("period must be one of: month, week, year"))
-  data <- .sport_mix_data(summaries, period_fmt = period_fmt,
-                          from = from, to = to, sport = sport,
-                          min_value = min_value, metric = metric,
-                          hr_max = hr_max)
+    month = "%Y-%m",
+    week  = "%G-W%V",
+    year  = "%Y",
+    stop("period must be one of: month, week, year")
+  )
+  data <- .sport_mix_data(summaries,
+    period_fmt = period_fmt,
+    from = from, to = to, sport = sport,
+    min_value = min_value, metric = metric,
+    hr_max = hr_max
+  )
 
   if (nrow(data) == 0) {
     msg <- switch(metric,
@@ -194,31 +217,45 @@ plot_sport_mix <- function(data, period = "month",
       duration = "Sport-mix: ingen tidsdata i fönstret",
       trimp    = "Sport-mix: ingen TRIMP-data i fönstret (kräver pulsdata)"
     )
-    return(ggplot2::ggplot() + ggplot2::ggtitle(msg))
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle(msg))
   }
 
   data <- dplyr::mutate(data, sport_sv = .relabel_sport(sport))
 
   y_label <- switch(metric,
-                    distance = "Kilometer",
-                    duration = "Minuter (aktiv tid)",
-                    trimp    = "TRIMP (Banister)")
+    distance = "Kilometer",
+    duration = "Minuter (aktiv tid)",
+    trimp    = "TRIMP (Banister)"
+  )
   title_unit <- switch(metric,
-                       distance = "distans",
-                       duration = "tid",
-                       trimp    = "ansträngning")
+    distance = "distans",
+    duration = "tid",
+    trimp    = "ansträngning"
+  )
 
-  ggplot2::ggplot(data,
-                  ggplot2::aes(x = period, y = value, fill = sport_sv)) +
+  ggplot2::ggplot(
+    data,
+    ggplot2::aes(x = period, y = value, fill = sport_sv)
+  ) +
     ggplot2::geom_col() +
     ggplot2::scale_x_discrete(breaks = .thin_discrete_breaks(15)) +
     ggplot2::labs(
-      x = switch(period, month = "År-mån", week = "ISO-vecka", year = "År"),
+      x = switch(period,
+        month = "År-mån",
+        week = "ISO-vecka",
+        year = "År"
+      ),
       y = y_label,
       fill = "Sport",
-      title = paste0("Sport-mix (", title_unit, ") per ",
-                     switch(period, month = "månad", week = "vecka",
-                            year = "år"))
+      title = paste0(
+        "Sport-mix (", title_unit, ") per ",
+        switch(period,
+          month = "månad",
+          week = "vecka",
+          year = "år"
+        )
+      )
     ) +
     .theme_rotated_x()
 }
@@ -241,17 +278,22 @@ plot_sport_mix <- function(data, period = "month",
 #' @return ggplot2 object.
 #' @export
 plot_sport_ctl_overlay <- function(data,
-                                    sports = c("running", "cycling",
-                                               "walking", "all"),
-                                    from = NULL, to = NULL) {
+                                   sports = c(
+                                     "running", "cycling",
+                                     "walking", "all"
+                                   ),
+                                   from = NULL, to = NULL) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
-  if (length(sports) == 0)
+  if (length(sports) == 0) {
     stop("sports must contain at least one bucket")
+  }
 
   series_list <- lapply(sports, function(s) {
     pmc <- compute_pmc(summaries, sport = s)
-    if (nrow(pmc) == 0) return(NULL)
+    if (nrow(pmc) == 0) {
+      return(NULL)
+    }
     pmc <- dplyr::select(pmc, date, ctl)
     pmc$sport <- s
     pmc
@@ -260,23 +302,28 @@ plot_sport_ctl_overlay <- function(data,
 
   if (nrow(series) == 0) {
     return(ggplot2::ggplot() +
-           ggplot2::ggtitle("CTL-overlay: ingen TRIMP-data tillgänglig"))
+      ggplot2::ggtitle("CTL-overlay: ingen TRIMP-data tillgänglig"))
   }
 
   if (!is.null(from)) series <- dplyr::filter(series, date >= as.Date(from))
-  if (!is.null(to))   series <- dplyr::filter(series, date <  as.Date(to))
+  if (!is.null(to)) series <- dplyr::filter(series, date < as.Date(to))
 
   # Plot-specific labelling: .sport_label_sv() turns "all" into the
   # generic "Aktivitet", which is ambiguous next to running/cycling
   # series in a CTL overlay. Force "Totalt" for the all-sport line so
   # the legend is unambiguous.
   series$sport_sv <- vapply(series$sport, function(s) {
-    if (identical(s, "all") || identical(s, "any")) "Totalt"
-    else .sport_label_sv(s)
+    if (identical(s, "all") || identical(s, "any")) {
+      "Totalt"
+    } else {
+      .sport_label_sv(s)
+    }
   }, character(1))
 
-  ggplot2::ggplot(series,
-                  ggplot2::aes(x = date, y = ctl, colour = sport_sv)) +
+  ggplot2::ggplot(
+    series,
+    ggplot2::aes(x = date, y = ctl, colour = sport_sv)
+  ) +
     ggplot2::geom_line(linewidth = 0.8) +
     ggplot2::labs(
       x = NULL,
@@ -304,7 +351,7 @@ plot_sport_ctl_overlay <- function(data,
 #' @return ggplot2 object.
 #' @export
 plot_sport_calendar <- function(data, from = NULL, to = NULL,
-                                 sport = NULL) {
+                                sport = NULL) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   # `to` follows the same exclusive-upper-bound convention used by the
@@ -317,9 +364,9 @@ plot_sport_calendar <- function(data, from = NULL, to = NULL,
   # whenever the picked sport's first session is later than the
   # dataset's overall first session.
   to_excl <- if (is.null(to)) (Sys.Date() + 1L) else as.Date(to)
-  from_d  <- if (is.null(from)) {
+  from_d <- if (is.null(from)) {
     scoped <- if (is.null(sport) || identical(tolower(sport), "all") ||
-                   identical(tolower(sport), "any")) {
+      identical(tolower(sport), "any")) {
       summaries
     } else {
       tryCatch(filter_sport(summaries, sport), error = function(e) summaries)
@@ -329,19 +376,23 @@ plot_sport_calendar <- function(data, from = NULL, to = NULL,
     # warning. The is.finite() check below handles the Inf result.
     earliest <- suppressWarnings(min(scoped$sessionStart, na.rm = TRUE))
     if (is.finite(earliest)) as.Date(earliest) else (to_excl - 366L)
-  } else as.Date(from)
+  } else {
+    as.Date(from)
+  }
   display_to <- to_excl - 1L
 
   # min_value = 0 so gym/strength sessions (0 km but still training)
   # get coloured on the calendar. Distance-based sports still win the
   # "dominant" tie-break by km below.
-  data <- .sport_mix_data(summaries, period_fmt = "%Y-%m-%d",
-                          from = from_d, to = to_excl,
-                          sport = sport, min_value = 0,
-                          metric = "distance")
+  data <- .sport_mix_data(summaries,
+    period_fmt = "%Y-%m-%d",
+    from = from_d, to = to_excl,
+    sport = sport, min_value = 0,
+    metric = "distance"
+  )
   if (nrow(data) == 0) {
     return(ggplot2::ggplot() +
-           ggplot2::ggtitle("Aktivitetskalender: ingen data i fönstret"))
+      ggplot2::ggtitle("Aktivitetskalender: ingen data i fönstret"))
   }
 
   # Pick the dominant sport per day. Tie-break: distance first, then
@@ -367,11 +418,13 @@ plot_sport_calendar <- function(data, from = NULL, to = NULL,
   joined <- dplyr::left_join(spine, dominant, by = "date") %>%
     dplyr::mutate(
       sport_sv = ifelse(is.na(sport), NA_character_,
-                        .relabel_sport(sport)),
+        .relabel_sport(sport)
+      ),
       iso_week = as.integer(format(date, "%V")),
       iso_year = as.integer(format(date, "%G")),
-      wday     = factor(swedish_wdays[as.integer(format(date, "%u"))],
-                        levels = swedish_wdays)
+      wday = factor(swedish_wdays[as.integer(format(date, "%u"))],
+        levels = swedish_wdays
+      )
     )
 
   # ggplot2 doesn't have a stable "year+isoweek" axis, so build a
@@ -379,12 +432,16 @@ plot_sport_calendar <- function(data, from = NULL, to = NULL,
   joined <- joined %>%
     dplyr::arrange(date) %>%
     dplyr::mutate(
-      year_week = paste0(iso_year, "-W",
-                         formatC(iso_week, width = 2, flag = "0"))
+      year_week = paste0(
+        iso_year, "-W",
+        formatC(iso_week, width = 2, flag = "0")
+      )
     )
 
-  ggplot2::ggplot(joined,
-                  ggplot2::aes(x = year_week, y = wday, fill = sport_sv)) +
+  ggplot2::ggplot(
+    joined,
+    ggplot2::aes(x = year_week, y = wday, fill = sport_sv)
+  ) +
     ggplot2::geom_tile(colour = "white", linewidth = 0.2) +
     ggplot2::scale_x_discrete(breaks = .thin_discrete_breaks(20)) +
     ggplot2::scale_y_discrete(limits = rev) +
@@ -392,8 +449,10 @@ plot_sport_calendar <- function(data, from = NULL, to = NULL,
       x = NULL,
       y = NULL,
       fill = "Sport",
-      title = paste0("Aktivitetskalender ", format(from_d, "%Y-%m-%d"),
-                     " – ", format(display_to, "%Y-%m-%d"))
+      title = paste0(
+        "Aktivitetskalender ", format(from_d, "%Y-%m-%d"),
+        " – ", format(display_to, "%Y-%m-%d")
+      )
     ) +
     .theme_rotated_x(angle = 90, size = 7)
 }

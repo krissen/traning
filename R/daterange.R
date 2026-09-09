@@ -92,7 +92,7 @@ build_date_range <- function(after = NULL, before = NULL, span = NULL) {
   }
 
   from <- if (!is.null(after)) parse_date_expr(after) else NULL
-  to   <- if (!is.null(before)) parse_date_expr(before) else NULL
+  to <- if (!is.null(before)) parse_date_expr(before) else NULL
 
   if (!is.null(span)) {
     to <- parse_date_expr(span, reference = from)
@@ -140,9 +140,9 @@ build_date_range <- function(after = NULL, before = NULL, span = NULL) {
 #' @return The filtered tibble.
 #' @export
 filter_by_daterange <- function(summaries, date_range, date_col = "sessionStart",
-                                 closed_upper = FALSE) {
+                                closed_upper = FALSE) {
   from <- date_range$from
-  to   <- date_range$to
+  to <- date_range$to
 
   if (is.null(from) && is.null(to)) {
     return(summaries)
@@ -171,7 +171,8 @@ filter_by_daterange <- function(summaries, date_range, date_col = "sessionStart"
 .filter_or_tail <- function(data, n, from, to, date_col, closed_upper = FALSE) {
   if (!is.null(from) || !is.null(to)) {
     data <- filter_by_daterange(data, list(from = from, to = to),
-                                 date_col = date_col, closed_upper = closed_upper)
+      date_col = date_col, closed_upper = closed_upper
+    )
   } else {
     data <- utils::tail(data, n = n)
   }

@@ -5,9 +5,15 @@
 # Auto-select date breaks to avoid label overlap
 .auto_date_breaks <- function(dates) {
   span_days <- as.numeric(diff(range(dates, na.rm = TRUE)))
-  if (span_days > 365 * 10) return("2 years")
-  if (span_days > 365 * 4)  return("1 year")
-  if (span_days > 365 * 2)  return("6 months")
+  if (span_days > 365 * 10) {
+    return("2 years")
+  }
+  if (span_days > 365 * 4) {
+    return("1 year")
+  }
+  if (span_days > 365 * 2) {
+    return("6 months")
+  }
   "3 months"
 }
 
@@ -46,18 +52,19 @@ fetch.plot.hr_zones <- function(data, from = NULL, to = NULL,
   td <- .as_traning_data(data)
   summaries <- td@summaries
   zone_data <- td@zone_data
-  if (is.null(zone_data))
+  if (is.null(zone_data)) {
     zone_data <- compute_zone_distribution(summaries, sport = sport)
+  }
 
   span_days <- .compute_span_days(from, to)
 
   # Adaptive aggregation: per-activity / weekly / monthly
   if (span_days < 60 && !is.null(zone_data$per_activity) &&
-      nrow(zone_data$per_activity) > 0) {
+    nrow(zone_data$per_activity) > 0) {
     # Use per-activity data, aggregate by week
     pa <- zone_data$per_activity
     if (!is.null(from)) pa <- pa %>% dplyr::filter(sessionStart >= as.Date(from))
-    if (!is.null(to))   pa <- pa %>% dplyr::filter(sessionStart < as.Date(to))
+    if (!is.null(to)) pa <- pa %>% dplyr::filter(sessionStart < as.Date(to))
 
     if (nrow(pa) == 0) {
       return(ggplot2::ggplot() +
@@ -76,11 +83,11 @@ fetch.plot.hr_zones <- function(data, from = NULL, to = NULL,
     bar_width <- 5
     x_title <- "Zonf\u00f6rdelning per vecka (Seiler 3-zon)"
   } else if (span_days < 365 && !is.null(zone_data$per_activity) &&
-             nrow(zone_data$per_activity) > 0) {
+    nrow(zone_data$per_activity) > 0) {
     # Weekly aggregation for medium spans
     pa <- zone_data$per_activity
     if (!is.null(from)) pa <- pa %>% dplyr::filter(sessionStart >= as.Date(from))
-    if (!is.null(to))   pa <- pa %>% dplyr::filter(sessionStart < as.Date(to))
+    if (!is.null(to)) pa <- pa %>% dplyr::filter(sessionStart < as.Date(to))
 
     if (nrow(pa) == 0) {
       return(ggplot2::ggplot() +
@@ -152,7 +159,7 @@ fetch.plot.hr_zones <- function(data, from = NULL, to = NULL,
     ) +
     ggplot2::geom_col(
       position = ggplot2::position_stack(reverse = TRUE),
-      width     = bar_width
+      width = bar_width
     ) +
     # 80 % reference line for ideal Z1 proportion
     ggplot2::geom_hline(
@@ -163,11 +170,11 @@ fetch.plot.hr_zones <- function(data, from = NULL, to = NULL,
     ) +
     ggplot2::annotate(
       "text",
-      x     = min(long$period, na.rm = TRUE),
-      y     = 81.5,
+      x = min(long$period, na.rm = TRUE),
+      y = 81.5,
       label = "80 % m\u00e5l",
       hjust = 0,
-      size  = 3,
+      size = 3,
       colour = "grey30"
     ) +
     ggplot2::scale_fill_manual(
@@ -206,7 +213,7 @@ fetch.plot.hr_zones <- function(data, from = NULL, to = NULL,
 fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
                                     zone_data = NULL) {
   if (is.null(zone_data)) zone_data <- compute_zone_distribution(summaries)
-  pi_data   <- compute_polarization_index(zone_data)
+  pi_data <- compute_polarization_index(zone_data)
 
   pi_data <- pi_data %>%
     dplyr::mutate(year_month = as.Date(paste0(year_month, "-01"))) %>%
@@ -227,11 +234,11 @@ fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
     ggplot2::ggplot(ggplot2::aes(x = year_month, y = pi)) +
     # Background bands: Treff 2019 cutoff at PI = 2.0
     ggplot2::annotate("rect",
-      xmin = x_min, xmax = x_max, ymin = -Inf,  ymax = 2.0,
+      xmin = x_min, xmax = x_max, ymin = -Inf, ymax = 2.0,
       fill = traning_palette$traffic_bg[["yellow"]], alpha = 0.06
     ) +
     ggplot2::annotate("rect",
-      xmin = x_min, xmax = x_max, ymin = 2.0,   ymax = Inf,
+      xmin = x_min, xmax = x_max, ymin = 2.0, ymax = Inf,
       fill = traning_palette$traffic_bg[["green"]], alpha = 0.06
     ) +
     # AVVIKELSE FR\u00c5N TEMA: dark-on-light annotation colours chosen to
@@ -239,13 +246,13 @@ fetch.plot.polarization <- function(summaries, from = NULL, to = NULL,
     # would lose contrast on the green band, palette yellow likewise).
     ggplot2::annotate("text",
       x = x_max, y = 1.0,
-      label  = "Icke\u2011polariserad",
-      hjust  = 1, vjust = 0.5, size = 3, colour = "#b7950b"
+      label = "Icke\u2011polariserad",
+      hjust = 1, vjust = 0.5, size = 3, colour = "#b7950b"
     ) +
     ggplot2::annotate("text",
       x = x_max, y = 2.5,
-      label  = "Polariserad",
-      hjust  = 1, vjust = 0.5, size = 3, colour = "#1e8449"
+      label = "Polariserad",
+      hjust = 1, vjust = 0.5, size = 3, colour = "#1e8449"
     ) +
     # Horizontal reference line at PI = 2.0 (Treff 2019 cutoff)
     ggplot2::geom_hline(
@@ -309,11 +316,11 @@ fetch.plot.zone_comparison <- function(summaries, myruns,
   # Pivot to long format — one row per activity × zone
   long <- cv_data %>%
     tidyr::pivot_longer(
-      cols      = c(
+      cols = c(
         dplyr::starts_with("garmin_z"),
         dplyr::starts_with("persec_z")
       ),
-      names_to  = "kalla_zon",
+      names_to = "kalla_zon",
       values_to = "pct"
     ) %>%
     dplyr::mutate(
@@ -324,7 +331,7 @@ fetch.plot.zone_comparison <- function(summaries, myruns,
         stringr::str_detect(kalla_zon, "z1") ~ "Z1",
         stringr::str_detect(kalla_zon, "z2") ~ "Z2",
         stringr::str_detect(kalla_zon, "z3") ~ "Z3",
-        TRUE                                  ~ NA_character_
+        TRUE ~ NA_character_
       )
     ) %>%
     dplyr::filter(!is.na(zon)) %>%
@@ -360,9 +367,11 @@ fetch.plot.zone_comparison <- function(summaries, myruns,
       ggplot2::vars(zon),
       nrow = 1,
       labeller = ggplot2::labeller(
-        zon = c(Z1 = "Z1 \u2014 L\u00e5gintensiv",
-                Z2 = "Z2 \u2014 Tr\u00f6skel",
-                Z3 = "Z3 \u2014 H\u00f6gintensiv")
+        zon = c(
+          Z1 = "Z1 \u2014 L\u00e5gintensiv",
+          Z2 = "Z2 \u2014 Tr\u00f6skel",
+          Z3 = "Z3 \u2014 H\u00f6gintensiv"
+        )
       )
     ) +
     ggplot2::scale_x_continuous(

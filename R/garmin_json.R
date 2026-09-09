@@ -23,11 +23,15 @@
     jsonlite::fromJSON(path, simplifyVector = TRUE),
     error = function(e) {
       warning("Kunde inte tolka summary-JSON: ", basename(path),
-              " (", conditionMessage(e), ")", call. = FALSE)
+        " (", conditionMessage(e), ")",
+        call. = FALSE
+      )
       return(NULL)
     }
   )
-  if (is.null(raw)) return(NULL)
+  if (is.null(raw)) {
+    return(NULL)
+  }
 
   # Determine format by presence of summaryDTO key
   is_old_format <- !is.null(raw[["summaryDTO"]])
@@ -39,21 +43,21 @@
 
   if (is_old_format) {
     dto <- raw[["summaryDTO"]]
-    maxHR           <- .get(dto, "maxHR")
-    vO2MaxValue     <- .get(dto, "vO2MaxValue")
-    hrTimeInZone_1  <- .get(dto, "hrTimeInZone_1")
-    hrTimeInZone_2  <- .get(dto, "hrTimeInZone_2")
-    hrTimeInZone_3  <- .get(dto, "hrTimeInZone_3")
-    hrTimeInZone_4  <- .get(dto, "hrTimeInZone_4")
-    hrTimeInZone_5  <- .get(dto, "hrTimeInZone_5")
+    maxHR <- .get(dto, "maxHR")
+    vO2MaxValue <- .get(dto, "vO2MaxValue")
+    hrTimeInZone_1 <- .get(dto, "hrTimeInZone_1")
+    hrTimeInZone_2 <- .get(dto, "hrTimeInZone_2")
+    hrTimeInZone_3 <- .get(dto, "hrTimeInZone_3")
+    hrTimeInZone_4 <- .get(dto, "hrTimeInZone_4")
+    hrTimeInZone_5 <- .get(dto, "hrTimeInZone_5")
   } else {
-    maxHR           <- .get(raw, "maxHR")
-    vO2MaxValue     <- .get(raw, "vO2MaxValue")
-    hrTimeInZone_1  <- .get(raw, "hrTimeInZone_1")
-    hrTimeInZone_2  <- .get(raw, "hrTimeInZone_2")
-    hrTimeInZone_3  <- .get(raw, "hrTimeInZone_3")
-    hrTimeInZone_4  <- .get(raw, "hrTimeInZone_4")
-    hrTimeInZone_5  <- .get(raw, "hrTimeInZone_5")
+    maxHR <- .get(raw, "maxHR")
+    vO2MaxValue <- .get(raw, "vO2MaxValue")
+    hrTimeInZone_1 <- .get(raw, "hrTimeInZone_1")
+    hrTimeInZone_2 <- .get(raw, "hrTimeInZone_2")
+    hrTimeInZone_3 <- .get(raw, "hrTimeInZone_3")
+    hrTimeInZone_4 <- .get(raw, "hrTimeInZone_4")
+    hrTimeInZone_5 <- .get(raw, "hrTimeInZone_5")
   }
 
   list(
@@ -76,7 +80,9 @@
     jsonlite::fromJSON(path, simplifyVector = TRUE),
     error = function(e) {
       warning("Kunde inte tolka details-JSON: ", basename(path),
-              " (", conditionMessage(e), ")", call. = FALSE)
+        " (", conditionMessage(e), ")",
+        call. = FALSE
+      )
       return(NULL)
     }
   )
@@ -124,9 +130,13 @@
 .parse_gconnect_timestamp <- function(filename) {
   # Extract the leading timestamp portion (up to the first underscore that
   # is followed by digits — the activityId)
-  ts_str <- sub("^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})[^_]*_.*$",
-                "\\1", filename)
-  if (identical(ts_str, filename)) return(as.POSIXct(NA))
+  ts_str <- sub(
+    "^(\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2})[^_]*_.*$",
+    "\\1", filename
+  )
+  if (identical(ts_str, filename)) {
+    return(as.POSIXct(NA))
+  }
   tryCatch(
     as.POSIXct(ts_str, format = "%Y-%m-%dT%H:%M:%S", tz = "UTC"),
     error = function(e) as.POSIXct(NA)
@@ -185,10 +195,10 @@ import_garmin_json <- function(gc_dir) {
 
   for (i in seq_along(summary_files)) {
     sum_path <- summary_files[[i]]
-    fname    <- basename(sum_path)
+    fname <- basename(sum_path)
 
     # Derive the prefix and details path from the summary filename
-    prefix       <- sub("_summary\\.json$", "", fname)
+    prefix <- sub("_summary\\.json$", "", fname)
     details_path <- file.path(gc_dir, paste0(prefix, "_details.json"))
 
     # Parse UTC timestamp from filename
@@ -291,8 +301,8 @@ import_garmin_json <- function(gc_dir) {
 #'   order; no rows are dropped.
 #' @export
 augment_summaries <- function(summaries, garmin_data,
-                               tolerance_secs = 120,
-                               force = FALSE) {
+                              tolerance_secs = 120,
+                              force = FALSE) {
   if (!("sessionStart" %in% names(summaries))) {
     stop("summaries saknar kolumnen 'sessionStart'.")
   }
@@ -359,11 +369,11 @@ augment_summaries <- function(summaries, garmin_data,
 
   # Work in UTC throughout
   session_utc <- as.POSIXct(summaries$sessionStart, tz = "UTC")
-  gc_ts       <- as.POSIXct(garmin_data$gc_timestamp_utc, tz = "UTC")
+  gc_ts <- as.POSIXct(garmin_data$gc_timestamp_utc, tz = "UTC")
 
-  matched_count   <- 0L
+  matched_count <- 0L
   ambiguous_count <- 0L
-  candidate_idx   <- which(needs_aug)
+  candidate_idx <- which(needs_aug)
 
   for (i in candidate_idx) {
     s_ts <- session_utc[[i]]
@@ -396,9 +406,10 @@ augment_summaries <- function(summaries, garmin_data,
 
   if (ambiguous_count > 0L) {
     warning(ambiguous_count,
-            " aktivitet(er) matchades mot fler än en JSON-fil;",
-            " närmaste tidsstampel användes.",
-            call. = FALSE)
+      " aktivitet(er) matchades mot fler än en JSON-fil;",
+      " närmaste tidsstampel användes.",
+      call. = FALSE
+    )
   }
 
   message(
@@ -444,7 +455,7 @@ load_garmin_json <- function(gc_dir,
   }
 
   # Load cached data
-  load(cache_path)  # loads 'garmin_data'
+  load(cache_path) # loads 'garmin_data'
   cache_mtime <- file.info(cache_path)$mtime
 
   # Find summary files newer than the cache
@@ -457,8 +468,10 @@ load_garmin_json <- function(gc_dir,
   new_files <- summary_files[file_mtimes > cache_mtime]
 
   if (length(new_files) == 0) {
-    message("Garmin JSON cache: ", nrow(garmin_data),
-            " aktiviteter (inga nya filer).")
+    message(
+      "Garmin JSON cache: ", nrow(garmin_data),
+      " aktiviteter (inga nya filer)."
+    )
     return(garmin_data)
   }
 
@@ -480,16 +493,20 @@ load_garmin_json <- function(gc_dir,
   # Remove any rows already in cache (by filename_prefix) and append
   if (nrow(new_data) > 0) {
     new_data <- new_data[!new_data$filename_prefix %in%
-                           garmin_data$filename_prefix, ]
+      garmin_data$filename_prefix, ]
   }
 
   if (nrow(new_data) > 0) {
     garmin_data <- dplyr::bind_rows(garmin_data, new_data)
-    message("Garmin JSON cache: +", nrow(new_data), " nya, ",
-            nrow(garmin_data), " totalt.")
+    message(
+      "Garmin JSON cache: +", nrow(new_data), " nya, ",
+      nrow(garmin_data), " totalt."
+    )
   } else {
-    message("Garmin JSON cache: ", nrow(garmin_data),
-            " aktiviteter (inga nya unika).")
+    message(
+      "Garmin JSON cache: ", nrow(garmin_data),
+      " aktiviteter (inga nya unika)."
+    )
   }
 
   save_atomic(garmin_data, file = cache_path)

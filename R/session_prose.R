@@ -81,7 +81,8 @@
     # session-taxonomy primer §Classification notes #4.
     hill =
       "Backintervaller — neuromuskulär drivkraft mot lutning.",
-    NA_character_)
+    NA_character_
+  )
 }
 
 # ---- Line 2: recovery hint + week-context triggers -------------------------
@@ -125,7 +126,8 @@
       "Hög återhämtningskostnad; räkna med 48–72 h innan full återhämtning.",
     hill =
       "Hög återhämtningskostnad; nästa kvalitetspass tidigast om 48 h.",
-    NA_character_)
+    NA_character_
+  )
 }
 
 # Z2-accumulation warning. Triggers when rolling 90-day Z2 fraction
@@ -136,10 +138,14 @@
 #   Stoggl2014: THR group showed no VO2peak improvement (-4.1%, ns).
 #   Implications: adaptive-signal-per-zone__implications.md §Z2 sessions.
 .line_z2_trap <- function(z2_frac_90d) {
-  if (!is.finite(z2_frac_90d) || z2_frac_90d <= 0.20) return(NULL)
+  if (!is.finite(z2_frac_90d) || z2_frac_90d <= 0.20) {
+    return(NULL)
+  }
   pct <- round(z2_frac_90d * 100)
-  paste0("Mellanzon-andelen senaste 90 dagarna ", pct,
-         "% — överväg fler riktigt lugna pass eller skarpare intervaller.")
+  paste0(
+    "Mellanzon-andelen senaste 90 dagarna ", pct,
+    "% — överväg fler riktigt lugna pass eller skarpare intervaller."
+  )
 }
 
 # Z3-count-this-week guard. Source: Seiler2010 verbatim
@@ -148,7 +154,9 @@
 # without inducing excessive stress over the long term."
 # Implications: adaptive-signal-per-zone__implications.md §Z3 sessions.
 .line_z3_weekly <- function(z3_count_7d) {
-  if (!is.finite(z3_count_7d)) return(NULL)
+  if (!is.finite(z3_count_7d)) {
+    return(NULL)
+  }
   if (z3_count_7d == 2) {
     return(paste0("Andra kvalitetspasset i veckan — på spåret."))
   }
@@ -165,16 +173,25 @@
 # Sources cited per branch (numeric thresholds = TrainingPeaks practitioner
 # convention, not validated for runners — labelled as such in the primer).
 .line_tsb_context <- function(pmc_today, pmc_prev = NULL) {
-  if (is.null(pmc_today)) return(NULL)
+  if (is.null(pmc_today)) {
+    return(NULL)
+  }
   tsb <- pmc_today$tsb
   ctl <- pmc_today$ctl
-  if (!is.finite(tsb) || !is.finite(ctl)) return(NULL)
+  if (!is.finite(tsb) || !is.finite(ctl)) {
+    return(NULL)
+  }
 
   ctl_delta_str <- if (!is.null(pmc_prev) && is.finite(pmc_prev$ctl)) {
     d <- ctl - pmc_prev$ctl
-    if (abs(d) >= 0.1) sprintf(" CTL %s.", fmt_dec_sv(d, signed = TRUE))
-    else ""
-  } else ""
+    if (abs(d) >= 0.1) {
+      sprintf(" CTL %s.", fmt_dec_sv(d, signed = TRUE))
+    } else {
+      ""
+    }
+  } else {
+    ""
+  }
 
   ctl_rising <- !is.null(pmc_prev) && is.finite(pmc_prev$ctl) &&
     (ctl - pmc_prev$ctl) > 0
@@ -240,20 +257,26 @@
 #'   \code{"Ingen data."} when summaries is empty for the sport.
 #' @export
 session_prose <- function(summaries, sport = "running", on_date = NULL,
-                           hr_max = NULL, hr_rest = NULL,
-                           include_tsb = TRUE,
-                           health_daily = NULL,
-                           readiness = NULL,
-                           trigger_source = "any") {
-  if (is.null(summaries) || nrow(summaries) == 0) return("Ingen data.")
+                          hr_max = NULL, hr_rest = NULL,
+                          include_tsb = TRUE,
+                          health_daily = NULL,
+                          readiness = NULL,
+                          trigger_source = "any") {
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    return("Ingen data.")
+  }
 
   runs <- .filter_sport(summaries, sport)
-  if (nrow(runs) == 0) return("Ingen data.")
+  if (nrow(runs) == 0) {
+    return("Ingen data.")
+  }
 
   # Pick latest with TCX priority when triggered from Garmin. Otherwise
   # fall through to plain tail() behaviour. Returns NULL on empty.
   latest <- .session_latest_garmin(runs, trigger_source = trigger_source)
-  if (is.null(latest) || nrow(latest) == 0) return("Ingen data.")
+  if (is.null(latest) || nrow(latest) == 0) {
+    return("Ingen data.")
+  }
   if (is.null(on_date)) on_date <- as.Date(latest$sessionStart[1])
   # Coerce caller-supplied "YYYY-MM-DD" strings so downstream date
   # arithmetic (e.g. `on_date - 1` inside .day_state_line()) works for
@@ -287,12 +310,14 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
   if (isTRUE(include_tsb)) {
     if (is.null(readiness) && is.null(health_daily)) {
       health_daily <- tryCatch(load_health_data(),
-                                error = function(e) NULL)
+        error = function(e) NULL
+      )
     }
     state <- tryCatch(
       .day_state_line(summaries, health_daily, on_date,
-                       hr_max = hr_max, hr_rest = hr_rest,
-                       readiness = readiness),
+        hr_max = hr_max, hr_rest = hr_rest,
+        readiness = readiness
+      ),
       error = function(e) NULL
     )
     if (!is.null(state)) parts <- c(parts, state)
@@ -313,8 +338,10 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
     if (!is.null(extra)) parts <- c(parts, extra)
   }
   if (identical(cls$zone, "Z3")) {
-    z3n <- session_z3_count(summaries, on_date = on_date, days = 7,
-                             hr_max = hr_max)
+    z3n <- session_z3_count(summaries,
+      on_date = on_date, days = 7,
+      hr_max = hr_max
+    )
     extra <- .line_z3_weekly(z3n)
     if (!is.null(extra)) parts <- c(parts, extra)
   }
@@ -335,13 +362,15 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
 # Falls back to "any source" when no TCX is present so an HAE-only
 # day still gets prose instead of "Ingen data.".
 .session_latest_garmin <- function(runs, trigger_source = "any") {
-  if (is.null(runs) || nrow(runs) == 0) return(NULL)
+  if (is.null(runs) || nrow(runs) == 0) {
+    return(NULL)
+  }
   filtered <- runs
   if (identical(trigger_source, "garmin") &&
-      "source" %in% names(runs)) {
+    "source" %in% names(runs)) {
     src <- runs$source
     filtered <- runs[is.na(src) | src == "tcx", , drop = FALSE]
-    if (nrow(filtered) == 0) filtered <- runs  # HAE-only fallback
+    if (nrow(filtered) == 0) filtered <- runs # HAE-only fallback
   }
   filtered <- filtered %>% dplyr::arrange(.data$sessionStart)
   utils::tail(filtered, 1)
@@ -360,15 +389,17 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
 .session_other_today <- function(summaries, latest, on_date) {
   empty <- tibble::tibble()
   if (is.null(summaries) || !inherits(summaries, "data.frame") ||
-      nrow(summaries) == 0) {
+    nrow(summaries) == 0) {
     return(empty)
   }
   on_date <- as.Date(on_date)
   latest_ts <- latest$sessionStart[1]
 
   summaries %>%
-    dplyr::filter(as.Date(.data$sessionStart) == on_date,
-                  .data$sessionStart != latest_ts)
+    dplyr::filter(
+      as.Date(.data$sessionStart) == on_date,
+      .data$sessionStart != latest_ts
+    )
 }
 
 # Format the other-passes-today line. Reads the same sport-day units as
@@ -377,13 +408,19 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
 # omitted — the same floor the dominant-effort and weekly stats use;
 # only the "Dagens pass" inventory shows everything.
 .session_today_context_line <- function(other_today, min_minutes = 20) {
-  if (is.null(other_today) || nrow(other_today) == 0) return(NULL)
+  if (is.null(other_today) || nrow(other_today) == 0) {
+    return(NULL)
+  }
   u <- .day_sport_units(other_today, classify = FALSE)
   u <- u[u$min >= min_minutes, , drop = FALSE]
-  if (nrow(u) == 0) return(NULL)
+  if (nrow(u) == 0) {
+    return(NULL)
+  }
   parts <- vapply(seq_len(nrow(u)), function(i) {
-    .per_sport_fragment(.sport_label_sv(u$sport[i]),
-                        u$n_segments[i], u$km[i], u$min[i])
+    .per_sport_fragment(
+      .sport_label_sv(u$sport[i]),
+      u$n_segments[i], u$km[i], u$min[i]
+    )
   }, character(1))
   paste0("Tidigare idag: ", paste(parts, collapse = " + "), ".")
 }
@@ -410,8 +447,10 @@ session_prose <- function(summaries, sport = "running", on_date = NULL,
 #' @return Appended prose; \code{base} unchanged when no triggers fire.
 #' @export
 session_prose_with_context <- function(base, summaries, cls,
-                                        on_date = Sys.Date()) {
-  if (is.null(cls) || cls$type == "unknown") return(base)
+                                       on_date = Sys.Date()) {
+  if (is.null(cls) || cls$type == "unknown") {
+    return(base)
+  }
   parts <- base
   if (cls$zone == "Z2") {
     z2 <- session_z2_fraction(summaries, on_date = on_date, days = 90)
@@ -459,17 +498,23 @@ session_prose_with_context <- function(base, summaries, cls,
     avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
     diff_sec <- if (is.na(avg_pace)) NA_real_ else (pace_val - avg_pace) * 60
     if (!is.na(diff_sec) && diff_sec < -5) {
-      positive <- paste0("Snabbare än månadens snitt (",
-                         dec_to_mmss(avg_pace), ")")
+      positive <- paste0(
+        "Snabbare än månadens snitt (",
+        dec_to_mmss(avg_pace), ")"
+      )
     } else if (!is.na(avg_km) && km > avg_km * 1.1) {
-      positive <- paste0("Längre än månadens snitt (",
-                         fmt_dec_sv(avg_km, trim_zero = TRUE), " km)")
+      positive <- paste0(
+        "Längre än månadens snitt (",
+        fmt_dec_sv(avg_km, trim_zero = TRUE), " km)"
+      )
     }
   } else if (nrow(this_month) >= 2) {
     avg_km <- mean(as.numeric(this_month$distance) / 1000, na.rm = TRUE)
     if (!is.na(avg_km) && km > avg_km * 1.1) {
-      positive <- paste0("Längre än månadens snitt (",
-                         fmt_dec_sv(avg_km, trim_zero = TRUE), " km)")
+      positive <- paste0(
+        "Längre än månadens snitt (",
+        fmt_dec_sv(avg_km, trim_zero = TRUE), " km)"
+      )
     }
   }
   if (is.null(positive)) {

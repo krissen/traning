@@ -26,7 +26,7 @@ test_that(".piecewise_score handles multi-segment breakpoints", {
   expect_equal(traning:::.piecewise_score(-1, bp), 50)
   expect_equal(traning:::.piecewise_score(0, bp), 75)
   expect_equal(traning:::.piecewise_score(1, bp), 100)
-  expect_equal(traning:::.piecewise_score(-1.5, bp), 25)  # midpoint -2...-1
+  expect_equal(traning:::.piecewise_score(-1.5, bp), 25) # midpoint -2...-1
 })
 
 # --- Component scoring --------------------------------------------------------
@@ -86,7 +86,7 @@ test_that(".weighted_composite redistributes on NA", {
   df <- data.frame(a = 80, b = NA_real_)
   w <- c(a = 0.5, b = 0.5)
   result <- traning:::.weighted_composite(df, w)
-  expect_equal(result$score, 80)  # only 'a' contributes, gets full weight
+  expect_equal(result$score, 80) # only 'a' contributes, gets full weight
   expect_equal(result$n_components, 1L)
 })
 
@@ -125,16 +125,26 @@ test_that(".consecutive_flag handles NA", {
 make_test_health <- function(n = 30) {
   dates <- seq(Sys.Date() - n, Sys.Date() - 1, by = "day")
   dplyr::bind_rows(
-    tibble::tibble(date = dates, metric = "heart_rate_variability",
-                   value = rnorm(n, 50, 10), source = "AW"),
-    tibble::tibble(date = dates, metric = "resting_heart_rate",
-                   value = rnorm(n, 52, 3), source = "AW"),
-    tibble::tibble(date = dates, metric = "sleep_totalSleep",
-                   value = rnorm(n, 7.2, 0.8), source = "AW"),
-    tibble::tibble(date = dates, metric = "sleep_deep",
-                   value = pmax(0, rnorm(n, 0.8, 0.2)), source = "AW"),
-    tibble::tibble(date = dates, metric = "sleep_rem",
-                   value = pmax(0, rnorm(n, 1.5, 0.3)), source = "AW")
+    tibble::tibble(
+      date = dates, metric = "heart_rate_variability",
+      value = rnorm(n, 50, 10), source = "AW"
+    ),
+    tibble::tibble(
+      date = dates, metric = "resting_heart_rate",
+      value = rnorm(n, 52, 3), source = "AW"
+    ),
+    tibble::tibble(
+      date = dates, metric = "sleep_totalSleep",
+      value = rnorm(n, 7.2, 0.8), source = "AW"
+    ),
+    tibble::tibble(
+      date = dates, metric = "sleep_deep",
+      value = pmax(0, rnorm(n, 0.8, 0.2)), source = "AW"
+    ),
+    tibble::tibble(
+      date = dates, metric = "sleep_rem",
+      value = pmax(0, rnorm(n, 1.5, 0.3)), source = "AW"
+    )
   )
 }
 
@@ -159,15 +169,17 @@ make_test_summaries <- function(n = 20) {
 test_that("compute_readiness returns expected columns", {
   set.seed(42)
   hd <- make_test_health(30)
-  s  <- make_test_summaries(15)
+  s <- make_test_summaries(15)
   result <- suppressWarnings(compute_readiness(hd, s))
 
-  expected_cols <- c("date", "readiness_score", "readiness_status",
-                     "ln_rmssd", "hrv_z", "hrv_score", "hrv_flag",
-                     "resting_hr", "rhr_deviation", "rhr_score", "rhr_flag",
-                     "sleep_total", "sleep_score", "sleep_flag",
-                     "daily_trimp", "atl", "ctl", "tsb", "trimp_score",
-                     "load_flag", "data_quality")
+  expected_cols <- c(
+    "date", "readiness_score", "readiness_status",
+    "ln_rmssd", "hrv_z", "hrv_score", "hrv_flag",
+    "resting_hr", "rhr_deviation", "rhr_score", "rhr_flag",
+    "sleep_total", "sleep_score", "sleep_flag",
+    "daily_trimp", "atl", "ctl", "tsb", "trimp_score",
+    "load_flag", "data_quality"
+  )
   for (col in expected_cols) {
     expect_true(col %in% names(result), info = paste("Missing column:", col))
   }
@@ -176,7 +188,7 @@ test_that("compute_readiness returns expected columns", {
 test_that("compute_readiness scores are 0-100", {
   set.seed(42)
   hd <- make_test_health(30)
-  s  <- make_test_summaries(15)
+  s <- make_test_summaries(15)
   result <- suppressWarnings(compute_readiness(hd, s))
 
   scores <- result$readiness_score[!is.na(result$readiness_score)]
@@ -186,7 +198,7 @@ test_that("compute_readiness scores are 0-100", {
 test_that("compute_readiness status is one of three values", {
   set.seed(42)
   hd <- make_test_health(30)
-  s  <- make_test_summaries(15)
+  s <- make_test_summaries(15)
   result <- suppressWarnings(compute_readiness(hd, s))
 
   statuses <- result$readiness_status[!is.na(result$readiness_status)]
@@ -196,7 +208,7 @@ test_that("compute_readiness status is one of three values", {
 test_that("compute_readiness data_quality reflects component availability", {
   set.seed(42)
   hd <- make_test_health(30)
-  s  <- make_test_summaries(15)
+  s <- make_test_summaries(15)
   result <- suppressWarnings(compute_readiness(hd, s))
 
   full_rows <- result[result$data_quality == "full" & !is.na(result$data_quality), ]
@@ -212,7 +224,7 @@ test_that("compute_readiness data_quality reflects component availability", {
 test_that("compute_readiness respects after/before filtering", {
   set.seed(42)
   hd <- make_test_health(30)
-  s  <- make_test_summaries(15)
+  s <- make_test_summaries(15)
   cutoff <- Sys.Date() - 10
   result <- suppressWarnings(
     compute_readiness(hd, s, after = cutoff)
@@ -227,9 +239,9 @@ test_that("compute_readiness(pmc=) returns identical results to the default path
   # internal compute_pmc was doing extra work beyond what's exposed.
   set.seed(42)
   hd <- make_test_health(30)
-  s  <- make_test_summaries(15)
+  s <- make_test_summaries(15)
   pmc <- suppressWarnings(compute_pmc(s))
-  r_default  <- suppressWarnings(compute_readiness(hd, s))
+  r_default <- suppressWarnings(compute_readiness(hd, s))
   r_injected <- suppressWarnings(compute_readiness(hd, s, pmc = pmc))
   expect_identical(r_default, r_injected)
 })

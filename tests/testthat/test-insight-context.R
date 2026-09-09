@@ -6,9 +6,13 @@ test_that(".insight_streak_line fires after 3+ days off", {
   today <- as.Date("2026-05-11")
   # Last run was 4 days ago (2026-05-07), today has another run.
   summaries <- tibble::tibble(
-    sessionStart = as.POSIXct(c("2026-05-07 08:00:00",
-                                 "2026-05-11 08:00:00"),
-                               tz = "UTC"),
+    sessionStart = as.POSIXct(
+      c(
+        "2026-05-07 08:00:00",
+        "2026-05-11 08:00:00"
+      ),
+      tz = "UTC"
+    ),
     distance = c(8000, 6000),
     sport = "running"
   )
@@ -23,19 +27,29 @@ test_that(".insight_streak_line threshold uses calendar-days arithmetic", {
   # boundary explicitly so the Swedish "på N dagar" wording stays
   # honest.
   today <- as.Date("2026-05-10")
-  s_three <- tibble::tibble(  # 3-day gap → should fire
-    sessionStart = as.POSIXct(c("2026-05-07 08:00:00",
-                                 "2026-05-10 08:00:00"),
-                               tz = "UTC"),
+  s_three <- tibble::tibble( # 3-day gap → should fire
+    sessionStart = as.POSIXct(
+      c(
+        "2026-05-07 08:00:00",
+        "2026-05-10 08:00:00"
+      ),
+      tz = "UTC"
+    ),
     distance = c(8000, 6000),
     sport = "running"
   )
-  expect_match(traning:::.insight_streak_line(s_three, today),
-               "på 3 dagar")
-  s_two <- tibble::tibble(    # 2-day gap → must NOT fire
-    sessionStart = as.POSIXct(c("2026-05-08 08:00:00",
-                                 "2026-05-10 08:00:00"),
-                               tz = "UTC"),
+  expect_match(
+    traning:::.insight_streak_line(s_three, today),
+    "på 3 dagar"
+  )
+  s_two <- tibble::tibble( # 2-day gap → must NOT fire
+    sessionStart = as.POSIXct(
+      c(
+        "2026-05-08 08:00:00",
+        "2026-05-10 08:00:00"
+      ),
+      tz = "UTC"
+    ),
     distance = c(8000, 6000),
     sport = "running"
   )
@@ -45,9 +59,13 @@ test_that(".insight_streak_line threshold uses calendar-days arithmetic", {
 test_that(".insight_streak_line is silent when ran yesterday", {
   today <- as.Date("2026-05-11")
   summaries <- tibble::tibble(
-    sessionStart = as.POSIXct(c("2026-05-10 08:00:00",
-                                 "2026-05-11 08:00:00"),
-                               tz = "UTC"),
+    sessionStart = as.POSIXct(
+      c(
+        "2026-05-10 08:00:00",
+        "2026-05-11 08:00:00"
+      ),
+      tz = "UTC"
+    ),
     distance = c(8000, 6000),
     sport = "running"
   )
@@ -75,9 +93,13 @@ test_that(".insight_streak_line tolerates NA sessionStart rows", {
   # leaving the remaining valid rows to drive the decision.
   today <- as.Date("2026-05-11")
   summaries <- tibble::tibble(
-    sessionStart = as.POSIXct(c(NA, "2026-05-07 08:00:00",
-                                 "2026-05-11 08:00:00"),
-                               tz = "UTC"),
+    sessionStart = as.POSIXct(
+      c(
+        NA, "2026-05-07 08:00:00",
+        "2026-05-11 08:00:00"
+      ),
+      tz = "UTC"
+    ),
     distance = c(0, 8000, 6000),
     sport = "running"
   )
@@ -103,9 +125,11 @@ test_that(".insight_streak_line tolerates NA sessionStart rows", {
     distance = per_km * 1000,
     sport = "running",
     durationMoving = as.difftime(rep(per_km * 6, length(d)),
-                                  units = "mins"),
-    duration       = as.difftime(rep(per_km * 6, length(d)),
-                                  units = "mins"),
+      units = "mins"
+    ),
+    duration = as.difftime(rep(per_km * 6, length(d)),
+      units = "mins"
+    ),
     avgHeartRateMoving = 140
   )
 }
@@ -124,14 +148,18 @@ test_that(".insight_acwr_line warns on elevated ACWR", {
   s <- .fixture_acwr_summaries(today, weekly_km = 30)
   # Add a heavy spike in the most recent 3 days
   spike <- tibble::tibble(
-    sessionStart = as.POSIXct(c("2026-05-09 08:00:00",
-                                 "2026-05-10 08:00:00",
-                                 "2026-05-11 08:00:00"),
-                               tz = "UTC"),
+    sessionStart = as.POSIXct(
+      c(
+        "2026-05-09 08:00:00",
+        "2026-05-10 08:00:00",
+        "2026-05-11 08:00:00"
+      ),
+      tz = "UTC"
+    ),
     distance = c(25000, 25000, 25000),
     sport = "running",
     durationMoving = as.difftime(rep(180, 3), units = "mins"),
-    duration       = as.difftime(rep(180, 3), units = "mins"),
+    duration = as.difftime(rep(180, 3), units = "mins"),
     avgHeartRateMoving = 140
   )
   s_spike <- dplyr::bind_rows(s, spike)
@@ -182,7 +210,7 @@ test_that(".insight_context_line returns streak before ACWR", {
     distance = 25000,
     sport = "running",
     durationMoving = as.difftime(180, units = "mins"),
-    duration       = as.difftime(180, units = "mins"),
+    duration = as.difftime(180, units = "mins"),
     avgHeartRateMoving = 140
   )
   s <- dplyr::bind_rows(s, comeback)

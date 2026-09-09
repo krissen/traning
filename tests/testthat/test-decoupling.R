@@ -10,8 +10,8 @@ make_dc_summaries <- function(n = 10) {
     sessionStart = as.POSIXct(dates),
     sport = "running",
     distance = runif(n, 8000, 15000),
-    avgSpeedMoving = runif(n, 2.5, 3.0),  # ~5:30-6:40/km
-    avgPaceMoving = runif(n, 5.5, 6.5),   # slower than 5:00
+    avgSpeedMoving = runif(n, 2.5, 3.0), # ~5:30-6:40/km
+    avgPaceMoving = runif(n, 5.5, 6.5), # slower than 5:00
     avgHeartRateMoving = runif(n, 140, 160),
     durationMoving = as.difftime(runif(n, 50, 80), units = "mins")
   )
@@ -35,15 +35,17 @@ make_dc_myruns <- function(summaries,
     mid <- floor(usable / 2)
 
     speed <- c(
-      rep(first_speed, warmup),       # warmup (will be excluded)
-      rep(first_speed, mid),           # first half
-      rep(second_speed, usable - mid)  # second half
+      rep(first_speed, warmup), # warmup (will be excluded)
+      rep(first_speed, mid), # first half
+      rep(second_speed, usable - mid) # second half
     )
     heart_rate <- rep(hr, n_total)
 
     session_df <- data.frame(
-      time = seq(from = as.POSIXct("2025-01-01 08:00:00"),
-                 by = 1, length.out = n_total),
+      time = seq(
+        from = as.POSIXct("2025-01-01 08:00:00"),
+        by = 1, length.out = n_total
+      ),
       speed = speed,
       heart_rate = heart_rate
     )
@@ -63,22 +65,26 @@ test_that("compute_decoupling returns tibble with expected columns", {
   myruns <- make_dc_myruns(test_summaries_dc)
   result <- compute_decoupling(test_summaries_dc, myruns)
   expect_s3_class(result, "tbl_df")
-  expected_cols <- c("sessionStart", "distance_km", "duration_min",
-                     "avg_pace", "avg_hr", "ratio_first", "ratio_second",
-                     "decoupling_pct", "decoupling_rolling28", "temperature",
-                     "capped")
+  expected_cols <- c(
+    "sessionStart", "distance_km", "duration_min",
+    "avg_pace", "avg_hr", "ratio_first", "ratio_second",
+    "decoupling_pct", "decoupling_rolling28", "temperature",
+    "capped"
+  )
   expect_true(all(expected_cols %in% names(result)))
 })
 
 test_that("compute_decoupling marks |decoupling| > cap_pct as capped, doesn't drop", {
   # Force an extreme decoupling: speed 3.0 → 1.0 m/s, decoupling ~67 %.
   myruns <- make_dc_myruns(test_summaries_dc,
-                           first_speed = 3.0, second_speed = 1.0, hr = 150)
+    first_speed = 3.0, second_speed = 1.0, hr = 150
+  )
   # Use loose half_diff filter so we don't reject these as fartlek
   res <- suppressWarnings(
     compute_decoupling(test_summaries_dc, myruns,
-                       max_half_speed_diff_pct = 99,
-                       cap_pct = 25)
+      max_half_speed_diff_pct = 99,
+      cap_pct = 25
+    )
   )
   expect_gt(nrow(res), 0)
   expect_true(any(res$capped))
@@ -92,16 +98,21 @@ test_that("rolling28 ignores capped sessions", {
   # Mix one extreme outlier in with otherwise normal data
   sm <- make_dc_summaries(8)
   myruns <- make_dc_myruns(sm,
-                           first_speed = 3.0, second_speed = 2.7, hr = 150)
+    first_speed = 3.0, second_speed = 2.7, hr = 150
+  )
   # Replace the last session's per-second data with an extreme decoupling
-  warmup <- 600; mid <- floor((3600 - warmup) / 2)
-  myruns[[length(myruns)]]$speed <- c(rep(3.0, warmup),
-                                       rep(3.0, mid),
-                                       rep(0.5, 3600 - warmup - mid))
+  warmup <- 600
+  mid <- floor((3600 - warmup) / 2)
+  myruns[[length(myruns)]]$speed <- c(
+    rep(3.0, warmup),
+    rep(3.0, mid),
+    rep(0.5, 3600 - warmup - mid)
+  )
   res <- suppressWarnings(
     compute_decoupling(sm, myruns,
-                       max_half_speed_diff_pct = 99,
-                       cap_pct = 25)
+      max_half_speed_diff_pct = 99,
+      cap_pct = 25
+    )
   )
   # Rolling on the capped session itself should be NA or ignore the spike
   capped_row <- res[res$capped, ]
@@ -113,7 +124,8 @@ test_that("compute_decoupling calculates known decoupling value", {
   # Second half: speed 2.7 m/s, HR 150 → ratio = 2.7/150 = 0.018
   # Decoupling = 100 * (0.020 - 0.018) / 0.020 = 10%
   myruns <- make_dc_myruns(test_summaries_dc,
-                           first_speed = 3.0, second_speed = 2.7, hr = 150)
+    first_speed = 3.0, second_speed = 2.7, hr = 150
+  )
   result <- compute_decoupling(test_summaries_dc, myruns)
   expect_gt(nrow(result), 0)
   # Allow tolerance for rolling mean smoothing on speed
@@ -122,7 +134,8 @@ test_that("compute_decoupling calculates known decoupling value", {
 
 test_that("compute_decoupling returns ~0% for constant pace", {
   myruns <- make_dc_myruns(test_summaries_dc,
-                           first_speed = 3.0, second_speed = 3.0, hr = 150)
+    first_speed = 3.0, second_speed = 3.0, hr = 150
+  )
   result <- compute_decoupling(test_summaries_dc, myruns)
   expect_gt(nrow(result), 0)
   expect_true(all(abs(result$decoupling_pct) < 1))
@@ -130,7 +143,8 @@ test_that("compute_decoupling returns ~0% for constant pace", {
 
 test_that("compute_decoupling returns negative for negative splits", {
   myruns <- make_dc_myruns(test_summaries_dc,
-                           first_speed = 2.7, second_speed = 3.0, hr = 150)
+    first_speed = 2.7, second_speed = 3.0, hr = 150
+  )
   result <- compute_decoupling(test_summaries_dc, myruns)
   expect_gt(nrow(result), 0)
   expect_true(all(result$decoupling_pct < 0))
@@ -157,7 +171,7 @@ test_that("compute_decoupling filters short runs (<45 min)", {
 
 test_that("compute_decoupling filters fast pace (<5:00/km)", {
   fast <- test_summaries_dc
-  fast$avgPaceMoving[1:3] <- 4.5  # faster than 5:00
+  fast$avgPaceMoving[1:3] <- 4.5 # faster than 5:00
   myruns <- make_dc_myruns(test_summaries_dc)
   result <- compute_decoupling(fast, myruns)
   full <- compute_decoupling(test_summaries_dc, myruns)
@@ -191,10 +205,13 @@ test_that("compute_decoupling disables pace ceiling for multi-sport buckets", {
   # endurance sessions).
   mixed <- test_summaries_dc
   mixed$sport <- rep(c("running", "cycling", "walking", "swimming"),
-                     length.out = nrow(mixed))
+    length.out = nrow(mixed)
+  )
   mixed$avgPaceMoving <- ifelse(mixed$sport == "cycling", 2.0,
-                                ifelse(mixed$sport == "running", 5.5,
-                                ifelse(mixed$sport == "walking", 8.0, 18.0)))
+    ifelse(mixed$sport == "running", 5.5,
+      ifelse(mixed$sport == "walking", 8.0, 18.0)
+    )
+  )
   myruns <- make_dc_myruns(test_summaries_dc)
   result <- compute_decoupling(mixed, myruns, sport = "endurance")
   expect_equal(nrow(result), nrow(mixed))
@@ -218,7 +235,7 @@ test_that("compute_decoupling unknown single sport disables pace ceiling", {
   # session and only duration / steady-state filters apply.
   weird <- test_summaries_dc
   weird$sport <- "yoga"
-  weird$avgPaceMoving <- 4.0  # would fail running's 5.0 cutoff
+  weird$avgPaceMoving <- 4.0 # would fail running's 5.0 cutoff
   myruns <- make_dc_myruns(test_summaries_dc)
   result <- compute_decoupling(weird, myruns, sport = "yoga")
   expect_gt(nrow(result), 0)
@@ -240,7 +257,7 @@ test_that("compute_decoupling handles missing speed column", {
   myruns[[1]] <- data.frame(
     time = seq(from = as.POSIXct("2025-01-01"), by = 1, length.out = 3600),
     heart_rate = rep(150, 3600)
-  )  # no speed column
+  ) # no speed column
   expect_warning(
     result <- compute_decoupling(test_summaries_dc, myruns),
     "sessioner hoppades"
@@ -250,7 +267,7 @@ test_that("compute_decoupling handles missing speed column", {
 
 test_that("compute_decoupling returns empty tibble for no qualifying sessions", {
   empty_summ <- test_summaries_dc
-  empty_summ$sport <- "cycling"  # all non-running
+  empty_summ$sport <- "cycling" # all non-running
   myruns <- make_dc_myruns(test_summaries_dc)
   result <- compute_decoupling(empty_summ, myruns)
   expect_equal(nrow(result), 0)
@@ -275,10 +292,12 @@ test_that("compute_decoupling temperature is NA when column missing", {
 test_that("compute_decoupling excludes non-steady-state sessions", {
   # First half at 2.0 m/s, second half at 3.5 m/s → 43% difference → excluded
   myruns <- make_dc_myruns(test_summaries_dc,
-                           first_speed = 2.0, second_speed = 3.5, hr = 150)
+    first_speed = 2.0, second_speed = 3.5, hr = 150
+  )
   expect_warning(
     result <- compute_decoupling(test_summaries_dc, myruns,
-                                 max_half_speed_diff_pct = 10),
+      max_half_speed_diff_pct = 10
+    ),
     "sessioner hoppades"
   )
   expect_equal(nrow(result), 0)
@@ -287,25 +306,30 @@ test_that("compute_decoupling excludes non-steady-state sessions", {
 test_that("compute_decoupling keeps steady-state sessions", {
   # First half at 3.0, second half at 2.85 → 5% difference → kept
   myruns <- make_dc_myruns(test_summaries_dc,
-                           first_speed = 3.0, second_speed = 2.85, hr = 150)
+    first_speed = 3.0, second_speed = 2.85, hr = 150
+  )
   result <- compute_decoupling(test_summaries_dc, myruns,
-                               max_half_speed_diff_pct = 10)
+    max_half_speed_diff_pct = 10
+  )
   expect_gt(nrow(result), 0)
 })
 
 test_that("compute_decoupling max_half_speed_diff_pct is adjustable", {
   # 15% speed difference between halves
   myruns <- make_dc_myruns(test_summaries_dc,
-                           first_speed = 3.0, second_speed = 2.5, hr = 150)
+    first_speed = 3.0, second_speed = 2.5, hr = 150
+  )
   # strict: should exclude (17% diff)
   expect_warning(
     strict <- compute_decoupling(test_summaries_dc, myruns,
-                                 max_half_speed_diff_pct = 10),
+      max_half_speed_diff_pct = 10
+    ),
     "sessioner hoppades"
   )
   # relaxed: should include
   relaxed <- compute_decoupling(test_summaries_dc, myruns,
-                                max_half_speed_diff_pct = 20)
+    max_half_speed_diff_pct = 20
+  )
   expect_lt(nrow(strict), nrow(relaxed))
 })
 
@@ -314,8 +338,10 @@ test_that("compute_decoupling max_half_speed_diff_pct is adjustable", {
 test_that("report_decoupling returns tibble with Swedish columns", {
   myruns <- make_dc_myruns(test_summaries_dc)
   dc_data <- compute_decoupling(test_summaries_dc, myruns)
-  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
-                          decoupling_data = dc_data)
+  bundle <- traning_data(
+    summaries = test_summaries_dc, myruns = myruns,
+    decoupling_data = dc_data
+  )
   result <- report_decoupling(bundle)
   expect_s3_class(result, "tbl_df")
   expected_cols <- c("Datum", "Km", "Tempo", "HR", "Dekopp %", "Dekopp 28d", "Temp")
@@ -325,8 +351,10 @@ test_that("report_decoupling returns tibble with Swedish columns", {
 test_that("report_decoupling respects n parameter", {
   myruns <- make_dc_myruns(test_summaries_dc)
   dc_data <- compute_decoupling(test_summaries_dc, myruns)
-  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
-                          decoupling_data = dc_data)
+  bundle <- traning_data(
+    summaries = test_summaries_dc, myruns = myruns,
+    decoupling_data = dc_data
+  )
   result <- report_decoupling(bundle, n = 3)
   expect_lte(nrow(result), 3)
 })
@@ -334,8 +362,10 @@ test_that("report_decoupling respects n parameter", {
 test_that("report_decoupling respects from/to date range", {
   myruns <- make_dc_myruns(test_summaries_dc)
   dc_data <- compute_decoupling(test_summaries_dc, myruns)
-  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
-                          decoupling_data = dc_data)
+  bundle <- traning_data(
+    summaries = test_summaries_dc, myruns = myruns,
+    decoupling_data = dc_data
+  )
   from <- Sys.Date() - 10
   to <- Sys.Date()
   result <- report_decoupling(bundle, from = from, to = to)
@@ -368,8 +398,10 @@ test_that("report_decoupling: cache-populated bundle skips recompute", {
   # recomputed from summaries/myruns instead of using the cache, this
   # value would not survive into the output.
   dc_data$decoupling_pct[1] <- 999
-  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
-                          decoupling_data = dc_data, sport = "running")
+  bundle <- traning_data(
+    summaries = test_summaries_dc, myruns = myruns,
+    decoupling_data = dc_data, sport = "running"
+  )
   result <- report_decoupling(bundle, n = nrow(dc_data))
   expect_s3_class(result, "tbl_df")
   expect_true(any(result[["Dekopp %"]] == 999))
@@ -377,8 +409,10 @@ test_that("report_decoupling: cache-populated bundle skips recompute", {
 
 test_that("report_decoupling: NULL decoupling_data triggers lazy-compute fallback", {
   myruns <- make_dc_myruns(test_summaries_dc)
-  bundle <- traning_data(summaries = test_summaries_dc, myruns = myruns,
-                          sport = "running")
+  bundle <- traning_data(
+    summaries = test_summaries_dc, myruns = myruns,
+    sport = "running"
+  )
   expect_null(bundle@decoupling_data)
   result <- report_decoupling(bundle)
   expect_s3_class(result, "tbl_df")
@@ -390,8 +424,10 @@ test_that("traning_data validator rejects decoupling_data with mismatched empty 
   myruns <- make_dc_myruns(test_summaries_dc)
   dc_data <- compute_decoupling(test_summaries_dc, myruns)
   expect_error(
-    traning_data(summaries = test_summaries_dc, myruns = myruns,
-                 decoupling_data = dc_data, sport = ""),
+    traning_data(
+      summaries = test_summaries_dc, myruns = myruns,
+      decoupling_data = dc_data, sport = ""
+    ),
     regexp = "sport"
   )
 })
@@ -417,7 +453,8 @@ test_that("load_decoupling force bypasses cache", {
 
   load_decoupling(test_summaries_dc, myruns, cache_path = cache_file)
   result <- load_decoupling(test_summaries_dc, myruns,
-                            cache_path = cache_file, force = TRUE)
+    cache_path = cache_file, force = TRUE
+  )
   expect_s3_class(result, "tbl_df")
 })
 
@@ -439,7 +476,8 @@ test_that("load_decoupling read_only=TRUE skips cache write", {
   Sys.sleep(1.1)
 
   result <- load_decoupling(test_summaries_dc, myruns,
-                            cache_path = cache_file, read_only = TRUE)
+    cache_path = cache_file, read_only = TRUE
+  )
   expect_s3_class(result, "tbl_df")
   mtime_after <- file.info(cache_file)$mtime
   expect_equal(mtime_before, mtime_after)
@@ -453,7 +491,8 @@ test_that("load_decoupling read_only=TRUE without existing cache still returns d
   on.exit(unlink(cache_file))
 
   result <- load_decoupling(test_summaries_dc, myruns,
-                            cache_path = cache_file, read_only = TRUE)
+    cache_path = cache_file, read_only = TRUE
+  )
   expect_s3_class(result, "tbl_df")
   expect_false(file.exists(cache_file))
 })
@@ -471,8 +510,9 @@ test_that("load_decoupling pace default is sport-aware (cycling)", {
   cache_file <- tempfile(fileext = ".RData")
   on.exit(unlink(cache_file))
   result <- load_decoupling(cyc, myruns,
-                            sport = "cycling",
-                            cache_path = cache_file)
+    sport = "cycling",
+    cache_path = cache_file
+  )
   expect_gt(nrow(result), 0)
 })
 
@@ -487,8 +527,9 @@ test_that("load_decoupling pace default disables filter for 'all'/buckets", {
   cache_file <- tempfile(fileext = ".RData")
   on.exit(unlink(cache_file))
   result <- load_decoupling(mixed, myruns,
-                            sport = "all",
-                            cache_path = cache_file)
+    sport = "all",
+    cache_path = cache_file
+  )
   expect_gt(nrow(result), 0)
 })
 
@@ -497,10 +538,14 @@ test_that("load_decoupling invalidates on parameter change", {
   cache_file <- tempfile(fileext = ".RData")
   on.exit(unlink(cache_file))
 
-  load_decoupling(test_summaries_dc, myruns, cache_path = cache_file,
-                  min_duration_min = 45)
+  load_decoupling(test_summaries_dc, myruns,
+    cache_path = cache_file,
+    min_duration_min = 45
+  )
   # Change parameter → should recompute
-  result <- load_decoupling(test_summaries_dc, myruns, cache_path = cache_file,
-                            min_duration_min = 30)
+  result <- load_decoupling(test_summaries_dc, myruns,
+    cache_path = cache_file,
+    min_duration_min = 30
+  )
   expect_s3_class(result, "tbl_df")
 })

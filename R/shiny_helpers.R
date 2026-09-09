@@ -80,15 +80,16 @@ load_traning_data <- function(data_dir = Sys.getenv("TRANING_DATA"), slots = NUL
     )
   }
 
-  cache_dir    <- file.path(data_dir, "cache")
+  cache_dir <- file.path(data_dir, "cache")
   db_summaries <- file.path(cache_dir, "summaries.RData")
-  db_myruns    <- file.path(cache_dir, "myruns.RData")
-  gc_json_dir  <- file.path(data_dir, "kristian", "filer", "gconnect")
+  db_myruns <- file.path(cache_dir, "myruns.RData")
+  gc_json_dir <- file.path(data_dir, "kristian", "filer", "gconnect")
 
   my_templist <- my_dbs_load(db_summaries, db_myruns,
-                              load_myruns = "myruns" %in% slots)
-  summaries   <- my_templist[["summaries"]]
-  myruns      <- my_templist[["myruns"]]
+    load_myruns = "myruns" %in% slots
+  )
+  summaries <- my_templist[["summaries"]]
+  myruns <- my_templist[["myruns"]]
   rm(my_templist)
 
   # Legacy Garmin-augment-fallback. `cli.R --import` augmenterar nu
@@ -98,9 +99,11 @@ load_traning_data <- function(data_dir = Sys.getenv("TRANING_DATA"), slots = NUL
   # (kedar, kailash, ev. andra hostar) re-importats minst en gång.
   augmented <- "garmin_matched" %in% names(summaries)
   if (dir.exists(gc_json_dir) && !augmented) {
-    message("load_traning_data: cache saknar garmin_matched-markören - ",
-            "augmenterar som fallback. Kör `traning import all` ",
-            "för permanent fix.")
+    message(
+      "load_traning_data: cache saknar garmin_matched-markören - ",
+      "augmenterar som fallback. Kör `traning import all` ",
+      "för permanent fix."
+    )
     garmin_data <- tryCatch(
       load_garmin_json(gc_json_dir),
       error = function(e) {
@@ -135,8 +138,9 @@ load_traning_data <- function(data_dir = Sys.getenv("TRANING_DATA"), slots = NUL
     # konsumenter. Cache-bygget sker fortfarande via `cli.R --decoupling`.
     decoupling_data <- tryCatch(
       load_decoupling(summaries, myruns,
-                      cache_path = decoupling_cache_path,
-                      read_only  = TRUE),
+        cache_path = decoupling_cache_path,
+        read_only  = TRUE
+      ),
       error = function(e) {
         warning("Kunde inte ladda decoupling-data: ", conditionMessage(e))
         NULL
@@ -240,9 +244,15 @@ load_myruns <- function(data_dir = Sys.getenv("TRANING_DATA")) {
 # NA om en custom date-range-picker har rensats — base-subset med
 # logiska NA ger 1 rad av NA, så NA måste tolkas som "ingen gräns".
 .normalize_range_bound <- function(x) {
-  if (is.null(x)) return(NULL)
-  if (length(x) == 0) return(NULL)
-  if (length(x) == 1 && is.na(x)) return(NULL)
+  if (is.null(x)) {
+    return(NULL)
+  }
+  if (length(x) == 0) {
+    return(NULL)
+  }
+  if (length(x) == 1 && is.na(x)) {
+    return(NULL)
+  }
   x
 }
 
@@ -261,12 +271,14 @@ load_myruns <- function(data_dir = Sys.getenv("TRANING_DATA")) {
 # mini-graferna). Privat (dot-prefix) — exportPattern("^[^\\.]") i
 # NAMESPACE hoppar över dot-funktioner. Konsumeras av mod_overview.R.
 .filter_readiness_range <- function(rd, from = NULL, to = NULL) {
-  if (is.null(rd) || nrow(rd) == 0) return(rd)
+  if (is.null(rd) || nrow(rd) == 0) {
+    return(rd)
+  }
   from <- .normalize_range_bound(from)
-  to   <- .normalize_range_bound(to)
+  to <- .normalize_range_bound(to)
   out <- rd[!is.na(rd$date), , drop = FALSE]
   if (!is.null(from)) out <- out[out$date >= from, , drop = FALSE]
-  if (!is.null(to))   out <- out[out$date <= to,   , drop = FALSE]
+  if (!is.null(to)) out <- out[out$date <= to, , drop = FALSE]
   out
 }
 
@@ -274,12 +286,14 @@ load_myruns <- function(data_dir = Sys.getenv("TRANING_DATA")) {
 # Halvöppet intervall [from, to) — se `.filter_readiness_range`. NA i
 # `sessionStart` droppas alltid, även när inga bounds är satta.
 .filter_running_range <- function(summaries, from = NULL, to = NULL) {
-  if (is.null(summaries) || nrow(summaries) == 0) return(summaries)
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    return(summaries)
+  }
   from <- .normalize_range_bound(from)
-  to   <- .normalize_range_bound(to)
+  to <- .normalize_range_bound(to)
   d <- as.Date(summaries$sessionStart)
   keep <- !is.na(d)
   if (!is.null(from)) keep <- keep & d >= from
-  if (!is.null(to))   keep <- keep & d <  to
+  if (!is.null(to)) keep <- keep & d < to
   summaries[keep, , drop = FALSE]
 }

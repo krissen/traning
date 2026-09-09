@@ -4,17 +4,21 @@
   # 40 days of running + some cycling for cross-sport tests
   base <- as.POSIXct("2026-01-01 08:00:00", tz = "UTC")
   data.frame(
-    sessionStart       = base + (0:39) * 86400,
-    sport              = rep(c("running", "running", "running",
-                                "cycling", "running"), 8),
-    distance           = rep(c(8000, 10000, 6000, 30000, 5000), 8),
-    durationMoving     = as.difftime(rep(c(40, 50, 30, 60, 25), 8),
-                                      units = "mins"),
+    sessionStart = base + (0:39) * 86400,
+    sport = rep(c(
+      "running", "running", "running",
+      "cycling", "running"
+    ), 8),
+    distance = rep(c(8000, 10000, 6000, 30000, 5000), 8),
+    durationMoving = as.difftime(rep(c(40, 50, 30, 60, 25), 8),
+      units = "mins"
+    ),
     avgHeartRateMoving = rep(c(140, 145, 142, 130, 138), 8),
-    avgSpeedMoving     = rep(c(3.33, 3.33, 3.33, 8.33, 3.33), 8),
-    avgPaceMoving      = rep(c(5.0, 5.0, 5.0, 2.0, 5.0), 8),
-    duration           = as.difftime(rep(c(40, 50, 30, 60, 25), 8),
-                                      units = "mins"),
+    avgSpeedMoving = rep(c(3.33, 3.33, 3.33, 8.33, 3.33), 8),
+    avgPaceMoving = rep(c(5.0, 5.0, 5.0, 2.0, 5.0), 8),
+    duration = as.difftime(rep(c(40, 50, 30, 60, 25), 8),
+      units = "mins"
+    ),
     stringsAsFactors = FALSE
   )
 }
@@ -37,8 +41,10 @@ test_that("compute_acwr auto-mode=km for sport='running'", {
 
 test_that("compute_acwr explicit mode overrides auto", {
   df <- .acwr_summaries()
-  trimp_force <- compute_acwr(df, sport = "running", mode = "trimp",
-                               hr_max = 185, hr_rest = 50)
+  trimp_force <- compute_acwr(df,
+    sport = "running", mode = "trimp",
+    hr_max = 185, hr_rest = 50
+  )
   expect_equal(attr(trimp_force, "mode"), "trimp")
   expect_true(all(is.na(trimp_force$daily_km)))
 
@@ -67,9 +73,11 @@ test_that("compute_acwr auto-mode treats NULL/'any' as whole-system", {
   for (s in list(NULL, "any")) {
     r <- compute_acwr(df, sport = s, hr_max = 185, hr_rest = 50)
     expect_equal(attr(r, "mode"), "trimp",
-                 info = paste("sport =", deparse(s)))
+      info = paste("sport =", deparse(s))
+    )
     expect_true(all(is.na(r$daily_km)),
-                info = paste("sport =", deparse(s)))
+      info = paste("sport =", deparse(s))
+    )
   }
 })
 
@@ -88,12 +96,16 @@ test_that("compute_acwr auto-mode picks TRIMP for multi-sport composites", {
   # "endurance" resolves to several sports (running+cycling+walking+
   # swimming+paddelsporter+rodd);
   # km doesn't compose across these, so auto-mode must pick TRIMP.
-  r_end <- compute_acwr(df, sport = "endurance",
-                         hr_max = 185, hr_rest = 50)
+  r_end <- compute_acwr(df,
+    sport = "endurance",
+    hr_max = 185, hr_rest = 50
+  )
   expect_equal(attr(r_end, "mode"), "trimp")
   # Explicit vector also triggers TRIMP mode
-  r_vec <- compute_acwr(df, sport = c("running", "cycling"),
-                         hr_max = 185, hr_rest = 50)
+  r_vec <- compute_acwr(df,
+    sport = c("running", "cycling"),
+    hr_max = 185, hr_rest = 50
+  )
   expect_equal(attr(r_vec, "mode"), "trimp")
 })
 
@@ -116,8 +128,10 @@ test_that("compute_trimp background-gate uses sport resolver", {
   )
   for (s in list("gång", "All", "endurance")) {
     label <- paste("sport =", deparse(s))
-    r <- compute_trimp(empty_summaries, hr_max = 185, hr_rest = 50,
-                       sport = s, health_daily = hd)
+    r <- compute_trimp(empty_summaries,
+      hr_max = 185, hr_rest = 50,
+      sport = s, health_daily = hd
+    )
     expect_true(nrow(r) > 0, label = label)
     expect_true(all(r$daily_trimp > 0), label = label)
   }
@@ -139,13 +153,17 @@ test_that("compute_acwr TRIMP mode threads health_daily background", {
   hd <- tibble::tibble(
     date = as.Date("2026-01-10") + 0:30,
     metric = "walking_running_distance",
-    value = 8,  # 8 km/day vardagsgång
+    value = 8, # 8 km/day vardagsgång
     source = "Apple Watch"
   )
-  with_bg <- compute_acwr(df, sport = "all", hr_max = 185, hr_rest = 50,
-                          health_daily = hd)
+  with_bg <- compute_acwr(df,
+    sport = "all", hr_max = 185, hr_rest = 50,
+    health_daily = hd
+  )
   no_bg <- compute_acwr(df, sport = "all", hr_max = 185, hr_rest = 50)
   # Total daily_load over the period should be higher with background
-  expect_gt(sum(with_bg$daily_load, na.rm = TRUE),
-            sum(no_bg$daily_load, na.rm = TRUE))
+  expect_gt(
+    sum(with_bg$daily_load, na.rm = TRUE),
+    sum(no_bg$daily_load, na.rm = TRUE)
+  )
 })

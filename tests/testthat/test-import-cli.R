@@ -15,7 +15,8 @@ run_cli_import <- function(traning_data, verbose = FALSE) {
   if (verbose) args <- c(args, "-v")
   out <- suppressWarnings(withr::with_envvar(
     c(TRANING_DATA = traning_data),
-    system2("Rscript", args = args, stdout = TRUE, stderr = TRUE)))
+    system2("Rscript", args = args, stdout = TRUE, stderr = TRUE)
+  ))
   paste(out, collapse = "\n")
 }
 
@@ -30,7 +31,8 @@ setup_swap_cache <- function(dir) {
   # to run and stamp garmin_matched, which is what the swap has to
   # trigger.
   dir.create(file.path(dir, "kristian", "filer", "gconnect"),
-             recursive = TRUE)
+    recursive = TRUE
+  )
   fixture <- testthat::test_path("fixtures", "sample1.tcx")
   file.copy(fixture, file.path(tcx_dir, "sample1.tcx"))
 
@@ -63,8 +65,10 @@ test_that("--import persists a one-for-one Garmin/Apple Watch swap", {
   out <- run_cli_import(tmp)
   expect_match(out, "Apple Watch", info = out)
 
-  after <- my_dbs_load(file.path(cache_dir, "summaries.RData"),
-                       file.path(cache_dir, "myruns.RData"))
+  after <- my_dbs_load(
+    file.path(cache_dir, "summaries.RData"),
+    file.path(cache_dir, "myruns.RData")
+  )
 
   # One row in, one row out: the count is unchanged, which is exactly
   # why the row count could not be the save trigger.
@@ -83,8 +87,10 @@ test_that("--import augments the row a swap brought in", {
 
   run_cli_import(tmp)
 
-  after <- my_dbs_load(file.path(cache_dir, "summaries.RData"),
-                       file.path(cache_dir, "myruns.RData"))
+  after <- my_dbs_load(
+    file.path(cache_dir, "summaries.RData"),
+    file.path(cache_dir, "myruns.RData")
+  )
   expect_true("garmin_matched" %in% names(after$summaries))
   expect_false(is.na(after$summaries$garmin_matched[1]))
 })
@@ -170,8 +176,11 @@ run_cli_dedup <- function(traning_data, extra = character(0)) {
   cli <- file.path(testthat::test_path("..", ".."), "inst", "cli.R")
   out <- suppressWarnings(withr::with_envvar(
     c(TRANING_DATA = traning_data),
-    system2("Rscript", args = c(cli, "--dedup", extra),
-            stdout = TRUE, stderr = TRUE)))
+    system2("Rscript",
+      args = c(cli, "--dedup", extra),
+      stdout = TRUE, stderr = TRUE
+    )
+  ))
   paste(out, collapse = "\n")
 }
 
@@ -244,7 +253,8 @@ write_hae_json <- function(dir, name, start, distance_km, duration_s) {
     avgHeartRate = list(qty = 140, units = "count/min")
   ))))
   jsonlite::write_json(payload, file.path(dir, paste0(name, ".json")),
-                       auto_unbox = TRUE, null = "null")
+    auto_unbox = TRUE, null = "null"
+  )
 }
 
 # An empty cache plus whichever sources the caller asks for.
@@ -253,15 +263,18 @@ setup_sources <- function(dir, tcx = FALSE, hae = FALSE) {
   dir.create(cache_dir, recursive = TRUE)
   dir.create(file.path(dir, "kristian", "filer", "tcx"), recursive = TRUE)
   if (tcx) {
-    file.copy(testthat::test_path("fixtures", "sample1.tcx"),
-              file.path(dir, "kristian", "filer", "tcx", "sample1.tcx"))
+    file.copy(
+      testthat::test_path("fixtures", "sample1.tcx"),
+      file.path(dir, "kristian", "filer", "tcx", "sample1.tcx")
+    )
   }
   hae_dir <- file.path(dir, "kristian", "health_export", "workouts")
   dir.create(hae_dir, recursive = TRUE)
   if (hae) {
     write_hae_json(hae_dir, "aw_session",
-                   as.POSIXct("2026-07-04 08:00:00", tz = "UTC"),
-                   distance_km = 7.5, duration_s = 2400)
+      as.POSIXct("2026-07-04 08:00:00", tz = "UTC"),
+      distance_km = 7.5, duration_s = 2400
+    )
   }
   summaries <- data.frame()
   myruns <- list()
@@ -293,14 +306,17 @@ test_that("--import reports every session of a mixed import", {
 
   expect_match(out, "Import: 2 pass", info = out)
 
-  after <- my_dbs_load(file.path(cache_dir, "summaries.RData"),
-                       file.path(cache_dir, "myruns.RData"))
+  after <- my_dbs_load(
+    file.path(cache_dir, "summaries.RData"),
+    file.path(cache_dir, "myruns.RData")
+  )
   expect_equal(nrow(after$summaries), 2)
   expect_setequal(after$summaries$source, c("tcx", "hae"))
 
   # The reported total is both sessions, not one of them twice.
   total_km <- fmt_dec_sv(sum(after$summaries$distance, na.rm = TRUE) / 1000,
-                         trim_zero = TRUE)
+    trim_zero = TRUE
+  )
   expect_match(out, paste0(total_km, " km totalt"), fixed = TRUE, info = out)
 })
 
@@ -313,8 +329,10 @@ test_that("--import reports a rename as a rename, not as an import", {
   tcx_dir <- file.path(tmp, "kristian", "filer", "tcx")
   dir.create(cache_dir, recursive = TRUE)
   dir.create(tcx_dir, recursive = TRUE)
-  file.copy(testthat::test_path("fixtures", "sample1.tcx"),
-            file.path(tcx_dir, "renamed.tcx"))
+  file.copy(
+    testthat::test_path("fixtures", "sample1.tcx"),
+    file.path(tcx_dir, "renamed.tcx")
+  )
 
   parsed <- trackeR::read_container(file.path(tcx_dir, "renamed.tcx"))
   s <- summary(parsed)
@@ -340,8 +358,10 @@ test_that("--import reports a rename as a rename, not as an import", {
   expect_match(out, "filnamn uppdaterade", info = out)
   expect_no_match(out, "Import: ", info = out)
 
-  after <- my_dbs_load(file.path(cache_dir, "summaries.RData"),
-                       file.path(cache_dir, "myruns.RData"))
+  after <- my_dbs_load(
+    file.path(cache_dir, "summaries.RData"),
+    file.path(cache_dir, "myruns.RData")
+  )
   expect_equal(nrow(after$summaries), 1)
   expect_equal(basename(after$summaries$file), "renamed.tcx")
 })

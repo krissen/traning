@@ -1,12 +1,12 @@
 # Tests for fetch.plot.pace_week_delta() — Träning-flikens nya kort.
 
 .fixture_pace_delta_runs <- function(n_weeks = 12) {
-  base <- as.POSIXct("2025-01-06 06:00:00", tz = "UTC")  # Monday
+  base <- as.POSIXct("2025-01-06 06:00:00", tz = "UTC") # Monday
   # 3 runs per week for n_weeks
   rows <- vector("list", n_weeks * 3)
   k <- 1
   for (w in seq_len(n_weeks)) {
-    for (d in c(0, 2, 4)) {  # Mon, Wed, Fri
+    for (d in c(0, 2, 4)) { # Mon, Wed, Fri
       rows[[k]] <- list(
         sessionStart = base + (w - 1L) * 86400 * 7 + d * 86400,
         sport = "running",
@@ -25,8 +25,10 @@
 
 test_that("fetch.plot.pace_week_delta returns a ggplot for normal input", {
   sm <- .fixture_pace_delta_runs(8)
-  p <- fetch.plot.pace_week_delta(sm, from = NULL, to = NULL,
-                                   sport = "running")
+  p <- fetch.plot.pace_week_delta(sm,
+    from = NULL, to = NULL,
+    sport = "running"
+  )
   expect_s3_class(p, "ggplot")
   # Building it should not error
   b <- ggplot2::ggplot_build(p)
@@ -37,8 +39,10 @@ test_that("fetch.plot.pace_week_delta returns a ggplot for normal input", {
 
 test_that("pace_week_delta produces a delta per week (n - 1 bars)", {
   sm <- .fixture_pace_delta_runs(8)
-  p <- fetch.plot.pace_week_delta(sm, from = NULL, to = NULL,
-                                   sport = "running")
+  p <- fetch.plot.pace_week_delta(sm,
+    from = NULL, to = NULL,
+    sport = "running"
+  )
   b <- ggplot2::ggplot_build(p)
   # The geom_col layer rows = number of weeks with a defined delta
   # (all weeks except the first). Hline contributes a 1-row layer.
@@ -57,10 +61,12 @@ test_that("pace_week_delta returns placeholder when too few runs", {
 
 test_that("pace_week_delta respects from/to window", {
   sm <- .fixture_pace_delta_runs(12)
-  to_d   <- as.Date("2025-02-28")
+  to_d <- as.Date("2025-02-28")
   from_d <- as.Date("2025-02-01")
-  p <- fetch.plot.pace_week_delta(sm, from = from_d, to = to_d,
-                                   sport = "running")
+  p <- fetch.plot.pace_week_delta(sm,
+    from = from_d, to = to_d,
+    sport = "running"
+  )
   expect_s3_class(p, "ggplot")
   b <- ggplot2::ggplot_build(p)
   # All bar x values should sit inside the window
