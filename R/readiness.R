@@ -326,7 +326,9 @@ compute_readiness <- function(health_daily, summaries,
   }
 
   # 11. Status and data quality
-  max_components <- if (has_wrist_temp) 5L else 4L
+  # Used below inside dplyr::case_when()'s data-masking expression;
+  # object_usage_linter can't see that reference from the enclosing scope.
+  max_components <- if (has_wrist_temp) 5L else 4L # nolint: object_usage_linter.
   spine <- spine |>
     dplyr::mutate(
       readiness_status = dplyr::case_when(

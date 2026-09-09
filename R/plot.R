@@ -89,7 +89,8 @@
 #' @return ggplot2 object
 #' @export
 fetch.plot.monthly.dist <- function(month_summaries_til_day) {
-  my_month <- .swedish_months[as.integer(format(Sys.time(), "%m"))]
+  # Interpolated inside str_glue() below.
+  my_month <- .swedish_months[as.integer(format(Sys.time(), "%m"))] # nolint: object_usage_linter.
   my_title <- stringr::str_glue(
     "Distans och tempo för löpande månad ({my_month})"
   )
@@ -1318,7 +1319,9 @@ fetch.plot.pace_tertile_share <- function(data, from = NULL, to = NULL,
     return(.run_profile_empty())
   }
 
-  pace_q <- stats::quantile(runs$pace, c(1 / 3, 2 / 3))
+  # Used below inside dplyr::case_when()'s data-masking expression;
+  # object_usage_linter can't see that reference from the enclosing scope.
+  pace_q <- stats::quantile(runs$pace, c(1 / 3, 2 / 3)) # nolint: object_usage_linter.
   # Pace traffic-light: see traning_palette$traffic for rationale.
   palette_traffic <- c(
     "Lugn" = traning_palette$traffic[["calm"]],

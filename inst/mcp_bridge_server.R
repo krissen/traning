@@ -344,7 +344,10 @@ serve_one <- function(req) {
     ))
   }
 
-  call_args <- tryCatch(build_call_args(func_name, func_args, bundle),
+  # build_call_args() is sourced at runtime from mcp_bridge_shared.R (both
+  # are standalone scripts in inst/, not part of the package), so lintr's
+  # per-file static analysis can't resolve it.
+  call_args <- tryCatch(build_call_args(func_name, func_args, bundle), # nolint: object_usage_linter.
     error = function(e) e
   )
   if (inherits(call_args, "error")) {
@@ -357,7 +360,9 @@ serve_one <- function(req) {
     ))
   }
 
-  resp <- run_dispatch(func_name, call_args, do_plot, plot_path)
+  # run_dispatch() is also sourced at runtime from mcp_bridge_shared.R —
+  # same lintr limitation as build_call_args() above.
+  resp <- run_dispatch(func_name, call_args, do_plot, plot_path) # nolint: object_usage_linter.
   resp$id <- id
   resp
 }

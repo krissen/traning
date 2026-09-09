@@ -114,8 +114,10 @@ plot_runs_month <- function(data, from = NULL, to = NULL,
   )
 
   ref_date <- if (!is.null(from)) as.Date(from) else Sys.Date()
-  do_year <- format(ref_date, "%Y")
-  do_month <- as.integer(format(ref_date, "%m"))
+  # Both interpolated inside str_glue() below; object_usage_linter can't
+  # see references inside a glue string.
+  do_year <- format(ref_date, "%Y") # nolint: object_usage_linter.
+  do_month <- as.integer(format(ref_date, "%m")) # nolint: object_usage_linter.
   title <- stringr::str_glue(
     "Löpturer {.swedish_months[do_month]} {do_year}"
   )
@@ -188,7 +190,8 @@ plot_monthlast <- function(data, from = NULL, to = NULL,
 
   my_month <- as.numeric(format(Sys.time(), "%m"))
   do_month <- if (my_month == 1) 12L else my_month - 1L
-  month_name <- .swedish_months[do_month]
+  # Interpolated inside str_glue() below.
+  month_name <- .swedish_months[do_month] # nolint: object_usage_linter.
 
   title <- stringr::str_glue("Jämförelse {month_name} över åren")
   .plot_year_bars(plot_data, title = title)
