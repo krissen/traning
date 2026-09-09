@@ -8,9 +8,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/.venv"
 
 if [ -d "$VENV_DIR" ]; then
-    echo "venv already exists at $VENV_DIR"
-    echo "To recreate: rm -rf $VENV_DIR && bash $0"
-    exit 0
+  echo "venv already exists at $VENV_DIR"
+  echo "To recreate: rm -rf $VENV_DIR && bash $0"
+  exit 0
 fi
 
 echo "Creating virtual environment at $VENV_DIR ..."
