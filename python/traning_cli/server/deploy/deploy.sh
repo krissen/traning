@@ -37,8 +37,24 @@ cmd_code() {
         python/.venv/bin/pip install --quiet --upgrade pip && \
         python/.venv/bin/pip install --quiet -e ."
 
+  # R_LIBS_USER exported (and the directory created) for BOTH R steps
+  # below, not just the package install: on a fresh host, cmd_code runs
+  # before cmd_secrets, so the .Renviron that would otherwise set it
+  # doesn't exist yet. Without this on install_r_deps.sh too, its CRAN
+  # fallback can install into R's default versioned user library —
+  # invisible once R_LIBS_USER is set for the later R CMD INSTALL step —
+  # and if every dependency instead comes from pacman, the directory is
+  # never created at all, so R drops the nonexistent path from
+  # .libPaths() and R CMD INSTALL falls back to the non-writable system
+  # library. Neither of those is where the running services (cmd_check,
+  # traning-vayu.service) actually load from
+  # (/home/krisse/R/library, per docs/dev/pipeline-design.md) — so a
+  # package can appear to install successfully while staying
+  # unavailable to the service that needs it.
   _info "Installing R dependencies ..."
-  ssh "$REMOTE" "cd $REMOTE_CODE && bash scripts/install_r_deps.sh"
+  ssh "$REMOTE" "set -e; export R_LIBS_USER=/home/krisse/R/library && \
+        mkdir -p \$R_LIBS_USER && \
+        cd $REMOTE_CODE && bash scripts/install_r_deps.sh"
 
   # The MCP bridge (inst/mcp_bridge.R) now loads via library(traning)
   # against the INSTALLED package rather than devtools::load_all() on
@@ -50,16 +66,8 @@ cmd_code() {
   # failure here aborts the deploy before the restart below, so we never
   # restart onto a half-installed package.
   _info "Installing traning R package ..."
-  # R_LIBS_USER set explicitly: on a fresh host, cmd_code runs before
-  # cmd_secrets, so the .Renviron that would otherwise set it doesn't
-  # exist yet. Without this, R CMD INSTALL falls back to the
-  # non-writable system library or a default versioned user library —
-  # neither of which is where the running services (cmd_check,
-  # traning-vayu.service) actually load from
-  # (/home/krisse/R/library, per docs/dev/pipeline-design.md) — so
-  # the package can appear to install successfully while staying
-  # unavailable to the service that needs it.
   ssh "$REMOTE" "set -e; export R_LIBS_USER=/home/krisse/R/library && \
+        mkdir -p \$R_LIBS_USER && \
         cd $REMOTE_CODE && \
         R CMD INSTALL --no-multiarch --with-keep.source ."
 
