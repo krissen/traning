@@ -1,0 +1,17 @@
+# Explicit linter selection, mirroring bifrost's .lintr (see design.md §4.4:
+# lintr's defaults are not pinned, so linters_with_defaults() grows silently
+# on every lintr upgrade; a stability question, not a style one).
+#
+# Formatting is not lintr's job here — styler owns it, and the pre-commit
+# hygiene hooks own trailing whitespace / end-of-file.
+linters: list(
+   object_usage_linter = object_usage_linter(),
+   equals_na_linter = equals_na_linter(),
+   seq_linter = seq_linter(),
+   T_and_F_symbol_linter = T_and_F_symbol_linter(),
+   vector_logic_linter = vector_logic_linter(),
+   cyclocomp_linter = cyclocomp_linter(25)
+   )
+exclusions: list(
+   "tests/testthat/"
+   )
