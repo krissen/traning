@@ -40,8 +40,13 @@ check:
 		echo "gitleaks missing from PATH — cannot run the full secret sweep" >> .check.log; \
 		status=1; \
 	fi; \
-	python/.venv/bin/ruff check . >> .check.log 2>&1 || status=1; \
-	python/.venv/bin/python -m pytest -q python/tests >> .check.log 2>&1 || status=1; \
+	if [ -x python/.venv/bin/ruff ] && [ -x python/.venv/bin/python ]; then \
+		python/.venv/bin/ruff check . >> .check.log 2>&1 || status=1; \
+		python/.venv/bin/python -m pytest -q python/tests >> .check.log 2>&1 || status=1; \
+	else \
+		echo "python/.venv missing or incomplete — run 'bash python/setup_venv.sh' first (see python/setup_venv.sh)" >> .check.log; \
+		status=1; \
+	fi; \
 	if command -v Rscript >/dev/null 2>&1; then \
 		Rscript .hooks/testthat.R >> .check.log 2>&1 || status=1; \
 	else \
