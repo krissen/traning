@@ -57,7 +57,11 @@ another machine needs to run it again.
   pre-commit (`always_run: true`, no `files:` filter — too slow to run
   on every commit; a `git push` runs it once for the whole batch of
   commits being pushed). **Decision (2026-09-09): no R job in GitHub
-  CI** — see below.
+  CI** — see below. **Known risk, not yet fixed:** if your `TRANING_DATA`
+  points at a real, live data directory (the normal daily-use setup),
+  `git push` now runs the full suite against it, and a few tests write
+  cache files under `$TRANING_DATA/cache` as a side effect — see
+  krissen/traning#91.
 
 CI (`.github/workflows/ci.yml`) runs the same `prek` configuration via
 `pipx run --spec prek==0.5.2 prek run --all-files`, skipping the three
