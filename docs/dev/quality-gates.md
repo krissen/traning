@@ -47,18 +47,30 @@ another machine needs to run it again.
   on R ≥ 4.5 on this machine. `lintr` runs `pkgload::load_all()` first
   so `utils::globalVariables()` (`R/traning-package.R`) is honoured —
   without it, every dplyr/ggplot2 column name shows up as an undefined
-  global. `.lintr` excludes `app/tRanat/` (a Shiny script directory, not
-  part of the package — lintr can't resolve its cross-module sourcing)
-  and pins `cyclocomp_linter` at 125, just above the current worst
-  offender; that threshold ratchets down as functions get broken up,
-  it isn't a statement that 125 is fine.
+  global. `app/tRanat/.lintr` scopes `object_usage_linter` off just for
+  the Shiny app directory (lintr can't resolve its cross-module,
+  runtime-sourced function calls); the root `.lintr` pins
+  `cyclocomp_linter` at 125, just above the current worst offender —
+  that threshold ratchets down as functions get broken up, it isn't a
+  statement that 125 is fine.
+- **testthat** — the full R test suite, at **pre-push**, not
+  pre-commit (`always_run: true`, no `files:` filter — too slow to run
+  on every commit; a `git push` runs it once for the whole batch of
+  commits being pushed). **Decision (2026-09-09): no R job in GitHub
+  CI** — see below.
 
 CI (`.github/workflows/ci.yml`) runs the same `prek` configuration via
-`pipx run --spec prek==0.5.2 prek run --all-files`, skipping the three R
-hooks (`SKIP=parsable-R,style-files,lintr` — the runner has no R
-toolchain), plus a full-tree `gitleaks dir .` and `pytest`. **`testthat`
-is not run in CI yet** — see the ORDER 1 rollout report for the
-CRAN-dependency-count estimate that decision rests on.
+`pipx run --spec prek==0.5.2 prek run --all-files`, skipping the three
+non-test R hooks (`SKIP=parsable-R,style-files,lintr` — the runner has
+no R toolchain), plus a full-tree `gitleaks dir .` and `pytest`.
+**`testthat` does not run in CI.** DESCRIPTION lists ~29 CRAN
+dependencies (`ggplot2`, `dplyr`, `shiny`, `plotly`, `DT`, and others);
+installing and caching that on GitHub Actions is the same class of cost
+the portfolio already moved bifrost's R job to GitLab to avoid (see
+design.md). Rather than repeat that decision per repo, testthat runs
+locally at `git push` instead (the `testthat` pre-push hook above, and
+in `make check`) — a push cannot land without the suite passing on the
+pusher's machine, even though GitHub Actions never sees it.
 
 ## `make check`
 
@@ -66,9 +78,10 @@ Runs locally before commit/PR: `prek run --all-files`, a full-tree
 `gitleaks dir .`, `ruff check .` **without** `--fix` (prek's own
 `--fix` hook would otherwise silently clean up and pass a newly
 created, still-untracked file with nothing staged to compare against),
-`pytest`, and `testthat`. Full output goes to `.check.log` (gitignored,
-see `.gitignore`); a green run prints one line, a red one prints the
-log.
+`pytest`, and `testthat` (same as the pre-push hook — running it here
+too catches a broken test before you even get to `git push`). Full
+output goes to `.check.log` (gitignored, see `.gitignore`); a green run
+prints one line, a red one prints the log.
 
 ```sh
 make check

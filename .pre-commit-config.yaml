@@ -103,3 +103,14 @@ repos:
         files: '\.(R|r)$'
         exclude: '^tests/testthat/'
         stages: [pre-commit]
+
+      - id: testthat
+        # Full R test suite, at push rather than every commit (too slow
+        # for pre-commit — decision recorded in docs/dev/quality-gates.md).
+        # No R CI job; this is the substitute gate.
+        name: testthat
+        entry: Rscript .hooks/testthat.R
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

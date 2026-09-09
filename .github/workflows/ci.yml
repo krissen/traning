@@ -76,6 +76,11 @@ jobs:
       - name: Run tests
         run: uv run pytest -q python/tests
 
-  # R tests (testthat) are NOT run in CI yet — see the PR description /
-  # ORDER 1 report for the CRAN-dependency-count estimate this decision
-  # is based on.
+  # R tests (testthat) intentionally have NO GitHub Actions job.
+  # Decision (2026-09-09): DESCRIPTION lists ~29 CRAN dependencies
+  # (ggplot2, dplyr, shiny, plotly, DT, ...) — installing/caching that
+  # here is the same class of cost the portfolio already moved
+  # bifrost's R job to GitLab to avoid (see design.md). testthat runs
+  # locally instead, as a pre-push hook (.pre-commit-config.yaml,
+  # .hooks/testthat.R) and in `make check` — see
+  # docs/dev/quality-gates.md.

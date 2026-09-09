@@ -18,8 +18,12 @@
 # and only get caught by CI. The second call (`gitleaks dir .`) sweeps
 # the whole working tree.
 #
-# testthat always runs in full, separately from lintr/styler (which prek
-# already covers via --all-files) — it's correctness, not lint debt.
+# testthat runs via the same script as the pre-push hook
+# (.hooks/testthat.R) — one source of truth for "how do we run the R
+# suite" — separately from lintr/styler, which prek already covers via
+# --all-files. There is no R job in GitHub CI (see
+# docs/dev/quality-gates.md); this and the pre-push hook are the R test
+# gate.
 
 check:
 	@: > .check.log
@@ -39,7 +43,7 @@ check:
 	python/.venv/bin/ruff check . >> .check.log 2>&1 || status=1; \
 	python/.venv/bin/python -m pytest -q python/tests >> .check.log 2>&1 || status=1; \
 	if command -v Rscript >/dev/null 2>&1; then \
-		Rscript -e 'devtools::test(stop_on_failure = TRUE)' >> .check.log 2>&1 || status=1; \
+		Rscript .hooks/testthat.R >> .check.log 2>&1 || status=1; \
 	else \
 		echo "Rscript missing from PATH — cannot run testthat" >> .check.log; \
 		status=1; \
