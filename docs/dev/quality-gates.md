@@ -76,6 +76,16 @@ locally at `git push` instead (the `testthat` pre-push hook above, and
 in `make check`) — a push cannot land without the suite passing on the
 pusher's machine, even though GitHub Actions never sees it.
 
+CI's `test` job pins `uv` itself (`astral-sh/setup-uv@v3`'s `version:
+"0.12.12"`) and runs `uv sync --locked` — not `--frozen` — so a
+dependency change without a matching `uv lock` fails CI instead of
+silently installing a stale environment. Because `--locked` is that
+strict, `uv.lock` must be regenerated with a `uv` version at least as
+new as the one pinned above — an older `uv` (this repo hit it with
+0.5.8) writes a lockfile missing the `revision` field a newer `uv`
+expects, which fails `--locked` even though no dependency actually
+changed.
+
 ## `make check`
 
 Runs locally before commit/PR: `prek run --all-files`, a full-tree

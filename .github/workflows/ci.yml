@@ -74,11 +74,21 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v3
-        # setup-uv's `version` input pins uv itself, not Python — there is
-        # no `python-version` input (it was silently ignored, with a CI
-        # annotation warning: "Unexpected input(s) 'python-version'").
-        # `uv python install` is uv's own toolchain manager and is what
-        # actually pins the interpreter version used below.
+        # `version` pins uv itself — there is no `python-version` input
+        # (it was silently ignored, with a CI annotation warning:
+        # "Unexpected input(s) 'python-version'"). `uv python install`
+        # below is uv's own toolchain manager and is what actually pins
+        # the interpreter version.
+        #
+        # Pinning matters here specifically because of --locked below:
+        # uv.lock gained a `revision` field between 0.5.x and 0.12.x, and
+        # an unpinned "latest" uv considers a lockfile written by an
+        # older uv (no revision field) as needing an update even though
+        # nothing about the dependencies changed — a real failure hit
+        # once on this PR (run 34388928821) before this pin and a
+        # `uv lock` regeneration with a matching uv version fixed it.
+        with:
+          version: "0.12.12"
 
       - name: Install Python ${{ env.PYTHON_VERSION }}
         run: uv python install ${{ env.PYTHON_VERSION }}
