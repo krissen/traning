@@ -21,7 +21,8 @@ metric_panel_ui <- function(id, title = NULL, use_plotly = TRUE,
       bslib::accordion(
         id = ns("acc"),
         open = FALSE,
-        bslib::accordion_panel("Data",
+        bslib::accordion_panel(
+          "Data",
           DT::dataTableOutput(ns("table"))
         )
       )
@@ -37,7 +38,9 @@ metric_panel_ui <- function(id, title = NULL, use_plotly = TRUE,
 
 metric_panel_server <- function(id, plot_fn, report_fn = NULL,
                                 use_plotly = TRUE, is_mobile = shiny::reactive(FALSE)) {
-  force(plot_fn); force(report_fn); force(use_plotly)
+  force(plot_fn)
+  force(report_fn)
+  force(use_plotly)
   shiny::moduleServer(id, function(input, output, session) {
     ply <- function(p, mobile = FALSE) {
       pp <- plotly::ggplotly(p) |>
@@ -46,11 +49,15 @@ metric_panel_server <- function(id, plot_fn, report_fn = NULL,
           modeBarButtonsToRemove = c("lasso2d", "select2d", "autoScale2d")
         ) |>
         plotly::layout(
-          title = list(x = 0.01, xanchor = "left", y = 0.99,
-                       font = list(size = 13)),
+          title = list(
+            x = 0.01, xanchor = "left", y = 0.99,
+            font = list(size = 13)
+          ),
           margin = list(t = 40, b = 60, l = 50, r = 30),
-          legend = list(orientation = "h", x = 0, y = -0.12,
-                        xanchor = "left", font = list(size = 10))
+          legend = list(
+            orientation = "h", x = 0, y = -0.12,
+            xanchor = "left", font = list(size = 10)
+          )
         )
       if (mobile) {
         pp <- pp |> plotly::layout(
@@ -66,9 +73,11 @@ metric_panel_server <- function(id, plot_fn, report_fn = NULL,
       output$plot <- plotly::renderPlotly({
         p <- tryCatch(plot_fn(), error = function(e) {
           ggplot2::ggplot() +
-            ggplot2::annotate("text", x = 0.5, y = 0.5,
+            ggplot2::annotate("text",
+              x = 0.5, y = 0.5,
               label = paste("Ej tillg\u00e4nglig:", e$message),
-              size = 4, color = "#6d5d4f") +
+              size = 4, color = "#6d5d4f"
+            ) +
             ggplot2::theme_void()
         })
         ply(p, mobile = is_mobile())
@@ -77,9 +86,11 @@ metric_panel_server <- function(id, plot_fn, report_fn = NULL,
       output$plot <- shiny::renderPlot({
         tryCatch(plot_fn(), error = function(e) {
           ggplot2::ggplot() +
-            ggplot2::annotate("text", x = 0.5, y = 0.5,
+            ggplot2::annotate("text",
+              x = 0.5, y = 0.5,
               label = paste("Ej tillg\u00e4nglig:", e$message),
-              size = 4, color = "#6d5d4f") +
+              size = 4, color = "#6d5d4f"
+            ) +
             ggplot2::theme_void()
         })
       })
@@ -87,28 +98,31 @@ metric_panel_server <- function(id, plot_fn, report_fn = NULL,
 
     if (!is.null(report_fn)) {
       output$table <- DT::renderDataTable({
-        tryCatch({
-          data <- report_fn()
-          DT::datatable(data,
-            extensions = "Responsive",
-            options = list(
-              responsive = TRUE,
-              pageLength = 15,
-              dom = "tip",
-              language = list(
-                info = "Visar _START_\u2013_END_ av _TOTAL_",
-                paginate = list(previous = "\u2190", `next` = "\u2192")
-              )
-            ),
-            rownames = FALSE
-          )
-        }, error = function(e) {
-          DT::datatable(
-            data.frame(fel = paste("Ej tillg\u00e4nglig:", e$message)),
-            options = list(dom = "t"),
-            rownames = FALSE
-          )
-        })
+        tryCatch(
+          {
+            data <- report_fn()
+            DT::datatable(data,
+              extensions = "Responsive",
+              options = list(
+                responsive = TRUE,
+                pageLength = 15,
+                dom = "tip",
+                language = list(
+                  info = "Visar _START_\u2013_END_ av _TOTAL_",
+                  paginate = list(previous = "\u2190", `next` = "\u2192")
+                )
+              ),
+              rownames = FALSE
+            )
+          },
+          error = function(e) {
+            DT::datatable(
+              data.frame(fel = paste("Ej tillg\u00e4nglig:", e$message)),
+              options = list(dom = "t"),
+              rownames = FALSE
+            )
+          }
+        )
       })
     }
   })

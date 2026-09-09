@@ -5,13 +5,13 @@
 make_zone_summaries <- function(n = 20, sport = "running") {
   set.seed(42)
   tibble::tibble(
-    sessionStart          = as.POSIXct(seq(
+    sessionStart = as.POSIXct(seq(
       as.Date("2024-01-05"),
       by = "week",
       length.out = n
     )),
-    sport                 = sport,
-    distance              = runif(n, 5000, 15000),
+    sport = sport,
+    distance = runif(n, 5000, 15000),
     garmin_hrTimeInZone_1 = runif(n, 600, 1200),
     garmin_hrTimeInZone_2 = runif(n, 300, 900),
     garmin_hrTimeInZone_3 = runif(n, 100, 600),
@@ -26,7 +26,7 @@ make_zone_data <- function(monthly_tbl) {
   list(
     per_activity = tibble::tibble(
       sessionStart = as.Date(character(0)),
-      distance_km  = numeric(0),
+      distance_km = numeric(0),
       z1_pct = numeric(0), z2_pct = numeric(0), z3_pct = numeric(0),
       z1_sec = numeric(0), z2_sec = numeric(0), z3_sec = numeric(0),
       total_sec = numeric(0)
@@ -45,7 +45,7 @@ test_that("compute_zone_distribution returns a list with $per_activity and $mont
   result <- compute_zone_distribution(test_summaries_zone)
   expect_type(result, "list")
   expect_true("per_activity" %in% names(result))
-  expect_true("monthly"      %in% names(result))
+  expect_true("monthly" %in% names(result))
 })
 
 test_that("$per_activity has the expected columns", {
@@ -143,7 +143,7 @@ test_that("returns empty tibbles when no qualifying runs exist", {
 
 test_that("compute_polarization_index returns the expected columns", {
   zone_data <- compute_zone_distribution(test_summaries_zone)
-  result    <- compute_polarization_index(zone_data)
+  result <- compute_polarization_index(zone_data)
   expect_s3_class(result, "tbl_df")
   expected_cols <- c(
     "year_month", "pi",
@@ -166,7 +166,9 @@ test_that("PI formula is correct for uniform distribution (33/33/33)", {
   )
   result <- compute_polarization_index(make_zone_data(monthly))
   expect_equal(nrow(result), 1)
-  p1 <- 1/3; p2 <- 1/3; p3 <- 1/3
+  p1 <- 1 / 3
+  p2 <- 1 / 3
+  p3 <- 1 / 3
   expected_pi <- log10((p1 / p2) * p3 * 100)
   expect_equal(result$pi, expected_pi, tolerance = 1e-9)
   expect_false(result$has_zero_zone)
@@ -184,7 +186,9 @@ test_that("PI formula is correct for polarized distribution (80/5/15)", {
     total_min    = 360
   )
   result <- compute_polarization_index(make_zone_data(monthly))
-  p1 <- 0.80; p2 <- 0.05; p3 <- 0.15
+  p1 <- 0.80
+  p2 <- 0.05
+  p3 <- 0.15
   expected_pi <- log10((p1 / p2) * p3 * 100)
   expect_equal(result$pi, expected_pi, tolerance = 1e-9)
   # PI > 2.0 = polarized per Treff 2019
@@ -195,9 +199,9 @@ test_that("PI formula is correct for polarized distribution (80/5/15)", {
 test_that("PI matches Treff 2019 Table 1 reference values", {
   # Verify against published reference values from the paper
   cases <- list(
-    list(z1 = 80, z2 = 8,  z3 = 12, expected_pi = 2.08),
+    list(z1 = 80, z2 = 8, z3 = 12, expected_pi = 2.08),
     list(z1 = 74, z2 = 11, z3 = 15, expected_pi = 2.00),
-    list(z1 = 77, z2 = 17, z3 = 6,  expected_pi = 1.43),
+    list(z1 = 77, z2 = 17, z3 = 6, expected_pi = 1.43),
     list(z1 = 70, z2 = 20, z3 = 10, expected_pi = 1.54)
   )
   for (case in cases) {
@@ -206,8 +210,10 @@ test_that("PI matches Treff 2019 Table 1 reference values", {
       z3_pct = case$z3, n_activities = 5L, total_min = 300
     )
     result <- compute_polarization_index(make_zone_data(monthly))
-    expect_equal(result$pi, case$expected_pi, tolerance = 0.02,
-      label = paste0("PI for ", case$z1, "/", case$z2, "/", case$z3))
+    expect_equal(result$pi, case$expected_pi,
+      tolerance = 0.02,
+      label = paste0("PI for ", case$z1, "/", case$z2, "/", case$z3)
+    )
   }
 })
 
@@ -216,7 +222,7 @@ test_that("Equation 2 is used when Z2 = 0", {
   monthly <- tibble::tibble(
     year_month   = "2024-03",
     z1_pct       = 90,
-    z2_pct       = 0,    # no threshold work this month
+    z2_pct       = 0, # no threshold work this month
     z3_pct       = 10,
     n_activities = 3L,
     total_min    = 150
@@ -291,7 +297,7 @@ test_that("report_hr_zones respects from/to date range (inklusiv övre gräns)",
   set.seed(8)
   long_data <- make_zone_summaries(n = 60)
   from <- as.Date("2024-06-01")
-  to   <- as.Date("2024-09-01")
+  to <- as.Date("2024-09-01")
   result <- report_hr_zones(long_data, from = from, to = to)
   if (nrow(result) > 0) {
     expect_true(all(result$Datum >= from))
@@ -326,8 +332,10 @@ test_that("report_hr_zones: cache-populated bundle skips recompute", {
   # silently recomputed from summaries instead of using the cache, this
   # value would not survive into the output.
   zone_data$monthly$z1_pct[1] <- 999
-  bundle <- traning_data(summaries = test_summaries_zone,
-                          zone_data = zone_data, sport = "running")
+  bundle <- traning_data(
+    summaries = test_summaries_zone,
+    zone_data = zone_data, sport = "running"
+  )
   result <- report_hr_zones(bundle, n = nrow(zone_data$monthly))
   expect_s3_class(result, "tbl_df")
   expect_true(any(result[["Z1 %"]] == 999))
@@ -346,8 +354,10 @@ test_that("report_hr_zones: NULL zone_data triggers lazy-compute fallback", {
 test_that("traning_data validator rejects zone_data with mismatched empty sport", {
   zone_data <- compute_zone_distribution(test_summaries_zone)
   expect_error(
-    traning_data(summaries = test_summaries_zone,
-                 zone_data = zone_data, sport = ""),
+    traning_data(
+      summaries = test_summaries_zone,
+      zone_data = zone_data, sport = ""
+    ),
     regexp = "sport"
   )
 })

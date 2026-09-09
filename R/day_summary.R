@@ -45,16 +45,18 @@
                              seg_floor = 10) {
   empty <- tibble::tibble(
     date = as.Date(character(0)), sport = character(0),
-    n_segments = integer(0), km = numeric(0), min = numeric(0))
+    n_segments = integer(0), km = numeric(0), min = numeric(0)
+  )
   if (classify) {
     empty <- empty %>% dplyr::mutate(
       intensity = character(0), duration_band = character(0),
       recovery_cost = character(0), class = character(0),
       modality = character(0), hr_reliability = character(0),
-      confidence = character(0), hard = logical(0))
+      confidence = character(0), hard = logical(0)
+    )
   }
   if (is.null(sessions) || !inherits(sessions, "data.frame") ||
-      nrow(sessions) == 0) {
+    nrow(sessions) == 0) {
     return(empty)
   }
 
@@ -85,51 +87,68 @@
   df <- sessions %>%
     dplyr::mutate(
       .date = as.Date(.data$sessionStart),
-      .km   = as.numeric(.data$distance) / 1000,
-      .min  = as.numeric(.data$durationMoving, units = "mins"),
-      .hr   = as.numeric(.data$avgHeartRateMoving),
+      .km = as.numeric(.data$distance) / 1000,
+      .min = as.numeric(.data$durationMoving, units = "mins"),
+      .hr = as.numeric(.data$avgHeartRateMoving),
       # A missing sport is coalesced to "" rather than dropped: the
       # session still happened, so it belongs in the inventory. The ""
       # key groups cleanly (unlike NA) and .sport_label_sv("") renders
       # the honest generic "Aktivitet" — hiding the row behind "Vilodag"
       # would be the worse error.
       sport = ifelse(is.na(.data$sport) | !nzchar(.data$sport), "",
-                     .data$sport)
+        .data$sport
+      )
     ) %>%
     dplyr::filter(is.finite(.data$.min), .data$.min > 0)
-  if (nrow(df) == 0) return(empty)
+  if (nrow(df) == 0) {
+    return(empty)
+  }
 
   agg <- df %>%
     dplyr::group_by(date = .data$.date, sport = .data$sport) %>%
     dplyr::summarise(
       n_segments = dplyr::n(),
-      km  = sum(.data$.km, na.rm = TRUE),
+      km = sum(.data$.km, na.rm = TRUE),
       min = sum(.data$.min),
       .groups = "drop"
     ) %>%
     dplyr::arrange(dplyr::desc(.data$km), dplyr::desc(.data$min))
 
-  if (!classify) return(agg)
+  if (!classify) {
+    return(agg)
+  }
 
   verdicts <- lapply(seq_len(nrow(agg)), function(i) {
     seg <- df[df$.date == agg$date[i] & df$sport == agg$sport[i], ]
-    .classify_alt_unit(seg$.min, seg$.hr, agg$sport[i], hr_max = hr_max,
-                       seg_floor = seg_floor)
+    .classify_alt_unit(seg$.min, seg$.hr, agg$sport[i],
+      hr_max = hr_max,
+      seg_floor = seg_floor
+    )
   })
   agg %>% dplyr::mutate(
-    intensity     = vapply(verdicts, function(v) v$intensity %||% NA_character_,
-                           character(1)),
+    intensity = vapply(
+      verdicts, function(v) v$intensity %||% NA_character_,
+      character(1)
+    ),
     duration_band = vapply(verdicts, function(v) v$duration_band, character(1)),
-    recovery_cost = vapply(verdicts, function(v) v$recovery_cost %||%
-                             NA_character_, character(1)),
-    class         = vapply(verdicts, function(v) v$class %||% NA_character_,
-                           character(1)),
-    modality      = vapply(verdicts, function(v) v$modality, character(1)),
-    hr_reliability = vapply(verdicts, function(v) v$hr_reliability,
-                            character(1)),
-    confidence    = vapply(verdicts, function(v) v$confidence, character(1)),
-    hard          = vapply(verdicts, function(v) identical(v$intensity, "hard"),
-                           logical(1))
+    recovery_cost = vapply(verdicts, function(v) {
+      v$recovery_cost %||%
+        NA_character_
+    }, character(1)),
+    class = vapply(
+      verdicts, function(v) v$class %||% NA_character_,
+      character(1)
+    ),
+    modality = vapply(verdicts, function(v) v$modality, character(1)),
+    hr_reliability = vapply(
+      verdicts, function(v) v$hr_reliability,
+      character(1)
+    ),
+    confidence = vapply(verdicts, function(v) v$confidence, character(1)),
+    hard = vapply(
+      verdicts, function(v) identical(v$intensity, "hard"),
+      logical(1)
+    )
   )
 }
 
@@ -177,10 +196,14 @@
 
 # Format the per-sport line: "Löpning 12.2 km + cykling 9.2 km + gång 2.5 km."
 .day_sports_line <- function(per_sport) {
-  if (nrow(per_sport) == 0) return(NULL)
+  if (nrow(per_sport) == 0) {
+    return(NULL)
+  }
   parts <- vapply(seq_len(nrow(per_sport)), function(i) {
-    .per_sport_fragment(.sport_label_sv(per_sport$sport[i]),
-                        per_sport$n[i], per_sport$km[i], per_sport$min[i])
+    .per_sport_fragment(
+      .sport_label_sv(per_sport$sport[i]),
+      per_sport$n[i], per_sport$km[i], per_sport$min[i]
+    )
   }, character(1))
   paste0("Dagens pass: ", paste(parts, collapse = " + "), ".")
 }
@@ -190,13 +213,17 @@
 .day_running_class <- function(todays, summaries, hr_max = NULL) {
   runs <- todays %>%
     dplyr::filter(stringr::str_detect(tolower(.data$sport), "running"))
-  if (nrow(runs) == 0) return(NULL)
+  if (nrow(runs) == 0) {
+    return(NULL)
+  }
   # If multiple running sessions, take the highest recovery-cost one
   # (high beats moderate beats low) — matches user intuition that a
   # quality session "owns the day" even if a recovery jog followed.
   classes <- lapply(seq_len(nrow(runs)), function(i) {
-    classify_session(runs[i, , drop = FALSE], hr_max = hr_max,
-                     summaries = summaries)
+    classify_session(runs[i, , drop = FALSE],
+      hr_max = hr_max,
+      summaries = summaries
+    )
   })
   costs <- vapply(classes, function(c) {
     .recovery_cost_rank(c$recovery_cost)
@@ -209,11 +236,18 @@
 # either side — are read as that whole hour, so a six-hour paddle is
 # announced as "6 h" rather than "5 h 58 min".
 .fmt_duration_sv <- function(min) {
-  if (!is.finite(min)) return(NA_character_)
-  if (min < 90) return(sprintf("%d min", round(min)))
+  if (!is.finite(min)) {
+    return(NA_character_)
+  }
+  if (min < 90) {
+    return(sprintf("%d min", round(min)))
+  }
   h <- floor(min / 60)
   m <- round(min - h * 60)
-  if (m > 55) { h <- h + 1; m <- 0 }
+  if (m > 55) {
+    h <- h + 1
+    m <- 0
+  }
   if (m < 5) sprintf("%d h", h) else sprintf("%d h %d min", h, m)
 }
 
@@ -222,17 +256,22 @@
 # Shared by .day_alt_class() (today) and .alt_week_stats() (the week) so
 # both count and classify the same units.
 .alt_units <- function(sessions, summaries = NULL, hr_max = NULL,
-                        min_minutes = 20) {
+                       min_minutes = 20) {
   if (is.null(hr_max)) {
     hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
-                       error = function(e) NULL)
+      error = function(e) NULL
+    )
   }
   u <- .day_sport_units(sessions, hr_max = hr_max, classify = TRUE)
-  if (nrow(u) == 0) return(u)
+  if (nrow(u) == 0) {
+    return(u)
+  }
   is_run <- stringr::str_detect(tolower(u$sport), "running")
   is_run[is.na(is_run)] <- FALSE
   u <- u[!is_run & u$min >= min_minutes, , drop = FALSE]
-  if (nrow(u) == 0) return(u)
+  if (nrow(u) == 0) {
+    return(u)
+  }
   # Highest recovery cost owns the day; ties go to the longest effort —
   # same rule .day_running_class() applies to running.
   rank <- vapply(u$recovery_cost, .recovery_cost_rank, integer(1))
@@ -254,10 +293,14 @@
 # Classify the dominant non-running effort of the day, if any. Returns
 # NULL when nothing alternative was done (or nothing long enough).
 .day_alt_class <- function(todays, summaries, hr_max = NULL,
-                            min_minutes = 20) {
-  u <- .alt_units(todays, summaries = summaries, hr_max = hr_max,
-                  min_minutes = min_minutes)
-  if (nrow(u) == 0) return(NULL)
+                           min_minutes = 20) {
+  u <- .alt_units(todays,
+    summaries = summaries, hr_max = hr_max,
+    min_minutes = min_minutes
+  )
+  if (nrow(u) == 0) {
+    return(NULL)
+  }
   .alt_unit_to_class(u[1, , drop = FALSE])
 }
 
@@ -286,8 +329,10 @@
       "Kort pass i mellanzonen.",
     moderate_medium = ,
     moderate_long =
-      paste("Alternativpass i mellanzonen — kostar återhämtning trots",
-            "att det inte är löpning."),
+      paste(
+        "Alternativpass i mellanzonen — kostar återhämtning trots",
+        "att det inte är löpning."
+      ),
     moderate_very_long =
       "Långt pass i mellanzonen — hög sammanlagd belastning.",
     hard_short = ,
@@ -296,7 +341,8 @@
     hard_long = ,
     hard_very_long =
       "Långt och hårt alternativpass — tung post i veckan.",
-    NULL)
+    NULL
+  )
 }
 
 # Family `other` — strength, studio work, ball sports. No adaptation
@@ -315,8 +361,10 @@
     low_long = ,
     low_very_long = ,
     moderate_short =
-      sprintf("%s — utanför löpdosen, men med i veckans totalbelastning.",
-              label),
+      sprintf(
+        "%s — utanför löpdosen, men med i veckans totalbelastning.",
+        label
+      ),
     moderate_medium = ,
     moderate_long = ,
     moderate_very_long =
@@ -326,8 +374,11 @@
     hard_long = ,
     hard_very_long =
       sprintf("%s på hög puls — räknas som kvalitet i veckans dos.", label),
-    NULL)
-  if (is.null(base)) return(NULL)
+    NULL
+  )
+  if (is.null(base)) {
+    return(NULL)
+  }
   if (class %in% c("low_long", "low_very_long")) {
     base <- paste(base, "Volymen kostar.")
   }
@@ -337,7 +388,9 @@
 # Functional fragment for the dominant alternative session.
 .alt_line_functional <- function(alt, label, dur) {
   cls <- alt$class
-  if (is.null(cls) || is.na(cls)) return(NULL)
+  if (is.null(cls) || is.na(cls)) {
+    return(NULL)
+  }
 
   # No HR: state what the session was and how long it lasted, nothing
   # else. "Stor volym i veckan" is a claim about the dose, not the
@@ -352,11 +405,13 @@
   # Mean HR underestimates intermittent work, so a low verdict is not
   # evidence of a low load. Never call such a session "lugnt".
   if (identical(alt$hr_reliability, "intermittent") &&
-      identical(alt$intensity, "low")) {
+    identical(alt$intensity, "low")) {
     return(sprintf("%s %s — med i veckans totalbelastning.", label, dur))
   }
 
-  if (identical(alt$modality, "aerobic")) return(.alt_text_aerobic(cls))
+  if (identical(alt$modality, "aerobic")) {
+    return(.alt_text_aerobic(cls))
+  }
   .alt_text_other(cls, label)
 }
 
@@ -365,10 +420,14 @@
 # same physiological situation.
 .alt_line_recovery <- function(alt) {
   cost <- alt$recovery_cost
-  if (is.null(cost) || is.na(cost)) return(NULL)
+  if (is.null(cost) || is.na(cost)) {
+    return(NULL)
+  }
   # Without HR there is no intensity claim to make, and every recovery
   # wording contains one.
-  if (identical(alt$confidence, "none")) return(NULL)
+  if (identical(alt$confidence, "none")) {
+    return(NULL)
+  }
   if (identical(cost, "high")) {
     return("Hög återhämtningskostnad; nästa kvalitetspass tidigast om 48 h.")
   }
@@ -386,18 +445,24 @@
 # alternative one the recovery fragment is dropped, so the notification
 # doesn't say the same thing twice.
 .day_alt_purpose_line <- function(alt, run_recovery_cost = NULL) {
-  if (is.null(alt)) return(NULL)
+  if (is.null(alt)) {
+    return(NULL)
+  }
   label <- .sport_label_sv(alt$sport)
   dur <- .fmt_duration_sv(alt$duration_min)
-  if (is.na(dur)) return(NULL)
+  if (is.na(dur)) {
+    return(NULL)
+  }
 
   functional <- .alt_line_functional(alt, label, dur)
-  if (is.null(functional)) return(NULL)
+  if (is.null(functional)) {
+    return(NULL)
+  }
 
   rec <- .alt_line_recovery(alt)
   if (!is.null(rec) &&
-      .recovery_cost_rank(run_recovery_cost) >=
-        .recovery_cost_rank(alt$recovery_cost)) {
+    .recovery_cost_rank(run_recovery_cost) >=
+      .recovery_cost_rank(alt$recovery_cost)) {
     rec <- NULL
   }
   paste(c(functional, rec), collapse = " ")
@@ -412,21 +477,30 @@
 # movement must not enter the denominator, or a step-heavy week drowns
 # both running and alternative training.
 .alt_week_stats <- function(summaries, on_date, days = 7, hr_max = NULL,
-                             hr_rest = NULL, min_minutes = 20) {
-  empty <- list(hours = 0, share = NA_real_, hard_count = 0L,
-                nohr_fraction = NA_real_, n = 0L)
-  if (is.null(summaries) || nrow(summaries) == 0) return(empty)
+                            hr_rest = NULL, min_minutes = 20) {
+  empty <- list(
+    hours = 0, share = NA_real_, hard_count = 0L,
+    nohr_fraction = NA_real_, n = 0L
+  )
+  if (is.null(summaries) || nrow(summaries) == 0) {
+    return(empty)
+  }
 
   on_date <- as.Date(on_date)
   start <- on_date - (days - 1)
   win <- summaries %>%
-    dplyr::filter(as.Date(.data$sessionStart) >= start,
-                  as.Date(.data$sessionStart) <= on_date)
-  if (nrow(win) == 0) return(empty)
+    dplyr::filter(
+      as.Date(.data$sessionStart) >= start,
+      as.Date(.data$sessionStart) <= on_date
+    )
+  if (nrow(win) == 0) {
+    return(empty)
+  }
 
   if (is.null(hr_max)) {
     hr_max <- tryCatch(get_hr_max(summaries, sport = "all"),
-                       error = function(e) NULL)
+      error = function(e) NULL
+    )
   }
 
   # Hours, hard-count and the no-HR share are unit quantities: a sport-
@@ -434,9 +508,13 @@
   # six-hour paddle is one unit (never four hard passes), and a
   # 3x15-min day is one 45-min unit that clears the 20-min gate (the
   # gate is applied after aggregation, never per segment).
-  u <- .alt_units(win, summaries = summaries, hr_max = hr_max,
-                  min_minutes = min_minutes)
-  if (nrow(u) == 0) return(empty)
+  u <- .alt_units(win,
+    summaries = summaries, hr_max = hr_max,
+    min_minutes = min_minutes
+  )
+  if (nrow(u) == 0) {
+    return(empty)
+  }
 
   # The TRIMP share is deliberately row-based: compute_trimp() already
   # aggregates per day and applies its own 10-min floor, so it is a
@@ -448,17 +526,24 @@
   alt_rows <- win[!is_run, , drop = FALSE]
   trimp_sum <- function(df) {
     res <- tryCatch(
-      compute_trimp(df, hr_max = hr_max, hr_rest = hr_rest,
-                    sport = "all", health_daily = NULL),
-      error = function(e) NULL)
-    if (is.null(res) || nrow(res) == 0) return(NA_real_)
+      compute_trimp(df,
+        hr_max = hr_max, hr_rest = hr_rest,
+        sport = "all", health_daily = NULL
+      ),
+      error = function(e) NULL
+    )
+    if (is.null(res) || nrow(res) == 0) {
+      return(NA_real_)
+    }
     sum(res$daily_trimp, na.rm = TRUE)
   }
   t_alt <- trimp_sum(alt_rows)
   t_tot <- trimp_sum(win)
   share <- if (is.finite(t_alt) && is.finite(t_tot) && t_tot > 0) {
     t_alt / t_tot
-  } else NA_real_
+  } else {
+    NA_real_
+  }
 
   total_min <- sum(u$min)
   nohr_min <- sum(u$min[u$confidence == "none"])
@@ -482,9 +567,13 @@
 .alt_week_dose_line <- function(alt_week) {
   hours <- alt_week$hours
   share <- alt_week$share
-  if (!is.finite(hours) || hours <= 0) return(NULL)
+  if (!is.finite(hours) || hours <= 0) {
+    return(NULL)
+  }
   mention <- (is.finite(share) && share >= 0.25) || hours >= 3
-  if (!mention) return(NULL)
+  if (!mention) {
+    return(NULL)
+  }
 
   # "%d%%" without a space, matching the Z2 share ("53%") that can
   # appear in the same sentence.
@@ -494,30 +583,47 @@
   if (!share_trustworthy) {
     return(sprintf("Alternativt: %s h.", fmt_dec_sv(hours)))
   }
-  sprintf("Alternativt: %s h (%d%% av veckans belastning).",
-          fmt_dec_sv(hours), round(share * 100))
+  sprintf(
+    "Alternativt: %s h (%d%% av veckans belastning).",
+    fmt_dec_sv(hours), round(share * 100)
+  )
 }
 
 # Compose the dominant-purpose line: "Tröskelpass dominerade dagens
 # stimulus." or NULL when no running was done.
 .day_purpose_line <- function(running_class, n_running) {
-  if (is.null(running_class) || running_class$type == "unknown") return(NULL)
+  if (is.null(running_class) || running_class$type == "unknown") {
+    return(NULL)
+  }
   type_sv <- switch(running_class$type,
-    recovery = "lugnt löppass", endurance = "distanspass",
-    long = "långpass", tempo = "tröskelpass",
+    recovery = "lugnt löppass",
+    endurance = "distanspass",
+    long = "långpass",
+    tempo = "tröskelpass",
     threshold_intervals = "tröskelintervaller",
     vo2max = "kvalitetspass",
-    race_pace = "race-pace", race = "race-pace",
-    fartlek = "fartlek", hill = "backintervaller",
-    NULL)
-  if (is.null(type_sv)) return(NULL)
+    race_pace = "race-pace",
+    race = "race-pace",
+    fartlek = "fartlek",
+    hill = "backintervaller",
+    NULL
+  )
+  if (is.null(type_sv)) {
+    return(NULL)
+  }
   if (n_running > 1) {
-    sprintf("Tyngdpunkt: %s.",
-            paste0(toupper(substr(type_sv, 1, 1)),
-                   substr(type_sv, 2, nchar(type_sv))))
+    sprintf(
+      "Tyngdpunkt: %s.",
+      paste0(
+        toupper(substr(type_sv, 1, 1)),
+        substr(type_sv, 2, nchar(type_sv))
+      )
+    )
   } else {
-    sprintf("%s%s.", toupper(substr(type_sv, 1, 1)),
-            substr(type_sv, 2, nchar(type_sv)))
+    sprintf(
+      "%s%s.", toupper(substr(type_sv, 1, 1)),
+      substr(type_sv, 2, nchar(type_sv))
+    )
   }
 }
 
@@ -554,21 +660,28 @@
 # hr_max), and day_summary_prose() passes it to both; overriding the
 # denominator everywhere at once is the caller's intent, not a mix-up.
 .day_week_line <- function(summaries, on_date, hr_max = NULL,
-                            hr_rest = NULL, hr_max_alt = NULL) {
-  z3_run <- session_z3_count(summaries, on_date = on_date, days = 7,
-                              hr_max = hr_max)
+                           hr_rest = NULL, hr_max_alt = NULL) {
+  z3_run <- session_z3_count(summaries,
+    on_date = on_date, days = 7,
+    hr_max = hr_max
+  )
   z2_28 <- session_z2_fraction(summaries, on_date = on_date, days = 28)
-  alt_week <- .alt_week_stats(summaries, on_date, days = 7,
-                               hr_max = hr_max_alt, hr_rest = hr_rest)
+  alt_week <- .alt_week_stats(summaries, on_date,
+    days = 7,
+    hr_max = hr_max_alt, hr_rest = hr_rest
+  )
   z3_alt <- alt_week$hard_count
   z3_tot <- z3_run + z3_alt
 
   parts <- character()
   if (z3_tot >= 3) {
     parts <- c(parts, sprintf(
-      paste("Veckan: %d hårda pass totalt (%d löpning, %d alternativt)",
-            "— håll koll på återhämtningen."),
-      z3_tot, z3_run, z3_alt))
+      paste(
+        "Veckan: %d hårda pass totalt (%d löpning, %d alternativt)",
+        "— håll koll på återhämtningen."
+      ),
+      z3_tot, z3_run, z3_alt
+    ))
   } else {
     if (z3_run == 2) {
       parts <- c(parts, "Veckan (löpning): 2 kvalitetspass, på spåret.")
@@ -576,21 +689,29 @@
       parts <- c(parts, "Veckan (löpning): 1 kvalitetspass.")
     }
     if (z3_alt >= 1) {
-      parts <- c(parts, sprintf("Plus %d %s alternativpass.", z3_alt,
-                                if (z3_alt == 1) "hårt" else "hårda"))
+      parts <- c(parts, sprintf(
+        "Plus %d %s alternativpass.", z3_alt,
+        if (z3_alt == 1) "hårt" else "hårda"
+      ))
     }
   }
 
   if (is.finite(z2_28) && z2_28 > 0.20) {
-    parts <- c(parts,
-      sprintf("Mellanzon-andel (löpning) %d%% senaste 28 dagarna.",
-              round(z2_28 * 100)))
+    parts <- c(
+      parts,
+      sprintf(
+        "Mellanzon-andel (löpning) %d%% senaste 28 dagarna.",
+        round(z2_28 * 100)
+      )
+    )
   }
 
   dose <- .alt_week_dose_line(alt_week)
   if (!is.null(dose)) parts <- c(parts, dose)
 
-  if (length(parts) == 0) return(NULL)
+  if (length(parts) == 0) {
+    return(NULL)
+  }
   paste(parts, collapse = " ")
 }
 
@@ -606,29 +727,37 @@
 # That last line contradicted the day's readiness verdict. Fixed by
 # letting Gul/Röd readiness override or qualify the TSB phrasing.
 .day_state_line <- function(summaries, health_daily, on_date,
-                             hr_max = NULL, hr_rest = NULL,
-                             readiness = NULL) {
-  tsb_text <- tryCatch({
-    pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
-                       health_daily = health_daily)
-    if (nrow(pmc) == 0) return(NULL)
-    today_idx <- which(pmc$date == on_date)
-    prev_idx  <- which(pmc$date == on_date - 1)
-    pmc_today <- if (length(today_idx) > 0) pmc[today_idx[1], ] else NULL
-    pmc_prev  <- if (length(prev_idx) > 0)  pmc[prev_idx[1],  ] else NULL
-    .line_tsb_context(pmc_today, pmc_prev)
-  }, error = function(e) NULL)
+                            hr_max = NULL, hr_rest = NULL,
+                            readiness = NULL) {
+  tsb_text <- tryCatch(
+    {
+      pmc <- compute_pmc(summaries,
+        hr_max = hr_max, hr_rest = hr_rest,
+        health_daily = health_daily
+      )
+      if (nrow(pmc) == 0) {
+        return(NULL)
+      }
+      today_idx <- which(pmc$date == on_date)
+      prev_idx <- which(pmc$date == on_date - 1)
+      pmc_today <- if (length(today_idx) > 0) pmc[today_idx[1], ] else NULL
+      pmc_prev <- if (length(prev_idx) > 0) pmc[prev_idx[1], ] else NULL
+      .line_tsb_context(pmc_today, pmc_prev)
+    },
+    error = function(e) NULL
+  )
 
   # `readiness` is normally derived inside this function; tests can
   # inject a pre-built list directly.
   if (is.null(readiness) && !is.null(health_daily) &&
-      inherits(health_daily, "data.frame") &&
-      nrow(health_daily) > 0) {
+    inherits(health_daily, "data.frame") &&
+    nrow(health_daily) > 0) {
     readiness <- tryCatch(
       health_insight_readiness(
         traning_data(summaries = summaries, health_daily = health_daily),
         hr_max = hr_max, hr_rest = hr_rest,
-        on_date = on_date),
+        on_date = on_date
+      ),
       error = function(e) NULL
     )
   }
@@ -638,8 +767,10 @@
     return(tsb_text)
   }
 
-  quality <- .readiness_quality_note(readiness$kvalitet,
-                                      readiness$components %||% list())
+  quality <- .readiness_quality_note(
+    readiness$kvalitet,
+    readiness$components %||% list()
+  )
 
   # At minimal quality the verdict is withheld entirely, and this is
   # deliberately *not* what the morning push does with the same field.
@@ -670,32 +801,42 @@
   # — this branch's own scenario.)
   if (!quality$trustworthy) {
     thin <- if (length(quality$missing) > 0) {
-      sprintf("Dagsformen kan inte bedömas — %s saknas för dagen.",
-              paste(quality$missing, collapse = "/"))
+      sprintf(
+        "Dagsformen kan inte bedömas — %s saknas för dagen.",
+        paste(quality$missing, collapse = "/")
+      )
     } else {
       "Dagsformen kan inte bedömas — underlaget är för tunt."
     }
-    if (is.null(tsb_text)) return(thin)
+    if (is.null(tsb_text)) {
+      return(thin)
+    }
     return(paste(thin, tsb_text))
   }
 
   score <- readiness$score
   ball <- switch(status,
-                 "Grön" = "\U0001F7E2",
-                 "Gul"  = "\U0001F7E1",
-                 "Röd"  = "\U0001F534",
-                 "")
+    "Grön" = "\U0001F7E2",
+    "Gul"  = "\U0001F7E1",
+    "Röd"  = "\U0001F534",
+    ""
+  )
   score_str <- if (is.finite(score)) sprintf(" %.0f", score) else ""
-  prefix <- paste0("Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
-                   status, score_str, quality$suffix)
+  prefix <- paste0(
+    "Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
+    status, score_str, quality$suffix
+  )
 
   if (status == "Röd") {
     # Hard override — TSB form claim could actively mislead
     # the user when autonomic/sleep signals are degraded.
     paste0(prefix, " — återhämtningssignaler dominerar. Vila eller lugnt imorgon.")
   } else if (status == "Gul") {
-    if (is.null(tsb_text)) paste0(prefix, ".")
-    else paste0(prefix, ". ", tsb_text)
+    if (is.null(tsb_text)) {
+      paste0(prefix, ".")
+    } else {
+      paste0(prefix, ". ", tsb_text)
+    }
   } else {
     # Grön — readiness and TSB concur; keep TSB phrasing.
     tsb_text
@@ -728,22 +869,30 @@
 # arrives as a session rather than only as energy, which caps the NEAT
 # false-positive rate.
 .day_energy_verdict <- function(health_daily, date,
-                                 window_days = 30, min_days = 14) {
+                                window_days = 30, min_days = 14) {
   if (is.null(health_daily) || !inherits(health_daily, "data.frame") ||
-      nrow(health_daily) == 0 ||
-      !all(c("date", "metric", "value") %in% names(health_daily))) {
+    nrow(health_daily) == 0 ||
+    !all(c("date", "metric", "value") %in% names(health_daily))) {
     return("insufficient")
   }
-  ae <- health_daily[health_daily$metric == "active_energy",
-                     c("date", "value")]
+  ae <- health_daily[
+    health_daily$metric == "active_energy",
+    c("date", "value")
+  ]
   ae <- ae[!is.na(ae$value), ]
-  if (nrow(ae) == 0) return("insufficient")
+  if (nrow(ae) == 0) {
+    return("insufficient")
+  }
   ae$date <- as.Date(ae$date)
   today <- ae$value[ae$date == date]
-  if (length(today) == 0) return("insufficient")
+  if (length(today) == 0) {
+    return("insufficient")
+  }
   today <- max(today)
   win <- ae$value[ae$date < date & ae$date >= date - window_days]
-  if (length(win) < min_days) return("insufficient")
+  if (length(win) < min_days) {
+    return("insufficient")
+  }
   q90 <- as.numeric(stats::quantile(win, 0.90, names = FALSE))
   if (today > q90) "high" else "rest"
 }
@@ -779,18 +928,25 @@
 # The check must never delay or break the 21:30 notification: the whole
 # probe is wrapped in tryCatch and the HTTP timeout is short.
 .day_freshness_guard <- function(date, summaries, health_daily,
-                                  freshness = NULL) {
+                                 freshness = NULL) {
   # The date gate is unconditional. Conjoining it with `is.null(freshness)`
   # would let an injected verdict reach a historical day, which is the
   # one case the gate exists to prevent — an injection seam must not
   # double as an escape hatch from an invariant.
-  if (date < Sys.Date() - 1) return(NULL)
+  if (date < Sys.Date() - 1) {
+    return(NULL)
+  }
   fresh <- freshness %||% tryCatch(
-    data_freshness(health_daily = health_daily, summaries = summaries,
-                   status_fetch = function() .receiver_status(timeout = 3L)),
-    error = function(e) NULL)
+    data_freshness(
+      health_daily = health_daily, summaries = summaries,
+      status_fetch = function() .receiver_status(timeout = 3L)
+    ),
+    error = function(e) NULL
+  )
   workouts <- fresh$flows$workouts
-  if (is.null(workouts)) return(NULL)
+  if (is.null(workouts)) {
+    return(NULL)
+  }
 
   # 1a. A queue the receiver has taken in but not yet imported makes the
   # flow demonstrably alive — and the day's material demonstrably
@@ -802,20 +958,30 @@
     return(workouts)
   }
   # 1b. A stuck import is positive proof the cache is incomplete.
-  if (identical(workouts$queue_state, "stuck")) return(workouts)
+  if (identical(workouts$queue_state, "stuck")) {
+    return(workouts)
+  }
 
   # 2. Workout flow fresh — a genuine rest day.
-  if (isTRUE(workouts$ok)) return(NULL)
+  if (isTRUE(workouts$ok)) {
+    return(NULL)
+  }
 
   # 3. Both flows silent — an unambiguous outage, or too little energy
   # history to judge. Hedge.
   metrics <- fresh$flows$metrics
-  if (is.null(metrics) || !isTRUE(metrics$ok)) return(workouts)
+  if (is.null(metrics) || !isTRUE(metrics$ok)) {
+    return(workouts)
+  }
   verdict <- .day_energy_verdict(health_daily, date)
-  if (verdict == "insufficient") return(workouts)
+  if (verdict == "insufficient") {
+    return(workouts)
+  }
 
   # 4. Metrics fresh: the energy imprint breaks the tie.
-  if (verdict == "high") return(workouts)
+  if (verdict == "high") {
+    return(workouts)
+  }
   NULL
 }
 
@@ -850,9 +1016,9 @@
 #'   data-is-missing line when the feed has gone quiet.
 #' @export
 day_summary_prose <- function(summaries, date = Sys.Date(),
-                               hr_max = NULL, hr_rest = NULL,
-                               health_daily = NULL,
-                               freshness = NULL) {
+                              hr_max = NULL, hr_rest = NULL,
+                              health_daily = NULL,
+                              freshness = NULL) {
   date <- as.Date(date)
 
   # Loaded before the empty-summaries branch: the freshness guard uses
@@ -860,7 +1026,8 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   # answer, and that branch is exactly where the guard matters most.
   if (is.null(health_daily)) {
     health_daily <- tryCatch(load_health_data(),
-                              error = function(e) NULL)
+      error = function(e) NULL
+    )
   }
 
   if (is.null(summaries) || nrow(summaries) == 0) {
@@ -895,7 +1062,9 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
       return(paste0("Inga registrerade pass — ", stale$prose))
     }
     state <- .day_state_line(summaries, health_daily, date, hr_max, hr_rest)
-    if (!is.null(state)) return(paste("Vilodag.", state))
+    if (!is.null(state)) {
+      return(paste("Vilodag.", state))
+    }
     return("Vilodag.")
   }
 
@@ -910,7 +1079,8 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   # (NA-sport) session would otherwise get no prose at all — the same
   # hidden-activity failure as the NANA case, via a different path.
   n_running <- sum(stringr::str_detect(tolower(todays$sport), "running"),
-                   na.rm = TRUE)
+    na.rm = TRUE
+  )
   l_purpose <- .day_purpose_line(cls, n_running)
   if (!is.null(l_purpose)) parts <- c(parts, l_purpose)
 
@@ -920,7 +1090,8 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   hr_max_alt <- hr_max
   if (is.null(hr_max_alt)) {
     hr_max_alt <- tryCatch(get_hr_max(summaries, sport = "all"),
-                            error = function(e) NULL)
+      error = function(e) NULL
+    )
   }
 
   # Alternative training gets its own line, after the running one —
@@ -928,14 +1099,18 @@ day_summary_prose <- function(summaries, date = Sys.Date(),
   # running this line takes the running line's place.
   alt <- .day_alt_class(todays, summaries, hr_max = hr_max_alt)
   l_alt <- .day_alt_purpose_line(
-    alt, run_recovery_cost = if (is.null(cls)) NULL else cls$recovery_cost)
+    alt,
+    run_recovery_cost = if (is.null(cls)) NULL else cls$recovery_cost
+  )
   if (!is.null(l_alt)) parts <- c(parts, l_alt)
 
   l_state <- .day_state_line(summaries, health_daily, date, hr_max, hr_rest)
   if (!is.null(l_state)) parts <- c(parts, l_state)
 
-  l_week <- .day_week_line(summaries, date, hr_max = hr_max,
-                            hr_rest = hr_rest, hr_max_alt = hr_max_alt)
+  l_week <- .day_week_line(summaries, date,
+    hr_max = hr_max,
+    hr_rest = hr_rest, hr_max_alt = hr_max_alt
+  )
   if (!is.null(l_week)) parts <- c(parts, l_week)
 
   paste(parts, collapse = " ")

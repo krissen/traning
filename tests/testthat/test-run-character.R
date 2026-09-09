@@ -3,7 +3,7 @@
 # realistic-enough fixture (multi-year, varied pace + distance).
 
 .fixture_run_profile <- function(n_years = 6, runs_per_year = 60,
-                                  seed = 17) {
+                                 seed = 17) {
   set.seed(seed)
   start <- as.POSIXct("2018-01-08 07:30:00", tz = "UTC")
   n <- n_years * runs_per_year
@@ -24,15 +24,15 @@
 
   dur_min <- km * pace
   data.frame(
-    sessionStart      = ss,
-    sport             = "running",
-    distance          = distance,
-    durationMoving    = as.difftime(dur_min, units = "mins"),
-    avgPaceMoving     = pace,
+    sessionStart = ss,
+    sport = "running",
+    distance = distance,
+    durationMoving = as.difftime(dur_min, units = "mins"),
+    avgPaceMoving = pace,
     avgHeartRateMoving = round(stats::runif(n, 130, 175)),
-    avgSpeedMoving    = 1 / (pace / 60) * (1000/1000),
-    duration          = as.difftime(dur_min, units = "mins"),
-    stringsAsFactors  = FALSE
+    avgSpeedMoving = 1 / (pace / 60) * (1000 / 1000),
+    duration = as.difftime(dur_min, units = "mins"),
+    stringsAsFactors = FALSE
   )
 }
 
@@ -141,9 +141,11 @@ test_that("fetch.plot.distance_pace_era converts to plotly without dropping the 
   # vertices — each geom_rect bin contributes 5 polygon points,
   # so a 30×30 bin grid produces hundreds. A bare median-line plot
   # cannot exceed 0 filled vertices.
-  total_filled_pts <- sum(vapply(build$x$data[filled_traces],
+  total_filled_pts <- sum(vapply(
+    build$x$data[filled_traces],
     function(tr) length(if (is.null(tr$x)) NULL else tr$x),
-    integer(1)))
+    integer(1)
+  ))
   expect_gt(total_filled_pts, 50)
 })
 
@@ -164,7 +166,8 @@ test_that("fetch.plot.heatmap_km quarter labels survive plotly conversion", {
   }))
   for (lbl in c("jan", "apr", "jul", "okt")) {
     expect_true(any(grepl(lbl, text_blobs, fixed = TRUE)),
-      info = sprintf("quarter label %s not present in plotly traces", lbl))
+      info = sprintf("quarter label %s not present in plotly traces", lbl)
+    )
   }
 })
 
@@ -185,14 +188,18 @@ test_that("fetch.plot.distance_pace_era handles degenerate km/pace ranges", {
   # caught (the generic "Ingen data i intervallet" would mislead
   # users who do have runs in the filter).
   expect_match(p$labels$title %||% "",
-               "variation i distans/tempo", fixed = TRUE)
+    "variation i distans/tempo",
+    fixed = TRUE
+  )
 
   df_same_pace <- df
   df_same_pace$avgPaceMoving <- 5.5
   p2 <- fetch.plot.distance_pace_era(df_same_pace)
   expect_s3_class(p2, "ggplot")
   expect_match(p2$labels$title %||% "",
-               "variation i distans/tempo", fixed = TRUE)
+    "variation i distans/tempo",
+    fixed = TRUE
+  )
 })
 
 # Regression: season_pace season bands previously had zero height

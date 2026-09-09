@@ -34,9 +34,7 @@ log = logging.getLogger(__name__)
 
 # Path to Rscript CLI + notify helper
 _CLI_R = Path(__file__).resolve().parent.parent.parent.parent / "inst" / "cli.R"
-_NOTIFY_HELPER_R = (
-    Path(__file__).resolve().parent.parent.parent.parent / "inst" / "notify_helper.R"
-)
+_NOTIFY_HELPER_R = Path(__file__).resolve().parent.parent.parent.parent / "inst" / "notify_helper.R"
 
 
 def _run_import_garmin() -> tuple[str, str | None]:
@@ -58,8 +56,7 @@ def _run_import_garmin() -> tuple[str, str | None]:
             result = run_r_import(_CLI_R, ["--import"], timeout=300)
             elapsed = int(time.time() - t0)
             if result.returncode != 0:
-                log.warning("Import garmin failed (%ds): %s",
-                            elapsed, result.stderr.strip()[-300:])
+                log.warning("Import garmin failed (%ds): %s", elapsed, result.stderr.strip()[-300:])
                 return "", "MISSLYCKADES"
             log.info("Import garmin OK (%ds)", elapsed)
             summary = parse_import_summary(result.stdout)
@@ -72,16 +69,23 @@ def _run_import_garmin() -> tuple[str, str | None]:
 
 def _run_insight_garmin() -> str:
     """Generate a short insight string from cached summaries. Returns "" on failure."""
-    cmd = ["Rscript", "-e", (
-        'devtools::load_all(".", quiet=TRUE); '
-        'td <- Sys.getenv("TRANING_DATA"); '
-        'tl <- my_dbs_load(file.path(td,"cache","summaries.RData"), '
-        'file.path(td,"cache","myruns.RData")); '
-        'cat(report_insight(tl[["summaries"]]))'
-    )]
+    cmd = [
+        "Rscript",
+        "-e",
+        (
+            'devtools::load_all(".", quiet=TRUE); '
+            'td <- Sys.getenv("TRANING_DATA"); '
+            'tl <- my_dbs_load(file.path(td,"cache","summaries.RData"), '
+            'file.path(td,"cache","myruns.RData")); '
+            'cat(report_insight(tl[["summaries"]]))'
+        ),
+    ]
     try:
         result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=120,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=120,
             cwd=str(_CLI_R.parent.parent),
         )
         if result.returncode == 0 and result.stdout.strip():
@@ -102,21 +106,18 @@ def _compose_garmin_message(import_summary: str, insight: str) -> str:
     informative to say (caller should skip the notification).
     """
     summary_low = import_summary.lower()
-    nothing_imported = (
-        not import_summary
-        or import_summary == "klart"
-        or "inget att" in summary_low
-    )
+    nothing_imported = not import_summary or import_summary == "klart" or "inget att" in summary_low
     if not insight:
         return "" if nothing_imported else import_summary
     if nothing_imported or summary_low.startswith("import: 1 pass"):
         return insight
     return f"{import_summary} {insight}"
 
+
 _import_lock = threading.Lock()
 
 
-def _import_and_notify(files: list, kind: str = "health"):
+def _import_and_notify(files: list, _kind: str = "health"):
     """Import files via R and emit a state-aware notification.
 
     First flush of the day → readiness/state notification.
@@ -139,7 +140,8 @@ def _import_and_notify(files: list, kind: str = "health"):
                 prev_path = tf.name
 
         cmd = [
-            "Rscript", str(_NOTIFY_HELPER_R),
+            "Rscript",
+            str(_NOTIFY_HELPER_R),
             f"--files={','.join(files)}",
         ]
         if prev_path:
@@ -149,20 +151,20 @@ def _import_and_notify(files: list, kind: str = "health"):
         title = "tRäning"
         message: str | None = None
         result_dict: dict | None = None
-        trigger_label = (
-            "health_morning" if not state.get("morning_sent") else "health_update"
-        )
+        trigger_label = "health_morning" if not state.get("morning_sent") else "health_update"
 
         try:
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=180,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=180,
                 cwd=str(_CLI_R.parent.parent),
             )
             elapsed = int(time.time() - t0)
 
             if result.returncode != 0:
-                log.warning("notify_helper failed (%ds): %s",
-                            elapsed, result.stderr.strip()[-300:])
+                log.warning("notify_helper failed (%ds): %s", elapsed, result.stderr.strip()[-300:])
                 message = f"Hälsoimport: MISSLYCKADES ({elapsed}s)"
             else:
                 stdout = result.stdout.strip()
@@ -172,8 +174,7 @@ def _import_and_notify(files: list, kind: str = "health"):
                     try:
                         result_dict = json.loads(stdout)
                     except Exception:
-                        log.warning("notify_helper: failed to parse JSON: %.300s",
-                                    stdout)
+                        log.warning("notify_helper: failed to parse JSON: %.300s", stdout)
                     if result_dict:
                         kind_field = result_dict.get("kind")
                         if kind_field == "error":
@@ -185,13 +186,9 @@ def _import_and_notify(files: list, kind: str = "health"):
                             if prosa:
                                 message = prosa
                             elif kind_field == "update":
-                                log.info(
-                                    "notify_helper: silent flush (no update trigger)"
-                                )
+                                log.info("notify_helper: silent flush (no update trigger)")
                             else:
-                                log.info(
-                                    "notify_helper: empty readiness prose (no data)"
-                                )
+                                log.info("notify_helper: empty readiness prose (no data)")
 
         except subprocess.TimeoutExpired:
             elapsed = int(time.time() - t0)
@@ -388,12 +385,10 @@ def _flush_pending_workouts() -> None:
             # short timer so the leftover pending count still gets flushed
             # on its own rather than waiting for the next workout push.
             log.debug(
-                "HAE auto-import: flush already in progress, "
-                "re-arming in %ds", _WORKOUTS_RETRY_SECS,
+                "HAE auto-import: flush already in progress, re-arming in %ds",
+                _WORKOUTS_RETRY_SECS,
             )
-            _workouts_timer = threading.Timer(
-                _WORKOUTS_RETRY_SECS, _flush_pending_workouts
-            )
+            _workouts_timer = threading.Timer(_WORKOUTS_RETRY_SECS, _flush_pending_workouts)
             _workouts_timer.daemon = True
             _workouts_timer.start()
             return
@@ -416,25 +411,27 @@ def _flush_pending_workouts() -> None:
         with _import_lock:
             try:
                 result = run_r_import(
-                    _CLI_R, ["--import"],
-                    cwd=_CLI_R.parent.parent, timeout=300,
+                    _CLI_R,
+                    ["--import"],
+                    cwd=_CLI_R.parent.parent,
+                    timeout=300,
                 )
                 elapsed = int(time.time() - t0)
                 if result.returncode != 0:
                     log.warning(
                         "HAE auto-import failed (%ds, %d pending): %s",
-                        elapsed, n, result.stderr.strip()[-300:],
+                        elapsed,
+                        n,
+                        result.stderr.strip()[-300:],
                     )
                 else:
                     ok = True
                     # Surface the trailing import-summary line for journal logs.
                     summary = parse_import_summary(result.stdout)
-                    log.info("HAE auto-import OK (%ds, %d pending): %s",
-                             elapsed, n, summary)
+                    log.info("HAE auto-import OK (%ds, %d pending): %s", elapsed, n, summary)
             except subprocess.TimeoutExpired:
                 elapsed = int(time.time() - t0)
-                log.warning("HAE auto-import timed out after %ds (%d pending)",
-                            elapsed, n)
+                log.warning("HAE auto-import timed out after %ds (%d pending)", elapsed, n)
             except Exception:
                 log.exception("HAE auto-import: unexpected error")
 
@@ -461,9 +458,7 @@ def _flush_pending_workouts() -> None:
         # False, so the snapshot n is left un-decremented and the batch
         # retries on the next push (same contract as an R-side failure).
         with _workouts_lock:
-            _pending_workouts_count = _decrement_after_flush(
-                _pending_workouts_count, n, ok
-            )
+            _pending_workouts_count = _decrement_after_flush(_pending_workouts_count, n, ok)
             _workouts_flushing = False
         _persist_pending_state()
 
@@ -477,9 +472,7 @@ def _schedule_workouts_import(n_new: int) -> None:
         _pending_workouts_count += n_new
         if _workouts_timer is not None:
             _workouts_timer.cancel()
-        _workouts_timer = threading.Timer(
-            _DEBOUNCE_WORKOUTS_SECS, _flush_pending_workouts
-        )
+        _workouts_timer = threading.Timer(_DEBOUNCE_WORKOUTS_SECS, _flush_pending_workouts)
         _workouts_timer.daemon = True
         _workouts_timer.start()
     _persist_pending_state()
@@ -513,9 +506,7 @@ def _resume_pending_state() -> None:
             _pending_workouts_count += count
             if _workouts_timer is not None:
                 _workouts_timer.cancel()
-            _workouts_timer = threading.Timer(
-                _DEBOUNCE_WORKOUTS_SECS, _flush_pending_workouts
-            )
+            _workouts_timer = threading.Timer(_DEBOUNCE_WORKOUTS_SECS, _flush_pending_workouts)
             _workouts_timer.daemon = True
             _workouts_timer.start()
         log.info("Resumed %d pending workout(s) after restart", count)
@@ -571,17 +562,17 @@ def _describe_validation_error(exc: RequestValidationError) -> str:
             exact = ".".join(str(part) for part in parts)
             # Collapse list indices so element 0 and element 499 of the
             # same broken field count as one finding.
-            collapsed = ".".join(
-                "*" if isinstance(part, int) else str(part) for part in parts
-            )
+            collapsed = ".".join("*" if isinstance(part, int) else str(part) for part in parts)
             err_type = err.get("type", "?")
             key = f"{collapsed}: {err_type}"
             first, count = seen.get(key, (f"{exact}: {err_type}", 0))
             seen[key] = (first, count + 1)
-        return "; ".join(
-            first if count == 1 else f"{key} (x{count})"
-            for key, (first, count) in seen.items()
-        ) or "no field detail"
+        return (
+            "; ".join(
+                first if count == 1 else f"{key} (x{count})" for key, (first, count) in seen.items()
+            )
+            or "no field detail"
+        )
     except Exception as err:
         log.debug("Could not describe validation error (%s)", type(err).__name__)
         return "undescribable"
@@ -596,7 +587,7 @@ _last_import_files: int = 0
 
 
 @asynccontextmanager
-async def _lifespan(application: FastAPI):
+async def _lifespan(_application: FastAPI):
     _resume_pending_state()
     yield
 
@@ -644,7 +635,6 @@ def create_app() -> FastAPI:
     async def healthcheck():
         return {"status": "ok"}
 
-
     @application.get("/v1/status", dependencies=[Depends(require_api_key)])
     async def status():
         with _pending_lock:
@@ -675,8 +665,7 @@ def create_app() -> FastAPI:
             # non-zero. That pairing (recent attempt, non-empty queue,
             # no re-armed timer) is a stuck import, not a live feed.
             "last_workouts_import": (
-                _last_workouts_import_ts.isoformat()
-                if _last_workouts_import_ts else None
+                _last_workouts_import_ts.isoformat() if _last_workouts_import_ts else None
             ),
             "last_workouts_import_count": _last_workouts_import_count,
             # Last import that actually succeeded (drained the queue), as
@@ -684,8 +673,7 @@ def create_app() -> FastAPI:
             # to catch a poison-message wedge: fresh arrivals + a growing
             # queue + a stale success = a broken import, not a live feed.
             "last_workouts_import_ok": (
-                _last_workouts_import_ok_ts.isoformat()
-                if _last_workouts_import_ok_ts else None
+                _last_workouts_import_ok_ts.isoformat() if _last_workouts_import_ok_ts else None
             ),
         }
 
@@ -737,14 +725,20 @@ def create_app() -> FastAPI:
     @application.post("/v1/trigger/garmin", dependencies=[Depends(require_api_key)])
     async def trigger_garmin(background_tasks: BackgroundTasks):
         """Trigger a Garmin fetch in the background."""
+
         def _run_fetch():
             traning_bin = (
                 Path(__file__).resolve().parent.parent.parent.parent
-                / "python" / ".venv" / "bin" / "traning"
+                / "python"
+                / ".venv"
+                / "bin"
+                / "traning"
             )
             result = subprocess.run(
                 [str(traning_bin), "fetch", "garmin"],
-                capture_output=True, text=True, timeout=120,
+                capture_output=True,
+                text=True,
+                timeout=120,
             )
             log.info("Garmin fetch: %s", result.stdout.strip())
             if result.returncode != 0:

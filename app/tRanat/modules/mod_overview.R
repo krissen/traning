@@ -5,7 +5,7 @@ mod_overview_ui <- function(id) {
   shiny::tagList(
     # --- KPI value boxes ---
     bslib::layout_column_wrap(
-      width = 1/5,
+      width = 1 / 5,
       heights_equal = "row",
       class = "section-spacer",
       shiny::uiOutput(ns("vb_readiness")),
@@ -15,7 +15,8 @@ mod_overview_ui <- function(id) {
       shiny::uiOutput(ns("vb_acwr"))
     ),
     # --- Mini trend charts ---
-    bslib::layout_columns(col_widths = 6, class = "section-spacer",
+    bslib::layout_columns(
+      col_widths = 6, class = "section-spacer",
       bslib::card(
         full_screen = TRUE,
         bslib::card_header("Beredskap"),
@@ -34,19 +35,23 @@ mod_overview_ui <- function(id) {
       )
     ),
     # --- Recent runs ---
-    tags$div(class = "section-spacer",
+    tags$div(
+      class = "section-spacer",
       bslib::accordion(
         open = FALSE,
-        bslib::accordion_panel("Senaste l\u00f6ppass",
+        bslib::accordion_panel(
+          "Senaste l\u00f6ppass",
           DT::dataTableOutput(ns("recent_runs"))
         )
       )
     ),
     # --- Fun facts ---
-    tags$div(class = "section-spacer",
+    tags$div(
+      class = "section-spacer",
       bslib::accordion(
         open = FALSE,
-        bslib::accordion_panel("Trivia",
+        bslib::accordion_panel(
+          "Trivia",
           shiny::uiOutput(ns("fun_facts"))
         )
       )
@@ -59,16 +64,15 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
   # compute_pmc/compute_acwr/compute_readiness were NOT migrated to the
   # S7 traning_data(data, ...) contract — they still take positional
   # summaries/health_daily args, so unpack the bundle's slots once here.
-  summaries    <- data@summaries
+  summaries <- data@summaries
   health_daily <- data@health_daily
   shiny::moduleServer(id, function(input, output, session) {
-
     # `dates()` styr de två mini-graferna nedan. Värde-boxarna avviker
     # medvetet: de visar senaste tillgängliga snapshot (dvs. dagens
     # läge för beredskap/CTL/TSB/ACWR) oberoende av navbar-presetet.
     # Se docs/dev/filter-consistency.md.
     dr_from <- shiny::reactive(dates()$from)
-    dr_to   <- shiny::reactive(dates()$to)
+    dr_to <- shiny::reactive(dates()$to)
 
     # --- Shared computed data (cached per session) ---
     # bindCache() default `cache = "app"` is shared across ALL sessions
@@ -103,9 +107,12 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
     # load_overview_metrics() on the first hit of a new day (which then
     # rebuilds fresh; read_only skips the disk write).
     overview_metrics <- shiny::reactive({
-      tryCatch(load_overview_metrics(summaries, health_daily,
-                                     read_only = TRUE),
-               error = function(e) NULL)
+      tryCatch(
+        load_overview_metrics(summaries, health_daily,
+          read_only = TRUE
+        ),
+        error = function(e) NULL
+      )
     }) |> shiny::bindCache(data_version, Sys.Date())
 
     pmc_data <- shiny::reactive({
@@ -147,7 +154,8 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
       if (is.null(rd)) {
         return(.vb_placeholder("Beredskap", "\u2014", "neutral", kpi_type = "readiness"))
       }
-      latest <- rd |> dplyr::filter(!is.na(readiness_score)) |>
+      latest <- rd |>
+        dplyr::filter(!is.na(readiness_score)) |>
         dplyr::slice_max(date, n = 1)
       if (nrow(latest) == 0) {
         return(.vb_placeholder("Beredskap", "\u2014", "neutral", kpi_type = "readiness"))
@@ -155,21 +163,30 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
 
       score <- round(latest$readiness_score[1])
       rs <- latest$readiness_status[1]
-      cls <- if (is.na(rs)) "neutral"
-             else if (rs == "Gr\u00f6n") "green"
-             else if (rs == "Gul") "yellow"
-             else if (rs == "R\u00f6d") "red"
-             else "neutral"
+      cls <- if (is.na(rs)) {
+        "neutral"
+      } else if (rs == "Gr\u00f6n") {
+        "green"
+      } else if (rs == "Gul") {
+        "yellow"
+      } else if (rs == "R\u00f6d") {
+        "red"
+      } else {
+        "neutral"
+      }
 
       .vb("Beredskap", score, cls,
         bsicons::bs_icon("heart-pulse-fill"),
-        kpi_type = "readiness")
+        kpi_type = "readiness"
+      )
     })
 
     # --- Value box: Weekly km ---
     output$vb_weekly_km <- shiny::renderUI({
       ad <- running_volume_data()
-      if (is.null(ad)) return(.vb_placeholder("Vecka km", "\u2014", "neutral", kpi_type = "weekly_km"))
+      if (is.null(ad)) {
+        return(.vb_placeholder("Vecka km", "\u2014", "neutral", kpi_type = "weekly_km"))
+      }
       latest <- ad |> dplyr::slice_max(date, n = 1)
       if (nrow(latest) == 0L) {
         return(.vb_placeholder("Vecka km", "\u2014", "neutral", kpi_type = "weekly_km"))
@@ -177,28 +194,38 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
       km <- traning::fmt_dec_sv(latest$weekly_km[1], trim_zero = TRUE)
       .vb("Vecka km", paste0(km, " km"), "neutral",
         bsicons::bs_icon("speedometer2"),
-        kpi_type = "weekly_km")
+        kpi_type = "weekly_km"
+      )
     })
 
     # --- Value box: CTL (fitness) ---
     output$vb_ctl <- shiny::renderUI({
       pd <- pmc_data()
-      if (is.null(pd)) return(.vb_placeholder("Fitness", "\u2014", "neutral", kpi_type = "ctl"))
-      latest <- pd |> dplyr::filter(!is.na(ctl)) |> dplyr::slice_max(date, n = 1)
+      if (is.null(pd)) {
+        return(.vb_placeholder("Fitness", "\u2014", "neutral", kpi_type = "ctl"))
+      }
+      latest <- pd |>
+        dplyr::filter(!is.na(ctl)) |>
+        dplyr::slice_max(date, n = 1)
       if (nrow(latest) == 0L) {
         return(.vb_placeholder("Fitness", "\u2014", "neutral", kpi_type = "ctl"))
       }
       ctl <- round(latest$ctl[1])
       .vb("Fitness (CTL)", ctl, "neutral",
         bsicons::bs_icon("graph-up"),
-        kpi_type = "ctl")
+        kpi_type = "ctl"
+      )
     })
 
     # --- Value box: TSB (form) ---
     output$vb_tsb <- shiny::renderUI({
       pd <- pmc_data()
-      if (is.null(pd)) return(.vb_placeholder("Form", "\u2014", "neutral", kpi_type = "tsb"))
-      latest <- pd |> dplyr::filter(!is.na(tsb)) |> dplyr::slice_max(date, n = 1)
+      if (is.null(pd)) {
+        return(.vb_placeholder("Form", "\u2014", "neutral", kpi_type = "tsb"))
+      }
+      latest <- pd |>
+        dplyr::filter(!is.na(tsb)) |>
+        dplyr::slice_max(date, n = 1)
       if (nrow(latest) == 0L) {
         return(.vb_placeholder("Form", "\u2014", "neutral", kpi_type = "tsb"))
       }
@@ -207,14 +234,19 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
       label <- if (tsb > 5) "Utvilad" else if (tsb > -10) "Neutral" else "Tr\u00f6tt"
       .vb("Form (TSB)", paste0(tsb, " \u2014 ", label), cls,
         bsicons::bs_icon("battery-half"),
-        kpi_type = "tsb")
+        kpi_type = "tsb"
+      )
     })
 
     # --- Value box: ACWR ---
     output$vb_acwr <- shiny::renderUI({
       ad <- acwr_data()
-      if (is.null(ad)) return(.vb_placeholder("ACWR", "\u2014", "neutral", kpi_type = "acwr"))
-      latest <- ad |> dplyr::filter(!is.na(acwr)) |> dplyr::slice_max(date, n = 1)
+      if (is.null(ad)) {
+        return(.vb_placeholder("ACWR", "\u2014", "neutral", kpi_type = "acwr"))
+      }
+      latest <- ad |>
+        dplyr::filter(!is.na(acwr)) |>
+        dplyr::slice_max(date, n = 1)
       # compute_acwr() can return zero qualifying rows when summaries
       # have distance data but no HR-qualifying workouts (e.g. a fresh
       # account with manual entries only, or the TRIMP-mode path with
@@ -229,7 +261,8 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
       # Compare on the number, display with a Swedish decimal comma.
       .vb("ACWR", traning::fmt_dec_sv(ratio, digits = 2), cls,
         bsicons::bs_icon("activity"),
-        kpi_type = "acwr")
+        kpi_type = "acwr"
+      )
     })
 
     # --- Mini readiness chart (följer globalt datumspann) ---
@@ -241,15 +274,27 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
       shiny::req(nrow(recent) > 0)
       pal <- traning::traning_palette
       ggplot2::ggplot(recent, ggplot2::aes(date, readiness_score)) +
-        ggplot2::geom_rect(ggplot2::aes(xmin = min(date), xmax = max(date),
-          ymin = 70, ymax = 100),
-          fill = pal$readiness_bg[["high"]], alpha = 0.5) +
-        ggplot2::geom_rect(ggplot2::aes(xmin = min(date), xmax = max(date),
-          ymin = 40, ymax = 70),
-          fill = pal$readiness_bg[["medium"]], alpha = 0.5) +
-        ggplot2::geom_rect(ggplot2::aes(xmin = min(date), xmax = max(date),
-          ymin = 0, ymax = 40),
-          fill = pal$readiness_bg[["low"]], alpha = 0.5) +
+        ggplot2::geom_rect(
+          ggplot2::aes(
+            xmin = min(date), xmax = max(date),
+            ymin = 70, ymax = 100
+          ),
+          fill = pal$readiness_bg[["high"]], alpha = 0.5
+        ) +
+        ggplot2::geom_rect(
+          ggplot2::aes(
+            xmin = min(date), xmax = max(date),
+            ymin = 40, ymax = 70
+          ),
+          fill = pal$readiness_bg[["medium"]], alpha = 0.5
+        ) +
+        ggplot2::geom_rect(
+          ggplot2::aes(
+            xmin = min(date), xmax = max(date),
+            ymin = 0, ymax = 40
+          ),
+          fill = pal$readiness_bg[["low"]], alpha = 0.5
+        ) +
         ggplot2::geom_line(linewidth = 1, color = pal$primary) +
         ggplot2::geom_point(size = 2, color = pal$primary) +
         ggplot2::scale_y_continuous(limits = c(0, 100)) +
@@ -270,7 +315,8 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
       running <- running |>
         dplyr::mutate(
           week = lubridate::floor_date(as.Date(sessionStart), "week",
-            week_start = 1)
+            week_start = 1
+          )
         ) |>
         dplyr::group_by(week) |>
         dplyr::summarise(km = sum(distance / 1000, na.rm = TRUE), .groups = "drop")
@@ -333,8 +379,10 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
     value = value,
     showcase = icon,
     class = cls,
-    theme = bslib::value_box_theme(bg = "transparent",
-                                    fg = traning::traning_palette$text_dark)
+    theme = bslib::value_box_theme(
+      bg = "transparent",
+      fg = traning::traning_palette$text_dark
+    )
   )
   if (!is.null(kpi_type)) {
     onclick <- sprintf(
@@ -360,5 +408,6 @@ mod_overview_server <- function(id, data, dates, is_mobile, data_version) {
 .vb_placeholder <- function(title, value = "\u2014", status = "neutral",
                             kpi_type = NULL) {
   .vb(title, value, status, bsicons::bs_icon("dash-circle"),
-      kpi_type = kpi_type)
+    kpi_type = kpi_type
+  )
 }

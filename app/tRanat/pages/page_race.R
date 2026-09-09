@@ -14,20 +14,23 @@ page_race_ui <- function(id) {
         bslib::layout_columns(
           col_widths = bslib::breakpoints(sm = 12, md = c(4, 4, 4)),
           shinyWidgets::airDatepickerInput(ns("race_date"), "Tävlingsdag",
-                            value     = Sys.Date() + 42L,
-                            minDate   = Sys.Date(),
-                            # language="en" for crash-free init; www/air-datepicker-sv.js
-                            # swaps the calendar to Swedish post-init (see mod_date_preset.R).
-                            language  = "en",
-                            firstDay  = 1L,
-                            autoClose = TRUE,
-                            width = "100%"),
+            value = Sys.Date() + 42L,
+            minDate = Sys.Date(),
+            # language="en" for crash-free init; www/air-datepicker-sv.js
+            # swaps the calendar to Swedish post-init (see mod_date_preset.R).
+            language = "en",
+            firstDay = 1L,
+            autoClose = TRUE,
+            width = "100%"
+          ),
           shiny::numericInput(ns("distance_km"), "Distans (km)",
-                               value = 21.1, min = 1, max = 200,
-                               step = 0.1, width = "100%"),
+            value = 21.1, min = 1, max = 200,
+            step = 0.1, width = "100%"
+          ),
           shiny::sliderInput(ns("taper_weeks"), "Taper-veckor",
-                              min = 1L, max = 4L, value = 2L, step = 1L,
-                              width = "100%")
+            min = 1L, max = 4L, value = 2L, step = 1L,
+            width = "100%"
+          )
         )
       )
     ),
@@ -64,9 +67,10 @@ page_race_server <- function(id, data, dates, is_mobile) {
       shiny::req(input$race_date, input$taper_weeks)
       tryCatch(
         compute_taper_plan(data,
-                            race_date = input$race_date,
-                            distance_km = input$distance_km,
-                            taper_weeks = as.integer(input$taper_weeks)),
+          race_date = input$race_date,
+          distance_km = input$distance_km,
+          taper_weeks = as.integer(input$taper_weeks)
+        ),
         error = function(e) {
           tibble::tibble(error = conditionMessage(e))
         }
@@ -77,11 +81,14 @@ page_race_server <- function(id, data, dates, is_mobile) {
       shiny::req(input$race_date, input$taper_weeks)
       tryCatch(
         compute_race_readiness(data,
-                                target_date = input$race_date,
-                                taper_weeks = as.integer(input$taper_weeks)),
+          target_date = input$race_date,
+          taper_weeks = as.integer(input$taper_weeks)
+        ),
         error = function(e) {
-          list(status = "Fel", score = NA_real_,
-               prose = conditionMessage(e))
+          list(
+            status = "Fel", score = NA_real_,
+            prose = conditionMessage(e)
+          )
         }
       )
     })
@@ -89,10 +96,14 @@ page_race_server <- function(id, data, dates, is_mobile) {
     output$plan_table <- DT::renderDataTable({
       plan <- taper_plan()
       if ("error" %in% names(plan)) {
-        return(DT::datatable(plan, rownames = FALSE,
-                              options = list(dom = "t",
-                                              paging = FALSE,
-                                              searching = FALSE)))
+        return(DT::datatable(plan,
+          rownames = FALSE,
+          options = list(
+            dom = "t",
+            paging = FALSE,
+            searching = FALSE
+          )
+        ))
       }
       # ISO weekdays via %u (1=Mon..7=Sun) keeps the label rendering
       # identical regardless of the Shiny host's LC_TIME — same trick
@@ -101,28 +112,38 @@ page_race_server <- function(id, data, dates, is_mobile) {
       wday <- swedish_wdays[as.integer(format(plan$week_start, "%u"))]
       vecka <- sprintf("%s %s", wday, format(plan$week_start))
       display <- data.frame(
-        Vecka           = vecka,
-        Fas             = c(build = "Bygg", taper = "Taper",
-                             race  = "Tävling")[plan$phase],
-        `Mål (km)`      = plan$target_km,
+        Vecka = vecka,
+        Fas = c(
+          build = "Bygg", taper = "Taper",
+          race = "Tävling"
+        )[plan$phase],
+        `Mål (km)` = plan$target_km,
         `% av baseline` = round(plan$relative_to_baseline * 100),
         check.names = FALSE
       )
-      DT::datatable(display, rownames = FALSE,
-                     options = list(dom = "t", paging = FALSE,
-                                     searching = FALSE,
-                                     ordering = FALSE))
+      DT::datatable(display,
+        rownames = FALSE,
+        options = list(
+          dom = "t", paging = FALSE,
+          searching = FALSE,
+          ordering = FALSE
+        )
+      )
     })
 
     output$plan_prose <- shiny::renderText({
       plan <- taper_plan()
-      if ("error" %in% names(plan)) return(plan$error[[1]])
+      if ("error" %in% names(plan)) {
+        return(plan$error[[1]])
+      }
       render_taper_plan_prose(plan)
     })
 
     output$readiness_header <- shiny::renderUI({
       r <- readiness()
-      if (is.null(r) || is.null(r$status)) return(NULL)
+      if (is.null(r) || is.null(r$status)) {
+        return(NULL)
+      }
       color <- switch(r$status,
         "Klar"      = "bg-success text-white",
         "Tveksam"   = "bg-warning",
@@ -138,7 +159,9 @@ page_race_server <- function(id, data, dates, is_mobile) {
 
     output$readiness_prose <- shiny::renderText({
       r <- readiness()
-      if (is.null(r) || is.null(r$prose)) return("Inget att visa.")
+      if (is.null(r) || is.null(r$prose)) {
+        return("Inget att visa.")
+      }
       r$prose
     })
   })

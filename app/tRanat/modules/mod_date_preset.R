@@ -2,7 +2,8 @@
 
 date_preset_ui <- function(id) {
   ns <- shiny::NS(id)
-  tags$div(class = "date-preset-container",
+  tags$div(
+    class = "date-preset-container",
     bslib::layout_columns(
       col_widths = bslib::breakpoints(sm = 12, md = c(3, 5, 4)),
       shiny::selectInput(ns("preset"), NULL,
@@ -56,19 +57,23 @@ date_preset_server <- function(id) {
     shiny::reactive({
       today <- Sys.Date()
       switch(input$preset,
-        "all"    = list(from = NULL, to = NULL),
-        "7d"     = list(from = today - 7,     to = today),
-        "4w"     = list(from = today - 28,    to = today),
-        "6w"     = list(from = today - 42,    to = today),
-        "3m"     = list(from = today - 90,    to = today),
-        "6m"     = list(from = today - 182,   to = today),
-        "ytd"    = list(from = as.Date(paste0(format(today, "%Y"), "-01-01")),
-                        to = today),
-        "12m"    = list(from = today - 365,   to = today),
-        "2y"     = list(from = today - 730,   to = today),
-        "5y"     = list(from = today - 1826,  to = today),
-        "custom" = list(from = input$custom_range[1],
-                        to   = input$custom_range[2])
+        "all" = list(from = NULL, to = NULL),
+        "7d" = list(from = today - 7, to = today),
+        "4w" = list(from = today - 28, to = today),
+        "6w" = list(from = today - 42, to = today),
+        "3m" = list(from = today - 90, to = today),
+        "6m" = list(from = today - 182, to = today),
+        "ytd" = list(
+          from = as.Date(paste0(format(today, "%Y"), "-01-01")),
+          to = today
+        ),
+        "12m" = list(from = today - 365, to = today),
+        "2y" = list(from = today - 730, to = today),
+        "5y" = list(from = today - 1826, to = today),
+        "custom" = list(
+          from = input$custom_range[1],
+          to = input$custom_range[2]
+        )
       )
     })
   })

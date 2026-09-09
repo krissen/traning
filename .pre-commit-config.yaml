@@ -1,0 +1,116 @@
+# Quality gate for traning, run by prek via the global git hook dispatcher
+# (~/.config/git/hooks/_dispatch). Nothing is installed per machine beyond
+# what's already on PATH. SKIP_PREK=1 git commit ... is the escape hatch;
+# it keeps the commit-message checks that --no-verify would also switch off.
+#
+# `default_stages: [pre-commit]` alone is NOT enough (verified against
+# prek 0.5.2): a hook without its own `stages:` runs in every stage,
+# including pre-push. Every hook below therefore sets its own explicit
+# `stages: [pre-commit]`.
+#
+# There is deliberately no top-level `exclude`: it would also hide paths
+# from gitleaks and check-added-large-files, which need to see everything.
+# Nothing in this repo currently needs a per-hook exclude either — no
+# vendored/frozen fixtures under R/, python/, app/, or scripts/.
+#
+# The R hooks call the system R directly instead of
+# lorenzwalthert/precommit, whose renv lockfile does not build on this
+# machine (R >= 4.5). See DRIFT.md / design.md, "R-hooks fail — and it's
+# not prek's fault".
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      # This hook's entry is hardcoded to `gitleaks git --staged`, which
+      # only sees the pending diff at commit time and reports Passed
+      # without scanning anything on a clean checkout (CI's state after
+      # actions/checkout). CI therefore runs `gitleaks dir .` as a
+      # separate step instead of relying on this hook (see ci.yml).
+      - id: gitleaks
+        stages: [pre-commit]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.5
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+        stages: [pre-commit]
+      - id: ruff-format
+        stages: [pre-commit]
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: check-yaml
+        stages: [pre-commit]
+      - id: check-json
+        stages: [pre-commit]
+      - id: check-added-large-files
+        # --enforce-all: without it this hook only looks at files that
+        # `git diff --diff-filter=A` reports as newly ADDED relative to a
+        # reference point — empty on a clean CI checkout, so `--all-files`
+        # would check nothing regardless of size.
+        args: ["--maxkb=1000", "--enforce-all"]
+        stages: [pre-commit]
+      - id: end-of-file-fixer
+        stages: [pre-commit]
+      - id: trailing-whitespace
+        stages: [pre-commit]
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1
+    hooks:
+      - id: shellcheck
+        args: [--severity=warning]
+        stages: [pre-commit]
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.13.1-1
+    hooks:
+      - id: shfmt
+        args: [--write, -i, "2", -ci]
+        stages: [pre-commit]
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.12
+    hooks:
+      - id: actionlint
+        stages: [pre-commit]
+
+  # R: local hooks against the system's installed styler/lintr/Rscript.
+  - repo: local
+    hooks:
+      - id: parsable-R
+        name: parsable R
+        entry: Rscript .hooks/parsable-R.R
+        language: system
+        files: '\.(R|r)$'
+        stages: [pre-commit]
+
+      - id: style-files
+        name: styler
+        entry: Rscript .hooks/style-files.R
+        language: system
+        files: '\.(R|r)$'
+        stages: [pre-commit]
+
+      - id: lintr
+        name: lintr
+        entry: Rscript .hooks/lintr.R
+        language: system
+        files: '\.(R|r)$'
+        exclude: '^tests/testthat/'
+        stages: [pre-commit]
+
+      - id: testthat
+        # Full R test suite, at push rather than every commit (too slow
+        # for pre-commit — decision recorded in docs/dev/quality-gates.md).
+        # No R CI job; this is the substitute gate.
+        name: testthat
+        entry: Rscript .hooks/testthat.R
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

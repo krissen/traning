@@ -33,7 +33,8 @@ D <- as.Date("2026-07-21")
     seg <- segs[[i]]
     tibble::tibble(
       sessionStart = as.POSIXct(sprintf("2026-07-21 %02d:00", start_hour + i),
-                                tz = "UTC"),
+        tz = "UTC"
+      ),
       sport = sport,
       distance = km * 1000,
       avgPaceMoving = NA_real_,
@@ -47,40 +48,55 @@ D <- as.Date("2026-07-21")
 .form <- list(
   a_segmented_long = .mk_segments("paddelsporter", list(
     list(min = 95, hr = 120), list(min = 95, hr = 118),
-    list(min = 95, hr = 121), list(min = 95, hr = 119))),
+    list(min = 95, hr = 121), list(min = 95, hr = 119)
+  )),
   b_three_short = .mk_segments("cycling", list(
     list(min = 15, hr = 130), list(min = 15, hr = 128),
-    list(min = 15, hr = 131))),
+    list(min = 15, hr = 131)
+  )),
   c_mixed = .mk_segments("cycling", list(
-    list(min = 60, hr = 130), list(min = 30, hr = 172))),
+    list(min = 60, hr = 130), list(min = 30, hr = 172)
+  )),
   d_subfloor = .mk_segments("karntraning", list(list(min = 12, hr = 110)),
-                            km = 0),
+    km = 0
+  ),
   e_nohr = .mk_segments("paddelsporter", list(
     list(min = 90, hr = NA_real_), list(min = 90, hr = NA_real_),
-    list(min = 90, hr = NA_real_), list(min = 90, hr = NA_real_))),
+    list(min = 90, hr = NA_real_), list(min = 90, hr = NA_real_)
+  )),
   # The cell that actually fails against round-1 code: multi-segment AND
   # each segment individually hard. Old code counted rows (hard_count 4);
   # the unit counts once. Form a (segmented-easy) and form c (single-
   # hard) never exercised this together.
   f_segmented_hard = .mk_segments("cycling", list(
     list(min = 95, hr = 170), list(min = 95, hr = 170),
-    list(min = 95, hr = 170), list(min = 95, hr = 170))),
+    list(min = 95, hr = 170), list(min = 95, hr = 170)
+  )),
   # issue-006 P2: several hard HR segments, each at or under the 10-min
   # TRIMP floor, summing past the 20-min unit gate. compute_trimp()
   # drops every segment (> 10), so the load is zero; the description
   # must not call it hard.
   g_subfloor_hard = .mk_segments("cycling", list(
     list(min = 8, hr = 172), list(min = 8, hr = 172),
-    list(min = 8, hr = 172)))
+    list(min = 8, hr = 172)
+  ))
 )
 
-.units <- function(s) traning:::.day_sport_units(s, hr_max = HR_MAX,
-                                                 classify = TRUE)
+.units <- function(s) {
+  traning:::.day_sport_units(s,
+    hr_max = HR_MAX,
+    classify = TRUE
+  )
+}
 .day_class <- function(s, min_minutes = 20) {
   traning:::.day_alt_class(s, s, hr_max = HR_MAX, min_minutes = min_minutes)
 }
-.week <- function(s) traning:::.alt_week_stats(s, D, hr_max = HR_MAX,
-                                               hr_rest = HR_REST)
+.week <- function(s) {
+  traning:::.alt_week_stats(s, D,
+    hr_max = HR_MAX,
+    hr_rest = HR_REST
+  )
+}
 
 # --- One unit per sport-day -------------------------------------------------
 
@@ -107,7 +123,7 @@ test_that("I1: the pass count agrees between canonical, inventory and context", 
 # --- I2: total time is identical across surfaces ----------------------------
 
 test_that("I2: unit minutes agree between canonical, day class and week", {
-  s <- .form$a_segmented_long          # 4 x 95 = 380 min
+  s <- .form$a_segmented_long # 4 x 95 = 380 min
   u <- .units(s)
   cls <- .day_class(s)
   wk <- .week(s)
@@ -119,7 +135,7 @@ test_that("I2: unit minutes agree between canonical, day class and week", {
 # --- I3: no surface contradicts another on intensity ------------------------
 
 test_that("I3: a hard block makes the day hard in every surface", {
-  s <- .form$c_mixed                   # 60 @130 low + 30 @172 hard
+  s <- .form$c_mixed # 60 @130 low + 30 @172 hard
   cls <- .day_class(s)
   wk <- .week(s)
   u <- .units(s)
@@ -133,7 +149,7 @@ test_that("I3: a segmented hard day counts as one hard session, not four", {
   # The cell that fails against row-counting (round-1) code: four hard
   # segments of one sport on one day. hard_count must be 1, not 4 — a
   # single outing does not fire "four hard passes this week".
-  s <- .form$f_segmented_hard          # 4 x 95 min @170, all hard
+  s <- .form$f_segmented_hard # 4 x 95 min @170, all hard
   cls <- .day_class(s)
   wk <- .week(s)
   u <- .units(s)
@@ -147,7 +163,7 @@ test_that("I3: a segmented easy day is low everywhere, never hard", {
   cls <- .day_class(s)
   wk <- .week(s)
   expect_equal(cls$intensity, "low")
-  expect_equal(wk$hard_count, 0L)      # 4 segments != 4 hard passes
+  expect_equal(wk$hard_count, 0L) # 4 segments != 4 hard passes
 })
 
 test_that("I3: sub-floor hard segments never claim hardness the load ignores", {
@@ -159,7 +175,7 @@ test_that("I3: sub-floor hard segments never claim hardness the load ignores", {
   cls <- .day_class(s)
   wk <- .week(s)
   expect_false(identical(cls$intensity, "hard"))
-  expect_true(is.na(cls$intensity))     # nothing above the floor to read
+  expect_true(is.na(cls$intensity)) # nothing above the floor to read
   expect_equal(wk$hard_count, 0L)
   # And load really is zero for these rows — the invariant's other side.
   tr <- compute_trimp(s, hr_max = HR_MAX, hr_rest = HR_REST)
@@ -169,7 +185,7 @@ test_that("I3: sub-floor hard segments never claim hardness the load ignores", {
 # --- I4: a sub-floor unit shows in the inventory, counts for nothing --------
 
 test_that("I4: a unit under min_minutes shows in inventory but adds 0 to the week", {
-  s <- .form$d_subfloor                # single 12-min unit
+  s <- .form$d_subfloor # single 12-min unit
   inv <- traning:::.day_per_sport(s)
   expect_equal(inv$n, 1L)
   expect_equal(inv$min, 12)
@@ -182,7 +198,7 @@ test_that("I4: a unit under min_minutes shows in inventory but adds 0 to the wee
 })
 
 test_that("I4: three short segments aggregate past the gate as one unit", {
-  s <- .form$b_three_short             # 3 x 15 = 45 min
+  s <- .form$b_three_short # 3 x 15 = 45 min
   # Old bug: filtered per row (each 15 < 20) -> 0 h in the week while the
   # day line showed a full unit. Now both aggregate first.
   cls <- .day_class(s)
@@ -195,7 +211,7 @@ test_that("I4: three short segments aggregate past the gate as one unit", {
 # --- I5: a no-HR unit contributes time but never intensity ------------------
 
 test_that("I5: a no-HR unit adds hours but no intensity and no hard count", {
-  s <- .form$e_nohr                    # 4 x 90 = 360 min, no HR
+  s <- .form$e_nohr # 4 x 90 = 360 min, no HR
   cls <- .day_class(s)
   wk <- .week(s)
   expect_true(startsWith(cls$class, "nohr_"))

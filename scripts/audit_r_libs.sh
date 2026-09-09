@@ -37,9 +37,15 @@ MODE="report"
 CATEGORY=""
 case "${1:-}" in
   --summary) MODE="summary" ;;
-  --list)    MODE="list"; CATEGORY="${2:-}" ;;
-  "")        ;;
-  *) echo "usage: $0 [--summary | --list <category>]" >&2; exit 2 ;;
+  --list)
+    MODE="list"
+    CATEGORY="${2:-}"
+    ;;
+  "") ;;
+  *)
+    echo "usage: $0 [--summary | --list <category>]" >&2
+    exit 2
+    ;;
 esac
 
 if ! command -v pacman >/dev/null 2>&1; then
@@ -81,12 +87,18 @@ fi
 # Version compare for duplicates.
 _read_ver() {
   local desc="$1"
-  [[ -f "$desc" ]] || { echo ""; return; }
+  [[ -f "$desc" ]] || {
+    echo ""
+    return
+  }
   awk '/^Version:/ { print $2; exit }' "$desc"
 }
 _read_built() {
   local desc="$1"
-  [[ -f "$desc" ]] || { echo ""; return; }
+  [[ -f "$desc" ]] || {
+    echo ""
+    return
+  }
   awk '/^Built:/ { sub(/^Built: /, ""); print; exit }' "$desc"
 }
 
@@ -94,10 +106,13 @@ _read_built() {
 
 if [[ "$MODE" == "list" ]]; then
   case "$CATEGORY" in
-    system-orphan)  echo "$SYSTEM_ORPHANS" ;;
+    system-orphan) echo "$SYSTEM_ORPHANS" ;;
     user-duplicate) echo "$USER_DUPES" ;;
-    user-unique)    echo "$USER_UNIQUES" ;;
-    *) echo "unknown category: $CATEGORY" >&2; exit 2 ;;
+    user-unique) echo "$USER_UNIQUES" ;;
+    *)
+      echo "unknown category: $CATEGORY" >&2
+      exit 2
+      ;;
   esac
   exit 0
 fi

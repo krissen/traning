@@ -55,11 +55,14 @@ def git_commit_paths(data_dir: Path, paths: Iterable[str], message: str) -> bool
         with git_lock(data_dir):
             subprocess.run(
                 ["git", "add", *path_list],
-                cwd=data_dir, check=True, capture_output=True,
+                cwd=data_dir,
+                check=True,
+                capture_output=True,
             )
             result = subprocess.run(
                 ["git", "diff", "--cached", "--quiet"],
-                cwd=data_dir, capture_output=True,
+                cwd=data_dir,
+                capture_output=True,
             )
             if result.returncode == 0:
                 log.debug("Nothing to commit in %s (paths=%s)", data_dir, path_list)
@@ -67,7 +70,9 @@ def git_commit_paths(data_dir: Path, paths: Iterable[str], message: str) -> bool
 
             subprocess.run(
                 ["git", "commit", "-m", message],
-                cwd=data_dir, check=True, capture_output=True,
+                cwd=data_dir,
+                check=True,
+                capture_output=True,
             )
         return True
     except subprocess.CalledProcessError as e:

@@ -32,22 +32,29 @@ test_that("traning_palette hex values are well-formed", {
   hex_ok <- function(x) grepl("^#[0-9a-fA-F]{6}$", x)
   flat <- unlist(traning_palette, recursive = TRUE, use.names = FALSE)
   expect_true(all(hex_ok(flat)),
-    info = paste("invalid:", paste(flat[!hex_ok(flat)], collapse = ", ")))
+    info = paste("invalid:", paste(flat[!hex_ok(flat)], collapse = ", "))
+  )
 })
 
 test_that("traning_palette$status carries exactly the four CSS status keys", {
-  expect_setequal(names(traning_palette$status),
-                  c("green", "yellow", "red", "blue"))
+  expect_setequal(
+    names(traning_palette$status),
+    c("green", "yellow", "red", "blue")
+  )
 })
 
 test_that("traning_palette$zones covers Z1..Z5", {
-  expect_setequal(names(traning_palette$zones),
-                  paste0("Z", 1:5))
+  expect_setequal(
+    names(traning_palette$zones),
+    paste0("Z", 1:5)
+  )
 })
 
 test_that("traning_palette$seasons covers four seasons", {
-  expect_setequal(names(traning_palette$seasons),
-                  c("winter", "spring", "summer", "autumn"))
+  expect_setequal(
+    names(traning_palette$seasons),
+    c("winter", "spring", "summer", "autumn")
+  )
 })
 
 test_that("traning_palette$run_profile has current/history pair", {
@@ -85,13 +92,13 @@ test_that("theme_traning() applies to a real ggplot without error", {
 test_that("scale_fill_traning() returns a ggplot scale", {
   sc <- scale_fill_traning()
   expect_true(inherits(sc, "Scale") || inherits(sc, "ScaleDiscrete") ||
-              inherits(sc, "ggproto"))
+    inherits(sc, "ggproto"))
 })
 
 test_that("scale_colour_traning() returns a ggplot scale", {
   sc <- scale_colour_traning()
   expect_true(inherits(sc, "Scale") || inherits(sc, "ScaleDiscrete") ||
-              inherits(sc, "ggproto"))
+    inherits(sc, "ggproto"))
 })
 
 test_that("scale_fill_traning() can be applied to a real ggplot", {
@@ -140,7 +147,7 @@ test_that("every CSS var used in styles.css is defined by traning_css_root()", {
     readLines(css_path, warn = FALSE),
     gregexpr("var\\(--[a-z0-9-]+", readLines(css_path, warn = FALSE))
   )))
-  used <- sub("^var\\(", "", used)  # "--foo"
+  used <- sub("^var\\(", "", used) # "--foo"
 
   root <- traning_css_root()
   defined <- unique(unlist(regmatches(
@@ -149,5 +156,6 @@ test_that("every CSS var used in styles.css is defined by traning_css_root()", {
 
   missing <- setdiff(used, defined)
   expect_identical(missing, character(0),
-                   info = paste("undefined CSS vars:", paste(missing, collapse = ", ")))
+    info = paste("undefined CSS vars:", paste(missing, collapse = ", "))
+  )
 })

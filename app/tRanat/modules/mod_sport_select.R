@@ -42,7 +42,9 @@
 .composite_choices <- function() {
   vals <- traning::sport_bucket_names()
   labels <- vapply(vals, function(v) {
-    if (identical(v, "endurance")) return(.endurance_label())
+    if (identical(v, "endurance")) {
+      return(.endurance_label())
+    }
     lab <- .bucket_labels_sv[[v]]
     if (is.null(lab)) tools::toTitleCase(v) else lab
   }, character(1))
@@ -55,7 +57,7 @@ sport_select_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::selectInput(
     ns("sport"),
-    label = "Sport",  # visible label needed for screen readers
+    label = "Sport", # visible label needed for screen readers
     choices = list(
       "Direkta sporter" = c(
         "Löpning"        = "running",
@@ -71,7 +73,7 @@ sport_select_ui <- function(id) {
       "Sammansatta" = .composite_choices()
     ),
     selected = "running",
-    width    = "100%"
+    width = "100%"
   )
 }
 
@@ -83,7 +85,7 @@ sport_select_server <- function(id) {
       # explicitly. Also coerce non-character values defensively so a
       # stray numeric/logical input can't reach downstream sport= args.
       if (is.null(val) || !is.character(val) || is.na(val) ||
-          !nzchar(val)) {
+        !nzchar(val)) {
         "running"
       } else {
         val

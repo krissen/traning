@@ -10,15 +10,15 @@ from ..settings import _read_renviron, get_project_root, get_settings
 # _read_renviron/get_project_root from here rather than traning_cli.settings.
 __all__ = [
     "_read_renviron",
-    "get_project_root",
-    "get_data_dir",
+    "activity_filename_prefix",
+    "extract_activity_id",
     "gconnect_dir",
+    "get_data_dir",
+    "get_project_root",
+    "prefix_to_symlink_name",
+    "setup_logging",
     "tcx_dir",
     "token_dir",
-    "activity_filename_prefix",
-    "prefix_to_symlink_name",
-    "extract_activity_id",
-    "setup_logging",
 ]
 
 

@@ -13,7 +13,6 @@ import argparse
 import json
 import subprocess
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 # Add project root to path for imports
@@ -48,14 +47,17 @@ def recover_deleted_files(data_dir: Path, delete_commit: str) -> list[Path]:
     """
     # Find which files were deleted in that commit
     result = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=D",
-         f"{delete_commit}~1", delete_commit],
-        cwd=data_dir, capture_output=True, text=True, check=True,
+        ["git", "diff", "--name-only", "--diff-filter=D", f"{delete_commit}~1", delete_commit],
+        cwd=data_dir,
+        capture_output=True,
+        text=True,
+        check=True,
     )
     deleted_paths = [
-        l.strip() for l in result.stdout.splitlines()
-        if l.strip().startswith("kristian/health_export/metrics/")
-        and l.strip().endswith(".json")
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("kristian/health_export/metrics/")
+        and line.strip().endswith(".json")
     ]
 
     recovered = []
@@ -67,7 +69,10 @@ def recover_deleted_files(data_dir: Path, delete_commit: str) -> list[Path]:
         try:
             content = subprocess.run(
                 ["git", "show", f"{delete_commit}~1:{rel_path}"],
-                cwd=data_dir, capture_output=True, text=True, check=True,
+                cwd=data_dir,
+                capture_output=True,
+                text=True,
+                check=True,
             ).stdout
             tmp_file = tmp_dir / filename
             tmp_file.write_text(content)
@@ -80,17 +85,22 @@ def recover_deleted_files(data_dir: Path, delete_commit: str) -> list[Path]:
 
 def main():
     parser = argparse.ArgumentParser(description="Migrate to canonical storage")
-    parser.add_argument("--data-dir", type=Path, default=None,
-                        help="Path to traning-data directory")
-    parser.add_argument("--recover-git", action="store_true",
-                        help="Also recover deleted files from git history")
-    parser.add_argument("--delete-commit", default="1d679e7c",
-                        help="Commit that deleted files (default: 1d679e7c)")
+    parser.add_argument(
+        "--data-dir", type=Path, default=None, help="Path to traning-data directory"
+    )
+    parser.add_argument(
+        "--recover-git", action="store_true", help="Also recover deleted files from git history"
+    )
+    parser.add_argument(
+        "--delete-commit", default="1d679e7c", help="Commit that deleted files (default: 1d679e7c)"
+    )
     args = parser.parse_args()
 
     import os
-    data_dir = args.data_dir or Path(os.environ.get(
-        "TRANING_DATA", Path.home() / "Documents" / "traning-data"))
+
+    data_dir = args.data_dir or Path(
+        os.environ.get("TRANING_DATA", Path.home() / "Documents" / "traning-data")
+    )
 
     metrics_dir = data_dir / "kristian" / "health_export" / "metrics"
     if not metrics_dir.exists():
@@ -137,7 +147,7 @@ def main():
             f.unlink()
         recovered_dir.rmdir()
 
-    print(f"\nMigration complete:")
+    print("\nMigration complete:")
     print(f"  Source files:    {len(all_files)}")
     print(f"  Metrics:         {len(metrics_seen)}")
     print(f"  Total samples:   {total_samples:,}")

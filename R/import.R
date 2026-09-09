@@ -58,10 +58,15 @@
 #' @return Character vector, one key per row.
 #' @keywords internal
 .summary_row_keys <- function(summaries) {
-  if (!is.data.frame(summaries) || nrow(summaries) == 0) return(character(0))
+  if (!is.data.frame(summaries) || nrow(summaries) == 0) {
+    return(character(0))
+  }
   col <- function(name) {
-    if (name %in% names(summaries)) as.character(summaries[[name]])
-    else rep(NA_character_, nrow(summaries))
+    if (name %in% names(summaries)) {
+      as.character(summaries[[name]])
+    } else {
+      rep(NA_character_, nrow(summaries))
+    }
   }
   paste(col("sessionStart"), col("source"), sep = "\u001f")
 }
@@ -81,14 +86,18 @@
 .align_myruns <- function(summaries, myruns, quiet = FALSE) {
   n <- nrow(summaries)
   if (is.null(myruns)) myruns <- list()
-  if (length(myruns) == n) return(list(summaries = summaries, myruns = myruns))
+  if (length(myruns) == n) {
+    return(list(summaries = summaries, myruns = myruns))
+  }
 
   # An entirely empty myruns is the documented "summaries-only cache"
   # shape, not corruption — pad it without the alarm. A *partial*
   # mismatch is the signal worth surfacing.
   if (!quiet && length(myruns) > 0) {
-    message("myruns/summaries ur synk: ", length(myruns), " run-objekt mot ",
-            n, " rader — justerar längden.")
+    message(
+      "myruns/summaries ur synk: ", length(myruns), " run-objekt mot ",
+      n, " rader — justerar längden."
+    )
   }
   if (length(myruns) < n) {
     myruns <- c(myruns, vector("list", n - length(myruns)))
@@ -128,8 +137,10 @@ my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
     # at import time (with a tolerance window) — see import_hae_workouts()
     # and get_new_workouts() — and retroactively via dedup_summaries().
     key <- if ("source" %in% names(summaries)) {
-      data.frame(sessionStart = summaries$sessionStart,
-                 source = summaries$source)
+      data.frame(
+        sessionStart = summaries$sessionStart,
+        source = summaries$source
+      )
     } else {
       data.frame(sessionStart = summaries$sessionStart)
     }
@@ -174,7 +185,7 @@ my_dbs_load <- function(db_summaries, db_myruns, load_myruns = TRUE) {
 
   # Backfill source column for caches predating multi-source support.
   if (is.data.frame(summaries) && nrow(summaries) > 0 &&
-      !"source" %in% names(summaries)) {
+    !"source" %in% names(summaries)) {
     summaries$source <- "tcx"
   }
 
@@ -182,11 +193,13 @@ my_dbs_load <- function(db_summaries, db_myruns, load_myruns = TRUE) {
   # caches. Repairing here would silently rewrite what the caller sees
   # without writing it back; my_dbs_save() does the actual alignment.
   if (load_myruns && is.data.frame(summaries) && length(myruns) > 0 &&
-      length(myruns) != nrow(summaries)) {
-    message("Varning: myruns (", length(myruns), ") och summaries (",
-            nrow(summaries), ") har olika längd — ",
-            "positionskopplingen är ur synk. ",
-            "Nästa my_dbs_save() justerar längden.")
+    length(myruns) != nrow(summaries)) {
+    message(
+      "Varning: myruns (", length(myruns), ") och summaries (",
+      nrow(summaries), ") har olika längd — ",
+      "positionskopplingen är ur synk. ",
+      "Nästa my_dbs_save() justerar längden."
+    )
   }
 
   my_templist <- list()
@@ -240,10 +253,16 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   myruns <- aligned$myruns
 
   # Match on basename to handle relative vs absolute path mismatches
-  existing_basenames <- if ("file" %in% names(summaries))
-    basename(summaries$file[!is.na(summaries$file)]) else character(0)
-  existing_starts <- if ("sessionStart" %in% names(summaries))
-    summaries$sessionStart else as.POSIXct(character(0))
+  existing_basenames <- if ("file" %in% names(summaries)) {
+    basename(summaries$file[!is.na(summaries$file)])
+  } else {
+    character(0)
+  }
+  existing_starts <- if ("sessionStart" %in% names(summaries)) {
+    summaries$sessionStart
+  } else {
+    as.POSIXct(character(0))
+  }
   n_imported <- 0
   n_updated <- 0
   n_hae_removed <- 0
@@ -291,7 +310,9 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       return(integer(0))
     }
     idx <- which(!is.na(summaries$source) & summaries$source == "hae")
-    if (length(idx) == 0) return(integer(0))
+    if (length(idx) == 0) {
+      return(integer(0))
+    }
     idx[.is_same_workout(row, summaries[idx, , drop = FALSE])]
   }
 
@@ -305,11 +326,13 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   # which spans them both.
   cached_garmin_distances <- function(dup) {
     if (length(dup) == 0 ||
-        !all(c("source", "distance") %in% names(summaries))) {
+      !all(c("source", "distance") %in% names(summaries))) {
       return(numeric(0))
     }
     idx <- which(!is.na(summaries$source) & summaries$source == "tcx")
-    if (length(idx) == 0) return(numeric(0))
+    if (length(idx) == 0) {
+      return(numeric(0))
+    }
     # Every Apple Watch row this session matched, not just the first of
     # them. The two copies HAE writes do not span quite the same window,
     # so an early leg can belong to one copy and a late leg to the other;
@@ -320,7 +343,8 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
     legs <- integer(0)
     for (h in dup) {
       legs <- union(legs, idx[.is_same_workout(
-        summaries[h, , drop = FALSE], summaries[idx, , drop = FALSE])])
+        summaries[h, , drop = FALSE], summaries[idx, , drop = FALSE]
+      )])
     }
     legs <- sort(as.integer(legs))
     # One recording cached under two names counts once.
@@ -338,13 +362,18 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       if (verbose) {
         cat("Läser in ", basename(files[[i]]), " ... ", sep = "")
       }
-      parsed <- tryCatch({
-        trackeR::read_container(files[[i]])
-      }, error = function(e) {
-        warning("Kunde inte läsa: ", basename(files[[i]]),
-                " (", conditionMessage(e), ")", call. = FALSE)
-        NULL
-      })
+      parsed <- tryCatch(
+        {
+          trackeR::read_container(files[[i]])
+        },
+        error = function(e) {
+          warning("Kunde inte läsa: ", basename(files[[i]]),
+            " (", conditionMessage(e), ")",
+            call. = FALSE
+          )
+          NULL
+        }
+      )
       if (is.null(parsed)) next
 
       run_summary <- summary(parsed)
@@ -364,7 +393,7 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       # its JSON importable again on the next run.
       if (length(dup_idx) > 0 && "source" %in% names(summaries)) {
         same_source <- is.na(summaries$source[dup_idx]) |
-                       summaries$source[dup_idx] == "tcx"
+          summaries$source[dup_idx] == "tcx"
         dup_idx <- dup_idx[same_source]
       }
       if (length(dup_idx) > 0) {
@@ -375,7 +404,9 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
           n_updated <- n_updated + 1
           if (verbose) {
             cat("dublett av ", basename(old_path),
-                " (saknas), uppdaterar filnamn\n", sep = "")
+              " (saknas), uppdaterar filnamn\n",
+              sep = ""
+            )
           }
         } else if (verbose) {
           cat("dublett av ", basename(old_path), ", hoppar över\n", sep = "")
@@ -399,11 +430,15 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       # apart. A total built from one session's legs says nothing about
       # the other, and evicting on it would delete a session this file
       # never covered. Rows that match each other are one session.
-      groups <- lapply(.session_groups(summaries[dup, , drop = FALSE]),
-                       function(g) dup[g])
+      groups <- lapply(
+        .session_groups(summaries[dup, , drop = FALSE]),
+        function(g) dup[g]
+      )
       won <- vapply(groups, function(g) {
-        garmin <- c(as.numeric(run_summary$distance),
-                    cached_garmin_distances(g))
+        garmin <- c(
+          as.numeric(run_summary$distance),
+          cached_garmin_distances(g)
+        )
         all(.garmin_verdict(summaries$distance[g], garmin) %in% TRUE)
       }, logical(1))
       evict <- unlist(groups[won])
@@ -413,11 +448,14 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
         # Not enough on its own — but the remaining legs may be in this
         # same batch, so park it and decide once the batch is known.
         deferred[[length(deferred) + 1L]] <- list(
-          row = run_summary, parsed = parsed, file = thefile, start = ss)
+          row = run_summary, parsed = parsed, file = thefile, start = ss
+        )
         existing_basenames <- c(existing_basenames, basename(thefile))
         if (verbose) {
           cat("fragment (", round(as.numeric(run_summary$distance)),
-              " m), avvaktar resten av batchen\n", sep = "")
+            " m), avvaktar resten av batchen\n",
+            sep = ""
+          )
         }
         next
       }
@@ -427,15 +465,16 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
         cat("OK\n")
         if (length(dup) > 0) {
           cat("  ersätter ", length(dup), " Apple Watch-rad",
-              if (length(dup) > 1) "er" else "", " för samma pass\n",
-              sep = "")
+            if (length(dup) > 1) "er" else "", " för samma pass\n",
+            sep = ""
+          )
         }
       }
       append_session(run_summary, parsed, dup, thefile, ss)
 
       # Checkpoint: save every batch_size imports
       if (n_imported %% batch_size == 0 &&
-          !is.null(db_summaries) && !is.null(db_myruns)) {
+        !is.null(db_summaries) && !is.null(db_myruns)) {
         if (verbose) cat("  Checkpoint: ", n_imported, " importerade, sparar...\n", sep = "")
         my_dbs_save(db_summaries, db_myruns, summaries, myruns)
       }
@@ -451,11 +490,14 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
   # the one the main loop uses.
   if (length(deferred) > 1) {
     keep <- .distinct_recordings(
-      vapply(deferred, function(e) as.numeric(e$row$sessionStart), numeric(1)))
+      vapply(deferred, function(e) as.numeric(e$row$sessionStart), numeric(1))
+    )
     if (verbose) {
       for (k in which(!keep)) {
         cat("dublett av parkerad del: ", basename(deferred[[k]]$file),
-            ", hoppar över\n", sep = "")
+          ", hoppar över\n",
+          sep = ""
+        )
       }
     }
     deferred <- deferred[keep]
@@ -480,16 +522,18 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
     # same second is the duplicate this pass exists to resolve, not a
     # copy of the file.
     near <- which(abs(as.numeric(existing_starts) -
-                      as.numeric(entry$row$sessionStart)) < 2)
+      as.numeric(entry$row$sessionStart)) < 2)
     if (length(near) > 0 && "source" %in% names(summaries)) {
       near <- near[near <= nrow(summaries)]
       near <- near[!is.na(summaries$source[near]) &
-                   summaries$source[near] == "tcx"]
+        summaries$source[near] == "tcx"]
     }
     if (length(near) > 0) {
       if (verbose) {
         cat("redan inläst under annat namn: ", basename(entry$file),
-            "\n", sep = "")
+          "\n",
+          sep = ""
+        )
       }
       pending[k] <- FALSE
       next
@@ -511,17 +555,21 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
     # length", which makes the whole total unknown; a fragment of some
     # *other* session must not be able to say that about this one.
     others <- setdiff(which(pending), k)
-    groups <- lapply(.session_groups(summaries[dup, , drop = FALSE]),
-                     function(g) dup[g])
+    groups <- lapply(
+      .session_groups(summaries[dup, , drop = FALSE]),
+      function(g) dup[g]
+    )
     won <- vapply(groups, function(g) {
       related <- others[vapply(others, function(j) {
         length(intersect(g, matching_hae(deferred[[j]]$row))) > 0
       }, logical(1))]
-      garmin <- c(as.numeric(entry$row$distance),
-                  cached_garmin_distances(g),
-                  vapply(related, function(j) {
-                    as.numeric(deferred[[j]]$row$distance)
-                  }, numeric(1)))
+      garmin <- c(
+        as.numeric(entry$row$distance),
+        cached_garmin_distances(g),
+        vapply(related, function(j) {
+          as.numeric(deferred[[j]]$row$distance)
+        }, numeric(1))
+      )
       all(.garmin_verdict(summaries$distance[g], garmin) %in% TRUE)
     }, logical(1))
     evict <- unlist(groups[won])
@@ -536,19 +584,24 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
       n_garmin_fragments <- n_garmin_fragments + 1
       if (verbose) {
         cat("fragment (", round(as.numeric(entry$row$distance)),
-            " m mot ", round(as.numeric(summaries$distance[dup[1]])),
-            " m), Apple Watch-raden behålls\n", sep = "")
+          " m mot ", round(as.numeric(summaries$distance[dup[1]])),
+          " m), Apple Watch-raden behålls\n",
+          sep = ""
+        )
       }
       next
     }
     dup <- evict
-    total <- .garmin_total(c(as.numeric(entry$row$distance),
-                             cached_garmin_distances(dup)))
+    total <- .garmin_total(c(
+      as.numeric(entry$row$distance),
+      cached_garmin_distances(dup)
+    ))
 
     if (verbose) {
       cat("delpass (", round(as.numeric(entry$row$distance)),
-          " m av ", round(total), " m totalt), ersätter Apple Watch-raden\n",
-          sep = "")
+        " m av ", round(total), " m totalt), ersätter Apple Watch-raden\n",
+        sep = ""
+      )
     }
     append_session(entry$row, entry$parsed, dup, entry$file, entry$start)
     pending[k] <- FALSE
@@ -607,7 +660,9 @@ repair_myruns <- function(files, summaries, myruns, verbose = FALSE) {
 
     # HAE rows have no on-disk TCX to re-parse; skip silently.
     if ("source" %in% names(summaries) &&
-        isTRUE(summaries$source[i] == "hae")) next
+      isTRUE(summaries$source[i] == "hae")) {
+      next
+    }
 
     summary_file <- summaries$file[i]
     if (is.na(summary_file) || nchar(summary_file) == 0) {
@@ -623,20 +678,25 @@ repair_myruns <- function(files, summaries, myruns, verbose = FALSE) {
 
     file_path <- files[match_idx[1]]
 
-    myruns[[i]] <- tryCatch({
-      trackeR::read_container(file_path)
-    }, error = function(e) {
-      n_failed <<- n_failed + 1L
-      NULL
-    })
+    myruns[[i]] <- tryCatch(
+      {
+        trackeR::read_container(file_path)
+      },
+      error = function(e) {
+        n_failed <<- n_failed + 1L
+        NULL
+      }
+    )
 
     if (!is.null(myruns[[i]])) {
       n_repaired <- n_repaired + 1L
     }
   }
 
-  message("myruns-reparation klar: ", n_repaired, " reparerade, ",
-          n_failed, " misslyckade, ", n_no_file, " utan matchande fil.")
+  message(
+    "myruns-reparation klar: ", n_repaired, " reparerade, ",
+    n_failed, " misslyckade, ", n_no_file, " utan matchande fil."
+  )
 
   list(summaries = summaries, myruns = myruns)
 }
@@ -666,13 +726,21 @@ repair_myruns_hr <- function(files, summaries, myruns, verbose = FALSE) {
   has_source <- "source" %in% names(summaries)
   problem_indices <- which(vapply(seq_len(n_summaries), function(i) {
     # HAE rows have no on-disk TCX to re-parse; skip.
-    if (has_source && isTRUE(summaries$source[i] == "hae")) return(FALSE)
+    if (has_source && isTRUE(summaries$source[i] == "hae")) {
+      return(FALSE)
+    }
     has_summary_hr <- !is.na(summaries$avgHeartRateMoving[[i]]) &&
-                      as.numeric(summaries$avgHeartRateMoving[[i]]) > 0
-    if (!has_summary_hr) return(FALSE)
-    if (i > length(myruns) || is.null(myruns[[i]])) return(FALSE)
+      as.numeric(summaries$avgHeartRateMoving[[i]]) > 0
+    if (!has_summary_hr) {
+      return(FALSE)
+    }
+    if (i > length(myruns) || is.null(myruns[[i]])) {
+      return(FALSE)
+    }
     df <- tryCatch(as.data.frame(myruns[[i]]), error = function(e) NULL)
-    if (is.null(df) || !"heart_rate" %in% names(df)) return(TRUE)
+    if (is.null(df) || !"heart_rate" %in% names(df)) {
+      return(TRUE)
+    }
     n_hr <- sum(!is.na(df$heart_rate) & df$heart_rate > 0)
     n_hr == 0
   }, logical(1)))
@@ -683,8 +751,10 @@ repair_myruns_hr <- function(files, summaries, myruns, verbose = FALSE) {
     return(list(summaries = summaries, myruns = myruns))
   }
 
-  message("myruns HR-reparation: ", n_problem,
-          " sessioner med summary-HR men saknar per-sekund-HR ...")
+  message(
+    "myruns HR-reparation: ", n_problem,
+    " sessioner med summary-HR men saknar per-sekund-HR ..."
+  )
   n_repaired <- 0L
   n_failed <- 0L
   n_no_file <- 0L
@@ -723,7 +793,7 @@ repair_myruns_hr <- function(files, summaries, myruns, verbose = FALSE) {
     # Verify the re-parsed data actually has HR
     new_df <- tryCatch(as.data.frame(new_data), error = function(e) NULL)
     if (!is.null(new_df) && "heart_rate" %in% names(new_df) &&
-        sum(!is.na(new_df$heart_rate) & new_df$heart_rate > 0) > 0) {
+      sum(!is.na(new_df$heart_rate) & new_df$heart_rate > 0) > 0) {
       myruns[[i]] <- new_data
       n_repaired <- n_repaired + 1L
     } else {
@@ -731,8 +801,10 @@ repair_myruns_hr <- function(files, summaries, myruns, verbose = FALSE) {
     }
   }
 
-  message("myruns HR-reparation klar: ", n_repaired, " reparerade, ",
-          n_failed, " misslyckade, ", n_no_file, " utan matchande fil.")
+  message(
+    "myruns HR-reparation klar: ", n_repaired, " reparerade, ",
+    n_failed, " misslyckade, ", n_no_file, " utan matchande fil."
+  )
 
   list(summaries = summaries, myruns = myruns)
 }

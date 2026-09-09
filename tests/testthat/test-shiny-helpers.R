@@ -71,7 +71,8 @@ test_that("load_session_data handles missing health/decoupling caches", {
   # health_daily ska vara tibble med rätt schema även när cache saknas
   expect_true(inherits(out@health_daily, "data.frame"))
   expect_named(out@health_daily, c("date", "metric", "value", "source"),
-               ignore.order = TRUE)
+    ignore.order = TRUE
+  )
 
   # decoupling_data is always NULL now — load_session_data() no longer
   # requests the "decoupling_data" slot (it requires "myruns", which
@@ -85,8 +86,13 @@ test_that("load_session_data honours explicit traning_data over env var", {
   # health) härleds från "right".
   td_wrong <- tempfile("traning_data_wrong_")
   td_right <- tempfile("traning_data_right_")
-  on.exit({ unlink(td_wrong, recursive = TRUE)
-            unlink(td_right, recursive = TRUE) }, add = TRUE)
+  on.exit(
+    {
+      unlink(td_wrong, recursive = TRUE)
+      unlink(td_right, recursive = TRUE)
+    },
+    add = TRUE
+  )
   dir.create(file.path(td_wrong, "cache"), recursive = TRUE)
   cache_dir_right <- make_fake_cache(td_right)
 
@@ -118,9 +124,12 @@ test_that("load_session_data is reentrant — two calls return equivalent data",
 test_that("load_session_data errors when TRANING_DATA is unset", {
   prev <- Sys.getenv("TRANING_DATA", unset = NA)
   Sys.unsetenv("TRANING_DATA")
-  on.exit({
-    if (!is.na(prev)) Sys.setenv(TRANING_DATA = prev)
-  }, add = TRUE)
+  on.exit(
+    {
+      if (!is.na(prev)) Sys.setenv(TRANING_DATA = prev)
+    },
+    add = TRUE
+  )
 
   expect_error(load_session_data(data_dir = ""), "TRANING_DATA")
 })

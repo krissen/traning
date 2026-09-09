@@ -23,38 +23,38 @@
 # compute_background_trimp(), so hiking kilometres would be counted both
 # as session TRIMP and as background TRIMP.
 .HAE_SPORT_NAMES <- list(
-  "löpning"                 = "running",
-  "kör"                     = "running",
-  "utomhus kör"             = "running",
-  "inomhus kör"             = "running",
-  "cykling"                 = "cycling",
-  "utomhus cykling"         = "cycling",
-  "inomhus cykling"         = "cycling",
-  "gång"                    = "walking",
-  "utomhus gång"            = "walking",
-  "inomhus gång"            = "walking",
-  "vandring"                = "walking",
-  "simning"                 = "swimming",
-  "öppet vatten-simning"    = "swimming",
-  "poolsimning"             = "swimming",
-  "paddelsporter"           = "paddelsporter",
-  "rodd"                    = "rodd",
-  "skridskosporter"         = "skridskosporter",
-  "snösporter"              = "snosporter",
-  "utförsåkning"            = "utforsakning",
+  "löpning" = "running",
+  "kör" = "running",
+  "utomhus kör" = "running",
+  "inomhus kör" = "running",
+  "cykling" = "cycling",
+  "utomhus cykling" = "cycling",
+  "inomhus cykling" = "cycling",
+  "gång" = "walking",
+  "utomhus gång" = "walking",
+  "inomhus gång" = "walking",
+  "vandring" = "walking",
+  "simning" = "swimming",
+  "öppet vatten-simning" = "swimming",
+  "poolsimning" = "swimming",
+  "paddelsporter" = "paddelsporter",
+  "rodd" = "rodd",
+  "skridskosporter" = "skridskosporter",
+  "snösporter" = "snosporter",
+  "utförsåkning" = "utforsakning",
   "funktionell styrketräning" = "strength",
   "traditionell styrketräning" = "strength",
-  "kärnträning"             = "karntraning",
-  "yoga"                    = "yoga",
-  "sinne & kropp"           = "sinne_&_kropp",
-  "badminton"               = "badminton",
-  "bordtennis"              = "bordtennis",
-  "tennis"                  = "tennis",
-  "fotboll"                 = "fotboll",
-  "hockey"                  = "hockey",
-  "fitness-spel"            = "fitness-spel",
-  "bågskytte"               = "bagskytte",
-  "övrigt"                  = "ovrigt"
+  "kärnträning" = "karntraning",
+  "yoga" = "yoga",
+  "sinne & kropp" = "sinne_&_kropp",
+  "badminton" = "badminton",
+  "bordtennis" = "bordtennis",
+  "tennis" = "tennis",
+  "fotboll" = "fotboll",
+  "hockey" = "hockey",
+  "fitness-spel" = "fitness-spel",
+  "bågskytte" = "bagskytte",
+  "övrigt" = "ovrigt"
 )
 
 # Normalise an HAE name for table lookup: lowercase, collapse runs of
@@ -102,12 +102,18 @@
   key <- .hae_name_key(name)
 
   exact <- .HAE_SPORT_NAMES[[key]]
-  if (!is.null(exact)) return(list(sport = exact, mapped = TRUE))
+  if (!is.null(exact)) {
+    return(list(sport = exact, mapped = TRUE))
+  }
 
   # Substring rules — cover "Utomhus X" / "Inomhus X" variants of names
   # Apple may introduce without us having seen them yet.
-  if (grepl("kör|löpning|löp", key)) return(list(sport = "running", mapped = TRUE))
-  if (grepl("cykling|cykel", key)) return(list(sport = "cycling", mapped = TRUE))
+  if (grepl("kör|löpning|löp", key)) {
+    return(list(sport = "running", mapped = TRUE))
+  }
+  if (grepl("cykling|cykel", key)) {
+    return(list(sport = "cycling", mapped = TRUE))
+  }
   if (grepl("gång|promenad|vandring|walking", key)) {
     return(list(sport = "walking", mapped = TRUE))
   }
@@ -117,7 +123,9 @@
   if (grepl("styrk|gym|strength", key)) {
     return(list(sport = "strength", mapped = TRUE))
   }
-  if (grepl("paddel", key)) return(list(sport = "paddelsporter", mapped = TRUE))
+  if (grepl("paddel", key)) {
+    return(list(sport = "paddelsporter", mapped = TRUE))
+  }
 
   # Fallback: lowercase, strip diacritics, replace spaces
   out <- tolower(name)
@@ -128,14 +136,20 @@
 
 # Pick a numeric quantity from an HAE field that's either {qty, units} or NA/NULL
 .hae_qty <- function(field) {
-  if (is.null(field)) return(NA_real_)
-  if (is.list(field) && !is.null(field[["qty"]])) return(as.numeric(field[["qty"]]))
+  if (is.null(field)) {
+    return(NA_real_)
+  }
+  if (is.list(field) && !is.null(field[["qty"]])) {
+    return(as.numeric(field[["qty"]]))
+  }
   NA_real_
 }
 
 # Parse HAE timestamp ("YYYY-MM-DD HH:MM:SS +ZZZZ") to POSIXct
 .hae_parse_time <- function(s) {
-  if (is.null(s) || is.na(s) || !nzchar(s)) return(as.POSIXct(NA))
+  if (is.null(s) || is.na(s) || !nzchar(s)) {
+    return(as.POSIXct(NA))
+  }
   # %z handles "+0200"; HAE writes "+0200" without colon
   t <- as.POSIXct(s, format = "%Y-%m-%d %H:%M:%OS %z", tz = "UTC")
   t
@@ -153,16 +167,23 @@
 #' @export
 parse_hae_workout <- function(path) {
   raw <- tryCatch(jsonlite::fromJSON(path, simplifyVector = FALSE),
-                  error = function(e) NULL)
-  if (is.null(raw)) return(NULL)
+    error = function(e) NULL
+  )
+  if (is.null(raw)) {
+    return(NULL)
+  }
   workouts <- raw[["data"]][["workouts"]]
-  if (is.null(workouts) || length(workouts) == 0) return(NULL)
+  if (is.null(workouts) || length(workouts) == 0) {
+    return(NULL)
+  }
   w <- workouts[[1]]
 
   # Required fields
   start <- .hae_parse_time(w[["start"]])
   duration <- if (!is.null(w[["duration"]])) as.numeric(w[["duration"]]) else NA_real_
-  if (is.na(start) || is.na(duration)) return(NULL)
+  if (is.na(start) || is.na(duration)) {
+    return(NULL)
+  }
 
   end <- .hae_parse_time(w[["end"]])
   dist_km <- .hae_qty(w[["distance"]])
@@ -176,7 +197,9 @@ parse_hae_workout <- function(path) {
   }
   pace_minkm <- if (!is.na(dist_km) && dist_km > 0 && duration > 0) {
     (duration / 60) / dist_km
-  } else NA_real_
+  } else {
+    NA_real_
+  }
   elev_up <- .hae_qty(w[["elevationUp"]])
   sport <- .hae_sport_from_name(w[["name"]])
 
@@ -360,7 +383,9 @@ parse_hae_workout <- function(path) {
   # on. Say it outright: nothing to compare is no match.
   fa <- .sport_family(a)
   fb <- .sport_family(b)
-  if (length(fa) == 0 || length(fb) == 0) return(rep(FALSE, n))
+  if (length(fa) == 0 || length(fb) == 0) {
+    return(rep(FALSE, n))
+  }
   fa <- rep(fa, length.out = n)
   fb <- rep(fb, length.out = n)
   !is.na(fa) & !is.na(fb) & fa == fb
@@ -369,7 +394,9 @@ parse_hae_workout <- function(path) {
 # Pull a field out of a data frame, list or bare vector holder.
 .workout_field <- function(x, name) {
   if (is.data.frame(x) || is.list(x)) {
-    if (!name %in% names(x)) return(NULL)
+    if (!name %in% names(x)) {
+      return(NULL)
+    }
     return(x[[name]])
   }
   NULL
@@ -378,8 +405,12 @@ parse_hae_workout <- function(path) {
 # Coerce a duration to seconds. trackeR stores durations as difftime
 # whose units vary by session; a bare numeric is assumed to be seconds.
 .workout_secs <- function(x) {
-  if (is.null(x) || length(x) == 0) return(NA_real_)
-  if (inherits(x, "difftime")) return(as.numeric(x, units = "secs"))
+  if (is.null(x) || length(x) == 0) {
+    return(NA_real_)
+  }
+  if (inherits(x, "difftime")) {
+    return(as.numeric(x, units = "secs"))
+  }
   as.numeric(x)
 }
 
@@ -388,7 +419,9 @@ parse_hae_workout <- function(path) {
 # anything.
 .intervals_overlap <- function(a, b, n) {
   num <- function(x) {
-    if (is.null(x) || length(x) == 0) return(rep(NA_real_, n))
+    if (is.null(x) || length(x) == 0) {
+      return(rep(NA_real_, n))
+    }
     rep(as.numeric(as.POSIXct(x)), length.out = n)
   }
   sa <- num(.workout_field(a, "sessionStart"))
@@ -490,7 +523,9 @@ parse_hae_workout <- function(path) {
 
   n <- max(length(sa), length(sb))
   rec <- function(x, default = NA_real_) {
-    if (is.null(x) || length(x) == 0) return(rep(default, n))
+    if (is.null(x) || length(x) == 0) {
+      return(rep(default, n))
+    }
     rep(x, length.out = n)
   }
 
@@ -507,11 +542,12 @@ parse_hae_workout <- function(path) {
   dist_ok <- .within_relative(da, db, tolerance)
   dur_ok <- .within_relative(ta, tb, tolerance)
   comparable <- (!is.na(da) & !is.na(db) & da > 0 & db > 0) |
-                (!is.na(ta) & !is.na(tb) & ta > 0 & tb > 0)
+    (!is.na(ta) & !is.na(tb) & ta > 0 & tb > 0)
 
   by_start <- ifelse(comparable,
-                     dt <= window_seconds & (dist_ok | dur_ok),
-                     dt <= time_only_seconds)
+    dt <= window_seconds & (dist_ok | dur_ok),
+    dt <= time_only_seconds
+  )
 
   # With no distance on either side, nearness in time is the whole case
   # for calling two recordings one session — and it is not enough.
@@ -548,8 +584,10 @@ parse_hae_workout <- function(path) {
   # ride and a run are two sessions however their edges overlap. Between
   # devices the labels disagree too often to be evidence of anything.
   if (isTRUE(same_sport)) {
-    out <- out & .same_sport_family(.workout_field(a, "sport"),
-                                    .workout_field(b, "sport"), n)
+    out <- out & .same_sport_family(
+      .workout_field(a, "sport"),
+      .workout_field(b, "sport"), n
+    )
   }
   out
 }
@@ -584,8 +622,8 @@ parse_hae_workout <- function(path) {
   # session that happens to log distance is still caught by the label,
   # and a mislabelled session is still caught by the missing distance.
   movement <- !.is_overlap_exempt(.workout_field(a, "sport"), n) &
-              !.is_overlap_exempt(.workout_field(b, "sport"), n) &
-              !is.na(da) & !is.na(db)
+    !.is_overlap_exempt(.workout_field(b, "sport"), n) &
+    !is.na(da) & !is.na(db)
 
   span_a <- end_a - start_a
   span_b <- end_b - start_b
@@ -594,10 +632,12 @@ parse_hae_workout <- function(path) {
     !is.na(dist) & span > 0 & dist / span >= .workout_min_speed(sport, n)
   }
   usable <- !is.na(start_a) & !is.na(start_b) & !is.na(end_a) & !is.na(end_b) &
-            span_a > 0 & span_b > 0 & movement &
-            believable(span_a, da, .workout_field(a, "sport")) &
-            believable(span_b, db, .workout_field(b, "sport"))
-  if (!any(usable)) return(no)
+    span_a > 0 & span_b > 0 & movement &
+    believable(span_a, da, .workout_field(a, "sport")) &
+    believable(span_b, db, .workout_field(b, "sport"))
+  if (!any(usable)) {
+    return(no)
+  }
 
   overlap <- pmin(end_a, end_b) - pmax(start_a, start_b)
   shorter <- pmin(span_a, span_b)
@@ -606,9 +646,9 @@ parse_hae_workout <- function(path) {
   out <- no
   out[usable] <-
     overlap[usable] >= overlap_min_seconds &
-    (overlap[usable] >= overlap_coverage * shorter[usable] |
-     end_gap[usable] <= overlap_end_seconds |
-     dist_ok[usable])
+      (overlap[usable] >= overlap_coverage * shorter[usable] |
+        end_gap[usable] <= overlap_end_seconds |
+        dist_ok[usable])
   out
 }
 
@@ -621,15 +661,18 @@ parse_hae_workout <- function(path) {
   }
   s <- rep(tolower(trimws(as.character(sport))), length.out = n)
   ifelse(!is.na(s) & grepl("cycling|cykl", s),
-         .WORKOUT_OVERLAP_MIN_SPEED_CYCLING,
-         .WORKOUT_OVERLAP_MIN_SPEED_DEFAULT)
+    .WORKOUT_OVERLAP_MIN_SPEED_CYCLING,
+    .WORKOUT_OVERLAP_MIN_SPEED_DEFAULT
+  )
 }
 
 # TRUE where the sport is one the overlap criterion must not touch.
 # A missing sport counts as exempt: without a label we can't tell a
 # parallel strength session from a duplicate recording.
 .is_overlap_exempt <- function(sport, n) {
-  if (is.null(sport) || length(sport) == 0) return(rep(TRUE, n))
+  if (is.null(sport) || length(sport) == 0) {
+    return(rep(TRUE, n))
+  }
   s <- rep(tolower(trimws(as.character(sport))), length.out = n)
   is.na(s) | !nzchar(s) | s %in% .WORKOUT_OVERLAP_EXEMPT_SPORTS
 }
@@ -688,13 +731,15 @@ parse_hae_workout <- function(path) {
 #' @keywords internal
 .distinct_recordings <- function(starts) {
   n <- length(starts)
-  if (n < 2) return(rep(TRUE, n))
+  if (n < 2) {
+    return(rep(TRUE, n))
+  }
   s <- as.numeric(starts)
   keep <- rep(TRUE, n)
   for (k in seq_len(n)[-1]) {
     earlier <- which(keep[seq_len(k - 1L)])
     if (any(!is.na(s[earlier]) & !is.na(s[k]) &
-            abs(s[earlier] - s[k]) < .SAME_RECORDING_SECONDS)) {
+      abs(s[earlier] - s[k]) < .SAME_RECORDING_SECONDS)) {
       keep[k] <- FALSE
     }
   }
@@ -725,14 +770,24 @@ parse_hae_workout <- function(path) {
 .copy_is_richer <- function(a_distance, a_duration, b_distance, b_duration) {
   ad <- as.numeric(a_distance)[1]
   bd <- as.numeric(b_distance)[1]
-  if (!is.na(ad) && is.na(bd)) return(TRUE)
-  if (is.na(ad) && !is.na(bd)) return(FALSE)
-  if (!is.na(ad) && !is.na(bd)) return(isTRUE(ad > bd))
+  if (!is.na(ad) && is.na(bd)) {
+    return(TRUE)
+  }
+  if (is.na(ad) && !is.na(bd)) {
+    return(FALSE)
+  }
+  if (!is.na(ad) && !is.na(bd)) {
+    return(isTRUE(ad > bd))
+  }
 
   at <- .workout_secs(a_duration)[1]
   bt <- .workout_secs(b_duration)[1]
-  if (is.na(at)) return(FALSE)
-  if (is.na(bt)) return(TRUE)
+  if (is.na(at)) {
+    return(FALSE)
+  }
+  if (is.na(bt)) {
+    return(TRUE)
+  }
   isTRUE(at > bt)
 }
 
@@ -750,12 +805,16 @@ parse_hae_workout <- function(path) {
 #' @keywords internal
 .best_copy <- function(distances, durations = NULL) {
   n <- length(distances)
-  if (n == 0) return(1L)
+  if (n == 0) {
+    return(1L)
+  }
   if (is.null(durations)) durations <- rep(NA_real_, n)
   best <- 1L
   for (k in seq_len(n)[-1]) {
-    if (.copy_is_richer(distances[k], durations[k],
-                        distances[best], durations[best])) {
+    if (.copy_is_richer(
+      distances[k], durations[k],
+      distances[best], durations[best]
+    )) {
       best <- k
     }
   }
@@ -783,7 +842,9 @@ parse_hae_workout <- function(path) {
 #' @keywords internal
 .garmin_total <- function(distances) {
   d <- as.numeric(distances)
-  if (length(d) == 0 || anyNA(d)) return(NA_real_)
+  if (length(d) == 0 || anyNA(d)) {
+    return(NA_real_)
+  }
   sum(d)
 }
 
@@ -827,13 +888,21 @@ parse_hae_workout <- function(path) {
 .garmin_verdict <- function(hae_distance, garmin_distances,
                             fragment_ratio = .WORKOUT_FRAGMENT_RATIO) {
   gd <- as.numeric(garmin_distances)
-  if (length(gd) == 0) return(rep(TRUE, length(hae_distance)))
+  if (length(gd) == 0) {
+    return(rep(TRUE, length(hae_distance)))
+  }
   known <- sum(gd[!is.na(gd)])
   complete <- !anyNA(gd)
   vapply(as.numeric(hae_distance), function(h) {
-    if (is.na(h) || h <= 0) return(TRUE)
-    if (known >= fragment_ratio * h) return(TRUE)
-    if (!complete) return(NA)
+    if (is.na(h) || h <= 0) {
+      return(TRUE)
+    }
+    if (known >= fragment_ratio * h) {
+      return(TRUE)
+    }
+    if (!complete) {
+      return(NA)
+    }
     FALSE
   }, logical(1))
 }
@@ -853,14 +922,19 @@ parse_hae_workout <- function(path) {
 #' @keywords internal
 .session_groups <- function(rows, same_sport = FALSE) {
   n <- nrow(rows)
-  if (n == 0) return(list())
-  if (n == 1) return(list(1L))
+  if (n == 0) {
+    return(list())
+  }
+  if (n == 1) {
+    return(list(1L))
+  }
   label <- seq_len(n)
   for (i in seq_len(n - 1L)) {
     for (j in (i + 1L):n) {
       if (isTRUE(.is_same_workout(rows[i, , drop = FALSE],
-                                  rows[j, , drop = FALSE],
-                                  same_sport = same_sport)[1])) {
+        rows[j, , drop = FALSE],
+        same_sport = same_sport
+      )[1])) {
         merged <- min(label[i], label[j])
         label[label == label[i] | label == label[j]] <- merged
       }
@@ -872,7 +946,9 @@ parse_hae_workout <- function(path) {
 # Rows of `candidates` that are the same workout as the single row `row`.
 # Returns an integer vector of positions (empty when nothing matches).
 .which_same_workout <- function(row, candidates, ...) {
-  if (is.null(candidates) || nrow(candidates) == 0) return(integer(0))
+  if (is.null(candidates) || nrow(candidates) == 0) {
+    return(integer(0))
+  }
   which(.is_same_workout(row, candidates, ...))
 }
 
@@ -949,8 +1025,10 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     return(result)
   }
 
-  files <- list.files(workouts_dir, pattern = "\\.json$",
-                      full.names = TRUE, ignore.case = TRUE)
+  files <- list.files(workouts_dir,
+    pattern = "\\.json$",
+    full.names = TRUE, ignore.case = TRUE
+  )
   if (length(files) == 0) {
     if (verbose) message("Inga HAE workout-JSON i ", workouts_dir)
     return(result)
@@ -968,11 +1046,13 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
   # duration so .is_same_workout() can apply its sanity check.
   .candidates <- function(which_source) {
     if (!all(c("source", "sessionStart") %in% names(summaries)) ||
-        nrow(summaries) == 0) {
+      nrow(summaries) == 0) {
       return(NULL)
     }
     keep <- !is.na(summaries$source) & summaries$source == which_source
-    if (!any(keep)) return(NULL)
+    if (!any(keep)) {
+      return(NULL)
+    }
     data.frame(
       # Original row position, so a losing Garmin row can be found again
       # in `summaries` when the fragment rule sends the win to HAE.
@@ -984,14 +1064,26 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       sessionStart = summaries$sessionStart[keep],
       # sessionEnd and sport feed the overlap criterion; both are absent
       # from very old caches, which simply falls back to the start rule.
-      sessionEnd = if ("sessionEnd" %in% names(summaries))
-        summaries$sessionEnd[keep] else as.POSIXct(NA),
-      sport = if ("sport" %in% names(summaries))
-        as.character(summaries$sport[keep]) else NA_character_,
-      distance = if ("distance" %in% names(summaries))
-        as.numeric(summaries$distance[keep]) else NA_real_,
-      duration = if ("duration" %in% names(summaries))
-        .workout_secs(summaries$duration[keep]) else NA_real_,
+      sessionEnd = if ("sessionEnd" %in% names(summaries)) {
+        summaries$sessionEnd[keep]
+      } else {
+        as.POSIXct(NA)
+      },
+      sport = if ("sport" %in% names(summaries)) {
+        as.character(summaries$sport[keep])
+      } else {
+        NA_character_
+      },
+      distance = if ("distance" %in% names(summaries)) {
+        as.numeric(summaries$distance[keep])
+      } else {
+        NA_real_
+      },
+      duration = if ("duration" %in% names(summaries)) {
+        .workout_secs(summaries$duration[keep])
+      } else {
+        NA_real_
+      },
       stringsAsFactors = FALSE
     )
   }
@@ -1028,8 +1120,9 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     # unless every Garmin row it matches is only a fragment of the
     # session — then the richer HAE row is imported and the fragments go.
     hit <- .which_same_workout(row, tcx_rows,
-                               window_seconds = tolerance_seconds,
-                               time_only_seconds = time_only_seconds)
+      window_seconds = tolerance_seconds,
+      time_only_seconds = time_only_seconds
+    )
     if (length(hit) > 0) {
       # Against everything Garmin holds for this session, not leg by leg.
       # Copies of one recording count once; legs count separately. The
@@ -1045,7 +1138,8 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
         result$n_skipped_dup <- result$n_skipped_dup + 1L
         if (verbose) {
           cat("Tvetydig mot flera Garmin-pass: ", bn, ", hoppar över\n",
-              sep = "")
+            sep = ""
+          )
         }
         next
       }
@@ -1055,9 +1149,13 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
         result$n_skipped_dup <- result$n_skipped_dup + 1L
         if (verbose) {
           dt <- abs(as.numeric(difftime(tcx_rows$sessionStart[hit],
-                                        row$sessionStart, units = "secs")))
+            row$sessionStart,
+            units = "secs"
+          )))
           cat("Dedupp mot Garmin: ", bn,
-              " (Δt = ", round(min(dt)), "s)\n", sep = "")
+            " (Δt = ", round(min(dt)), "s)\n",
+            sep = ""
+          )
         }
         next
       }
@@ -1077,16 +1175,18 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     # the complete recording was turned away on every import and the
     # reports read the short distance for good.
     hit <- .which_same_workout(row, hae_rows,
-                               window_seconds = tolerance_seconds,
-                               time_only_seconds = time_only_seconds,
-                               same_sport = TRUE)
+      window_seconds = tolerance_seconds,
+      time_only_seconds = time_only_seconds,
+      same_sport = TRUE
+    )
     if (length(hit) > 0) {
       # The same argument on this side: rows that are not copies of each
       # other are different sessions, and a file that matches both is not
       # a copy of either. Replacing them all would delete a session this
       # file never recorded.
       if (length(.session_groups(hae_rows[hit, , drop = FALSE],
-                                 same_sport = TRUE)) > 1) {
+        same_sport = TRUE
+      )) > 1) {
         result$n_skipped_dup_hae <- result$n_skipped_dup_hae + 1L
         if (verbose) {
           cat("Tvetydig mot flera HAE-pass: ", bn, ", hoppar över\n", sep = "")
@@ -1096,15 +1196,20 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       best <- hit[.best_copy(hae_rows$distance[hit], hae_rows$duration[hit])]
       incoming_is_richer <- .copy_is_richer(
         row$distance, row$duration,
-        hae_rows$distance[best], hae_rows$duration[best])
+        hae_rows$distance[best], hae_rows$duration[best]
+      )
 
       if (!incoming_is_richer) {
         result$n_skipped_dup_hae <- result$n_skipped_dup_hae + 1L
         if (verbose) {
           dt <- abs(as.numeric(difftime(hae_rows$sessionStart[hit],
-                                        row$sessionStart, units = "secs")))
+            row$sessionStart,
+            units = "secs"
+          )))
           cat("Dedupp mot HAE: ", bn,
-              " (Δt = ", round(min(dt)), "s)\n", sep = "")
+            " (Δt = ", round(min(dt)), "s)\n",
+            sep = ""
+          )
         }
         next
       }
@@ -1122,13 +1227,20 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
       }
       if (verbose) {
         cat("Fylligare HAE-kopia: ", bn, " (",
-            if (is.na(as.numeric(row$distance)))
-              paste0(round(.workout_secs(row$duration) / 60), " min mot ",
-                     round(.workout_secs(hae_rows$duration[best]) / 60), " min")
-            else
-              paste0(round(as.numeric(row$distance)), " m mot ",
-                     round(as.numeric(hae_rows$distance[best])), " m"),
-            ")\n", sep = "")
+          if (is.na(as.numeric(row$distance))) {
+            paste0(
+              round(.workout_secs(row$duration) / 60), " min mot ",
+              round(.workout_secs(hae_rows$duration[best]) / 60), " min"
+            )
+          } else {
+            paste0(
+              round(as.numeric(row$distance)), " m mot ",
+              round(as.numeric(hae_rows$distance[best])), " m"
+            )
+          },
+          ")\n",
+          sep = ""
+        )
       }
       hae_rows <- hae_rows[-hit, , drop = FALSE]
     }
@@ -1139,8 +1251,10 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
         result$n_garmin_fragments + length(pending_supersede)
       if (verbose) {
         cat("Garmin-fragment ersatt av AW: ", bn, " (",
-            pending_supersede_from, " m mot ",
-            round(as.numeric(row$distance)), " m)\n", sep = "")
+          pending_supersede_from, " m mot ",
+          round(as.numeric(row$distance)), " m)\n",
+          sep = ""
+        )
       }
     }
 
@@ -1167,7 +1281,9 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
   result$n_unmapped_sports <- length(unmapped)
   if (length(unmapped) > 0 && verbose) {
     cat("Okänd aktivitetstyp (ingen etikett, ingen bucket): ",
-        paste(unmapped, collapse = ", "), "\n", sep = "")
+      paste(unmapped, collapse = ", "), "\n",
+      sep = ""
+    )
   }
 
   # Copies struck by a fuller one leave holes; the per-sport tally is
@@ -1200,7 +1316,8 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
   if (length(superseded) > 0) {
     drop <- sort(unique(superseded))
     summaries <- .restore_df_attrs(
-      result$summaries[-drop, , drop = FALSE], result$summaries)
+      result$summaries[-drop, , drop = FALSE], result$summaries
+    )
     rownames(summaries) <- NULL
     myruns <- result$myruns
     keep_runs <- drop[drop <= length(myruns)]
@@ -1214,11 +1331,16 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
 
 # Bind two data frames by union of columns, filling NA where absent
 .rbind_align <- function(a, b) {
-  if (nrow(a) == 0) return(b)
-  if (nrow(b) == 0) return(a)
+  if (nrow(a) == 0) {
+    return(b)
+  }
+  if (nrow(b) == 0) {
+    return(a)
+  }
   all_cols <- union(names(a), names(b))
   for (col in setdiff(all_cols, names(a))) a[[col]] <- NA
   for (col in setdiff(all_cols, names(b))) b[[col]] <- NA
   rbind(a[, all_cols, drop = FALSE], b[, all_cols, drop = FALSE],
-        deparse.level = 0, make.row.names = FALSE)
+    deparse.level = 0, make.row.names = FALSE
+  )
 }

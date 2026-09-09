@@ -14,13 +14,21 @@
   bp_x <- as.numeric(names(breakpoints))
   bp_y <- unname(breakpoints)
   vapply(x, function(val) {
-    if (is.na(val)) return(NA_real_)
-    if (val <= bp_x[1]) return(bp_y[1])
-    if (val >= bp_x[length(bp_x)]) return(bp_y[length(bp_y)])
+    if (is.na(val)) {
+      return(NA_real_)
+    }
+    if (val <= bp_x[1]) {
+      return(bp_y[1])
+    }
+    if (val >= bp_x[length(bp_x)]) {
+      return(bp_y[length(bp_y)])
+    }
     # Find the segment
     idx <- max(which(bp_x <= val))
-    x0 <- bp_x[idx]; x1 <- bp_x[idx + 1]
-    y0 <- bp_y[idx]; y1 <- bp_y[idx + 1]
+    x0 <- bp_x[idx]
+    x1 <- bp_x[idx + 1]
+    y0 <- bp_y[idx]
+    y1 <- bp_y[idx + 1]
     y0 + (val - x0) / (x1 - x0) * (y1 - y0)
   }, numeric(1))
 }
@@ -47,7 +55,8 @@
   ratio <- ifelse(has_staging, (deep + rem) / total, NA_real_)
 
   bonus <- ifelse(has_staging & ratio >= 0.35, 10,
-           ifelse(has_staging & ratio < 0.20, -10, 0))
+    ifelse(has_staging & ratio < 0.20, -10, 0)
+  )
 
   pmin(100, pmax(0, base + bonus))
 }
@@ -57,8 +66,10 @@
 #' @return Numeric vector of scores.
 #' @keywords internal
 .score_rhr <- function(rhr_deviation) {
-  .piecewise_score(rhr_deviation,
-                   c("-3" = 100, "0" = 80, "3" = 50, "5" = 25, "8" = 0))
+  .piecewise_score(
+    rhr_deviation,
+    c("-3" = 100, "0" = 80, "3" = 50, "5" = 25, "8" = 0)
+  )
 }
 
 #' Score TRIMP ratio (yesterday's load / ATL) to 0-100
@@ -78,8 +89,10 @@
 #' @return Numeric vector of scores.
 #' @keywords internal
 .score_wrist_temp <- function(wt_deviation) {
-  .piecewise_score(wt_deviation,
-                   c("-0.5" = 100, "0" = 90, "0.3" = 70, "0.5" = 40, "1" = 0))
+  .piecewise_score(
+    wt_deviation,
+    c("-0.5" = 100, "0" = 90, "0.3" = 70, "0.5" = 40, "1" = 0)
+  )
 }
 
 # --- Composite scoring --------------------------------------------------------
@@ -105,7 +118,7 @@
     if (n_comp[i] == 0) {
       score[i] <- NA_real_
     } else {
-      w <- weights[available] / sum(weights[available])  # redistribute
+      w <- weights[available] / sum(weights[available]) # redistribute
       score[i] <- sum(vals[available] * w)
     }
   }
@@ -163,9 +176,9 @@
 #'   scores, flags, and data quality.
 #' @export
 compute_readiness <- function(health_daily, summaries,
-                               hr_max = NULL, hr_rest = NULL,
-                               after = NULL, before = NULL,
-                               pmc = NULL) {
+                              hr_max = NULL, hr_rest = NULL,
+                              after = NULL, before = NULL,
+                              pmc = NULL) {
   # 1. Health side: wide tibble with AW metrics
   health <- get_readiness(health_daily)
 
@@ -175,8 +188,10 @@ compute_readiness <- function(health_daily, summaries,
   # health_daily threads through so background-activity TRIMP from
   # daily steps/distance is reflected in CTL/ATL/TSB used for scoring.
   if (is.null(pmc)) {
-    pmc <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
-                       health_daily = health_daily)
+    pmc <- compute_pmc(summaries,
+      hr_max = hr_max, hr_rest = hr_rest,
+      health_daily = health_daily
+    )
   }
 
   # 3. Unified date spine
@@ -185,11 +200,15 @@ compute_readiness <- function(health_daily, summaries,
 
   # Join health
   health_cols <- health |>
-    dplyr::select(date,
-                  dplyr::any_of(c("resting_heart_rate", "heart_rate_variability",
-                                   "ln_rmssd", "sleep_totalSleep",
-                                   "sleep_deep", "sleep_rem",
-                                   "apple_sleeping_wrist_temperature")))
+    dplyr::select(
+      date,
+      dplyr::any_of(c(
+        "resting_heart_rate", "heart_rate_variability",
+        "ln_rmssd", "sleep_totalSleep",
+        "sleep_deep", "sleep_rem",
+        "apple_sleeping_wrist_temperature"
+      ))
+    )
   spine <- spine |> dplyr::left_join(health_cols, by = "date")
 
   # Join PMC
@@ -201,7 +220,7 @@ compute_readiness <- function(health_daily, summaries,
   spine <- spine |>
     dplyr::mutate(
       ln_rmssd_7d_mean = .rolling_mean(ln_rmssd, 7),
-      ln_rmssd_7d_sd   = .rolling_sd(ln_rmssd, 7),
+      ln_rmssd_7d_sd = .rolling_sd(ln_rmssd, 7),
       hrv_z = dplyr::if_else(
         !is.na(ln_rmssd_7d_sd) & ln_rmssd_7d_sd > 0,
         (ln_rmssd - ln_rmssd_7d_mean) / ln_rmssd_7d_sd,
@@ -264,56 +283,65 @@ compute_readiness <- function(health_daily, summaries,
 
   # 9. Composite score (5 components when wrist temp available)
   if (has_wrist_temp) {
-    weights <- c(hrv = 0.30, sleep = 0.25, rhr = 0.20,
-                 trimp = 0.15, wrist_temp = 0.10)
+    weights <- c(
+      hrv = 0.30, sleep = 0.25, rhr = 0.20,
+      trimp = 0.15, wrist_temp = 0.10
+    )
     score_df <- spine |>
-      dplyr::select(hrv = hrv_score, sleep = sleep_score,
-                    rhr = rhr_score, trimp = trimp_score,
-                    wrist_temp = wrist_temp_score)
+      dplyr::select(
+        hrv = hrv_score, sleep = sleep_score,
+        rhr = rhr_score, trimp = trimp_score,
+        wrist_temp = wrist_temp_score
+      )
   } else {
     weights <- c(hrv = 0.35, sleep = 0.30, rhr = 0.20, trimp = 0.15)
     score_df <- spine |>
-      dplyr::select(hrv = hrv_score, sleep = sleep_score,
-                    rhr = rhr_score, trimp = trimp_score)
+      dplyr::select(
+        hrv = hrv_score, sleep = sleep_score,
+        rhr = rhr_score, trimp = trimp_score
+      )
   }
   composite <- .weighted_composite(score_df, weights)
 
   spine$readiness_score <- composite$score
-  spine$n_components    <- composite$n_components
+  spine$n_components <- composite$n_components
 
   # 10. Flags
   spine <- spine |>
     dplyr::mutate(
-      hrv_flag   = !is.na(hrv_z) & hrv_z < -1,
-      rhr_flag   = .consecutive_flag(rhr_deviation, threshold = 5, min_run = 3),
+      hrv_flag = !is.na(hrv_z) & hrv_z < -1,
+      rhr_flag = .consecutive_flag(rhr_deviation, threshold = 5, min_run = 3),
       sleep_flag = !is.na(sleep_totalSleep) & sleep_totalSleep < 7 &
-                   !is.na(hrv_z) & hrv_z < 0,
-      load_flag  = !is.na(trimp_yesterday) & !is.na(atl) & atl > 0 &
-                   trimp_yesterday > 2 * atl
+        !is.na(hrv_z) & hrv_z < 0,
+      load_flag = !is.na(trimp_yesterday) & !is.na(atl) & atl > 0 &
+        trimp_yesterday > 2 * atl
     )
   if (has_wrist_temp) {
     spine <- spine |>
       dplyr::mutate(
         wrist_temp_flag = .consecutive_flag(wrist_temp_deviation,
-                                            threshold = 0.5, min_run = 2)
+          threshold = 0.5, min_run = 2
+        )
       )
   }
 
   # 11. Status and data quality
-  max_components <- if (has_wrist_temp) 5L else 4L
+  # Used below inside dplyr::case_when()'s data-masking expression;
+  # object_usage_linter can't see that reference from the enclosing scope.
+  max_components <- if (has_wrist_temp) 5L else 4L # nolint: object_usage_linter.
   spine <- spine |>
     dplyr::mutate(
       readiness_status = dplyr::case_when(
         is.na(readiness_score) ~ NA_character_,
-        readiness_score >= 70  ~ "Gr\u00f6n",
-        readiness_score >= 40  ~ "Gul",
-        TRUE                   ~ "R\u00f6d"
+        readiness_score >= 70 ~ "Gr\u00f6n",
+        readiness_score >= 40 ~ "Gul",
+        TRUE ~ "R\u00f6d"
       ),
       data_quality = dplyr::case_when(
         n_components == max_components ~ "full",
-        n_components >= 2              ~ "partial",
-        n_components == 1              ~ "minimal",
-        TRUE                           ~ NA_character_
+        n_components >= 2 ~ "partial",
+        n_components == 1 ~ "minimal",
+        TRUE ~ NA_character_
       )
     )
 
@@ -329,9 +357,11 @@ compute_readiness <- function(health_daily, summaries,
     "daily_trimp", "atl", "ctl", "tsb", "trimp_score", "load_flag"
   )
   if (has_wrist_temp) {
-    base_cols <- c(base_cols, "wrist_temp", "wrist_temp_14d",
-                   "wrist_temp_deviation", "wrist_temp_score",
-                   "wrist_temp_flag")
+    base_cols <- c(
+      base_cols, "wrist_temp", "wrist_temp_14d",
+      "wrist_temp_deviation", "wrist_temp_score",
+      "wrist_temp_flag"
+    )
   }
   base_cols <- c(base_cols, "data_quality")
 
@@ -343,7 +373,7 @@ compute_readiness <- function(health_daily, summaries,
     )
 
   # 13. Filter output
-  if (!is.null(after))  result <- result |> dplyr::filter(date >= as.Date(after))
+  if (!is.null(after)) result <- result |> dplyr::filter(date >= as.Date(after))
   if (!is.null(before)) result <- result |> dplyr::filter(date <= as.Date(before))
 
   result

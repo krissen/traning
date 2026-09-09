@@ -4,15 +4,17 @@
   base <- as.POSIXct("2020-03-15 06:00:00", tz = "UTC")
   data.frame(
     sessionStart = c(
-      base,                          # first run
-      base + 86400 * 5,              # 5 days later
-      base + 86400 * 120,            # 4 months later (longest gap = 115 d)
+      base, # first run
+      base + 86400 * 5, # 5 days later
+      base + 86400 * 120, # 4 months later (longest gap = 115 d)
       base + 86400 * 121,
       base + 86400 * 200,
-      base + 86400 * 365 * 2         # 2 years after start
+      base + 86400 * 365 * 2 # 2 years after start
     ),
-    sport = c("running", "running", "running", "cycling",
-              "running", "strength"),
+    sport = c(
+      "running", "running", "running", "cycling",
+      "running", "strength"
+    ),
     distance = c(8000, 5500, 21000, 30000, 10500, 0),
     durationMoving = as.difftime(c(45, 28, 110, 60, 55, 40), units = "mins"),
     avgSpeedMoving = c(3.0, 3.3, 3.2, 8.3, 3.2, NA),
@@ -33,17 +35,21 @@ test_that("compute_fun_facts returns a list of named facts", {
   # Each entry has $string and $value
   for (n in names(facts)) {
     expect_true("string" %in% names(facts[[n]]),
-                info = paste("missing $string in", n))
+      info = paste("missing $string in", n)
+    )
     expect_true("value" %in% names(facts[[n]]),
-                info = paste("missing $value in", n))
+      info = paste("missing $value in", n)
+    )
     expect_type(facts[[n]]$string, "character")
   }
 })
 
 test_that("compute_fun_facts identifies the first session correctly", {
   facts <- compute_fun_facts(.fixture_facts_summaries())
-  expect_equal(as.Date(facts$first_session$value),
-               as.Date("2020-03-15"))
+  expect_equal(
+    as.Date(facts$first_session$value),
+    as.Date("2020-03-15")
+  )
 })
 
 test_that("compute_fun_facts identifies longest gap between runs", {

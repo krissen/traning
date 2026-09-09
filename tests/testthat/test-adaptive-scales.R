@@ -23,10 +23,14 @@
   # robust against any future reorganisation that places plot code in a
   # subdirectory.
   paths <- c(
-    list.files(file.path(root, "R"), pattern = "\\.R$",
-               full.names = TRUE, recursive = TRUE),
-    list.files(file.path(root, "app"), pattern = "\\.R$",
-               full.names = TRUE, recursive = TRUE)
+    list.files(file.path(root, "R"),
+      pattern = "\\.R$",
+      full.names = TRUE, recursive = TRUE
+    ),
+    list.files(file.path(root, "app"),
+      pattern = "\\.R$",
+      full.names = TRUE, recursive = TRUE
+    )
   )
 
   offenders <- character()
@@ -44,8 +48,10 @@
       # Function entry: capture the assignee. Triggers also on assignments
       # inside theme() etc., but those won't open a brace block at the
       # top level so the brace tracking below stays sane.
-      m <- regmatches(ln, regexec("^([a-zA-Z._][a-zA-Z._0-9]*)\\s*<-\\s*function",
-                                  ln))[[1]]
+      m <- regmatches(ln, regexec(
+        "^([a-zA-Z._][a-zA-Z._0-9]*)\\s*<-\\s*function",
+        ln
+      ))[[1]]
       if (length(m) >= 2) {
         current_fn <- m[[2]]
         brace_depth <- 0L
@@ -67,12 +73,20 @@
       # bare form too — that's exactly the regression we want to fail
       # on if it ever slips in.
       if (!grepl("(?<![\\w.])(?:ggplot2::)?scale_x_date(?:time)?\\s*\\(",
-                 ln, perl = TRUE)) next
+        ln,
+        perl = TRUE
+      )) {
+        next
+      }
 
       # Allow when inside the canonical helpers
       if (!is.null(current_fn) &&
-          current_fn %in% c(".adaptive_date_scale",
-                            ".adaptive_datetime_scale")) next
+        current_fn %in% c(
+          ".adaptive_date_scale",
+          ".adaptive_datetime_scale"
+        )) {
+        next
+      }
 
       # Allow when an AVVIKELSE marker sits on (or just above) the line
       ctx <- lines[max(1L, i - 3L):i]
@@ -90,11 +104,12 @@ test_that("scale_x_date()/scale_x_datetime() only via adaptive helpers", {
   offenders <- .scan_for_direct_date_scales(root)
   if (length(offenders) > 0) {
     cat("\nDirect scale_x_date()/scale_x_datetime() callsites outside\n",
-        "the .adaptive_* helpers and without an `AVVIKELSE FRÅN ADAPTIV\n",
-        "X-AXEL` marker. Use .adaptive_date_scale() /\n",
-        ".adaptive_datetime_scale() in R/plot.R instead.\n",
-        "Offenders:\n  ", paste(offenders, collapse = "\n  "), "\n",
-        sep = "")
+      "the .adaptive_* helpers and without an `AVVIKELSE FRÅN ADAPTIV\n",
+      "X-AXEL` marker. Use .adaptive_date_scale() /\n",
+      ".adaptive_datetime_scale() in R/plot.R instead.\n",
+      "Offenders:\n  ", paste(offenders, collapse = "\n  "), "\n",
+      sep = ""
+    )
   }
   expect_length(offenders, 0)
 })
@@ -115,7 +130,7 @@ test_that(".adaptive_date_spec thresholds avoid over-dense breaks", {
   # 2-month bucket so ~6 labels render.
   expect_equal(traning:::.adaptive_date_spec(365)$breaks, "2 months")
   # The 14-day bucket stays daily.
-  expect_equal(traning:::.adaptive_date_spec(7)$breaks,  "1 day")
+  expect_equal(traning:::.adaptive_date_spec(7)$breaks, "1 day")
   # 5-year span = quarterly cadence (was "3 months", now "6 months").
   expect_equal(traning:::.adaptive_date_spec(365 * 5)$breaks, "6 months")
   # Decade+ spans collapse to yearly horizontal labels.

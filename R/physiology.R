@@ -3,7 +3,9 @@
 # Internal helper: resolve the resting HR cache path.
 # Uses $TRANING_DATA/cache/resting_hr.RData by default.
 .rhr_cache_path <- function(cache_path = NULL) {
-  if (!is.null(cache_path)) return(cache_path)
+  if (!is.null(cache_path)) {
+    return(cache_path)
+  }
   data_root <- Sys.getenv("TRANING_DATA", unset = NA_character_)
   if (is.na(data_root) || nchar(data_root) == 0) {
     warning("TRANING_DATA env var not set — cannot resolve cache path")
@@ -72,8 +74,10 @@ import_resting_hr <- function(csv_path) {
     dplyr::select(date, rhr = bpm, source = source_raw) %>%
     dplyr::arrange(date)
 
-  message("Imported ", nrow(result), " daily resting HR observations ",
-          "(", format(min(result$date)), " to ", format(max(result$date)), ")")
+  message(
+    "Imported ", nrow(result), " daily resting HR observations ",
+    "(", format(min(result$date)), " to ", format(max(result$date)), ")"
+  )
 
   result
 }
@@ -130,7 +134,8 @@ get_hr_max <- function(summaries = NULL, sport = "running") {
 
   # 3. BIRTH_YEAR + Tanaka formula (preferred — same source as get_hr_max_at)
   birth_year <- suppressWarnings(
-    as.numeric(Sys.getenv("BIRTH_YEAR", unset = "")))
+    as.numeric(Sys.getenv("BIRTH_YEAR", unset = ""))
+  )
   if (!is.na(birth_year) && birth_year > 1900) {
     age <- as.numeric(format(Sys.Date(), "%Y")) - birth_year
     estimate <- 208 - 0.7 * age
@@ -141,15 +146,19 @@ get_hr_max <- function(summaries = NULL, sport = "running") {
   age_env <- suppressWarnings(as.numeric(Sys.getenv("AGE", unset = "")))
   if (!is.na(age_env) && age_env > 0) {
     estimate <- 208 - 0.7 * age_env
-    message("HRmax estimated via Tanaka formula (age=", age_env, "): ",
-            round(estimate), " bpm")
+    message(
+      "HRmax estimated via Tanaka formula (age=", age_env, "): ",
+      round(estimate), " bpm"
+    )
     return(round(estimate))
   }
 
   # 5. Ultimate fallback
-  warning("HRmax could not be determined (set HR_MAX, BIRTH_YEAR or AGE env ",
-          "var, or provide summaries with garmin_maxHR). ",
-          "Returning 185 bpm as default.")
+  warning(
+    "HRmax could not be determined (set HR_MAX, BIRTH_YEAR or AGE env ",
+    "var, or provide summaries with garmin_maxHR). ",
+    "Returning 185 bpm as default."
+  )
   185
 }
 
@@ -186,8 +195,8 @@ get_hr_rest <- function(date, rhr_data = NULL) {
     return(rep(fallback, length(date)))
   }
 
-  rhr_min  <- min(rhr_data$date)
-  rhr_max  <- max(rhr_data$date)
+  rhr_min <- min(rhr_data$date)
+  rhr_max <- max(rhr_data$date)
 
   # Compute the backward-looking 30-day rolling mean per *unique* date,
   # then map back to the requested vector. Callers like compute_trimp
@@ -196,12 +205,17 @@ get_hr_rest <- function(date, rhr_data = NULL) {
   # session on the same date.
   uniq <- sort(unique(date))
   uniq_vals <- vapply(uniq, function(d) {
-    if (d < rhr_min || d > rhr_max + 1) return(fallback)
+    if (d < rhr_min || d > rhr_max + 1) {
+      return(fallback)
+    }
     window_vals <- rhr_data$rhr[
       rhr_data$date >= d - 30 & rhr_data$date <= d - 1
     ]
-    if (length(window_vals) == 0) fallback
-    else mean(window_vals, na.rm = TRUE)
+    if (length(window_vals) == 0) {
+      fallback
+    } else {
+      mean(window_vals, na.rm = TRUE)
+    }
   }, numeric(1))
 
   uniq_vals[match(date, uniq)]
@@ -237,7 +251,8 @@ get_hr_max_at <- function(date, summaries = NULL, sport = "running") {
 
   # 2. BIRTH_YEAR + Tanaka formula (preferred — simple and physiologically sound)
   birth_year <- suppressWarnings(
-    as.numeric(Sys.getenv("BIRTH_YEAR", unset = "")))
+    as.numeric(Sys.getenv("BIRTH_YEAR", unset = ""))
+  )
   if (!is.na(birth_year) && birth_year > 1900) {
     ages <- target_years - birth_year
     result <- round(208 - 0.7 * ages)
@@ -265,7 +280,8 @@ get_hr_max_at <- function(date, summaries = NULL, sport = "running") {
     if (nrow(yearly) >= 2) {
       fit <- stats::lm(hr_max ~ year, data = yearly)
       predicted <- stats::predict(fit,
-                                  newdata = data.frame(year = target_years))
+        newdata = data.frame(year = target_years)
+      )
       return(round(pmax(predicted, 150)))
     }
   }
@@ -278,8 +294,10 @@ get_hr_max_at <- function(date, summaries = NULL, sport = "running") {
   }
 
   # 5. Fallback
-  warning("Kan inte ber\u00e4kna tidsvarierande HRmax. ",
-          "S\u00e4tt BIRTH_YEAR i .Renviron (t.ex. BIRTH_YEAR=1980).")
+  warning(
+    "Kan inte ber\u00e4kna tidsvarierande HRmax. ",
+    "S\u00e4tt BIRTH_YEAR i .Renviron (t.ex. BIRTH_YEAR=1980)."
+  )
   rep(185, length(date))
 }
 

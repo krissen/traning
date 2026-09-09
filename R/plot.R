@@ -15,7 +15,9 @@
   }
   if (!is.null(data_dates) && length(data_dates) > 0) {
     rng <- suppressWarnings(range(as.Date(data_dates), na.rm = TRUE))
-    if (all(is.finite(rng))) return(as.numeric(diff(rng)))
+    if (all(is.finite(rng))) {
+      return(as.numeric(diff(rng)))
+    }
   }
   fallback_days
 }
@@ -31,17 +33,17 @@
 # afford ~10 wide / ~17 narrow labels — we aim well below.
 .adaptive_date_spec <- function(span_days) {
   if (span_days <= 14) {
-    list(labels = "%d %b", breaks = "1 day",    angle = 45)
+    list(labels = "%d %b", breaks = "1 day", angle = 45)
   } else if (span_days <= 60) {
-    list(labels = "%d %b", breaks = "1 week",   angle = 45)
+    list(labels = "%d %b", breaks = "1 week", angle = 45)
   } else if (span_days <= 180) {
-    list(labels = "%b %Y", breaks = "1 month",  angle = 45)
+    list(labels = "%b %Y", breaks = "1 month", angle = 45)
   } else if (span_days <= 365 * 2) {
     list(labels = "%b %Y", breaks = "2 months", angle = 45)
   } else if (span_days <= 365 * 5) {
     list(labels = "%b %Y", breaks = "6 months", angle = 45)
   } else {
-    list(labels = "%Y",    breaks = "1 year",   angle = 0)
+    list(labels = "%Y", breaks = "1 year", angle = 0)
   }
 }
 
@@ -87,25 +89,36 @@
 #' @return ggplot2 object
 #' @export
 fetch.plot.monthly.dist <- function(month_summaries_til_day) {
-  my_month <- .swedish_months[as.integer(format(Sys.time(), "%m"))]
+  # Interpolated inside str_glue() below.
+  my_month <- .swedish_months[as.integer(format(Sys.time(), "%m"))] # nolint: object_usage_linter.
   my_title <- stringr::str_glue(
-    "Distans och tempo för löpande månad ({my_month})")
+    "Distans och tempo för löpande månad ({my_month})"
+  )
 
   month_summaries_til_day %>%
     ggplot2::ggplot(ggplot2::aes(x = as.integer(year))) +
     ggplot2::geom_col(
-      ggplot2::aes(y = dist_avg, fill = "Dist., medel")) +
+      ggplot2::aes(y = dist_avg, fill = "Dist., medel")
+    ) +
     ggplot2::geom_col(
-      ggplot2::aes(y = d_avg_dy, fill = "Dist. per dag, medel.")) +
+      ggplot2::aes(y = d_avg_dy, fill = "Dist. per dag, medel.")
+    ) +
     ggplot2::geom_line(
-      ggplot2::aes(y = pace_avg, colour = 'Tempo, medel')) +
+      ggplot2::aes(y = pace_avg, colour = "Tempo, medel")
+    ) +
     ggplot2::scale_colour_manual("",
-      values = c("Tempo, medel" = traning_palette$status[["red"]])) +
+      values = c("Tempo, medel" = traning_palette$status[["red"]])
+    ) +
     ggplot2::scale_fill_manual(" ",
-      values = c("Dist., medel" = traning_palette$primary,
-                 "Dist. per dag, medel." = traning_palette$accent_warm)) +
-    ggplot2::theme(legend.key = ggplot2::element_blank(),
-                   legend.title = ggplot2::element_blank()) +
+      values = c(
+        "Dist., medel" = traning_palette$primary,
+        "Dist. per dag, medel." = traning_palette$accent_warm
+      )
+    ) +
+    ggplot2::theme(
+      legend.key = ggplot2::element_blank(),
+      legend.title = ggplot2::element_blank()
+    ) +
     ggplot2::ggtitle(my_title) +
     ggplot2::labs(x = "År", y = "Kilometer") -> p1
   return(p1)
@@ -124,10 +137,11 @@ fetch.plot.sum.dist <- function(summaries, sport = "running") {
       dist_max = max(distance),
       dist_sum = sum(distance) / 1000,
       dist_avg = mean(distance, na.rm = TRUE) / 1000,
-      .groups = "keep") %>%
+      .groups = "keep"
+    ) %>%
     ggplot2::ggplot(ggplot2::aes(x = as.integer(year), y = dist_sum)) +
     ggplot2::geom_point() +
-    ggplot2::geom_smooth(method = 'loess', formula = 'y ~ x') +
+    ggplot2::geom_smooth(method = "loess", formula = "y ~ x") +
     ggplot2::ggtitle("Distans över år") +
     ggplot2::labs(x = "År", y = "Kilometer") -> plot.sum.dist
   return(plot.sum.dist)
@@ -151,7 +165,8 @@ fetch.plot.ef <- function(data, from = NULL, to = NULL,
   # Filter to date range
   ef_data <- filter_by_daterange(ef_data, list(from = from, to = to), date_col = "sessionStart")
   if (nrow(ef_data) == 0) {
-    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen EF-data i intervallet"))
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle("Ingen EF-data i intervallet"))
   }
 
   span <- .compute_span_days(from, to)
@@ -261,7 +276,8 @@ fetch.plot.hre <- function(data, from = NULL, to = NULL,
   # Filter to date range
   hre_data <- filter_by_daterange(hre_data, list(from = from, to = to), date_col = "sessionStart")
   if (nrow(hre_data) == 0) {
-    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen HRE-data i intervallet"))
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle("Ingen HRE-data i intervallet"))
   }
 
   span <- .compute_span_days(from, to)
@@ -285,7 +301,8 @@ fetch.plot.hre <- function(data, from = NULL, to = NULL,
       xmin = -Inf, xmax = Inf, ymin = 800, ymax = Inf,
       fill = traning_palette$traffic_bg[["red"]], alpha = 0.06
     ) +
-    ggplot2::geom_hline(yintercept = c(700, 750, 800),
+    ggplot2::geom_hline(
+      yintercept = c(700, 750, 800),
       colour = "grey70", linetype = "dotted", linewidth = 0.4
     ) +
     ggplot2::geom_point(
@@ -343,8 +360,10 @@ fetch.plot.acwr <- function(data, from = NULL, to = NULL,
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
-  acwr_data <- compute_acwr(summaries, sport = sport, mode = mode,
-                            health_daily = health_daily)
+  acwr_data <- compute_acwr(summaries,
+    sport = sport, mode = mode,
+    health_daily = health_daily
+  )
   resolved_mode <- attr(acwr_data, "mode") %||% "km"
 
   acwr_window <- filter_by_daterange(acwr_data, list(from = from, to = to), date_col = "date", closed_upper = TRUE) %>%
@@ -355,13 +374,14 @@ fetch.plot.acwr <- function(data, from = NULL, to = NULL,
   acwr_window <- acwr_window %>%
     dplyr::mutate(
       zon = dplyr::case_when(
-        acwr < 0.8             ~ "Underbelastning",
-        acwr <= 1.3            ~ "Optimalt",
-        acwr <= 1.5            ~ "Varning",
-        TRUE                   ~ "Överbelastning"
+        acwr < 0.8 ~ "Underbelastning",
+        acwr <= 1.3 ~ "Optimalt",
+        acwr <= 1.5 ~ "Varning",
+        TRUE ~ "Överbelastning"
       ),
       zon = factor(zon,
-        levels = c("Underbelastning", "Optimalt", "Varning", "Överbelastning"))
+        levels = c("Underbelastning", "Optimalt", "Varning", "Överbelastning")
+      )
     )
 
   # Build a long-format data frame suitable for facet_grid
@@ -448,7 +468,7 @@ fetch.plot.acwr <- function(data, from = NULL, to = NULL,
       fill = traning_palette$accent, alpha = 0.7, width = 1
     ) +
     ggplot2::scale_colour_manual(
-      name   = "Zon",
+      name = "Zon",
       values = zon_farger,
       na.value = traning_palette$primary
     ) +
@@ -461,7 +481,7 @@ fetch.plot.acwr <- function(data, from = NULL, to = NULL,
     ggplot2::ggtitle("Akut:kronisk belastningskvot") +
     ggplot2::labs(x = NULL, y = NULL) +
     ggplot2::theme(
-      strip.text   = ggplot2::element_text(face = "bold"),
+      strip.text = ggplot2::element_text(face = "bold"),
       legend.position = "bottom"
     ) -> p
 
@@ -575,11 +595,14 @@ fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
-  pmc_data <- compute_pmc(summaries, hr_max = hr_max, hr_rest = hr_rest,
-                          sport = sport, health_daily = health_daily)
+  pmc_data <- compute_pmc(summaries,
+    hr_max = hr_max, hr_rest = hr_rest,
+    sport = sport, health_daily = health_daily
+  )
 
   if (nrow(pmc_data) == 0) {
-    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle("Ingen TRIMP-data tillgänglig"))
   }
 
   pmc_window <- filter_by_daterange(pmc_data, list(from = from, to = to), date_col = "date", closed_upper = TRUE)
@@ -591,8 +614,9 @@ fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
     tidyr::pivot_longer(cols = c(ctl, atl), names_to = "metrik", values_to = "value") %>%
     dplyr::mutate(
       metrik = dplyr::recode(metrik, ctl = "Fitness (CTL)", atl = "Trötthet (ATL)"),
-      panel  = factor("Fitness / Trötthet",
-                       levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
+      panel = factor("Fitness / Trötthet",
+        levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP")
+      )
     )
 
   # Panel 2: TSB with zone colouring
@@ -600,16 +624,19 @@ fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
     dplyr::select(date, tsb) %>%
     dplyr::mutate(
       zon = dplyr::case_when(
-        tsb > 15    ~ "Utvilad",
-        tsb > 5     ~ "Tävlingsredo",
-        tsb > -10   ~ "Produktiv",
-        tsb > -20   ~ "Trött",
-        TRUE        ~ "Överbelastad"
+        tsb > 15 ~ "Utvilad",
+        tsb > 5 ~ "Tävlingsredo",
+        tsb > -10 ~ "Produktiv",
+        tsb > -20 ~ "Trött",
+        TRUE ~ "Överbelastad"
       ),
-      zon = factor(zon, levels = c("Utvilad", "Tävlingsredo", "Produktiv",
-                                    "Trött", "Överbelastad")),
+      zon = factor(zon, levels = c(
+        "Utvilad", "Tävlingsredo", "Produktiv",
+        "Trött", "Överbelastad"
+      )),
       panel = factor("Form (TSB)",
-                     levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
+        levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP")
+      )
     )
 
   # Panel 3: daily TRIMP bars
@@ -617,7 +644,8 @@ fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
     dplyr::select(date, daily_trimp) %>%
     dplyr::mutate(
       panel = factor("Daglig TRIMP",
-                     levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
+        levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP")
+      )
     )
 
   # TSB zone palette maps to traffic_bg + cool/neutral tones. "Utvilad"
@@ -637,7 +665,8 @@ fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
   # Reference lines for TSB panel
   tsb_ref <- data.frame(
     panel = factor("Form (TSB)",
-                   levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP"))
+      levels = c("Fitness / Trötthet", "Form (TSB)", "Daglig TRIMP")
+    )
   )
 
   ggplot2::ggplot() +
@@ -653,9 +682,11 @@ fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
     # combined panel. Use zones$Z1 (saturated blue) for the fitness
     # baseline and traffic_bg$red for the fatigue alarm.
     ggplot2::scale_colour_manual(
-      name   = NULL,
-      values = c("Fitness (CTL)" = traning_palette$zones[["Z1"]],
-                 "Trötthet (ATL)" = traning_palette$traffic_bg[["red"]])
+      name = NULL,
+      values = c(
+        "Fitness (CTL)" = traning_palette$zones[["Z1"]],
+        "Trötthet (ATL)" = traning_palette$traffic_bg[["red"]]
+      )
     ) +
     # Panel 2: TSB coloured by zone
     ggplot2::geom_col(
@@ -683,7 +714,8 @@ fetch.plot.pmc <- function(data, hr_max = NULL, hr_rest = NULL,
     ) +
     .adaptive_date_scale(span) +
     ggplot2::ggtitle("Performance Management Chart (PMC)",
-                     subtitle = .pmc_scope_subtitle(sport, health_daily)) +
+      subtitle = .pmc_scope_subtitle(sport, health_daily)
+    ) +
     ggplot2::labs(
       x = NULL, y = NULL,
       caption = "TSB-trösklar är coaching-heuristik, ej validerade för motionslöpning"
@@ -709,13 +741,15 @@ fetch.plot.recovery_hr <- function(data, from = NULL, to = NULL,
 
   if (nrow(rhr_data) == 0) {
     message("Ingen recovery HR-data tillgänglig.")
-    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen recovery HR-data"))
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle("Ingen recovery HR-data"))
   }
 
   # Filter to date range
   rhr_data <- filter_by_daterange(rhr_data, list(from = from, to = to), date_col = "sessionStart")
   if (nrow(rhr_data) == 0) {
-    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen recovery HR-data i intervallet"))
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle("Ingen recovery HR-data i intervallet"))
   }
 
   span <- .compute_span_days(from, to)
@@ -809,13 +843,15 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
   decoupling_data <- td@decoupling_data
   if (is.null(decoupling_data)) {
     decoupling_data <- compute_decoupling(summaries, myruns,
-                                           cap_pct = cap_pct,
-                                           sport = sport)
+      cap_pct = cap_pct,
+      sport = sport
+    )
   }
 
   if (nrow(decoupling_data) == 0) {
     message("Ingen decoupling-data tillg\u00e4nglig.")
-    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen decoupling-data"))
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle("Ingen decoupling-data"))
   }
 
   # Older cache files predate the `capped` column \u2014 backfill so the
@@ -827,7 +863,8 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
   # Filter to date range
   decoupling_data <- filter_by_daterange(decoupling_data, list(from = from, to = to), date_col = "sessionStart")
   if (nrow(decoupling_data) == 0) {
-    return(ggplot2::ggplot() + ggplot2::ggtitle("Ingen decoupling-data i intervallet"))
+    return(ggplot2::ggplot() +
+      ggplot2::ggtitle("Ingen decoupling-data i intervallet"))
   }
 
   span <- .compute_span_days(from, to)
@@ -860,7 +897,8 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
     ) %>%
     dplyr::mutate(
       panel = factor("Decoupling (%)",
-                     levels = c("Decoupling (%)", "Veckokilometer"))
+        levels = c("Decoupling (%)", "Veckokilometer")
+      )
     )
 
   # Volume panel data
@@ -872,7 +910,8 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
       value = weekly_km,
       capped = FALSE,
       panel = factor("Veckokilometer",
-                     levels = c("Decoupling (%)", "Veckokilometer"))
+        levels = c("Decoupling (%)", "Veckokilometer")
+      )
     ) %>%
     dplyr::select(sessionStart, metrik, value, capped, panel)
 
@@ -897,7 +936,8 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
       xmin = -Inf, xmax = Inf, ymin = 8, ymax = Inf,
       fill = traning_palette$traffic_bg[["red"]], alpha = 0.06
     ) +
-    ggplot2::geom_hline(yintercept = c(3, 5, 8),
+    ggplot2::geom_hline(
+      yintercept = c(3, 5, 8),
       colour = "grey70", linetype = "dotted", linewidth = 0.4
     ) +
     # Decoupling points (regular, non-capped)
@@ -980,14 +1020,14 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
 # silently drop cycling (pace ~1.5–3) and walking (pace >10) sessions —
 # they pass pace_filter = FALSE.
 .run_profile_runs <- function(summaries, sport = "running", year_min = 2005,
-                               pace_filter = TRUE) {
+                              pace_filter = TRUE) {
   out <- .filter_sport(summaries, sport) %>%
     dplyr::mutate(
       date = as.Date(sessionStart),
       year = lubridate::year(sessionStart),
-      woy  = lubridate::isoweek(sessionStart),
+      woy = lubridate::isoweek(sessionStart),
       month = lubridate::month(sessionStart),
-      km   = distance / 1000,
+      km = distance / 1000,
       dur_min = as.numeric(durationMoving, units = "mins"),
       pace = avgPaceMoving
     ) %>%
@@ -1005,7 +1045,7 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
 # Apply a from/to date filter on the derived `date` column. NULL => no-op.
 .run_profile_filter_range <- function(runs, from, to) {
   if (!is.null(from)) runs <- dplyr::filter(runs, date >= as.Date(from))
-  if (!is.null(to))   runs <- dplyr::filter(runs, date <  as.Date(to))
+  if (!is.null(to)) runs <- dplyr::filter(runs, date < as.Date(to))
   runs
 }
 
@@ -1013,14 +1053,18 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
 # and not reusable on bare integer vectors).
 .year_breaks_int <- function(years, target = 10) {
   yrs <- sort(unique(years))
-  if (length(yrs) <= target) return(yrs)
+  if (length(yrs) <= target) {
+    return(yrs)
+  }
   step <- ceiling(length(yrs) / target)
   yrs[seq(1, length(yrs), by = step)]
 }
 
 # Empty-state placeholder when filters strip the data to zero rows.
 .run_profile_empty <- function(msg = "Ingen data i intervallet") {
-  ggplot2::ggplot() + ggplot2::ggtitle(msg) + .theme_run_profile()
+  ggplot2::ggplot() +
+    ggplot2::ggtitle(msg) +
+    .theme_run_profile()
 }
 
 #' Tempo per \u00e5r: median + 25-75 % band + objektiva milstolpar
@@ -1036,74 +1080,99 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.pace_year <- function(data, from = NULL, to = NULL,
-                                  sport = "running") {
+                                 sport = "running") {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
-  if (nrow(runs) == 0) return(.run_profile_empty())
+  if (nrow(runs) == 0) {
+    return(.run_profile_empty())
+  }
 
-  yearly <- runs %>% dplyr::group_by(year) %>%
+  yearly <- runs %>%
+    dplyr::group_by(year) %>%
     dplyr::summarise(
       median_pace = stats::median(pace),
       p25 = stats::quantile(pace, .25),
       p75 = stats::quantile(pace, .75),
-      total_km = sum(km), .groups = "drop")
+      total_km = sum(km), .groups = "drop"
+    )
 
-  fastest        <- runs %>% dplyr::slice_min(pace, n = 1, with_ties = FALSE)
-  slowest        <- runs %>% dplyr::slice_max(pace, n = 1, with_ties = FALSE)
-  longest_pass   <- runs %>% dplyr::slice_max(km,   n = 1, with_ties = FALSE)
-  peak_year      <- yearly %>% dplyr::slice_min(median_pace, n = 1)
-  worst_year     <- yearly %>% dplyr::slice_max(median_pace, n = 1)
-  top_volume_year<- yearly %>% dplyr::slice_max(total_km,   n = 1)
+  fastest <- runs %>% dplyr::slice_min(pace, n = 1, with_ties = FALSE)
+  slowest <- runs %>% dplyr::slice_max(pace, n = 1, with_ties = FALSE)
+  longest_pass <- runs %>% dplyr::slice_max(km, n = 1, with_ties = FALSE)
+  peak_year <- yearly %>% dplyr::slice_min(median_pace, n = 1)
+  worst_year <- yearly %>% dplyr::slice_max(median_pace, n = 1)
+  top_volume_year <- yearly %>% dplyr::slice_max(total_km, n = 1)
 
   milestones <- dplyr::bind_rows(
-    tibble::tibble(year = fastest$year, pace = fastest$pace,
-      label = sprintf("Snabbaste pass\n%.2f (%d)", fastest$pace, fastest$year)),
-    tibble::tibble(year = slowest$year, pace = slowest$pace,
-      label = sprintf("L\u00e5ngsammaste pass\n%.2f (%d)", slowest$pace, slowest$year)),
-    tibble::tibble(year = longest_pass$year,
+    tibble::tibble(
+      year = fastest$year, pace = fastest$pace,
+      label = sprintf("Snabbaste pass\n%.2f (%d)", fastest$pace, fastest$year)
+    ),
+    tibble::tibble(
+      year = slowest$year, pace = slowest$pace,
+      label = sprintf("L\u00e5ngsammaste pass\n%.2f (%d)", slowest$pace, slowest$year)
+    ),
+    tibble::tibble(
+      year = longest_pass$year,
       pace = yearly$median_pace[match(longest_pass$year, yearly$year)],
-      label = sprintf("L\u00e4ngsta pass\n%.0f km (%d)", longest_pass$km, longest_pass$year)),
-    tibble::tibble(year = peak_year$year, pace = peak_year$median_pace,
-      label = sprintf("Snabbast median\u00e5r\n%.2f (%d)", peak_year$median_pace, peak_year$year)),
-    tibble::tibble(year = worst_year$year, pace = worst_year$median_pace,
-      label = sprintf("L\u00e5ngsammast median\u00e5r\n%.2f (%d)", worst_year$median_pace, worst_year$year)),
-    tibble::tibble(year = top_volume_year$year,
+      label = sprintf("L\u00e4ngsta pass\n%.0f km (%d)", longest_pass$km, longest_pass$year)
+    ),
+    tibble::tibble(
+      year = peak_year$year, pace = peak_year$median_pace,
+      label = sprintf("Snabbast median\u00e5r\n%.2f (%d)", peak_year$median_pace, peak_year$year)
+    ),
+    tibble::tibble(
+      year = worst_year$year, pace = worst_year$median_pace,
+      label = sprintf("L\u00e5ngsammast median\u00e5r\n%.2f (%d)", worst_year$median_pace, worst_year$year)
+    ),
+    tibble::tibble(
+      year = top_volume_year$year,
       pace = top_volume_year$median_pace,
-      label = sprintf("Mest km-\u00e5r\n%.0f km (%d)", top_volume_year$total_km, top_volume_year$year))
+      label = sprintf("Mest km-\u00e5r\n%.0f km (%d)", top_volume_year$total_km, top_volume_year$year)
+    )
   )
 
   y_lo <- min(yearly$p25) - 0.2
   y_hi <- max(yearly$p75) + 0.2
   milestones <- milestones %>% dplyr::mutate(
     y_anchor = dplyr::case_when(
-      pace < y_lo ~ y_lo, pace > y_hi ~ y_hi, TRUE ~ pace))
+      pace < y_lo ~ y_lo, pace > y_hi ~ y_hi, TRUE ~ pace
+    )
+  )
 
   yb <- .year_breaks_int(yearly$year)
 
   ggplot2::ggplot(yearly, ggplot2::aes(x = year, y = median_pace)) +
     ggplot2::geom_ribbon(ggplot2::aes(ymin = p25, ymax = p75),
-                          fill = traning_palette$run_profile$history, alpha = 0.18) +
+      fill = traning_palette$run_profile$history, alpha = 0.18
+    ) +
     ggplot2::geom_line(colour = traning_palette$run_profile$history, linewidth = 0.7) +
     ggplot2::geom_point(colour = traning_palette$run_profile$history, size = 1.6) +
-    ggplot2::geom_point(data = milestones,
+    ggplot2::geom_point(
+      data = milestones,
       ggplot2::aes(x = year, y = y_anchor),
       shape = 21, fill = traning_palette$run_profile$fill$light,
       colour = traning_palette$run_profile$fill$dark,
-      size = 3.2, stroke = 0.8) +
-    ggrepel::geom_label_repel(data = milestones,
+      size = 3.2, stroke = 0.8
+    ) +
+    ggrepel::geom_label_repel(
+      data = milestones,
       ggplot2::aes(x = year, y = y_anchor, label = label),
       size = 2.6, colour = traning_palette$run_profile$fill$darker,
       fill = traning_palette$run_profile$fill$bg,
       label.size = 0.4, min.segment.length = 0,
-      box.padding = 0.5, force = 5, max.overlaps = Inf) +
+      box.padding = 0.5, force = 5, max.overlaps = Inf
+    ) +
     ggplot2::scale_x_continuous(breaks = yb) +
     ggplot2::scale_y_reverse() +
     ggplot2::coord_cartesian(ylim = c(y_lo, y_hi), clip = "off") +
-    ggplot2::labs(title = "Tempo per \u00e5r",
-                   subtitle = "Median + 25\u201375 %-band per \u00e5r. L\u00e4gre = snabbare.",
-                   x = NULL, y = "Tempo (min/km)") +
+    ggplot2::labs(
+      title = "Tempo per \u00e5r",
+      subtitle = "Median + 25\u201375 %-band per \u00e5r. L\u00e4gre = snabbare.",
+      x = NULL, y = "Tempo (min/km)"
+    ) +
     .theme_run_profile() +
     ggplot2::theme(plot.margin = ggplot2::margin(12, 12, 28, 12))
 }
@@ -1118,7 +1187,7 @@ fetch.plot.pace_year <- function(data, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
-                                        sport = "running") {
+                                       sport = "running") {
   # pace_filter = FALSE so cycling (~1.5-3 min/km), walking (>10) and
   # other non-running sports still produce data. The week-over-week
   # delta is computed on the bucket's own pace distribution, so the
@@ -1135,9 +1204,11 @@ fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
       week_start = lubridate::floor_date(.data$date, "week", week_start = 1)
     ) %>%
     dplyr::group_by(.data$week_start) %>%
-    dplyr::summarise(median_pace = stats::median(.data$pace, na.rm = TRUE),
-                     n = dplyr::n(),
-                     .groups = "drop") %>%
+    dplyr::summarise(
+      median_pace = stats::median(.data$pace, na.rm = TRUE),
+      n = dplyr::n(),
+      .groups = "drop"
+    ) %>%
     dplyr::filter(!is.na(.data$median_pace)) %>%
     dplyr::arrange(.data$week_start)
 
@@ -1158,17 +1229,21 @@ fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
 
   span <- .compute_span_days(from, to, data_dates = weekly$week_start)
 
-  ggplot2::ggplot(weekly, ggplot2::aes(x = .data$week_start, y = .data$delta,
-                                        fill = .data$faster)) +
+  ggplot2::ggplot(weekly, ggplot2::aes(
+    x = .data$week_start, y = .data$delta,
+    fill = .data$faster
+  )) +
     # width = 6 (Date axis) gives bars that almost touch on the 7-day
     # ISO grid without overlapping into the next week.
     ggplot2::geom_col(width = 6) +
     ggplot2::geom_hline(yintercept = 0, colour = "grey40", linewidth = 0.4) +
     ggplot2::scale_fill_manual(
-      values = c(`TRUE` = traning_palette$traffic_bg[["green"]],
-                 `FALSE` = traning_palette$traffic_bg[["red"]]),
+      values = c(
+        `TRUE` = traning_palette$traffic_bg[["green"]],
+        `FALSE` = traning_palette$traffic_bg[["red"]]
+      ),
       labels = c(`TRUE` = "Snabbare", `FALSE` = "L\u00e5ngsammare"),
-      name   = NULL
+      name = NULL
     ) +
     .adaptive_date_scale(span) +
     ggplot2::labs(
@@ -1190,27 +1265,39 @@ fetch.plot.pace_week_delta <- function(summaries, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.pace_year_ridges <- function(data, from = NULL, to = NULL,
-                                          sport = "running") {
+                                        sport = "running") {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
-  if (nrow(runs) == 0) return(.run_profile_empty())
+  if (nrow(runs) == 0) {
+    return(.run_profile_empty())
+  }
 
-  runs <- runs %>% dplyr::group_by(year) %>%
-    dplyr::mutate(yr_total_km = sum(km)) %>% dplyr::ungroup()
+  runs <- runs %>%
+    dplyr::group_by(year) %>%
+    dplyr::mutate(yr_total_km = sum(km)) %>%
+    dplyr::ungroup()
 
-  ggplot2::ggplot(runs, ggplot2::aes(x = pace, y = factor(year),
-                                       fill = yr_total_km)) +
-    ggridges::geom_density_ridges(scale = 1.8, alpha = 0.78,
-                                    colour = "white", linewidth = 0.4) +
-    ggplot2::scale_fill_viridis_c(option = "viridis", trans = "sqrt",
-                                    direction = -1,
-                                    name = "Total km / \u00e5r") +
+  ggplot2::ggplot(runs, ggplot2::aes(
+    x = pace, y = factor(year),
+    fill = yr_total_km
+  )) +
+    ggridges::geom_density_ridges(
+      scale = 1.8, alpha = 0.78,
+      colour = "white", linewidth = 0.4
+    ) +
+    ggplot2::scale_fill_viridis_c(
+      option = "viridis", trans = "sqrt",
+      direction = -1,
+      name = "Total km / \u00e5r"
+    ) +
     ggplot2::scale_x_reverse() +
-    ggplot2::labs(title = "Tempo per \u00e5r (t\u00e4thet)",
-                   subtitle = "F\u00e4rg = \u00e5rets totala km (m\u00f6rkare = mer).",
-                   x = "Tempo (min/km)", y = NULL) +
+    ggplot2::labs(
+      title = "Tempo per \u00e5r (t\u00e4thet)",
+      subtitle = "F\u00e4rg = \u00e5rets totala km (m\u00f6rkare = mer).",
+      x = "Tempo (min/km)", y = NULL
+    ) +
     .theme_run_profile()
 }
 
@@ -1223,43 +1310,62 @@ fetch.plot.pace_year_ridges <- function(data, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.pace_tertile_share <- function(data, from = NULL, to = NULL,
-                                            sport = "running") {
+                                          sport = "running") {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
-  if (nrow(runs) == 0) return(.run_profile_empty())
+  if (nrow(runs) == 0) {
+    return(.run_profile_empty())
+  }
 
-  pace_q <- stats::quantile(runs$pace, c(1/3, 2/3))
+  # Used below inside dplyr::case_when()'s data-masking expression;
+  # object_usage_linter can't see that reference from the enclosing scope.
+  pace_q <- stats::quantile(runs$pace, c(1 / 3, 2 / 3)) # nolint: object_usage_linter.
   # Pace traffic-light: see traning_palette$traffic for rationale.
-  palette_traffic <- c("Lugn"  = traning_palette$traffic[["calm"]],
-                       "Medel" = traning_palette$traffic[["medium"]],
-                       "Snabb" = traning_palette$traffic[["fast"]])
+  palette_traffic <- c(
+    "Lugn" = traning_palette$traffic[["calm"]],
+    "Medel" = traning_palette$traffic[["medium"]],
+    "Snabb" = traning_palette$traffic[["fast"]]
+  )
 
-  runs_int <- runs %>% dplyr::mutate(
-    intensity = dplyr::case_when(
-      pace <= pace_q[1] ~ "Snabb",
-      pace <= pace_q[2] ~ "Medel",
-      TRUE              ~ "Lugn")) %>%
+  runs_int <- runs %>%
+    dplyr::mutate(
+      intensity = dplyr::case_when(
+        pace <= pace_q[1] ~ "Snabb",
+        pace <= pace_q[2] ~ "Medel",
+        TRUE ~ "Lugn"
+      )
+    ) %>%
     dplyr::mutate(intensity = factor(intensity,
-                                      levels = c("Lugn", "Medel", "Snabb")))
+      levels = c("Lugn", "Medel", "Snabb")
+    ))
 
-  stream_km_norm <- runs_int %>% dplyr::group_by(year, intensity) %>%
+  stream_km_norm <- runs_int %>%
+    dplyr::group_by(year, intensity) %>%
     dplyr::summarise(km = sum(km), .groups = "drop")
 
   yb <- .year_breaks_int(stream_km_norm$year)
 
-  ggplot2::ggplot(stream_km_norm,
-                   ggplot2::aes(x = year, y = km, fill = intensity)) +
-    ggplot2::geom_area(position = ggplot2::position_fill(reverse = TRUE),
-                        alpha = 0.92) +
+  ggplot2::ggplot(
+    stream_km_norm,
+    ggplot2::aes(x = year, y = km, fill = intensity)
+  ) +
+    ggplot2::geom_area(
+      position = ggplot2::position_fill(reverse = TRUE),
+      alpha = 0.92
+    ) +
     ggplot2::scale_x_continuous(breaks = yb) +
     ggplot2::scale_y_continuous(labels = scales::percent) +
-    ggplot2::scale_fill_manual(values = palette_traffic, name = NULL,
-                                breaks = c("Snabb", "Medel", "Lugn")) +
-    ggplot2::labs(title = "Tempo-f\u00f6rdelning per \u00e5r",
-                   subtitle = "Andel av \u00e5rets km i lugnt / medel / snabbt tempo.",
-                   x = NULL, y = "Andel km") +
+    ggplot2::scale_fill_manual(
+      values = palette_traffic, name = NULL,
+      breaks = c("Snabb", "Medel", "Lugn")
+    ) +
+    ggplot2::labs(
+      title = "Tempo-f\u00f6rdelning per \u00e5r",
+      subtitle = "Andel av \u00e5rets km i lugnt / medel / snabbt tempo.",
+      x = NULL, y = "Andel km"
+    ) +
     .theme_run_profile() +
     ggplot2::theme(legend.position = "bottom")
 }
@@ -1273,63 +1379,85 @@ fetch.plot.pace_tertile_share <- function(data, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.longest_runs_year <- function(data, from = NULL, to = NULL,
-                                           sport = "running") {
+                                         sport = "running") {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   # Volume-centric — pace isn't shown, so don't drop non-running
   # sessions on running's pace band.
   runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
-  if (nrow(runs) == 0) return(.run_profile_empty())
+  if (nrow(runs) == 0) {
+    return(.run_profile_empty())
+  }
 
-  top5 <- runs %>% dplyr::group_by(year) %>%
+  top5 <- runs %>%
+    dplyr::group_by(year) %>%
     dplyr::arrange(dplyr::desc(km)) %>%
     dplyr::mutate(rank = dplyr::row_number()) %>%
-    dplyr::filter(rank <= 5) %>% dplyr::ungroup()
+    dplyr::filter(rank <= 5) %>%
+    dplyr::ungroup()
 
-  segs5 <- top5 %>% dplyr::select(year, rank, km) %>%
-    tidyr::pivot_wider(names_from = rank, values_from = km,
-                        names_prefix = "k") %>%
-    dplyr::mutate(dplyr::across(dplyr::starts_with("k"),
-                                  ~ replace(., is.na(.), 0))) %>%
+  segs5 <- top5 %>%
+    dplyr::select(year, rank, km) %>%
+    tidyr::pivot_wider(
+      names_from = rank, values_from = km,
+      names_prefix = "k"
+    ) %>%
+    dplyr::mutate(dplyr::across(
+      dplyr::starts_with("k"),
+      ~ replace(., is.na(.), 0)
+    )) %>%
     dplyr::mutate(
       seg5 = pmin(k1, k2, k3, k4, k5),
       seg4 = pmax(k4, k5) - seg5,
       seg3 = pmax(k3, k4) - (seg5 + seg4),
       seg2 = pmax(k2, k3) - (seg5 + seg4 + seg3),
-      seg1 = k1 - (seg5 + seg4 + seg3 + seg2)) %>%
+      seg1 = k1 - (seg5 + seg4 + seg3 + seg2)
+    ) %>%
     dplyr::select(year, seg1, seg2, seg3, seg4, seg5) %>%
     tidyr::pivot_longer(c(seg1, seg2, seg3, seg4, seg5),
-                         names_to = "segment", values_to = "km") %>%
+      names_to = "segment", values_to = "km"
+    ) %>%
     dplyr::mutate(segment = factor(segment,
       levels = c("seg5", "seg4", "seg3", "seg2", "seg1"),
-      labels = c("5:e l\u00e4ngsta", "4:e", "3:e", "2:a", "1:a l\u00e4ngsta")))
+      labels = c("5:e l\u00e4ngsta", "4:e", "3:e", "2:a", "1:a l\u00e4ngsta")
+    ))
 
-  top1_labels <- top5 %>% dplyr::filter(rank == 1) %>%
+  top1_labels <- top5 %>%
+    dplyr::filter(rank == 1) %>%
     dplyr::select(year, total = km)
 
   yb <- .year_breaks_int(segs5$year)
 
   ggplot2::ggplot(segs5, ggplot2::aes(x = year, y = km, fill = segment)) +
-    ggplot2::geom_col(alpha = 0.92, width = 0.85,
-                       position = ggplot2::position_stack(reverse = TRUE)) +
-    ggplot2::geom_text(data = top1_labels,
+    ggplot2::geom_col(
+      alpha = 0.92, width = 0.85,
+      position = ggplot2::position_stack(reverse = TRUE)
+    ) +
+    ggplot2::geom_text(
+      data = top1_labels,
       ggplot2::aes(x = year, y = total, label = round(total, 0)),
-      inherit.aes = FALSE, vjust = -0.4, size = 2.6, colour = "grey25") +
+      inherit.aes = FALSE, vjust = -0.4, size = 2.6, colour = "grey25"
+    ) +
     ggplot2::scale_x_continuous(breaks = yb) +
     # Duration-rank gradient: see traning_palette$duration_rank.
     ggplot2::scale_fill_manual(
-      values = c("5:e l\u00e4ngsta" = traning_palette$duration_rank[1],
-                 "4:e"           = traning_palette$duration_rank[2],
-                 "3:e"           = traning_palette$duration_rank[3],
-                 "2:a"           = traning_palette$duration_rank[4],
-                 "1:a l\u00e4ngsta" = traning_palette$duration_rank[5]),
+      values = c(
+        "5:e l\u00e4ngsta" = traning_palette$duration_rank[1],
+        "4:e" = traning_palette$duration_rank[2],
+        "3:e" = traning_palette$duration_rank[3],
+        "2:a" = traning_palette$duration_rank[4],
+        "1:a l\u00e4ngsta" = traning_palette$duration_rank[5]
+      ),
       name = NULL,
-      guide = ggplot2::guide_legend(reverse = TRUE)) +
+      guide = ggplot2::guide_legend(reverse = TRUE)
+    ) +
     ggplot2::expand_limits(y = max(top1_labels$total) * 1.12) +
-    ggplot2::labs(title = "L\u00e4ngsta pass per \u00e5r",
-                   subtitle = "Stapeln visar de fem l\u00e4ngsta passen; siffran ovanf\u00f6r = l\u00e4ngsta enskilda passet.",
-                   x = NULL, y = "Kilometer (kumulerat)") +
+    ggplot2::labs(
+      title = "L\u00e4ngsta pass per \u00e5r",
+      subtitle = "Stapeln visar de fem l\u00e4ngsta passen; siffran ovanf\u00f6r = l\u00e4ngsta enskilda passet.",
+      x = NULL, y = "Kilometer (kumulerat)"
+    ) +
     .theme_run_profile() +
     ggplot2::theme(legend.position = "bottom")
 }
@@ -1343,37 +1471,44 @@ fetch.plot.longest_runs_year <- function(data, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.season_pace <- function(data, from = NULL, to = NULL,
-                                     sport = "running") {
+                                   sport = "running") {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
-  if (nrow(runs) == 0) return(.run_profile_empty())
+  if (nrow(runs) == 0) {
+    return(.run_profile_empty())
+  }
 
-  woy_data <- runs %>% dplyr::filter(woy <= 52) %>%
+  woy_data <- runs %>%
+    dplyr::filter(woy <= 52) %>%
     dplyr::group_by(woy) %>%
-    dplyr::summarise(mean_pace = mean(pace),
-                      p25 = stats::quantile(pace, .25),
-                      p75 = stats::quantile(pace, .75),
-                      n = dplyr::n(), .groups = "drop")
-  if (nrow(woy_data) == 0) return(.run_profile_empty())
+    dplyr::summarise(
+      mean_pace = mean(pace),
+      p25 = stats::quantile(pace, .25),
+      p75 = stats::quantile(pace, .75),
+      n = dplyr::n(), .groups = "drop"
+    )
+  if (nrow(woy_data) == 0) {
+    return(.run_profile_empty())
+  }
 
   # Season bands: see traning_palette$seasons.
   seasons <- tibble::tribble(
-    ~name,     ~start, ~end, ~fill,
-    "Vinter",  1,      12,   traning_palette$seasons[["winter"]],
-    "V\u00e5r", 13,    21,   traning_palette$seasons[["spring"]],
-    "Sommar",  22,     35,   traning_palette$seasons[["summer"]],
-    "H\u00f6st",36,    47,   traning_palette$seasons[["autumn"]],
-    "Vinter",  48,     52,   traning_palette$seasons[["winter"]]
+    ~name, ~start, ~end, ~fill,
+    "Vinter", 1, 12, traning_palette$seasons[["winter"]],
+    "V\u00e5r", 13, 21, traning_palette$seasons[["spring"]],
+    "Sommar", 22, 35, traning_palette$seasons[["summer"]],
+    "H\u00f6st", 36, 47, traning_palette$seasons[["autumn"]],
+    "Vinter", 48, 52, traning_palette$seasons[["winter"]]
   )
   season_labels <- tibble::tribble(
-    ~name,     ~x,
-    "Vinter",  6,
+    ~name, ~x,
+    "Vinter", 6,
     "V\u00e5r", 17,
-    "Sommar",  28,
-    "H\u00f6st",41,
-    "Vinter",  50
+    "Sommar", 28,
+    "H\u00f6st", 41,
+    "Vinter", 50
   )
   woy_breaks <- c(1, 13, 26, 39, 52)
   woy_labels <- c("V1\njan", "V13\napr", "V26\njul", "V39\nokt", "V52\ndec")
@@ -1386,39 +1521,50 @@ fetch.plot.season_pace <- function(data, from = NULL, to = NULL,
   # Floor pad so degenerate ranges (single week, constant pace across
   # weeks) still produce non-zero band height. 0.25 min/km is a
   # sensible fallback when there's no spread to compute against.
-  pad   <- max(diff(y_rng) * 0.08, 0.25)
-  y_lo  <- y_rng[1] - pad   # lower numeric value = faster pace (top of reversed axis)
-  y_hi  <- y_rng[2] + pad   # higher numeric value = slower pace (bottom of reversed axis)
+  pad <- max(diff(y_rng) * 0.08, 0.25)
+  y_lo <- y_rng[1] - pad # lower numeric value = faster pace (top of reversed axis)
+  y_hi <- y_rng[2] + pad # higher numeric value = slower pace (bottom of reversed axis)
 
   ggplot2::ggplot(woy_data, ggplot2::aes(x = woy, y = mean_pace)) +
     ggplot2::annotate("rect",
-      xmin  = seasons$start - 0.5, xmax = seasons$end + 0.5,
-      ymin  = y_lo, ymax = y_hi,
-      fill  = seasons$fill, alpha = 0.55) +
+      xmin = seasons$start - 0.5, xmax = seasons$end + 0.5,
+      ymin = y_lo, ymax = y_hi,
+      fill = seasons$fill, alpha = 0.55
+    ) +
     ggplot2::geom_point(colour = traning_palette$run_profile$current, size = 2.2, alpha = 0.85) +
-    ggplot2::geom_smooth(method = "loess", formula = y ~ x, se = TRUE,
-                          colour = traning_palette$run_profile$history, fill = traning_palette$run_profile$history,
-                          alpha = 0.18) +
+    ggplot2::geom_smooth(
+      method = "loess", formula = y ~ x, se = TRUE,
+      colour = traning_palette$run_profile$history, fill = traning_palette$run_profile$history,
+      alpha = 0.18
+    ) +
     # Anchor labels at an explicit data y near the band top (= y_lo,
     # the faster-pace edge — top of the panel under scale_y_reverse).
     # Using y = Inf here would land them at the bottom of the
     # reversed panel instead of the top.
-    ggplot2::geom_text(data = season_labels, inherit.aes = FALSE,
+    ggplot2::geom_text(
+      data = season_labels, inherit.aes = FALSE,
       ggplot2::aes(x = x, y = y_lo + (y_hi - y_lo) * 0.05, label = name),
-      colour = "grey40", size = 3.2, fontface = "italic") +
+      colour = "grey40", size = 3.2, fontface = "italic"
+    ) +
     ggplot2::scale_y_reverse() +
-    ggplot2::scale_x_continuous(breaks = woy_breaks, labels = woy_labels,
-                                  expand = c(0.01, 0.01)) +
+    ggplot2::scale_x_continuous(
+      breaks = woy_breaks, labels = woy_labels,
+      expand = c(0.01, 0.01)
+    ) +
     # ylim locks the panel to the season-band extent; expand = FALSE
     # disables the default 5% padding so the bands fully reach the
     # panel edge (no thin unshaded strips at top/bottom). clip = "off"
     # is kept for the loess CI ribbon, which is allowed to extend
     # outside the band in cases where it is wider than mean_pace ± pad.
-    ggplot2::coord_cartesian(ylim = c(y_lo, y_hi),
-                             expand = FALSE, clip = "off") +
-    ggplot2::labs(title = "S\u00e4songsm\u00f6nster i tempo",
-                   subtitle = "Veckans medeltempo \u00f6ver alla \u00e5r. Bakgrund = \u00e5rstid; kurva = loess.",
-                   x = NULL, y = "Tempo (min/km)") +
+    ggplot2::coord_cartesian(
+      ylim = c(y_lo, y_hi),
+      expand = FALSE, clip = "off"
+    ) +
+    ggplot2::labs(
+      title = "S\u00e4songsm\u00f6nster i tempo",
+      subtitle = "Veckans medeltempo \u00f6ver alla \u00e5r. Bakgrund = \u00e5rstid; kurva = loess.",
+      x = NULL, y = "Tempo (min/km)"
+    ) +
     .theme_run_profile()
 }
 
@@ -1431,33 +1577,44 @@ fetch.plot.season_pace <- function(data, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.heatmap_km <- function(data, from = NULL, to = NULL,
-                                    sport = "running") {
+                                  sport = "running") {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
-  if (nrow(runs) == 0) return(.run_profile_empty())
+  if (nrow(runs) == 0) {
+    return(.run_profile_empty())
+  }
 
-  heatmap_km <- runs %>% dplyr::filter(woy <= 52) %>%
+  heatmap_km <- runs %>%
+    dplyr::filter(woy <= 52) %>%
     dplyr::group_by(year, woy) %>%
     dplyr::summarise(total_km = sum(km), .groups = "drop")
-  heatmap_full <- expand.grid(year = sort(unique(runs$year)),
-                               woy = 1:52,
-                               KEEP.OUT.ATTRS = FALSE,
-                               stringsAsFactors = FALSE) %>%
+  heatmap_full <- expand.grid(
+    year = sort(unique(runs$year)),
+    woy = 1:52,
+    KEEP.OUT.ATTRS = FALSE,
+    stringsAsFactors = FALSE
+  ) %>%
     dplyr::left_join(heatmap_km, by = c("year", "woy"))
 
-  quarter_gaps   <- c(13, 26, 39)
-  quarter_labels <- c("jan\u2013mar", "apr\u2013jun",
-                      "jul\u2013sep", "okt\u2013dec")
+  quarter_gaps <- c(13, 26, 39)
+  quarter_labels <- c(
+    "jan\u2013mar", "apr\u2013jun",
+    "jul\u2013sep", "okt\u2013dec"
+  )
 
   n_years <- length(unique(heatmap_full$year))
 
-  ggplot2::ggplot(heatmap_full,
-                   ggplot2::aes(x = woy, y = factor(year), fill = total_km)) +
+  ggplot2::ggplot(
+    heatmap_full,
+    ggplot2::aes(x = woy, y = factor(year), fill = total_km)
+  ) +
     ggplot2::geom_tile(colour = "white", linewidth = 0.1) +
-    ggplot2::geom_vline(xintercept = quarter_gaps + 0.5,
-                         colour = "white", linewidth = 1.5) +
+    ggplot2::geom_vline(
+      xintercept = quarter_gaps + 0.5,
+      colour = "white", linewidth = 1.5
+    ) +
     # Quarter labels via geom_text (not scale_x_continuous(sec.axis))
     # because plotly::ggplotly() does not carry secondary axes; the
     # dashboard renders this plot through plotly so the labels would
@@ -1472,25 +1629,33 @@ fetch.plot.heatmap_km <- function(data, from = NULL, to = NULL,
       inherit.aes = FALSE,
       colour = "grey35", fontface = "bold", size = 3.4
     ) +
-    ggplot2::scale_fill_viridis_c(option = "viridis", trans = "sqrt",
-                                    na.value = "grey88", name = "Km/vecka") +
-    ggplot2::scale_x_continuous(breaks = c(1, 13, 26, 39, 52),
-                                  labels = c("V1", "V13", "V26", "V39", "V52"),
-                                  expand = c(0.005, 0.005)) +
+    ggplot2::scale_fill_viridis_c(
+      option = "viridis", trans = "sqrt",
+      na.value = "grey88", name = "Km/vecka"
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = c(1, 13, 26, 39, 52),
+      labels = c("V1", "V13", "V26", "V39", "V52"),
+      expand = c(0.005, 0.005)
+    ) +
     # clip = "off" lets the quarter labels render in plot.margin space
     # above the panel; plot.margin top and plot.title bottom-margin
     # reserve the room so the labels don't overlap the title.
     ggplot2::coord_cartesian(clip = "off") +
-    ggplot2::labs(title = "Veckokilometer per \u00e5r",
-                   subtitle = "Cellf\u00e4rg = veckans totala km. Saknad data = gr\u00e5.",
-                   x = NULL, y = NULL) +
+    ggplot2::labs(
+      title = "Veckokilometer per \u00e5r",
+      subtitle = "Cellf\u00e4rg = veckans totala km. Saknad data = gr\u00e5.",
+      x = NULL, y = NULL
+    ) +
     .theme_run_profile() +
     ggplot2::theme(
-      axis.text.y      = ggplot2::element_text(size = 8),
-      plot.title       = ggplot2::element_text(face = "bold",
-                                                 margin = ggplot2::margin(b = 16)),
-      plot.subtitle    = ggplot2::element_text(margin = ggplot2::margin(b = 12)),
-      plot.margin      = ggplot2::margin(12, 12, 12, 12)
+      axis.text.y = ggplot2::element_text(size = 8),
+      plot.title = ggplot2::element_text(
+        face = "bold",
+        margin = ggplot2::margin(b = 16)
+      ),
+      plot.subtitle = ggplot2::element_text(margin = ggplot2::margin(b = 12)),
+      plot.margin = ggplot2::margin(12, 12, 12, 12)
     )
 }
 
@@ -1503,14 +1668,17 @@ fetch.plot.heatmap_km <- function(data, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.cumulative_km <- function(data, from = NULL, to = NULL,
-                                       sport = "running") {
+                                     sport = "running") {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport, pace_filter = FALSE)
   runs <- .run_profile_filter_range(runs, from, to)
-  if (nrow(runs) == 0) return(.run_profile_empty())
+  if (nrow(runs) == 0) {
+    return(.run_profile_empty())
+  }
 
-  weekly_raw <- runs %>% dplyr::filter(woy <= 52) %>%
+  weekly_raw <- runs %>%
+    dplyr::filter(woy <= 52) %>%
     dplyr::group_by(year, woy) %>%
     dplyr::summarise(km = sum(km), .groups = "drop")
 
@@ -1525,37 +1693,54 @@ fetch.plot.cumulative_km <- function(data, from = NULL, to = NULL,
   # the range's last year orange even though the subtitle calls it the
   # innevarande år.
   current_year <- lubridate::year(Sys.Date())
-  current_woy  <- as.integer(lubridate::isoweek(Sys.Date()))
+  current_woy <- as.integer(lubridate::isoweek(Sys.Date()))
 
   weekly <- weekly_raw %>%
     tidyr::complete(year, woy = 1:52, fill = list(km = 0)) %>%
     dplyr::filter(year != current_year | woy <= current_woy) %>%
     dplyr::arrange(year, woy) %>%
     dplyr::group_by(year) %>%
-    dplyr::mutate(cumkm = cumsum(km)) %>% dplyr::ungroup()
+    dplyr::mutate(cumkm = cumsum(km)) %>%
+    dplyr::ungroup()
 
-  end_pts <- weekly %>% dplyr::group_by(year) %>%
-    dplyr::slice_max(woy, n = 1) %>% dplyr::ungroup()
+  end_pts <- weekly %>%
+    dplyr::group_by(year) %>%
+    dplyr::slice_max(woy, n = 1) %>%
+    dplyr::ungroup()
 
   weekly_split <- weekly %>% dplyr::mutate(is_current = year == current_year)
 
-  ggplot2::ggplot(weekly_split,
-                   ggplot2::aes(x = woy, y = cumkm, group = year)) +
-    ggplot2::geom_line(data = dplyr::filter(weekly_split, !is_current),
-                        colour = "grey75", linewidth = 0.4, alpha = 0.65) +
-    ggplot2::geom_line(data = dplyr::filter(weekly_split, is_current),
-                        colour = traning_palette$run_profile$current, linewidth = 1.4) +
-    ggplot2::geom_point(data = dplyr::filter(weekly_split, is_current),
-                         colour = traning_palette$run_profile$current, size = 1.8) +
-    ggplot2::geom_text(data = dplyr::filter(end_pts, year == current_year),
+  ggplot2::ggplot(
+    weekly_split,
+    ggplot2::aes(x = woy, y = cumkm, group = year)
+  ) +
+    ggplot2::geom_line(
+      data = dplyr::filter(weekly_split, !is_current),
+      colour = "grey75", linewidth = 0.4, alpha = 0.65
+    ) +
+    ggplot2::geom_line(
+      data = dplyr::filter(weekly_split, is_current),
+      colour = traning_palette$run_profile$current, linewidth = 1.4
+    ) +
+    ggplot2::geom_point(
+      data = dplyr::filter(weekly_split, is_current),
+      colour = traning_palette$run_profile$current, size = 1.8
+    ) +
+    ggplot2::geom_text(
+      data = dplyr::filter(end_pts, year == current_year),
       ggplot2::aes(label = sprintf("%d: %.0f km", year, cumkm)),
-      hjust = -0.15, size = 3.2, colour = traning_palette$run_profile$current, fontface = "bold") +
-    ggplot2::scale_x_continuous(breaks = c(1, 13, 26, 39, 52),
-                                  labels = c("V1", "V13", "V26", "V39", "V52"),
-                                  expand = ggplot2::expansion(add = c(0, 6))) +
-    ggplot2::labs(title = "Kumulativ km \u2014 innevarande \u00e5r vs historik",
-                   subtitle = "Gr\u00e5 linjer = tidigare \u00e5r. Orange = innevarande \u00e5r.",
-                   x = NULL, y = "Kumulerad km") +
+      hjust = -0.15, size = 3.2, colour = traning_palette$run_profile$current, fontface = "bold"
+    ) +
+    ggplot2::scale_x_continuous(
+      breaks = c(1, 13, 26, 39, 52),
+      labels = c("V1", "V13", "V26", "V39", "V52"),
+      expand = ggplot2::expansion(add = c(0, 6))
+    ) +
+    ggplot2::labs(
+      title = "Kumulativ km \u2014 innevarande \u00e5r vs historik",
+      subtitle = "Gr\u00e5 linjer = tidigare \u00e5r. Orange = innevarande \u00e5r.",
+      x = NULL, y = "Kumulerad km"
+    ) +
     .theme_run_profile()
 }
 
@@ -1572,32 +1757,38 @@ fetch.plot.cumulative_km <- function(data, from = NULL, to = NULL,
 #' @return ggplot2-objekt.
 #' @export
 fetch.plot.distance_pace_era <- function(data, from = NULL, to = NULL,
-                                            sport = "running") {
+                                         sport = "running") {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   runs <- .run_profile_runs(summaries, sport = sport)
   runs <- .run_profile_filter_range(runs, from, to)
-  if (nrow(runs) == 0) return(.run_profile_empty())
+  if (nrow(runs) == 0) {
+    return(.run_profile_empty())
+  }
 
   runs_era <- runs %>%
     dplyr::mutate(era_base = dplyr::case_when(
       year <= 2010 ~ "2005\u20132010",
       year <= 2016 ~ "2011\u20132016",
       year <= 2021 ~ "2017\u20132021",
-      TRUE         ~ "2022\u20132026")) %>%
+      TRUE ~ "2022\u20132026"
+    )) %>%
     dplyr::mutate(era = factor(era_base,
-      levels = c("2022\u20132026", "2017\u20132021",
-                  "2011\u20132016", "2005\u20132010")))
+      levels = c(
+        "2022\u20132026", "2017\u20132021",
+        "2011\u20132016", "2005\u20132010"
+      )
+    ))
 
   all_median_pace <- stats::median(runs$pace)
-  all_median_km   <- stats::median(runs$km)
+  all_median_km <- stats::median(runs$km)
 
   # Pre-bin with cut() so plotly::ggplotly() can render hover-able tiles.
   # geom_bin2d() is not supported by ggplotly; geom_tile() is.
   # Use log10 binning on km (matches scale_x_log10), linear on pace.
-  nbins       <- 30
-  km_range    <- range(runs_era$km,   na.rm = TRUE)
-  pace_range  <- range(runs_era$pace, na.rm = TRUE)
+  nbins <- 30
+  km_range <- range(runs_era$km, na.rm = TRUE)
+  pace_range <- range(runs_era$pace, na.rm = TRUE)
   # Guard against degenerate ranges: when every run has the same km
   # or the same pace, seq(..., length.out = nbins + 1) produces
   # repeated breakpoints and cut() fails with "'breaks' are not
@@ -1608,8 +1799,8 @@ fetch.plot.distance_pace_era <- function(data, from = NULL, to = NULL,
   if (diff(km_range) == 0 || diff(pace_range) == 0) {
     return(.run_profile_empty("För liten variation i distans/tempo"))
   }
-  km_breaks   <- 10^seq(log10(km_range[1]),  log10(km_range[2]),  length.out = nbins + 1)
-  pace_breaks <-     seq(pace_range[1],      pace_range[2],       length.out = nbins + 1)
+  km_breaks <- 10^seq(log10(km_range[1]), log10(km_range[2]), length.out = nbins + 1)
+  pace_breaks <- seq(pace_range[1], pace_range[2], length.out = nbins + 1)
 
   # Use xmin/xmax/ymin/ymax (geom_rect) instead of x/width (geom_tile)
   # because scale_x_log10() transforms positional aesthetics but not
@@ -1618,7 +1809,7 @@ fetch.plot.distance_pace_era <- function(data, from = NULL, to = NULL,
   # transformed by the scale, so the bins land at correct extents.
   binned <- runs_era %>%
     dplyr::mutate(
-      km_bin   = cut(km,   breaks = km_breaks,   include.lowest = TRUE, labels = FALSE),
+      km_bin   = cut(km, breaks = km_breaks, include.lowest = TRUE, labels = FALSE),
       pace_bin = cut(pace, breaks = pace_breaks, include.lowest = TRUE, labels = FALSE)
     ) %>%
     dplyr::group_by(era, km_bin, pace_bin) %>%
@@ -1631,29 +1822,43 @@ fetch.plot.distance_pace_era <- function(data, from = NULL, to = NULL,
     )
 
   ggplot2::ggplot(runs_era, ggplot2::aes(x = km, y = pace)) +
-    ggplot2::geom_rect(data = binned,
-      ggplot2::aes(xmin = km_lo, xmax = km_hi,
-                   ymin = pace_lo, ymax = pace_hi,
-                   fill = count),
-      alpha = 0.92, inherit.aes = FALSE) +
-    ggplot2::geom_hline(yintercept = all_median_pace,
-                         colour = "white", linewidth = 0.6,
-                         linetype = "dashed") +
-    ggplot2::geom_vline(xintercept = all_median_km,
-                         colour = "white", linewidth = 0.6,
-                         linetype = "dashed") +
-    ggplot2::annotate("point", x = all_median_km, y = all_median_pace,
-                       colour = "white", fill = traning_palette$run_profile$current, shape = 21,
-                       size = 4, stroke = 0.9) +
-    ggplot2::scale_fill_viridis_c(option = "plasma", trans = "log",
-                                    name = "Pass",
-                                    breaks = c(1, 10, 100, 1000)) +
+    ggplot2::geom_rect(
+      data = binned,
+      ggplot2::aes(
+        xmin = km_lo, xmax = km_hi,
+        ymin = pace_lo, ymax = pace_hi,
+        fill = count
+      ),
+      alpha = 0.92, inherit.aes = FALSE
+    ) +
+    ggplot2::geom_hline(
+      yintercept = all_median_pace,
+      colour = "white", linewidth = 0.6,
+      linetype = "dashed"
+    ) +
+    ggplot2::geom_vline(
+      xintercept = all_median_km,
+      colour = "white", linewidth = 0.6,
+      linetype = "dashed"
+    ) +
+    ggplot2::annotate("point",
+      x = all_median_km, y = all_median_pace,
+      colour = "white", fill = traning_palette$run_profile$current, shape = 21,
+      size = 4, stroke = 0.9
+    ) +
+    ggplot2::scale_fill_viridis_c(
+      option = "plasma", trans = "log",
+      name = "Pass",
+      breaks = c(1, 10, 100, 1000)
+    ) +
     ggplot2::scale_x_log10() +
     ggplot2::scale_y_reverse() +
-    ggplot2::facet_wrap(~ era, ncol = 1) +
-    ggplot2::labs(title = "Distans \u00d7 tempo per epok",
-                   subtitle = "Bin-t\u00e4thet av enskilda pass. Vita streck + prick = hela datasetets median (samma i alla paneler).",
-                   x = "Kilometer (log)", y = "Tempo (min/km)") +
+    ggplot2::facet_wrap(~era, ncol = 1) +
+    ggplot2::labs(
+      title = "Distans \u00d7 tempo per epok",
+      subtitle = "Bin-t\u00e4thet av enskilda pass. Vita streck + prick = hela datasetets median (samma i alla paneler).",
+      x = "Kilometer (log)", y = "Tempo (min/km)"
+    ) +
     .theme_run_profile()
   # `theme(aspect.ratio = ...)` is silently dropped by plotly::ggplotly,
   # so the wide-screen layout cap is applied via a max-width container

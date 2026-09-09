@@ -34,9 +34,12 @@ test_that("fetch.plot.acwr with NULL from/to spans the full history", {
   b <- suppressWarnings(ggplot2::ggplot_build(p))
   # Find a layer with non-empty x — it should span > 365 days
   spans <- vapply(b$data, function(d) {
-    if (is.null(d$x) || length(d$x) == 0) return(NA_real_)
+    if (is.null(d$x) || length(d$x) == 0) {
+      return(NA_real_)
+    }
     as.numeric(diff(range(suppressWarnings(as.Date(d$x, origin = "1970-01-01")),
-                          na.rm = TRUE)))
+      na.rm = TRUE
+    )))
   }, numeric(1))
   expect_gt(max(spans, na.rm = TRUE), 365)
 })
@@ -48,9 +51,12 @@ test_that("fetch.plot.monotony with NULL from/to spans the full history", {
   # Date scale — those infinity bounds are accepted but ggplot warns.
   b <- suppressWarnings(ggplot2::ggplot_build(p))
   spans <- vapply(b$data, function(d) {
-    if (is.null(d$x) || length(d$x) == 0) return(NA_real_)
+    if (is.null(d$x) || length(d$x) == 0) {
+      return(NA_real_)
+    }
     as.numeric(diff(range(suppressWarnings(as.Date(d$x, origin = "1970-01-01")),
-                          na.rm = TRUE)))
+      na.rm = TRUE
+    )))
   }, numeric(1))
   expect_gt(max(spans, na.rm = TRUE), 365)
 })
@@ -62,9 +68,12 @@ test_that("fetch.plot.pmc with NULL from/to spans the full history", {
   # Date scale — those infinity bounds are accepted but ggplot warns.
   b <- suppressWarnings(ggplot2::ggplot_build(p))
   spans <- vapply(b$data, function(d) {
-    if (is.null(d$x) || length(d$x) == 0) return(NA_real_)
+    if (is.null(d$x) || length(d$x) == 0) {
+      return(NA_real_)
+    }
     as.numeric(diff(range(suppressWarnings(as.Date(d$x, origin = "1970-01-01")),
-                          na.rm = TRUE)))
+      na.rm = TRUE
+    )))
   }, numeric(1))
   expect_gt(max(spans, na.rm = TRUE), 365)
 })
@@ -79,9 +88,12 @@ test_that("fetch.plot.acwr with explicit 1y window stays within ~1y", {
   b <- suppressWarnings(ggplot2::ggplot_build(p))
   # All non-empty layers should be within the 1-year window
   spans <- vapply(b$data, function(d) {
-    if (is.null(d$x) || length(d$x) == 0) return(NA_real_)
+    if (is.null(d$x) || length(d$x) == 0) {
+      return(NA_real_)
+    }
     as.numeric(diff(range(suppressWarnings(as.Date(d$x, origin = "1970-01-01")),
-                          na.rm = TRUE)))
+      na.rm = TRUE
+    )))
   }, numeric(1))
   expect_lte(max(spans, na.rm = TRUE), 366)
 })
@@ -100,8 +112,8 @@ test_that("fetch.plot.ef gives identical rendered data for bundle and bare-summa
   sm <- .fixture_long_history()
   bundle <- traning_data(summaries = sm)
   p_bundle <- fetch.plot.ef(bundle, sport = "running")
-  p_bare   <- fetch.plot.ef(sm, sport = "running")
+  p_bare <- fetch.plot.ef(sm, sport = "running")
   b_bundle <- suppressWarnings(ggplot2::ggplot_build(p_bundle))
-  b_bare   <- suppressWarnings(ggplot2::ggplot_build(p_bare))
+  b_bare <- suppressWarnings(ggplot2::ggplot_build(p_bare))
   expect_identical(b_bundle$data, b_bare$data)
 })

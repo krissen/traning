@@ -6,6 +6,6 @@ __all__ = [
     "authenticate",
     "fetch_new_activities",
     "get_data_dir",
-    "token_dir",
     "setup_logging",
+    "token_dir",
 ]

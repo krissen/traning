@@ -9,13 +9,22 @@ from traning_cli.metric_taxonomy import (
 )
 from traning_cli.server.storage import _SUM_METRICS
 
-EXPECTED_SUM_METRICS = frozenset({
-    "step_count", "active_energy", "basal_energy_burned",
-    "flights_climbed", "apple_exercise_time", "apple_stand_time",
-    "apple_stand_hour", "walking_running_distance",
-    "cycling_distance", "mindful_minutes", "time_in_daylight",
-    "alcohol_consumption",
-})
+EXPECTED_SUM_METRICS = frozenset(
+    {
+        "step_count",
+        "active_energy",
+        "basal_energy_burned",
+        "flights_climbed",
+        "apple_exercise_time",
+        "apple_stand_time",
+        "apple_stand_hour",
+        "walking_running_distance",
+        "cycling_distance",
+        "mindful_minutes",
+        "time_in_daylight",
+        "alcohol_consumption",
+    }
+)
 
 
 def test_sum_metrics_matches_expected():
@@ -39,7 +48,7 @@ def test_sum_metrics_matches_taxonomy_json():
 def test_storage_sum_metrics_is_frozenset_from_taxonomy():
     assert isinstance(_SUM_METRICS, frozenset)
     assert _SUM_METRICS == EXPECTED_SUM_METRICS
-    assert _SUM_METRICS == load_sum_metrics()
+    assert load_sum_metrics() == _SUM_METRICS
 
 
 def test_load_taxonomy_is_memoized():

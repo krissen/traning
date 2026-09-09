@@ -41,14 +41,18 @@
 # receiver is unreachable, unauthenticated or answering non-JSON.
 # Never signals — every caller treats NULL as "fall back to disk".
 .receiver_status <- function(url = .receiver_status_url(),
-                              timeout = 5L,
-                              api_key = Sys.getenv("TRANING_API_KEY")) {
+                             timeout = 5L,
+                             api_key = Sys.getenv("TRANING_API_KEY")) {
   api_key <- trimws(api_key)
-  if (!nzchar(api_key)) return(NULL)
+  if (!nzchar(api_key)) {
+    return(NULL)
+  }
   # A key containing a quote or newline would break out of the curl
   # config syntax below and inject options. Keys are hex, so refusing
   # is safe.
-  if (grepl("[\"\r\n]", api_key)) return(NULL)
+  if (grepl("[\"\r\n]", api_key)) {
+    return(NULL)
+  }
 
   # Feed the key through curl's stdin config rather than argv: command
   # lines are world-readable via /proc on the receiver host.
@@ -60,15 +64,23 @@
     "fail"
   )
   out <- suppressWarnings(system2("curl", c("--config", "-"),
-                                   input = cfg,
-                                   stdout = TRUE, stderr = FALSE))
+    input = cfg,
+    stdout = TRUE, stderr = FALSE
+  ))
   status <- attr(out, "status")
-  if (!is.null(status) && !identical(as.integer(status), 0L)) return(NULL)
-  if (length(out) == 0) return(NULL)
+  if (!is.null(status) && !identical(as.integer(status), 0L)) {
+    return(NULL)
+  }
+  if (length(out) == 0) {
+    return(NULL)
+  }
   payload <- tryCatch(
     jsonlite::fromJSON(paste(out, collapse = "\n"), simplifyVector = TRUE),
-    error = function(e) NULL)
-  if (!is.list(payload)) return(NULL)
+    error = function(e) NULL
+  )
+  if (!is.list(payload)) {
+    return(NULL)
+  }
   payload
 }
 
@@ -81,19 +93,27 @@
 # values so a future serialisation change degrades to "older reading"
 # rather than "no reading".
 .parse_iso_time <- function(x) {
-  if (is.null(x) || length(x) == 0) return(.na_time())
+  if (is.null(x) || length(x) == 0) {
+    return(.na_time())
+  }
   x <- as.character(x)[1]
-  if (is.na(x) || !nzchar(x)) return(.na_time())
+  if (is.na(x) || !nzchar(x)) {
+    return(.na_time())
+  }
   tz <- ""
   if (grepl("Z$", x)) {
     x <- sub("Z$", "", x)
     tz <- "UTC"
   }
-  fmts <- c("%Y-%m-%dT%H:%M:%OS", "%Y-%m-%d %H:%M:%OS",
-            "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d")
+  fmts <- c(
+    "%Y-%m-%dT%H:%M:%OS", "%Y-%m-%d %H:%M:%OS",
+    "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"
+  )
   for (f in fmts) {
     ts <- suppressWarnings(as.POSIXct(x, format = f, tz = tz))
-    if (!is.na(ts)) return(ts)
+    if (!is.na(ts)) {
+      return(ts)
+    }
   }
   .na_time()
 }
@@ -103,23 +123,27 @@
 # "yesterday" is at most ~24 h behind, not ~48 h.
 .freshness_health_ts <- function(health_daily) {
   if (is.null(health_daily) || !inherits(health_daily, "data.frame") ||
-      nrow(health_daily) == 0 || !"date" %in% names(health_daily)) {
+    nrow(health_daily) == 0 || !"date" %in% names(health_daily)) {
     return(.na_time())
   }
   d <- suppressWarnings(as.Date(health_daily$date))
   d <- d[!is.na(d)]
-  if (length(d) == 0) return(.na_time())
+  if (length(d) == 0) {
+    return(.na_time())
+  }
   as.POSIXct(paste(max(d), "23:59:59"), tz = "")
 }
 
 .freshness_session_ts <- function(summaries) {
   if (is.null(summaries) || !inherits(summaries, "data.frame") ||
-      nrow(summaries) == 0 || !"sessionStart" %in% names(summaries)) {
+    nrow(summaries) == 0 || !"sessionStart" %in% names(summaries)) {
     return(.na_time())
   }
   ts <- suppressWarnings(as.POSIXct(summaries$sessionStart))
   ts <- ts[!is.na(ts)]
-  if (length(ts) == 0) return(.na_time())
+  if (length(ts) == 0) {
+    return(.na_time())
+  }
   max(ts)
 }
 
@@ -156,7 +180,9 @@
 # before the true one. The error has a sign. A watchdog built on it can
 # cry wolf, but it cannot sleep through a feed that has gone quiet.
 .freshness_dir_mtime <- function(dir, max_scan = 5000L) {
-  if (is.null(dir) || !nzchar(dir) || !dir.exists(dir)) return(.na_time())
+  if (is.null(dir) || !nzchar(dir) || !dir.exists(dir)) {
+    return(.na_time())
+  }
 
   # The directory itself plus one level of subdirectories: canonical
   # writes land in canonical/<metric>/, so the root's own mtime would
@@ -165,7 +191,9 @@
   files <- list.files(dir, recursive = FALSE, full.names = TRUE, no.. = TRUE)
   # An inbox that was created but never written to would otherwise
   # report its own creation time as an arrival.
-  if (length(subdirs) == 0 && length(files) == 0) return(.na_time())
+  if (length(subdirs) == 0 && length(files) == 0) {
+    return(.na_time())
+  }
 
   candidates <- suppressWarnings(file.mtime(c(dir, subdirs)))
   if (length(files) > 0 && length(files) <= max_scan) {
@@ -173,7 +201,9 @@
   }
 
   candidates <- candidates[!is.na(candidates)]
-  if (length(candidates) == 0) return(.na_time())
+  if (length(candidates) == 0) {
+    return(.na_time())
+  }
   max(candidates)
 }
 
@@ -211,7 +241,8 @@
 # apart from "stuck".
 .freshness_queue_pending <- function(status_payload) {
   pending <- suppressWarnings(
-    as.numeric(status_payload[["pending_workouts"]] %||% NA_real_))
+    as.numeric(status_payload[["pending_workouts"]] %||% NA_real_)
+  )
   armed <- isTRUE(status_payload[["workouts_timer_armed"]])
   armed || (!is.na(pending) && pending > 0)
 }
@@ -219,7 +250,8 @@
 # Seconds since the receiver process started, NA when unknown.
 .freshness_uptime <- function(status_payload) {
   suppressWarnings(
-    as.numeric(status_payload[["uptime_seconds"]] %||% NA_real_))
+    as.numeric(status_payload[["uptime_seconds"]] %||% NA_real_)
+  )
 }
 
 # --- Swedish wording ---------------------------------------------------------
@@ -233,14 +265,18 @@
 # where format(..., "%B") is English). Year is appended only when the
 # timestamp falls outside the reference year.
 .freshness_date_sv <- function(ts, reference = Sys.time()) {
-  if (is.na(ts)) return(NA_character_)
+  if (is.na(ts)) {
+    return(NA_character_)
+  }
   # Read the calendar fields off the timestamp directly. as.Date() on a
   # POSIXct converts via UTC, so an arrival at 00:30 local time would
   # render as the previous day here while the English message — built
   # with format() — named the right one. A function whose whole purpose
   # is to say *when* something last arrived cannot afford that.
-  base <- sprintf("%d %s", as.integer(format(ts, "%d")),
-                  .swedish_months[as.integer(format(ts, "%m"))])
+  base <- sprintf(
+    "%d %s", as.integer(format(ts, "%d")),
+    .swedish_months[as.integer(format(ts, "%m"))]
+  )
   if (format(ts, "%Y") != format(reference, "%Y")) {
     base <- paste(base, format(ts, "%Y"))
   }
@@ -258,8 +294,8 @@
 # and folding it in is what let a wedged importer read as fresh. The
 # queue is applied afterwards by .freshness_annotate_queue().
 .freshness_assess_flow <- function(flow, tiers, now,
-                                    warn_hours, fail_hours,
-                                    tightened = FALSE) {
+                                   warn_hours, fail_hours,
+                                   tightened = FALSE) {
   label <- .FRESHNESS_FLOW_SV[[flow]]
   newest <- .freshness_newest(tiers)
 
@@ -271,28 +307,36 @@
       warn_hours = warn_hours, fail_hours = fail_hours,
       tightened = tightened, queue_state = "clear", in_flight = FALSE,
       message = sprintf(
-        "%s: no signal — receiver silent and nothing on disk.", flow),
+        "%s: no signal — receiver silent and nothing on disk.", flow
+      ),
       prose = sprintf(
         "%s går inte att verifiera, så underlaget kan vara ofullständigt.",
-        label),
+        label
+      ),
       prose_pending = NULL
     ))
   }
 
   age <- as.numeric(difftime(now, newest$ts, units = "hours"))
-  status <- if (age > fail_hours) "fail"
-            else if (age > warn_hours) "warn"
-            else "ok"
+  status <- if (age > fail_hours) {
+    "fail"
+  } else if (age > warn_hours) {
+    "warn"
+  } else {
+    "ok"
+  }
   when <- format(newest$ts, "%Y-%m-%d %H:%M")
 
   message <- if (status == "ok") {
     sprintf("%s: %.1f h old (%s, %s).", flow, max(age, 0), newest$source, when)
   } else {
-    sprintf("%s: silent for %.1f h (%s above %g h%s) — newest %s from %s.",
-            flow, age, status,
-            if (status == "fail") fail_hours else warn_hours,
-            if (tightened) ", tightened: metrics still arriving" else "",
-            when, newest$source)
+    sprintf(
+      "%s: silent for %.1f h (%s above %g h%s) — newest %s from %s.",
+      flow, age, status,
+      if (status == "fail") fail_hours else warn_hours,
+      if (tightened) ", tightened: metrics still arriving" else "",
+      when, newest$source
+    )
   }
 
   date_sv <- .freshness_date_sv(newest$ts, reference = now)
@@ -302,21 +346,28 @@
     # Only at fail do we name a cause. A live metric feed proves the
     # phone is pushing, so by this point a silent workout feed is far
     # more likely a broken automation than a quiet training week.
-    sprintf(paste("%s har inte kommit in sedan %s, medan hälsodata",
-                  "fortsätter komma in — troligen en trasig automation."),
-            label, date_sv)
+    sprintf(
+      paste(
+        "%s har inte kommit in sedan %s, medan hälsodata",
+        "fortsätter komma in — troligen en trasig automation."
+      ),
+      label, date_sv
+    )
   } else if (tightened) {
     # At warn, state the observation and stop. The real eight-day
     # training break in Oct--Nov 2024 would have drawn six consecutive
     # days of "broken automation" had the accusation started here —
     # and an accusation that is wrong is worse than a neutral note at
     # the same frequency.
-    sprintf("%s har inte kommit in sedan %s, medan hälsodata fortsätter komma in.",
-            label, date_sv)
+    sprintf(
+      "%s har inte kommit in sedan %s, medan hälsodata fortsätter komma in.",
+      label, date_sv
+    )
   } else {
     sprintf(
       "%s har inte kommit in sedan %s, så underlaget är ofullständigt.",
-      label, date_sv)
+      label, date_sv
+    )
   }
 
   list(
@@ -351,8 +402,10 @@
 # stored history — the receiver reports the last success directly.
 # `import_stalled` is computed by the caller from that timestamp.
 .freshness_annotate_queue <- function(flow, pending, import_stalled,
-                                       last_import_ok, now) {
-  if (!pending) return(flow)
+                                      last_import_ok, now) {
+  if (!pending) {
+    return(flow)
+  }
   label <- .FRESHNESS_FLOW_SV[[flow$flow]]
 
   # The verdict follows queue_state, not the raw arrival evidence, so
@@ -378,14 +431,17 @@
     flow$in_flight <- TRUE
     flow$prose_pending <- sprintf(
       "%s håller fortfarande på att läsas in, så underlaget är ofullständigt än.",
-      label)
+      label
+    )
     # The ops message must follow the flipped status too, or doctor's
     # human/JSON output reads "ok" beside the pre-override "…: silent…"
     # message — the same verdict/text contradiction this module exists to
     # remove. (source/last_data keep reporting the last real arrival,
     # which is coherent with an import in progress.)
-    flow$message <- sprintf("%s: import in progress, queue not yet drained.",
-                            flow$flow)
+    flow$message <- sprintf(
+      "%s: import in progress, queue not yet drained.",
+      flow$flow
+    )
     return(flow)
   }
 
@@ -400,15 +456,23 @@
   # a wedge is today and would read as if nothing were wrong.
   when <- .freshness_date_sv(last_import_ok, reference = now)
   flow$prose <- if (is.na(when)) {
-    sprintf("%s kommer in men kan inte läsas in, så underlaget är ofullständigt.",
-            label)
+    sprintf(
+      "%s kommer in men kan inte läsas in, så underlaget är ofullständigt.",
+      label
+    )
   } else {
-    sprintf(paste("%s kommer in men har inte kunnat läsas in sedan %s,",
-                  "så underlaget är ofullständigt."),
-            label, when)
+    sprintf(
+      paste(
+        "%s kommer in men har inte kunnat läsas in sedan %s,",
+        "så underlaget är ofullständigt."
+      ),
+      label, when
+    )
   }
-  flow$message <- paste0(flow$message,
-                          " [queue stuck: pending workouts not importing]")
+  flow$message <- paste0(
+    flow$message,
+    " [queue stuck: pending workouts not importing]"
+  )
   flow
 }
 
@@ -509,22 +573,22 @@
 #'   notifications.
 #' @export
 data_freshness <- function(health_daily = NULL,
-                            summaries = NULL,
-                            now = Sys.time(),
-                            metrics_warn_hours = 36,
-                            metrics_fail_hours = 72,
-                            workout_warn_hours = 96,
-                            workout_fail_hours = 24 * 14,
-                            workout_asym_warn_hours = 48,
-                            workout_asym_fail_hours = 24 * 7,
-                            workout_import_stale_hours = 24,
-                            receiver_grace_hours = 1,
-                            data_dir = Sys.getenv("TRANING_DATA"),
-                            metrics_dir = NULL,
-                            canonical_dir = NULL,
-                            workouts_dir = NULL,
-                            status_payload = NULL,
-                            status_fetch = .receiver_status) {
+                           summaries = NULL,
+                           now = Sys.time(),
+                           metrics_warn_hours = 36,
+                           metrics_fail_hours = 72,
+                           workout_warn_hours = 96,
+                           workout_fail_hours = 24 * 14,
+                           workout_asym_warn_hours = 48,
+                           workout_asym_fail_hours = 24 * 7,
+                           workout_import_stale_hours = 24,
+                           receiver_grace_hours = 1,
+                           data_dir = Sys.getenv("TRANING_DATA"),
+                           metrics_dir = NULL,
+                           canonical_dir = NULL,
+                           workouts_dir = NULL,
+                           status_payload = NULL,
+                           status_fetch = .receiver_status) {
   if (is.null(status_payload) && is.function(status_fetch)) {
     status_payload <- tryCatch(status_fetch(), error = function(e) NULL)
   }
@@ -534,8 +598,10 @@ data_freshness <- function(health_daily = NULL,
     metrics_dir <- file.path(data_dir, "kristian", "health_export", "metrics")
   }
   if (is.null(canonical_dir) && nzchar(data_dir)) {
-    canonical_dir <- file.path(data_dir, "kristian", "health_export",
-                                "canonical")
+    canonical_dir <- file.path(
+      data_dir, "kristian", "health_export",
+      "canonical"
+    )
   }
   if (is.null(workouts_dir) && nzchar(data_dir)) {
     workouts_dir <- file.path(data_dir, "kristian", "health_export", "workouts")
@@ -560,12 +626,15 @@ data_freshness <- function(health_daily = NULL,
     # a false green. On kailash the local tiers are always present, so
     # this never changes the production verdict.
     list(
-      list(health_cache = .freshness_health_ts(health_daily),
-           canonical_files = .freshness_dir_mtime(canonical_dir),
-           metric_files = .freshness_dir_mtime(metrics_dir))
+      list(
+        health_cache = .freshness_health_ts(health_daily),
+        canonical_files = .freshness_dir_mtime(canonical_dir),
+        metric_files = .freshness_dir_mtime(metrics_dir)
+      )
     ),
     now = now,
-    warn_hours = metrics_warn_hours, fail_hours = metrics_fail_hours)
+    warn_hours = metrics_warn_hours, fail_hours = metrics_fail_hours
+  )
 
   # Tighten the workout thresholds when metrics are demonstrably
   # arriving — see workout_asym_* in the docs above. Suppressed for the
@@ -584,7 +653,8 @@ data_freshness <- function(health_daily = NULL,
   # arrived and reached summaries — and it also drives the stuck/
   # in_progress split below, so the one field carries both roles.
   last_import_ok <- .parse_iso_time(
-    status_payload[["last_workouts_import_ok"]])
+    status_payload[["last_workouts_import_ok"]]
+  )
   workouts_flow <- .freshness_assess_flow(
     "workouts",
     list(
@@ -592,19 +662,28 @@ data_freshness <- function(health_daily = NULL,
       # restart; the inbox mtime is the durable half. The receiver's
       # pending queue is NOT here — it measures non-consumption, not
       # arrival — and is folded in by .freshness_annotate_queue() below.
-      list(receiver_import_ok = last_import_ok,
-           workout_files = .freshness_dir_mtime(workouts_dir)),
+      list(
+        receiver_import_ok = last_import_ok,
+        workout_files = .freshness_dir_mtime(workouts_dir)
+      ),
       # Weaker tier, and a content date rather than an arrival time:
       # summaries also carries the separate Garmin pipeline, and during
       # a backfill its newest sessionStart lags weeks behind delivery.
       list(sessions = .freshness_session_ts(summaries))
     ),
     now = now,
-    warn_hours = if (tightened) workout_asym_warn_hours
-                 else workout_warn_hours,
-    fail_hours = if (tightened) workout_asym_fail_hours
-                 else workout_fail_hours,
-    tightened = tightened)
+    warn_hours = if (tightened) {
+      workout_asym_warn_hours
+    } else {
+      workout_warn_hours
+    },
+    fail_hours = if (tightened) {
+      workout_asym_fail_hours
+    } else {
+      workout_fail_hours
+    },
+    tightened = tightened
+  )
 
   # Deliveries the receiver has taken in but not yet imported. Note the
   # tense: this is about undelivered work right now, not about a flush
@@ -642,7 +721,8 @@ data_freshness <- function(health_daily = NULL,
   import_stalled <- pending && success_age > workout_import_stale_hours &&
     !timer_armed
   workouts_flow <- .freshness_annotate_queue(
-    workouts_flow, pending, import_stalled, last_import_ok, now)
+    workouts_flow, pending, import_stalled, last_import_ok, now
+  )
 
   flows <- list(metrics = metrics_flow, workouts = workouts_flow)
   ranks <- vapply(flows, function(f) .FRESHNESS_RANK[[f$status]], integer(1))
@@ -672,7 +752,8 @@ data_freshness <- function(health_daily = NULL,
         as.numeric(status_payload[["pending_workouts"]] %||% NA_real_)
     ),
     message = paste(vapply(flows, `[[`, character(1), "message"),
-                    collapse = " "),
+      collapse = " "
+    ),
     prose = if (length(bad) == 0) {
       paste(vapply(flows, `[[`, character(1), "prose"), collapse = " ")
     } else {

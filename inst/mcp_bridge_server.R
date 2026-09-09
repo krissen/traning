@@ -101,11 +101,12 @@ traning_data_root <- Sys.getenv("TRANING_DATA")
 if (traning_data_root == "") {
   stop("mcp_bridge_server: TRANING_DATA is not set")
 }
-db_summaries      <- file.path(traning_data_root, "cache", "summaries.RData")
-db_myruns         <- file.path(traning_data_root, "cache", "myruns.RData")
-gc_json_dir       <- file.path(traning_data_root, "kristian", "filer", "gconnect")
+db_summaries <- file.path(traning_data_root, "cache", "summaries.RData")
+db_myruns <- file.path(traning_data_root, "cache", "myruns.RData")
+gc_json_dir <- file.path(traning_data_root, "kristian", "filer", "gconnect")
 garmin_cache_path <- normalizePath(
-  file.path(traning_data_root, "cache", "garmin_json.RData"), mustWork = FALSE
+  file.path(traning_data_root, "cache", "garmin_json.RData"),
+  mustWork = FALSE
 )
 # .hae_cache_path() is an internal (non-exported) traning helper —
 # reused via `:::` rather than duplicating its TRANING_DATA-relative
@@ -118,7 +119,9 @@ health_cache_path <- traning:::.hae_cache_path()
 .STATE <- new.env(parent = emptyenv())
 
 .mtime_num <- function(path) {
-  if (is.null(path) || !nzchar(path) || !file.exists(path)) return(NA_real_)
+  if (is.null(path) || !nzchar(path) || !file.exists(path)) {
+    return(NA_real_)
+  }
   as.numeric(file.info(path)$mtime)
 }
 
@@ -161,7 +164,7 @@ health_cache_path <- traning:::.hae_cache_path()
   }
   # Backfill source column for caches predating multi-source support.
   if (is.data.frame(summaries) && nrow(summaries) > 0 &&
-      !"source" %in% names(summaries)) {
+    !"source" %in% names(summaries)) {
     summaries$source <- "tcx"
   }
   summaries
@@ -194,15 +197,19 @@ health_cache_path <- traning:::.hae_cache_path()
 .get_augmented_summaries <- function(summaries) {
   key <- list(.mtime_num(db_summaries), .mtime_num(garmin_cache_path))
   .memo("augmented_summaries", key, function() {
-    if (!dir.exists(gc_json_dir)) return(summaries)
+    if (!dir.exists(gc_json_dir)) {
+      return(summaries)
+    }
     garmin_data <- load_garmin_json(gc_json_dir)
     augment_summaries(summaries, garmin_data)
   })
 }
 
 .get_health_daily <- function() {
-  .memo("health_daily", .mtime_num(health_cache_path),
-        function() load_health_data())
+  .memo(
+    "health_daily", .mtime_num(health_cache_path),
+    function() load_health_data()
+  )
 }
 
 # Zone / decoupling caches are keyed by sport (a cache built for
@@ -225,20 +232,24 @@ health_cache_path <- traning:::.hae_cache_path()
 # summaries + myruns + params, the file's own mtime carries no
 # information the summaries/myruns/garmin mtimes don't already capture.
 .get_zone_data <- function(summaries, myruns, sport) {
-  key <- list(sport = sport,
-              summaries_mtime = .mtime_num(db_summaries),
-              garmin_mtime    = .mtime_num(garmin_cache_path),
-              myruns_mtime    = .mtime_num(db_myruns))
+  key <- list(
+    sport = sport,
+    summaries_mtime = .mtime_num(db_summaries),
+    garmin_mtime = .mtime_num(garmin_cache_path),
+    myruns_mtime = .mtime_num(db_myruns)
+  )
   .memo(paste0("zone_", sport), key, function() {
     load_zone_distribution(summaries, myruns, sport = sport)
   })
 }
 
 .get_decoupling_data <- function(summaries, myruns, sport) {
-  key <- list(sport = sport,
-              summaries_mtime = .mtime_num(db_summaries),
-              garmin_mtime    = .mtime_num(garmin_cache_path),
-              myruns_mtime    = .mtime_num(db_myruns))
+  key <- list(
+    sport = sport,
+    summaries_mtime = .mtime_num(db_summaries),
+    garmin_mtime = .mtime_num(garmin_cache_path),
+    myruns_mtime = .mtime_num(db_myruns)
+  )
   .memo(paste0("decoupling_", sport), key, function() {
     load_decoupling(summaries, myruns, sport = sport)
   })
@@ -314,35 +325,54 @@ serve_one <- function(req) {
   plot_path <- req$plot_path
 
   if (is.null(func_name) || !func_name %in% names(func_registry)) {
-    return(list(id = id, type = "error",
-                message = paste0("Unknown or missing function: ", func_name)))
+    return(list(
+      id = id, type = "error",
+      message = paste0("Unknown or missing function: ", func_name)
+    ))
   }
 
   bundle <- tryCatch(build_bundle(func_name, func_args),
-                     error = function(e) e)
+    error = function(e) e
+  )
   if (inherits(bundle, "error")) {
-    return(list(id = id, type = "error",
-                message = paste0("mcp_bridge_server: data load error: ",
-                                 conditionMessage(bundle))))
+    return(list(
+      id = id, type = "error",
+      message = paste0(
+        "mcp_bridge_server: data load error: ",
+        conditionMessage(bundle)
+      )
+    ))
   }
 
-  call_args <- tryCatch(build_call_args(func_name, func_args, bundle),
-                        error = function(e) e)
+  # build_call_args() is sourced at runtime from mcp_bridge_shared.R (both
+  # are standalone scripts in inst/, not part of the package), so lintr's
+  # per-file static analysis can't resolve it.
+  call_args <- tryCatch(build_call_args(func_name, func_args, bundle), # nolint: object_usage_linter.
+    error = function(e) e
+  )
   if (inherits(call_args, "error")) {
-    return(list(id = id, type = "error",
-                message = paste0("mcp_bridge_server: argument error: ",
-                                 conditionMessage(call_args))))
+    return(list(
+      id = id, type = "error",
+      message = paste0(
+        "mcp_bridge_server: argument error: ",
+        conditionMessage(call_args)
+      )
+    ))
   }
 
-  resp <- run_dispatch(func_name, call_args, do_plot, plot_path)
+  # run_dispatch() is also sourced at runtime from mcp_bridge_shared.R —
+  # same lintr limitation as build_call_args() above.
+  resp <- run_dispatch(func_name, call_args, do_plot, plot_path) # nolint: object_usage_linter.
   resp$id <- id
   resp
 }
 
 # --- Framing ---
 send_frame <- function(con, obj) {
-  payload <- as.character(jsonlite::toJSON(obj, auto_unbox = TRUE, null = "null",
-                                           dataframe = "rows", Date = "ISO8601"))
+  payload <- as.character(jsonlite::toJSON(obj,
+    auto_unbox = TRUE, null = "null",
+    dataframe = "rows", Date = "ISO8601"
+  ))
   encoded <- gsub("[\r\n]", "", jsonlite::base64_enc(charToRaw(payload)))
   writeLines(encoded, con = con)
   flush(con)
@@ -350,17 +380,27 @@ send_frame <- function(con, obj) {
 
 read_frame <- function(con) {
   line <- tryCatch(readLines(con, n = 1, warn = FALSE),
-                   error = function(e) character(0))
-  if (length(line) == 0) return(NULL)  # EOF
-  if (!nzchar(line)) return(list())     # blank line — treated as a no-op below
-  tryCatch({
-    payload <- rawToChar(jsonlite::base64_dec(line))
-    jsonlite::fromJSON(payload, simplifyVector = FALSE)
-  }, error = function(e) {
-    message("mcp_bridge_server: dropped malformed request frame: ",
-            conditionMessage(e))
-    list()
-  })
+    error = function(e) character(0)
+  )
+  if (length(line) == 0) {
+    return(NULL)
+  } # EOF
+  if (!nzchar(line)) {
+    return(list())
+  } # blank line — treated as a no-op below
+  tryCatch(
+    {
+      payload <- rawToChar(jsonlite::base64_dec(line))
+      jsonlite::fromJSON(payload, simplifyVector = FALSE)
+    },
+    error = function(e) {
+      message(
+        "mcp_bridge_server: dropped malformed request frame: ",
+        conditionMessage(e)
+      )
+      list()
+    }
+  )
 }
 
 # --- Request loop ---
@@ -385,9 +425,13 @@ repeat {
   resp <- tryCatch(
     serve_one(req),
     error = function(e) {
-      list(id = req$id, type = "error",
-          message = paste0("mcp_bridge_server: unhandled error: ",
-                           conditionMessage(e)))
+      list(
+        id = req$id, type = "error",
+        message = paste0(
+          "mcp_bridge_server: unhandled error: ",
+          conditionMessage(e)
+        )
+      )
     }
   )
   send_frame(.frame_out, resp)

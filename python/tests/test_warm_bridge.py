@@ -12,6 +12,7 @@ process and compares its output byte-for-byte against the spawn-per-call
 `inst/mcp_bridge.R` path.
 """
 
+import itertools
 import json
 import os
 import subprocess
@@ -167,6 +168,7 @@ def test_kill_switch_never_spawns_warm_process(monkeypatch):
             returncode = 0
             stdout = '{"type": "data", "data": {}}'
             stderr = ""
+
         return R()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -216,9 +218,7 @@ def test_partial_frame_does_not_hang_and_releases_lock(monkeypatch):
     while self._lock was held, wedging the singleton: every subsequent
     warm call would block on lock-acquire and never reach the spawn
     fallback."""
-    monkeypatch.setattr(
-        r_bridge, "_warm_bridge_cmd", lambda: _fake_cmd(_FAKE_PARTIAL_FRAME)
-    )
+    monkeypatch.setattr(r_bridge, "_warm_bridge_cmd", lambda: _fake_cmd(_FAKE_PARTIAL_FRAME))
     bridge = WarmRBridge.singleton()
     timeout = 2
 
@@ -262,6 +262,7 @@ def test_timeout_falls_back_to_spawn_path(monkeypatch):
             returncode = 0
             stdout = '{"type": "data", "data": {"spawned": true}}'
             stderr = ""
+
         return R()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -272,9 +273,7 @@ def test_timeout_falls_back_to_spawn_path(monkeypatch):
 
 
 def test_dead_process_respawns_on_next_call(monkeypatch):
-    monkeypatch.setattr(
-        r_bridge, "_warm_bridge_cmd", lambda: _fake_cmd(_FAKE_DIES_IMMEDIATELY)
-    )
+    monkeypatch.setattr(r_bridge, "_warm_bridge_cmd", lambda: _fake_cmd(_FAKE_DIES_IMMEDIATELY))
     bridge = WarmRBridge.singleton()
     with pytest.raises(WarmBridgeUnavailable):
         bridge.request("report_monthstatus", {}, False, None, timeout=5)
@@ -289,9 +288,7 @@ def test_respawn_budget_bounded(monkeypatch):
     """MAX_RESPAWNS failures within the window exhaust the budget; the
     next call must fail fast (WarmBridgeUnavailable) without trying to
     spawn again."""
-    monkeypatch.setattr(
-        r_bridge, "_warm_bridge_cmd", lambda: _fake_cmd(_FAKE_DIES_IMMEDIATELY)
-    )
+    monkeypatch.setattr(r_bridge, "_warm_bridge_cmd", lambda: _fake_cmd(_FAKE_DIES_IMMEDIATELY))
     bridge = WarmRBridge.singleton()
     for _ in range(WarmRBridge.MAX_RESPAWNS):
         with pytest.raises(WarmBridgeUnavailable):
@@ -390,10 +387,7 @@ def test_concurrent_requests_are_serialized(monkeypatch):
         except Exception as e:  # pragma: no cover - failure path surfaced via errors
             errors.append(e)
 
-    threads = [
-        threading.Thread(target=worker, args=(f"report_func_{i}",))
-        for i in range(5)
-    ]
+    threads = [threading.Thread(target=worker, args=(f"report_func_{i}",)) for i in range(5)]
     for t in threads:
         t.start()
     for t in threads:
@@ -414,7 +408,7 @@ def test_concurrent_requests_are_serialized(monkeypatch):
     # by _TimingLock must be pairwise non-overlapping.
     intervals = sorted(timing_lock.intervals)
     assert len(intervals) == 5
-    for (_, end_a), (start_b, _) in zip(intervals, intervals[1:]):
+    for (_, end_a), (start_b, _) in itertools.pairwise(intervals):
         assert start_b >= end_a
 
 
@@ -423,11 +417,14 @@ def test_concurrent_requests_are_serialized(monkeypatch):
 _TRANING_DATA = os.environ.get("TRANING_DATA", "")
 
 
-def _run_spawn_bridge(func: str, args: str = "{}", plot: bool = False,
-                      plot_path: str | None = None) -> dict:
+def _run_spawn_bridge(
+    func: str, args: str = "{}", plot: bool = False, plot_path: str | None = None
+) -> dict:
     cmd_args = [
-        "Rscript", str(MCP_BRIDGE_R),
-        f"--func={func}", f"--args={args}",
+        "Rscript",
+        str(MCP_BRIDGE_R),
+        f"--func={func}",
+        f"--args={args}",
     ]
     if plot:
         cmd_args.append("--plot")
@@ -435,8 +432,12 @@ def _run_spawn_bridge(func: str, args: str = "{}", plot: bool = False,
         cmd_args.append(f"--plot_path={plot_path}")
     env = {**os.environ, "TRANING_BRIDGE_LOADER": "load_all"}
     result = subprocess.run(
-        cmd_args, capture_output=True, text=True, cwd=str(TRANING_ROOT),
-        env=env, timeout=60,
+        cmd_args,
+        capture_output=True,
+        text=True,
+        cwd=str(TRANING_ROOT),
+        env=env,
+        timeout=60,
     )
     return json.loads(result.stdout.strip())
 
@@ -472,9 +473,7 @@ def test_real_warm_server_plot_matches_spawn(monkeypatch, tmp_path):
     bridge = WarmRBridge.singleton()
 
     warm_plot_path = tmp_path / "warm.png"
-    warm = bridge.request(
-        "fetch.plot.ef", {"from": "2025-01-01"}, True, warm_plot_path, timeout=60
-    )
+    warm = bridge.request("fetch.plot.ef", {"from": "2025-01-01"}, True, warm_plot_path, timeout=60)
     assert warm["type"] == "plot"
     assert warm["path"] == str(warm_plot_path)
     assert warm_plot_path.exists()
@@ -482,7 +481,9 @@ def test_real_warm_server_plot_matches_spawn(monkeypatch, tmp_path):
 
     spawn_plot_path = tmp_path / "spawn.png"
     spawn = _run_spawn_bridge(
-        "fetch.plot.ef", '{"from":"2025-01-01"}', plot=True,
+        "fetch.plot.ef",
+        '{"from":"2025-01-01"}',
+        plot=True,
         plot_path=str(spawn_plot_path),
     )
     assert spawn["type"] == "plot"

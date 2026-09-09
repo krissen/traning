@@ -24,22 +24,26 @@ make_ov_summaries <- function(n = 30) {
 
 make_ov_health <- function(n = 30) {
   dates <- seq(Sys.Date() - n, Sys.Date() - 1, by = "day")
-  metrics <- c("resting_heart_rate", "heart_rate_variability",
-              "sleep_totalSleep", "sleep_deep", "sleep_rem")
+  metrics <- c(
+    "resting_heart_rate", "heart_rate_variability",
+    "sleep_totalSleep", "sleep_deep", "sleep_rem"
+  )
   tibble::tibble(
-    date   = rep(dates, length(metrics)),
+    date = rep(dates, length(metrics)),
     metric = rep(metrics, each = length(dates)),
-    value  = c(runif(length(dates), 45, 60),   # resting_heart_rate
-               runif(length(dates), 30, 80),   # heart_rate_variability
-               runif(length(dates), 360, 480),  # sleep_totalSleep (min)
-               runif(length(dates), 60, 120),   # sleep_deep (min)
-               runif(length(dates), 60, 120)),  # sleep_rem (min)
+    value = c(
+      runif(length(dates), 45, 60), # resting_heart_rate
+      runif(length(dates), 30, 80), # heart_rate_variability
+      runif(length(dates), 360, 480), # sleep_totalSleep (min)
+      runif(length(dates), 60, 120), # sleep_deep (min)
+      runif(length(dates), 60, 120)
+    ), # sleep_rem (min)
     source = "test"
   )
 }
 
 test_summaries_ov <- make_ov_summaries(30)
-test_health_ov    <- make_ov_health(30)
+test_health_ov <- make_ov_health(30)
 
 # Sets up an isolated TRANING_DATA/cache/ dir with real summaries.RData
 # and health_daily.RData files (so .overview_source_mtime() has
@@ -61,8 +65,11 @@ setup_ov_cache_dir <- function() {
     root = root,
     cache_path = file.path(root, "cache", "overview.RData"),
     restore = function() {
-      if (is.na(old_td)) Sys.unsetenv("TRANING_DATA")
-      else Sys.setenv(TRANING_DATA = old_td)
+      if (is.na(old_td)) {
+        Sys.unsetenv("TRANING_DATA")
+      } else {
+        Sys.setenv(TRANING_DATA = old_td)
+      }
       unlink(root, recursive = TRUE)
     }
   )
@@ -76,11 +83,14 @@ test_that("load_overview_metrics builds and saves a cache on a cold miss", {
 
   expect_false(file.exists(env$cache_path))
   result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   expect_true(file.exists(env$cache_path))
   expect_type(result, "list")
-  expect_setequal(names(result), c("pmc", "acwr_all", "volume_running",
-                                   "readiness"))
+  expect_setequal(names(result), c(
+    "pmc", "acwr_all", "volume_running",
+    "readiness"
+  ))
   expect_s3_class(result$pmc, "tbl_df")
   expect_s3_class(result$acwr_all, "tbl_df")
   expect_s3_class(result$volume_running, "tbl_df")
@@ -91,16 +101,18 @@ test_that("load_overview_metrics reads a fresh cache without recomputing", {
   on.exit(env$restore())
 
   first <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                 cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   # Tag the cached pmc with a sentinel value compute_pmc() would never
   # produce, then reload — if the cache hit path silently recomputed,
   # the sentinel would be gone.
-  load(env$cache_path)  # loads: overview_cache
+  load(env$cache_path) # loads: overview_cache
   overview_cache$pmc$ctl[1] <- -999999
   save(overview_cache, file = env$cache_path)
 
   second <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   expect_true(any(second$pmc$ctl == -999999, na.rm = TRUE))
 })
 
@@ -109,14 +121,20 @@ test_that("load_overview_metrics cached values equal direct compute_*() calls", 
   on.exit(env$restore())
 
   cached <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   direct_pmc <- compute_pmc(test_summaries_ov, health_daily = test_health_ov)
-  direct_acwr_all <- compute_acwr(test_summaries_ov, sport = "all",
-                                  health_daily = test_health_ov)
-  direct_volume <- compute_acwr(test_summaries_ov, sport = "running",
-                                mode = "km")
+  direct_acwr_all <- compute_acwr(test_summaries_ov,
+    sport = "all",
+    health_daily = test_health_ov
+  )
+  direct_volume <- compute_acwr(test_summaries_ov,
+    sport = "running",
+    mode = "km"
+  )
   direct_readiness <- compute_readiness(test_health_ov, test_summaries_ov,
-                                        pmc = direct_pmc)
+    pmc = direct_pmc
+  )
 
   expect_equal(cached$pmc, direct_pmc)
   expect_equal(cached$acwr_all, direct_acwr_all)
@@ -129,13 +147,15 @@ test_that("load_overview_metrics force=TRUE bypasses a fresh cache", {
   on.exit(env$restore())
 
   load_overview_metrics(test_summaries_ov, test_health_ov,
-                        cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   load(env$cache_path)
   overview_cache$pmc$ctl[1] <- -999999
   save(overview_cache, file = env$cache_path)
 
   result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path, force = TRUE)
+    cache_path = env$cache_path, force = TRUE
+  )
   expect_false(any(result$pmc$ctl == -999999, na.rm = TRUE))
 })
 
@@ -147,8 +167,9 @@ test_that("load_overview_metrics read_only=TRUE on a cold miss does not write", 
 
   expect_false(file.exists(env$cache_path))
   result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path,
-                                  read_only = TRUE)
+    cache_path = env$cache_path,
+    read_only = TRUE
+  )
   expect_type(result, "list")
   expect_false(file.exists(env$cache_path))
 })
@@ -158,7 +179,8 @@ test_that("load_overview_metrics read_only=TRUE on a fresh cache reads it, doesn
   on.exit(env$restore())
 
   load_overview_metrics(test_summaries_ov, test_health_ov,
-                        cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   load(env$cache_path)
   overview_cache$pmc$ctl[1] <- -999999
   save(overview_cache, file = env$cache_path)
@@ -166,8 +188,9 @@ test_that("load_overview_metrics read_only=TRUE on a fresh cache reads it, doesn
 
   Sys.sleep(1.1)
   result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path,
-                                  read_only = TRUE)
+    cache_path = env$cache_path,
+    read_only = TRUE
+  )
   # Fresh cache was reused (sentinel survives) ...
   expect_true(any(result$pmc$ctl == -999999, na.rm = TRUE))
   # ... and the file was not rewritten.
@@ -182,7 +205,8 @@ test_that("load_overview_metrics invalidates when summaries.RData mtime changes"
   on.exit(env$restore())
 
   load_overview_metrics(test_summaries_ov, test_health_ov,
-                        cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   load(env$cache_path)
   overview_cache$pmc$ctl[1] <- -999999
   save(overview_cache, file = env$cache_path)
@@ -194,7 +218,8 @@ test_that("load_overview_metrics invalidates when summaries.RData mtime changes"
   save(summaries, file = file.path(env$root, "cache", "summaries.RData"))
 
   result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   expect_false(any(result$pmc$ctl == -999999, na.rm = TRUE))
 })
 
@@ -203,7 +228,8 @@ test_that("load_overview_metrics invalidates when health_daily.RData mtime chang
   on.exit(env$restore())
 
   load_overview_metrics(test_summaries_ov, test_health_ov,
-                        cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   load(env$cache_path)
   overview_cache$pmc$ctl[1] <- -999999
   save(overview_cache, file = env$cache_path)
@@ -213,7 +239,8 @@ test_that("load_overview_metrics invalidates when health_daily.RData mtime chang
   save(health_daily, file = file.path(env$root, "cache", "health_daily.RData"))
 
   result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   expect_false(any(result$pmc$ctl == -999999, na.rm = TRUE))
 })
 
@@ -222,14 +249,16 @@ test_that("load_overview_metrics invalidates a cache with a stale built_date", {
   on.exit(env$restore())
 
   load_overview_metrics(test_summaries_ov, test_health_ov,
-                        cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   load(env$cache_path)
   overview_cache$pmc$ctl[1] <- -999999
   overview_cache$built_date <- Sys.Date() - 1
   save(overview_cache, file = env$cache_path)
 
   result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   expect_false(any(result$pmc$ctl == -999999, na.rm = TRUE))
   # And the rebuilt cache should now be stamped with today's date.
   load(env$cache_path)
@@ -245,7 +274,8 @@ test_that("load_overview_metrics treats a corrupt cache file as a miss, not an e
   writeLines("not an RData file", env$cache_path)
   expect_error(
     result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                    cache_path = env$cache_path),
+      cache_path = env$cache_path
+    ),
     NA
   )
   expect_type(result, "list")
@@ -258,6 +288,7 @@ test_that("load_overview_metrics treats a missing cache file as a miss", {
 
   expect_false(file.exists(env$cache_path))
   result <- load_overview_metrics(test_summaries_ov, test_health_ov,
-                                  cache_path = env$cache_path)
+    cache_path = env$cache_path
+  )
   expect_s3_class(result$pmc, "tbl_df")
 })

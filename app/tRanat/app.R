@@ -18,19 +18,19 @@ library(ggplot2)
 if (!exists("load_session_data")) source("global.R", local = FALSE)
 
 # --- Source modules and pages ---
-source("modules/mod_date_preset.R",   local = TRUE)
-source("modules/mod_sport_select.R",  local = TRUE)
-source("modules/mod_metric_panel.R",  local = TRUE)
-source("modules/mod_overview.R",      local = TRUE)
-source("pages/page_overview.R",       local = TRUE)
-source("pages/page_training.R",       local = TRUE)
-source("pages/page_progress.R",       local = TRUE)
-source("pages/page_health.R",         local = TRUE)
-source("pages/page_performance.R",    local = TRUE)
-source("pages/page_runprofile.R",     local = TRUE)
-source("pages/page_race.R",           local = TRUE)
-source("pages/page_sport_mix.R",      local = TRUE)
-source("pages/page_import.R",         local = TRUE)
+source("modules/mod_date_preset.R", local = TRUE)
+source("modules/mod_sport_select.R", local = TRUE)
+source("modules/mod_metric_panel.R", local = TRUE)
+source("modules/mod_overview.R", local = TRUE)
+source("pages/page_overview.R", local = TRUE)
+source("pages/page_training.R", local = TRUE)
+source("pages/page_progress.R", local = TRUE)
+source("pages/page_health.R", local = TRUE)
+source("pages/page_performance.R", local = TRUE)
+source("pages/page_runprofile.R", local = TRUE)
+source("pages/page_race.R", local = TRUE)
+source("pages/page_sport_mix.R", local = TRUE)
+source("pages/page_import.R", local = TRUE)
 
 # --- Theme ---
 # Colours are sourced from traning_palette (R/theme.R) — the single
@@ -39,14 +39,14 @@ source("pages/page_import.R",         local = TRUE)
 # navbar-dark-color which has no plot equivalent) stay as literals.
 theme <- bs_theme(
   version = 5,
-  bg      = "#f5f1ed",
-  fg      = traning_palette$text_dark,
+  bg = "#f5f1ed",
+  fg = traning_palette$text_dark,
   primary = traning_palette$primary,
   secondary = traning_palette$secondary,
   success = unname(traning_palette$status["green"]),
   warning = unname(traning_palette$status["yellow"]),
-  danger  = unname(traning_palette$status["red"]),
-  info    = unname(traning_palette$status["blue"]),
+  danger = unname(traning_palette$status["red"]),
+  info = unname(traning_palette$status["blue"]),
   base_font = font_collection(
     "-apple-system", "BlinkMacSystemFont", "Segoe UI", "Roboto", "sans-serif"
   ),
@@ -54,10 +54,10 @@ theme <- bs_theme(
     "Monaco", "Menlo", "Consolas", "Courier New", "monospace"
   ),
   font_scale = 0.92,
-  "navbar-bg"          = traning_palette$primary,
-  "navbar-dark-color"  = "#d4cdc3",
-  "card-border-color"  = traning_palette$border_warm,
-  "card-bg"            = traning_palette$bg_card
+  "navbar-bg" = traning_palette$primary,
+  "navbar-dark-color" = "#d4cdc3",
+  "card-border-color" = traning_palette$border_warm,
+  "card-bg" = traning_palette$bg_card
 )
 
 # --- UI ---
@@ -99,32 +99,40 @@ ui <- page_navbar(
       sport_select_ui("sport")
     )
   ),
-
-  nav_panel("\u00d6versikt",
+  nav_panel(
+    "\u00d6versikt",
     page_overview_ui("overview")
   ),
-  nav_panel("Tr\u00e4ning",
+  nav_panel(
+    "Tr\u00e4ning",
     page_training_ui("training")
   ),
-  nav_panel("Utveckling",
+  nav_panel(
+    "Utveckling",
     page_progress_ui("progress")
   ),
-  nav_panel("Sport-mix",
+  nav_panel(
+    "Sport-mix",
     page_sport_mix_ui("sport_mix")
   ),
-  nav_panel("H\u00e4lsa",
+  nav_panel(
+    "H\u00e4lsa",
     page_health_ui("health")
   ),
-  nav_panel("Prestation",
+  nav_panel(
+    "Prestation",
     page_performance_ui("performance")
   ),
-  nav_panel("L\u00f6pprofil",
+  nav_panel(
+    "L\u00f6pprofil",
     page_runprofile_ui("runprofile")
   ),
-  nav_panel("T\u00e4vling",
+  nav_panel(
+    "T\u00e4vling",
     page_race_ui("race")
   ),
-  nav_panel("Import",
+  nav_panel(
+    "Import",
     page_import_ui("import")
   )
 )
@@ -142,13 +150,13 @@ server <- function(input, output, session) {
   # direkt från disk — helt oberoende av `data`-bundlen (PR 8 nedan) —
   # så den logiken är opåverkad av att load_session_data() nu returnerar
   # en traning_data-bundle istället för en list.
-  cache_dir    <- file.path(Sys.getenv("TRANING_DATA"), "cache")
+  cache_dir <- file.path(Sys.getenv("TRANING_DATA"), "cache")
   summary_path <- file.path(cache_dir, "summaries.RData")
-  health_path  <- file.path(cache_dir, "health_daily.RData")
+  health_path <- file.path(cache_dir, "health_daily.RData")
   read_cache_mtimes <- function() {
     paste(
       if (file.exists(summary_path)) as.numeric(file.info(summary_path)$mtime) else 0,
-      if (file.exists(health_path))  as.numeric(file.info(health_path)$mtime)  else 0,
+      if (file.exists(health_path)) as.numeric(file.info(health_path)$mtime) else 0,
       sep = "|"
     )
   }
@@ -195,16 +203,18 @@ server <- function(input, output, session) {
   # synlig). Kompenserar för sticky navbar och lägger till 5px luft.
   # Delay:n ger bslib tid att rendera måltab:en innan scroll triggar.
   kpi_targets <- list(
-    readiness  = list(tab = "Hälsa",      dom = "health-readiness-plot"),
+    readiness  = list(tab = "Hälsa", dom = "health-readiness-plot"),
     weekly_km  = list(tab = "Utveckling", dom = "progress-monthstatus-plot"),
-    ctl        = list(tab = "Träning",    dom = "training-pmc-plot"),
-    tsb        = list(tab = "Träning",    dom = "training-pmc-plot"),
-    acwr       = list(tab = "Träning",    dom = "training-acwr-plot")
+    ctl        = list(tab = "Träning", dom = "training-pmc-plot"),
+    tsb        = list(tab = "Träning", dom = "training-pmc-plot"),
+    acwr       = list(tab = "Träning", dom = "training-acwr-plot")
   )
   observeEvent(input$kpi_click, {
     msg <- input$kpi_click
     tgt <- kpi_targets[[msg$type]]
-    if (is.null(tgt)) return()
+    if (is.null(tgt)) {
+      return()
+    }
     bslib::nav_select("main_nav", tgt$tab)
     shinyjs::delay(150, shinyjs::runjs(sprintf(
       "var el=document.getElementById('%s'); if(el){var card=el.closest('.card')||el; var nav=document.querySelector('.navbar'); var navH=nav?nav.offsetHeight:0; var top=card.getBoundingClientRect().top+window.scrollY-navH-5; window.scrollTo({top:top,behavior:'smooth'});}",

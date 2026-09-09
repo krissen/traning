@@ -39,6 +39,7 @@ def calls(monkeypatch):
 
 # --- Dispatch -------------------------------------------------------------
 
+
 def test_daily_view_calls_report_alcohol(calls):
     tools.get_alcohol()
     assert calls == [("report_alcohol", {})]
@@ -54,6 +55,7 @@ def test_returns_the_bridge_envelope_unchanged(calls):
 
 
 # --- Date handling --------------------------------------------------------
+
 
 def test_dates_are_passed_as_from_and_to(calls):
     tools.get_alcohol(after="2026-01-01", before="2026-01-31")
@@ -84,9 +86,8 @@ def test_unset_filters_are_omitted_entirely(calls):
 
 # --- Metric metadata ------------------------------------------------------
 
-@pytest.mark.parametrize(
-    "alias", ["alcohol", "alkohol", "drinks", "drinkar", "glas"]
-)
+
+@pytest.mark.parametrize("alias", ["alcohol", "alkohol", "drinks", "drinkar", "glas"])
 def test_aliases_resolve_to_the_canonical_metric(alias, traning_data_dir):
     assert tools._resolve_metric(alias) == "alcohol_consumption"
 
@@ -114,20 +115,15 @@ def test_metric_resource_lists_alcohol_under_its_category(traning_data_dir):
 
 # --- Registration across the bridge ---------------------------------------
 
-@pytest.mark.parametrize(
-    "func", ["report_alcohol", "report_alcohol_weekly"]
-)
+
+@pytest.mark.parametrize("func", ["report_alcohol", "report_alcohol_weekly"])
 def test_bridge_accepts_the_alcohol_functions(func):
     assert func in _KNOWN_FUNCTIONS
 
 
-@pytest.mark.parametrize(
-    "func", ["report_alcohol", "report_alcohol_weekly"]
-)
+@pytest.mark.parametrize("func", ["report_alcohol", "report_alcohol_weekly"])
 def test_r_registry_lists_the_alcohol_functions(func):
-    source = (REPO_ROOT / "inst" / "mcp_bridge_shared.R").read_text(
-        encoding="utf-8"
-    )
+    source = (REPO_ROOT / "inst" / "mcp_bridge_shared.R").read_text(encoding="utf-8")
     registry = source.split("func_registry <- list(", 1)[1].split("\n)", 1)[0]
     assert re.search(rf"^\s*{re.escape(func)}\s*=", registry, re.MULTILINE)
 
@@ -138,9 +134,7 @@ def test_r_bridge_binds_after_and_before_for_the_alcohol_functions():
     Without the by-name rebinding in build_call_args, every dated call
     would fail in R with an unused-argument error.
     """
-    source = (REPO_ROOT / "inst" / "mcp_bridge_shared.R").read_text(
-        encoding="utf-8"
-    )
+    source = (REPO_ROOT / "inst" / "mcp_bridge_shared.R").read_text(encoding="utf-8")
     assert 'c("report_alcohol", "report_alcohol_weekly")' in source
     assert "a$after" in source
     assert "a$before" in source

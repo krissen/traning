@@ -100,7 +100,8 @@ test_that("filter_by_daterange closed_upper=TRUE makes 'to' inclusive", {
   # Default (exclusive) drops the row exactly at 'to'; closed_upper keeps it.
   excl <- filter_by_daterange(df, list(from = NULL, to = as.Date("2025-01-01")))
   incl <- filter_by_daterange(df, list(from = NULL, to = as.Date("2025-01-01")),
-                              closed_upper = TRUE)
+    closed_upper = TRUE
+  )
   expect_equal(nrow(excl), 2)
   expect_equal(nrow(incl), 3)
 })
@@ -111,7 +112,8 @@ test_that("filter_by_daterange filters on a non-default date_col", {
     date = as.Date(c("2023-01-01", "2024-01-01", "2025-01-01"))
   )
   result <- filter_by_daterange(df, list(from = as.Date("2024-01-01"), to = NULL),
-                                date_col = "date")
+    date_col = "date"
+  )
   expect_equal(nrow(result), 2)
 })
 

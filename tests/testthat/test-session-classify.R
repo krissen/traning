@@ -16,13 +16,13 @@ test_that("classify_session: RPE primary cutoffs map to expected types", {
     )
   }
 
-  expect_equal(classify_session(mk(20, 30))$type, "recovery")    # RPE 2
-  expect_equal(classify_session(mk(30, 60))$type, "endurance")    # RPE 3
-  expect_equal(classify_session(mk(50, 100))$type, "long")        # RPE 5, >90 min
-  expect_equal(classify_session(mk(60, 45))$type, "tempo")        # RPE 6
-  expect_equal(classify_session(mk(75, 60))$type, "threshold_intervals")  # RPE 7.5
-  expect_equal(classify_session(mk(85, 35))$type, "vo2max")       # RPE 8.5
-  expect_equal(classify_session(mk(95, 50))$type, "race_pace")    # RPE 9.5
+  expect_equal(classify_session(mk(20, 30))$type, "recovery") # RPE 2
+  expect_equal(classify_session(mk(30, 60))$type, "endurance") # RPE 3
+  expect_equal(classify_session(mk(50, 100))$type, "long") # RPE 5, >90 min
+  expect_equal(classify_session(mk(60, 45))$type, "tempo") # RPE 6
+  expect_equal(classify_session(mk(75, 60))$type, "threshold_intervals") # RPE 7.5
+  expect_equal(classify_session(mk(85, 35))$type, "vo2max") # RPE 8.5
+  expect_equal(classify_session(mk(95, 50))$type, "race_pace") # RPE 9.5
 })
 
 test_that("classify_session: zone-fraction heuristic", {
@@ -90,9 +90,9 @@ test_that("classify_session: HR-average fallback (no RPE, no zones)", {
   expect_equal(classify_session(mk_hr(120, 30), hr_max = 180)$type, "recovery")
   expect_equal(classify_session(mk_hr(130, 60), hr_max = 180)$type, "endurance")
   expect_equal(classify_session(mk_hr(130, 100), hr_max = 180)$type, "long")
-  expect_equal(classify_session(mk_hr(155, 60), hr_max = 180)$type, "tempo")     # ~86%
-  expect_equal(classify_session(mk_hr(165, 45), hr_max = 180)$type, "threshold_intervals")  # 91.7% — below the 92% VT2 anchor
-  expect_equal(classify_session(mk_hr(170, 30), hr_max = 180)$type, "vo2max")    # 94.4% — clearly Z3
+  expect_equal(classify_session(mk_hr(155, 60), hr_max = 180)$type, "tempo") # ~86%
+  expect_equal(classify_session(mk_hr(165, 45), hr_max = 180)$type, "threshold_intervals") # 91.7% — below the 92% VT2 anchor
+  expect_equal(classify_session(mk_hr(170, 30), hr_max = 180)$type, "vo2max") # 94.4% — clearly Z3
 
   res <- classify_session(mk_hr(155, 60), hr_max = 180)
   expect_equal(res$confidence, "low")
@@ -122,10 +122,10 @@ test_that("session_z3_count counts only Z3-classified runs in window", {
   }
   on_date <- as.Date("2026-05-07")
   summaries <- dplyr::bind_rows(
-    zone_row(on_date - 1, 300, 300, 600, 1200, 600, 50),  # race_pace (Z3)
-    zone_row(on_date - 3, 900, 600, 0, 450, 150, 35),     # vo2max (Z3)
-    zone_row(on_date - 5, 1200, 2400, 0, 0, 0, 60),       # endurance (Z1)
-    zone_row(on_date - 10, 300, 300, 600, 1200, 600, 50)  # outside 7-day window
+    zone_row(on_date - 1, 300, 300, 600, 1200, 600, 50), # race_pace (Z3)
+    zone_row(on_date - 3, 900, 600, 0, 450, 150, 35), # vo2max (Z3)
+    zone_row(on_date - 5, 1200, 2400, 0, 0, 0, 60), # endurance (Z1)
+    zone_row(on_date - 10, 300, 300, 600, 1200, 600, 50) # outside 7-day window
   )
   expect_equal(session_z3_count(summaries, on_date = on_date, days = 7), 2L)
 })
@@ -144,9 +144,9 @@ test_that("session_z2_fraction sums Garmin zone 3 over window", {
   on_date <- as.Date("2026-05-07")
   # 3 sessions of equal total time; zone-3 share: 0%, 50%, 25%.
   summaries <- dplyr::bind_rows(
-    zone_row(on_date - 1, 1800, 1800, 0, 0, 0),       # 0% Z2
-    zone_row(on_date - 5, 600, 600, 1800, 600, 0),    # 50% Z2
-    zone_row(on_date - 60, 1800, 600, 1200, 0, 0)     # 33% Z2
+    zone_row(on_date - 1, 1800, 1800, 0, 0, 0), # 0% Z2
+    zone_row(on_date - 5, 600, 600, 1800, 600, 0), # 50% Z2
+    zone_row(on_date - 60, 1800, 600, 1200, 0, 0) # 33% Z2
   )
   frac <- session_z2_fraction(summaries, on_date = on_date, days = 90)
   # total_sec = 3600 * 3 = 10800; z3 = 0 + 1800 + 1200 = 3000 → 27.78%

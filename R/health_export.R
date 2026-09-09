@@ -44,12 +44,16 @@
 #' @keywords internal
 .load_manifest <- function(manifest_path = NULL) {
   if (is.null(manifest_path)) manifest_path <- .hae_manifest_path()
-  if (!file.exists(manifest_path)) return(list())
+  if (!file.exists(manifest_path)) {
+    return(list())
+  }
   loaded <- tryCatch(
     jsonlite::fromJSON(manifest_path, simplifyVector = FALSE),
     error = function(e) {
       warning("manifest JSON unreadable (", conditionMessage(e),
-              "), starting with an empty manifest", call. = FALSE)
+        "), starting with an empty manifest",
+        call. = FALSE
+      )
       NULL
     }
   )
@@ -60,7 +64,9 @@
   if (!is.list(loaded) || is.null(names(loaded)) || any(names(loaded) == "")) {
     if (!is.null(loaded)) {
       warning("manifest has wrong shape (expected a named list of entries), ",
-              "starting with an empty manifest", call. = FALSE)
+        "starting with an empty manifest",
+        call. = FALSE
+      )
     }
     return(list())
   }
@@ -153,8 +159,8 @@
     # turning a path into NA in the result. A corrupt manifest should
     # degrade to full re-import, not raise and not poison the file list.
     if (is.null(prev) || !is.list(prev) || is.null(prev$md5) ||
-        !is.character(prev$md5) || length(prev$md5) != 1 ||
-        is.na(prev$md5)) {
+      !is.character(prev$md5) || length(prev$md5) != 1 ||
+      is.na(prev$md5)) {
       return(TRUE)
     }
     unname(tools::md5sum(f)) != prev$md5
@@ -217,7 +223,9 @@
 .parse_metric <- function(metric_obj) {
   name <- metric_obj$name
   samples <- metric_obj$data
-  if (length(samples) == 0) return(.empty_health_long())
+  if (length(samples) == 0) {
+    return(.empty_health_long())
+  }
 
   if (name == "sleep_analysis") {
     return(.parse_sleep(samples))
@@ -269,7 +277,9 @@
 #' @return Tibble in long format with sleep_* metrics
 #' @keywords internal
 .parse_sleep <- function(samples) {
-  if (length(samples) == 0) return(.empty_health_long())
+  if (length(samples) == 0) {
+    return(.empty_health_long())
+  }
 
   # Detect format: aggregated has "totalSleep", raw has "value"
   first <- samples[[1]]
@@ -288,8 +298,10 @@
 #' @return Tibble in long format
 #' @keywords internal
 .parse_sleep_aggregated <- function(samples) {
-  sleep_fields <- c("totalSleep", "core", "deep", "rem", "awake", "inBed",
-                     "asleep")
+  sleep_fields <- c(
+    "totalSleep", "core", "deep", "rem", "awake", "inBed",
+    "asleep"
+  )
   time_fields <- c("sleepStart", "sleepEnd", "inBedStart", "inBedEnd")
 
   rows <- lapply(samples, function(s) {
@@ -298,7 +310,9 @@
 
     numeric_rows <- lapply(sleep_fields, function(f) {
       val <- s[[f]]
-      if (is.null(val)) return(NULL)
+      if (is.null(val)) {
+        return(NULL)
+      }
       tibble::tibble(
         date = d, metric = paste0("sleep_", f),
         value = as.numeric(val), source = src
@@ -307,12 +321,16 @@
 
     time_rows <- lapply(time_fields, function(f) {
       val <- s[[f]]
-      if (is.null(val) || val == "") return(NULL)
+      if (is.null(val) || val == "") {
+        return(NULL)
+      }
       parsed <- lubridate::ymd_hms(val, tz = "Europe/Stockholm", quiet = TRUE)
-      if (is.na(parsed)) return(NULL)
+      if (is.na(parsed)) {
+        return(NULL)
+      }
       hour_frac <- lubridate::hour(parsed) +
-                   lubridate::minute(parsed) / 60 +
-                   lubridate::second(parsed) / 3600
+        lubridate::minute(parsed) / 60 +
+        lubridate::second(parsed) / 3600
       tibble::tibble(
         date = d, metric = paste0("sleep_", f),
         value = hour_frac, source = src
@@ -369,11 +387,11 @@
 
   for (i in seq_len(n)) {
     s <- samples[[i]]
-    end_dates[i]   <- .coalesce_scalar(s$endDate, s$end, s$date, "")
+    end_dates[i] <- .coalesce_scalar(s$endDate, s$end, s$date, "")
     start_dates[i] <- .coalesce_scalar(s$startDate, s$start, s$date, "")
-    stages[i]      <- .coalesce_scalar(s$value, "")
-    hours[i]       <- as.numeric(.coalesce_scalar(s$qty, 0))
-    sources[i]     <- .coalesce_scalar(s$source, NA_character_)
+    stages[i] <- .coalesce_scalar(s$value, "")
+    hours[i] <- as.numeric(.coalesce_scalar(s$qty, 0))
+    sources[i] <- .coalesce_scalar(s$source, NA_character_)
   }
 
   # Assign sleep date: segments starting >= 18:00 belong to the NEXT calendar
@@ -386,12 +404,12 @@
   sleep_date <- dplyr::if_else(start_hour >= 18L, start_date + 1L, end_date)
 
   df <- tibble::tibble(
-    date   = sleep_date,
-    stage  = stages,
-    hours  = hours,
+    date = sleep_date,
+    stage = stages,
+    hours = hours,
     source = sources,
     start_ts = start_dates,
-    end_ts   = end_dates
+    end_ts = end_dates
   )
 
   # Map stages to metric names; drop unknown stages
@@ -400,7 +418,8 @@
 
   # Deduplicate identical segments (Sleep Cycle often reports duplicates)
   df <- dplyr::distinct(df, date, stage, hours, source, start_ts, end_ts,
-                         .keep_all = TRUE)
+    .keep_all = TRUE
+  )
 
   # Normalize NBSP (U+00A0) before priority matching — HAE JSON writes
   # "Apple\u00a0Watch" with NBSP but the priority list uses regular space.
@@ -449,8 +468,10 @@
   # Compute totalSleep = core + deep + rem (when staging available)
   # or inBed (when only Sleep Cycle-era data exists)
   daily <- stage_totals |>
-    tidyr::pivot_wider(names_from = metric_suffix, values_from = hours,
-                       values_fill = 0)
+    tidyr::pivot_wider(
+      names_from = metric_suffix, values_from = hours,
+      values_fill = 0
+    )
 
   # Ensure columns exist
   for (col in c("core", "deep", "rem", "asleep", "inBed")) {
@@ -461,9 +482,9 @@
     dplyr::mutate(
       totalSleep = dplyr::case_when(
         core + deep + rem > 0 ~ core + deep + rem,
-        asleep > 0            ~ asleep,
-        inBed > 0             ~ inBed,
-        TRUE                  ~ 0
+        asleep > 0 ~ asleep,
+        inBed > 0 ~ inBed,
+        TRUE ~ 0
       )
     )
 
@@ -473,7 +494,7 @@
     dplyr::group_by(date) |>
     dplyr::summarise(
       sleepStart = min(start_ts),
-      sleepEnd   = max(end_ts),
+      sleepEnd = max(end_ts),
       .groups = "drop"
     )
 
@@ -482,7 +503,7 @@
     dplyr::group_by(date) |>
     dplyr::summarise(
       inBedStart = min(start_ts),
-      inBedEnd   = max(end_ts),
+      inBedEnd = max(end_ts),
       .groups = "drop"
     )
 
@@ -502,21 +523,25 @@
 
   numeric_long <- daily |>
     dplyr::select(date, source, dplyr::all_of(numeric_cols)) |>
-    tidyr::pivot_longer(cols = dplyr::all_of(numeric_cols),
-                        names_to = "field", values_to = "value") |>
+    tidyr::pivot_longer(
+      cols = dplyr::all_of(numeric_cols),
+      names_to = "field", values_to = "value"
+    ) |>
     dplyr::mutate(metric = paste0("sleep_", field)) |>
     dplyr::select(date, metric, value, source)
 
   time_long <- if (length(time_cols) > 0) {
     daily |>
       dplyr::select(date, source, dplyr::all_of(time_cols)) |>
-      tidyr::pivot_longer(cols = dplyr::all_of(time_cols),
-                          names_to = "field", values_to = "ts") |>
+      tidyr::pivot_longer(
+        cols = dplyr::all_of(time_cols),
+        names_to = "field", values_to = "ts"
+      ) |>
       dplyr::mutate(
         parsed = lubridate::ymd_hms(ts, tz = "Europe/Stockholm", quiet = TRUE),
         value = lubridate::hour(parsed) +
-                lubridate::minute(parsed) / 60 +
-                lubridate::second(parsed) / 3600,
+          lubridate::minute(parsed) / 60 +
+          lubridate::second(parsed) / 3600,
         metric = paste0("sleep_", field)
       ) |>
       dplyr::filter(!is.na(parsed)) |>
@@ -563,8 +588,10 @@
     df <- df[!drop, ]
   }
   if (n_dropped > 0) {
-    message("  Filtrerade bort ", n_dropped,
-            " Connect-kontaminerade värden (ren AW-data fanns)")
+    message(
+      "  Filtrerade bort ", n_dropped,
+      " Connect-kontaminerade värden (ren AW-data fanns)"
+    )
   }
 
   # Drop implausible sleep values:
@@ -573,12 +600,16 @@
   is_total <- df$metric == "sleep_totalSleep"
   if (any(is_total)) {
     # Check for matching inBed values on same date/source
-    inbed_lookup <- df[df$metric == "sleep_inBed",
-                       c("date", "source", "value")]
+    inbed_lookup <- df[
+      df$metric == "sleep_inBed",
+      c("date", "source", "value")
+    ]
     names(inbed_lookup)[3] <- "inbed_val"
     total_df <- df[is_total, c("date", "source", "value")]
-    merged <- merge(total_df, inbed_lookup, by = c("date", "source"),
-                    all.x = TRUE)
+    merged <- merge(total_df, inbed_lookup,
+      by = c("date", "source"),
+      all.x = TRUE
+    )
     too_long <- is_total & df$value > 16
     too_short <- is_total &
       df$value < 2 &
@@ -587,13 +618,17 @@
     n_sleep_dropped <- sum(too_long | too_short)
     if (n_sleep_dropped > 0) {
       # Drop all sleep_* metrics for these (date, source) pairs
-      bad_keys <- paste(df$date[too_long | too_short],
-                        df$source[too_long | too_short])
+      bad_keys <- paste(
+        df$date[too_long | too_short],
+        df$source[too_long | too_short]
+      )
       is_bad_sleep <- grepl("^sleep_", df$metric) &
         paste(df$date, df$source) %in% bad_keys
-      message("  Filtrerade bort ", sum(is_bad_sleep),
-              " rader fr\u00e5n ", n_sleep_dropped,
-              " orimliga s\u00f6mnn\u00e4tter (>16h eller <2h med >4h i s\u00e4ngen)")
+      message(
+        "  Filtrerade bort ", sum(is_bad_sleep),
+        " rader fr\u00e5n ", n_sleep_dropped,
+        " orimliga s\u00f6mnn\u00e4tter (>16h eller <2h med >4h i s\u00e4ngen)"
+      )
       df <- df[!is_bad_sleep, ]
     }
   }
@@ -617,7 +652,9 @@
 #' @keywords internal
 .metric_taxonomy_path <- function() {
   pkg_path <- system.file("metric_taxonomy.json", package = "traning")
-  if (nzchar(pkg_path)) return(pkg_path)
+  if (nzchar(pkg_path)) {
+    return(pkg_path)
+  }
 
   cwd <- getwd()
   candidates <- c(
@@ -626,7 +663,9 @@
     file.path(cwd, "..", "..", "inst", "metric_taxonomy.json")
   )
   for (cand in candidates) {
-    if (file.exists(cand)) return(normalizePath(cand, mustWork = FALSE))
+    if (file.exists(cand)) {
+      return(normalizePath(cand, mustWork = FALSE))
+    }
   }
   NA_character_
 }
@@ -642,8 +681,10 @@
 .load_metric_taxonomy <- function() {
   path <- .metric_taxonomy_path()
   if (is.na(path)) {
-    stop("metric_taxonomy.json not found (system.file() and repo-relative ",
-         "fallbacks all failed)")
+    stop(
+      "metric_taxonomy.json not found (system.file() and repo-relative ",
+      "fallbacks all failed)"
+    )
   }
   jsonlite::fromJSON(path, simplifyVector = TRUE)
 }
@@ -711,11 +752,15 @@ read_canonical_file <- function(path, verbose = FALSE) {
     jsonlite::fromJSON(path, simplifyVector = FALSE),
     error = function(e) {
       warning("Kunde inte l\u00e4sa canonical-fil, hoppar \u00f6ver: ", path,
-              " (", conditionMessage(e), ")", call. = FALSE)
+        " (", conditionMessage(e), ")",
+        call. = FALSE
+      )
       NULL
     }
   )
-  if (is.null(raw)) return(.empty_health_long())
+  if (is.null(raw)) {
+    return(.empty_health_long())
+  }
 
   # Canonical format: {metric, date, units, samples}
   metric_name <- raw$metric
@@ -738,7 +783,9 @@ read_canonical_file <- function(path, verbose = FALSE) {
       first_src <- if (length(samples)) {
         s <- samples[[1]]$source
         if (is.null(s)) NA_character_ else as.character(s)
-      } else NA_character_
+      } else {
+        NA_character_
+      }
       return(tibble::tibble(
         date = as.Date(raw$date),
         metric = metric_name,
@@ -760,8 +807,10 @@ read_canonical_file <- function(path, verbose = FALSE) {
   result <- .parse_metric(metric_obj)
 
   if (verbose && nrow(result) > 0) {
-    cat("  ", basename(dirname(path)), "/", basename(path), ":",
-        nrow(result), "rader\n")
+    cat(
+      "  ", basename(dirname(path)), "/", basename(path), ":",
+      nrow(result), "rader\n"
+    )
   }
 
   result
@@ -803,7 +852,8 @@ read_health_export <- function(path, verbose = FALSE) {
       .parse_metric(m),
       error = function(e) {
         warning("Kunde inte parsa '", m$name, "': ", conditionMessage(e),
-                call. = FALSE)
+          call. = FALSE
+        )
         .empty_health_long()
       }
     )
@@ -853,17 +903,19 @@ read_health_export <- function(path, verbose = FALSE) {
 #' @return A tibble of all health data (long format), invisibly.
 #' @export
 import_health_export <- function(path = NULL, cache_path = NULL,
-                                  force = FALSE, save = TRUE,
-                                  verbose = TRUE) {
+                                 force = FALSE, save = TRUE,
+                                 verbose = TRUE) {
   if (is.null(cache_path)) cache_path <- .hae_cache_path()
 
   # Load existing cache
   existing <- load_health_data(cache_path)
   if (verbose && nrow(existing) > 0) {
-    cat("Cache:", nrow(existing), "rader,",
-        length(unique(existing$metric)), "metrics,",
-        as.character(min(existing$date)), "till",
-        as.character(max(existing$date)), "\n")
+    cat(
+      "Cache:", nrow(existing), "rader,",
+      length(unique(existing$metric)), "metrics,",
+      as.character(min(existing$date)), "till",
+      as.character(max(existing$date)), "\n"
+    )
   }
 
   # Find files to import — prefer canonical/ if it exists, else metrics/
@@ -872,22 +924,34 @@ import_health_export <- function(path = NULL, cache_path = NULL,
 
   if (is.null(path)) {
     if (use_canonical) {
-      canonical_files <- list.files(canonical_dir, pattern = "\\.json$",
-                                     full.names = TRUE, recursive = TRUE)
+      canonical_files <- list.files(canonical_dir,
+        pattern = "\\.json$",
+        full.names = TRUE, recursive = TRUE
+      )
       # Also include legacy metrics/ files (sleep spans midnight,
       # kept in legacy format)
       metrics_dir <- file.path(.hae_dir(), "metrics")
       legacy_files <- if (dir.exists(metrics_dir)) {
-        list.files(metrics_dir, pattern = "\\.json$",
-                   full.names = TRUE, recursive = FALSE)
-      } else character(0)
+        list.files(metrics_dir,
+          pattern = "\\.json$",
+          full.names = TRUE, recursive = FALSE
+        )
+      } else {
+        character(0)
+      }
       files <- c(canonical_files, legacy_files)
-      if (verbose) cat("Importerar fr\u00e5n canonical/ (", length(canonical_files),
-                       ") + metrics/ (", length(legacy_files), ")\n")
+      if (verbose) {
+        cat(
+          "Importerar fr\u00e5n canonical/ (", length(canonical_files),
+          ") + metrics/ (", length(legacy_files), ")\n"
+        )
+      }
     } else {
       metrics_dir <- file.path(.hae_dir(), "metrics")
-      files <- list.files(metrics_dir, pattern = "\\.json$",
-                          full.names = TRUE, recursive = FALSE)
+      files <- list.files(metrics_dir,
+        pattern = "\\.json$",
+        full.names = TRUE, recursive = FALSE
+      )
     }
     if (length(files) == 0) {
       cat("Inga JSON-filer att importera\n")
@@ -910,8 +974,10 @@ import_health_export <- function(path = NULL, cache_path = NULL,
     files_to_parse <- .filter_changed_files(files, manifest)
     n_skipped <- length(files) - length(files_to_parse)
     if (verbose) {
-      cat(length(files), "filer totalt,", n_skipped,
-          "oförändrade (hoppar över),", length(files_to_parse), "att importera\n")
+      cat(
+        length(files), "filer totalt,", n_skipped,
+        "oförändrade (hoppar över),", length(files_to_parse), "att importera\n"
+      )
     }
     if (length(files_to_parse) == 0) {
       cat("Alla filer redan importerade — inget att göra\n")
@@ -931,7 +997,9 @@ import_health_export <- function(path = NULL, cache_path = NULL,
   # Filter to actively used metrics (canonical files only; legacy always kept)
   n_before_filter <- length(files_to_parse)
   files_to_parse <- Filter(function(f) {
-    if (!grepl("/canonical/", f, fixed = TRUE)) return(TRUE)
+    if (!grepl("/canonical/", f, fixed = TRUE)) {
+      return(TRUE)
+    }
     basename(dirname(f)) %in% .import_metrics
   }, files_to_parse)
   n_filtered <- n_before_filter - length(files_to_parse)
@@ -973,9 +1041,11 @@ import_health_export <- function(path = NULL, cache_path = NULL,
   is_sleep <- grepl("^sleep_", combined$metric)
   combined$.src_rank <- NA_integer_
   combined$.src_rank[is_sleep] <- match(
-    combined$source[is_sleep], .sleep_source_priority)
+    combined$source[is_sleep], .sleep_source_priority
+  )
   combined$.src_rank[!is_sleep] <- match(
-    combined$source[!is_sleep], .source_priority)
+    combined$source[!is_sleep], .source_priority
+  )
   combined$.src_rank[is.na(combined$.src_rank)] <- 99L
   health_daily <- combined |>
     dplyr::arrange(date, metric, .src_rank) |>
@@ -993,10 +1063,14 @@ import_health_export <- function(path = NULL, cache_path = NULL,
 
   n_new <- nrow(health_daily) - nrow(existing)
   if (verbose) {
-    cat("Resultat:", nrow(health_daily), "rader",
-        "(", n_new, "nya)\n")
-    cat("Period:", as.character(min(health_daily$date)), "till",
-        as.character(max(health_daily$date)), "\n")
+    cat(
+      "Resultat:", nrow(health_daily), "rader",
+      "(", n_new, "nya)\n"
+    )
+    cat(
+      "Period:", as.character(min(health_daily$date)), "till",
+      as.character(max(health_daily$date)), "\n"
+    )
     cat("Metrics:", length(unique(health_daily$metric)), "\n")
   }
 
@@ -1084,16 +1158,18 @@ pivot_health_wide <- function(health_daily, metrics = NULL) {
 #' @return A wide tibble with readiness metrics per day.
 #' @export
 get_readiness <- function(health_daily, after = NULL, before = NULL) {
-  readiness_metrics <- c("resting_heart_rate", "heart_rate_variability",
-                          "sleep_totalSleep", "sleep_deep", "sleep_rem",
-                          "sleep_core", "sleep_awake",
-                          "blood_oxygen_saturation", "respiratory_rate",
-                          "apple_sleeping_wrist_temperature")
+  readiness_metrics <- c(
+    "resting_heart_rate", "heart_rate_variability",
+    "sleep_totalSleep", "sleep_deep", "sleep_rem",
+    "sleep_core", "sleep_awake",
+    "blood_oxygen_saturation", "respiratory_rate",
+    "apple_sleeping_wrist_temperature"
+  )
 
   df <- health_daily |>
     dplyr::filter(metric %in% readiness_metrics)
 
-  if (!is.null(after))  df <- df |> dplyr::filter(date >= as.Date(after))
+  if (!is.null(after)) df <- df |> dplyr::filter(date >= as.Date(after))
   if (!is.null(before)) df <- df |> dplyr::filter(date <= as.Date(before))
 
   wide <- df |>
@@ -1164,10 +1240,10 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
 
 # Tier 2: daily metrics — report if significant vs 7d average
 .tier2_thresholds <- list(
-  heart_rate_variability = 5,    # ms
-  resting_heart_rate     = 4,    # bpm
-  sleep_totalSleep       = 0.5,  # hours
-  sleep_deep             = 0.3   # hours
+  heart_rate_variability = 5, # ms
+  resting_heart_rate     = 4, # bpm
+  sleep_totalSleep       = 0.5, # hours
+  sleep_deep             = 0.3 # hours
 )
 
 # Tier 3: high-frequency, low-insight — never report
@@ -1265,7 +1341,9 @@ get_readiness <- function(health_daily, after = NULL, before = NULL) {
 #' @return Character string. Empty string if no meaningful changes.
 #' @export
 health_insight_delta <- function(before, after) {
-  if (is.null(after) || nrow(after) == 0) return("")
+  if (is.null(after) || nrow(after) == 0) {
+    return("")
+  }
 
   # Find changed (date, metric) pairs
   after_key <- after |>
@@ -1273,13 +1351,18 @@ health_insight_delta <- function(before, after) {
   before_key <- if (nrow(before) > 0) {
     before |> dplyr::select(date, metric, value)
   } else {
-    tibble::tibble(date = as.Date(character()), metric = character(),
-                   value = numeric())
+    tibble::tibble(
+      date = as.Date(character()), metric = character(),
+      value = numeric()
+    )
   }
 
   changed <- dplyr::anti_join(after_key, before_key,
-                               by = c("date", "metric", "value"))
-  if (nrow(changed) == 0) return("")
+    by = c("date", "metric", "value")
+  )
+  if (nrow(changed) == 0) {
+    return("")
+  }
 
   # Focus on latest date
 
@@ -1297,7 +1380,7 @@ health_insight_delta <- function(before, after) {
     if (m %in% .pass_metrics) next
 
     label <- if (m %in% names(.metric_labels)) .metric_labels[[m]] else m
-    unit  <- if (m %in% names(.metric_units)) .metric_units[[m]] else ""
+    unit <- if (m %in% names(.metric_units)) .metric_units[[m]] else ""
     unit_str <- if (nzchar(unit)) paste0(" ", unit) else ""
 
     if (m %in% .tier1_metrics) {
@@ -1318,8 +1401,10 @@ health_insight_delta <- function(before, after) {
 
       # Sleep < 5.5h always flags
       if (m == "sleep_totalSleep" && !is.na(v) && v < 5.5) {
-        parts <- c(parts, paste0(label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str,
-                                  " (kort natt)"))
+        parts <- c(parts, paste0(
+          label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str,
+          " (kort natt)"
+        ))
         next
       }
 
@@ -1327,9 +1412,11 @@ health_insight_delta <- function(before, after) {
         delta <- v - avg7d
         if (abs(delta) >= threshold) {
           sign_str <- if (delta > 0) "+" else ""
-          parts <- c(parts, paste0(label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str,
-                                    " (", sign_str, fmt_dec_sv(delta, trim_zero = TRUE),
-                                    " vs 7d)"))
+          parts <- c(parts, paste0(
+            label, " ", fmt_dec_sv(v, trim_zero = TRUE), unit_str,
+            " (", sign_str, fmt_dec_sv(delta, trim_zero = TRUE),
+            " vs 7d)"
+          ))
         }
       } else {
         # No history — report as new
@@ -1341,7 +1428,9 @@ health_insight_delta <- function(before, after) {
     }
   }
 
-  if (length(parts) == 0) return("")
+  if (length(parts) == 0) {
+    return("")
+  }
 
   date_str <- format(focus_date, "%e %b") |> trimws()
   paste0("H\u00e4lsa ", date_str, ": ", paste(parts, collapse = ", "))
@@ -1387,19 +1476,26 @@ health_insight_delta <- function(before, after) {
 #'
 #' @keywords internal
 .readiness_for_insight <- function(health_daily, summaries, on_date = NULL,
-                                    hr_max = NULL, hr_rest = NULL) {
-  if (is.null(health_daily) || nrow(health_daily) == 0) return(NULL)
+                                   hr_max = NULL, hr_rest = NULL) {
+  if (is.null(health_daily) || nrow(health_daily) == 0) {
+    return(NULL)
+  }
   r <- tryCatch(
     compute_readiness(health_daily, summaries,
-                       hr_max = hr_max, hr_rest = hr_rest),
+      hr_max = hr_max, hr_rest = hr_rest
+    ),
     error = function(e) NULL
   )
-  if (is.null(r) || nrow(r) == 0) return(NULL)
+  if (is.null(r) || nrow(r) == 0) {
+    return(NULL)
+  }
 
   if (is.null(on_date)) on_date <- max(r$date)
   on_date <- as.Date(on_date)
   row <- r[r$date == on_date, , drop = FALSE]
-  if (nrow(row) == 0) return(NULL)
+  if (nrow(row) == 0) {
+    return(NULL)
+  }
 
   # Raw HRV in ms (prose uses ms, not ln_rmssd)
   hrv_today <- health_daily |>
@@ -1408,15 +1504,19 @@ health_insight_delta <- function(before, after) {
   hrv_today <- if (length(hrv_today) >= 1) mean(hrv_today, na.rm = TRUE) else NA_real_
 
   hrv_7d <- health_daily |>
-    dplyr::filter(metric == "heart_rate_variability",
-                  date >= on_date - 7, date < on_date) |>
+    dplyr::filter(
+      metric == "heart_rate_variability",
+      date >= on_date - 7, date < on_date
+    ) |>
     dplyr::pull(value)
   hrv_7d_mean <- if (length(hrv_7d) >= 2) mean(hrv_7d, na.rm = TRUE) else NA_real_
 
   # Raw sleep 7d mean
   sleep_7d <- health_daily |>
-    dplyr::filter(metric == "sleep_totalSleep",
-                  date >= on_date - 7, date < on_date) |>
+    dplyr::filter(
+      metric == "sleep_totalSleep",
+      date >= on_date - 7, date < on_date
+    ) |>
     dplyr::pull(value)
   sleep_7d_mean <- if (length(sleep_7d) >= 2) mean(sleep_7d, na.rm = TRUE) else NA_real_
 
@@ -1436,16 +1536,22 @@ health_insight_delta <- function(before, after) {
   list(
     hrv = list(
       value = if (is.finite(ctx$hrv_ms)) round(ctx$hrv_ms, 0) else NA_real_,
-      delta = if (is.finite(ctx$hrv_ms) && is.finite(ctx$hrv_ms_7d))
-                round(ctx$hrv_ms - ctx$hrv_ms_7d, 0) else NA_real_,
-      flag  = isTRUE(row$hrv_flag),
+      delta = if (is.finite(ctx$hrv_ms) && is.finite(ctx$hrv_ms_7d)) {
+        round(ctx$hrv_ms - ctx$hrv_ms_7d, 0)
+      } else {
+        NA_real_
+      },
+      flag = isTRUE(row$hrv_flag),
       score = row$hrv_score
     ),
     sleep = list(
       value = if (is.finite(row$sleep_total)) round(row$sleep_total, 1) else NA_real_,
-      delta = if (is.finite(row$sleep_total) && is.finite(ctx$sleep_7d))
-                round(row$sleep_total - ctx$sleep_7d, 1) else NA_real_,
-      flag  = isTRUE(row$sleep_flag),
+      delta = if (is.finite(row$sleep_total) && is.finite(ctx$sleep_7d)) {
+        round(row$sleep_total - ctx$sleep_7d, 1)
+      } else {
+        NA_real_
+      },
+      flag = isTRUE(row$sleep_flag),
       score = row$sleep_score
     ),
     rhr = list(
@@ -1463,12 +1569,17 @@ health_insight_delta <- function(before, after) {
     wrist_temp = if ("wrist_temp" %in% names(row) && is.finite(row$wrist_temp)) {
       list(
         value = round(row$wrist_temp, 1),
-        delta = if (is.finite(row$wrist_temp_deviation))
-                  round(row$wrist_temp_deviation, 2) else NA_real_,
-        flag  = isTRUE(row$wrist_temp_flag),
+        delta = if (is.finite(row$wrist_temp_deviation)) {
+          round(row$wrist_temp_deviation, 2)
+        } else {
+          NA_real_
+        },
+        flag = isTRUE(row$wrist_temp_flag),
         score = row$wrist_temp_score
       )
-    } else NULL
+    } else {
+      NULL
+    }
   )
 }
 
@@ -1478,7 +1589,9 @@ health_insight_delta <- function(before, after) {
 .render_component <- function(name, c, kind = c("neg", "pos", "ok")) {
   kind <- match.arg(kind)
   spec <- .readiness_components[[name]]
-  if (is.null(spec) || is.null(c) || is.na(c$value)) return(NA_character_)
+  if (is.null(spec) || is.null(c) || is.na(c$value)) {
+    return(NA_character_)
+  }
 
   # Load: always neutral label unless flagged. "L\u00e5g belastning" can mean rest,
   # which doesn't necessarily warrant a positive callout.
@@ -1491,7 +1604,7 @@ health_insight_delta <- function(before, after) {
   # down \u2014 i.e. delta >= 0 (positive OR exactly normal). The flag
   # still keeps the line in "Drar ner".
   if (name == "sleep" && kind == "neg" &&
-      !is.na(c$delta) && c$delta >= 0) {
+    !is.na(c$delta) && c$delta >= 0) {
     kind <- "ok"
   }
 
@@ -1506,13 +1619,20 @@ health_insight_delta <- function(before, after) {
 
   # Drop the "vs Xd" suffix when delta rounds to zero \u2014 adds no information
   delta_meaningful <- !is.na(c$delta) &&
-    abs(c$delta) >= switch(name, hrv = 1, sleep = 0.1, rhr = 0.5,
-                            wrist_temp = 0.05, 0)
+    abs(c$delta) >= switch(name,
+      hrv = 1,
+      sleep = 0.1,
+      rhr = 0.5,
+      wrist_temp = 0.05,
+      0
+    )
   if (delta_meaningful) {
     sign_str <- if (c$delta > 0) "+" else ""
-    paste0(label, " (", val_str, unit_str, ", ", sign_str,
-           fmt_dec_sv(c$delta, digits = spec$digits), " ",
-           spec$baseline_label, ")")
+    paste0(
+      label, " (", val_str, unit_str, ", ", sign_str,
+      fmt_dec_sv(c$delta, digits = spec$digits), " ",
+      spec$baseline_label, ")"
+    )
   } else {
     paste0(label, " (", val_str, unit_str, ")")
   }
@@ -1530,35 +1650,42 @@ health_insight_delta <- function(before, after) {
 # sports (gym/strength rows that have sessions but no kilometres) are
 # dropped — listing "styrketräning 0.0 km" in the push reads as noise.
 .recent_sport_activity <- function(summaries, on_date, hours = 24L) {
-  if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
+  if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0) {
     return(NULL)
-  if (!all(c("sport", "sessionStart", "distance") %in% names(summaries)))
+  }
+  if (!all(c("sport", "sessionStart", "distance") %in% names(summaries))) {
     return(NULL)
-  end_ts   <- as.POSIXct(as.character(on_date),
-                          format = "%Y-%m-%d", tz = "UTC") +
-              as.difftime(1, units = "days")
+  }
+  end_ts <- as.POSIXct(as.character(on_date),
+    format = "%Y-%m-%d", tz = "UTC"
+  ) +
+    as.difftime(1, units = "days")
   start_ts <- end_ts - as.difftime(hours, units = "hours")
 
   recent <- summaries[
     !is.na(summaries$sessionStart) &
       summaries$sessionStart >= start_ts &
-      summaries$sessionStart <  end_ts &
-      !is.na(summaries$sport),
-    , drop = FALSE
+      summaries$sessionStart < end_ts &
+      !is.na(summaries$sport), ,
+    drop = FALSE
   ]
-  if (nrow(recent) == 0) return(NULL)
+  if (nrow(recent) == 0) {
+    return(NULL)
+  }
 
   agg <- by(recent, recent$sport, function(d) {
     data.frame(
-      sport    = d$sport[1],
+      sport = d$sport[1],
       sessions = nrow(d),
-      km       = sum(as.numeric(d$distance), na.rm = TRUE) / 1000,
+      km = sum(as.numeric(d$distance), na.rm = TRUE) / 1000,
       stringsAsFactors = FALSE
     )
   })
   out <- do.call(rbind, agg)
   out <- out[!is.na(out$km) & out$km >= 0.1, , drop = FALSE]
-  if (nrow(out) == 0) return(NULL)
+  if (nrow(out) == 0) {
+    return(NULL)
+  }
   rownames(out) <- NULL
   out[order(-out$km), , drop = FALSE]
 }
@@ -1575,23 +1702,27 @@ health_insight_delta <- function(before, after) {
 # When NULL, total_trimp falls back to NA (the recap then falls through
 # to km-delta).
 .weekly_sport_aggregate <- function(summaries, on_date, week_offset = 0L,
-                                     daily_trimp = NULL) {
-  if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0)
+                                    daily_trimp = NULL) {
+  if (is.null(summaries) || !is.data.frame(summaries) || nrow(summaries) == 0) {
     return(NULL)
+  }
   # Required columns for the per-sport aggregation. Mirrors the guard
   # in .recent_sport_activity() — partial/legacy caches can omit any
   # of these and would otherwise crash on $-indexing below.
-  if (!all(c("sessionStart", "sport", "distance") %in% names(summaries)))
+  if (!all(c("sessionStart", "sport", "distance") %in% names(summaries))) {
     return(NULL)
+  }
   ref <- as.Date(on_date) + (week_offset * 7L)
   # ISO week: Monday start. as.POSIXlt$wday returns 0 (Sun) .. 6 (Sat).
   wday <- as.POSIXlt(ref)$wday
   monday_offset <- if (wday == 0L) 6L else (wday - 1L)
   monday <- ref - monday_offset
-  end_ts   <- as.POSIXct(as.character(monday + 7L),
-                          format = "%Y-%m-%d", tz = "UTC")
+  end_ts <- as.POSIXct(as.character(monday + 7L),
+    format = "%Y-%m-%d", tz = "UTC"
+  )
   start_ts <- as.POSIXct(as.character(monday),
-                          format = "%Y-%m-%d", tz = "UTC")
+    format = "%Y-%m-%d", tz = "UTC"
+  )
 
   # Sum the precomputed daily TRIMP into a single weekly scalar.
   # `daily_trimp` carries the caller's HR anchors so the recap stays
@@ -1599,8 +1730,8 @@ health_insight_delta <- function(before, after) {
   # passed explicitly.
   total_trimp <- NA_real_
   if (!is.null(daily_trimp) && is.data.frame(daily_trimp) &&
-      nrow(daily_trimp) > 0 &&
-      all(c("date", "daily_trimp") %in% names(daily_trimp))) {
+    nrow(daily_trimp) > 0 &&
+    all(c("date", "daily_trimp") %in% names(daily_trimp))) {
     # Drop NA dates up front — they leak through compute_trimp() when a
     # session has NA sessionStart, and would otherwise make
     # `daily_trimp$date >= monday` return NA and crash the if() below
@@ -1609,7 +1740,7 @@ health_insight_delta <- function(before, after) {
     if (any(valid)) {
       dt <- daily_trimp[valid, , drop = FALSE]
       in_week <- dt$date >= as.Date(monday) &
-                 dt$date <  as.Date(monday + 7L)
+        dt$date < as.Date(monday + 7L)
       if (any(in_week)) {
         week_vals <- dt$daily_trimp[in_week]
         if (any(!is.na(week_vals))) total_trimp <- sum(week_vals, na.rm = TRUE)
@@ -1620,24 +1751,26 @@ health_insight_delta <- function(before, after) {
   rows <- summaries[
     !is.na(summaries$sessionStart) &
       summaries$sessionStart >= start_ts &
-      summaries$sessionStart <  end_ts &
-      !is.na(summaries$sport),
-    , drop = FALSE
+      summaries$sessionStart < end_ts &
+      !is.na(summaries$sport), ,
+    drop = FALSE
   ]
   if (nrow(rows) == 0) {
     return(list(
-      iso_week    = format(monday, "%G-W%V"),
-      total_km    = 0,
+      iso_week = format(monday, "%G-W%V"),
+      total_km = 0,
       total_trimp = total_trimp,
-      per_sport   = data.frame(sport = character(0), sessions = integer(0),
-                                km = numeric(0), stringsAsFactors = FALSE)
+      per_sport = data.frame(
+        sport = character(0), sessions = integer(0),
+        km = numeric(0), stringsAsFactors = FALSE
+      )
     ))
   }
   agg <- by(rows, rows$sport, function(d) {
     data.frame(
-      sport    = d$sport[1],
+      sport = d$sport[1],
       sessions = nrow(d),
-      km       = sum(as.numeric(d$distance), na.rm = TRUE) / 1000,
+      km = sum(as.numeric(d$distance), na.rm = TRUE) / 1000,
       stringsAsFactors = FALSE
     )
   })
@@ -1659,14 +1792,21 @@ health_insight_delta <- function(before, after) {
 # Format a single distance for in-line text (one decimal under 10, integer
 # from 10 km).
 .fmt_km <- function(km) {
-  if (is.na(km)) return("")
-  if (km >= 10) format(round(km), big.mark = "")
-  else fmt_dec_sv(km)
+  if (is.na(km)) {
+    return("")
+  }
+  if (km >= 10) {
+    format(round(km), big.mark = "")
+  } else {
+    fmt_dec_sv(km)
+  }
 }
 
 # Build the "Senaste dygnet: löpning 8.1 km, gång 4.2 km." line, or NULL.
 .format_recent_activity_line <- function(activity) {
-  if (is.null(activity) || nrow(activity) == 0) return(NULL)
+  if (is.null(activity) || nrow(activity) == 0) {
+    return(NULL)
+  }
   parts <- vapply(seq_len(nrow(activity)), function(i) {
     sport <- tolower(.sport_label_sv(activity$sport[i]))
     paste0(sport, " ", .fmt_km(activity$km[i]), " km")
@@ -1678,12 +1818,18 @@ health_insight_delta <- function(before, after) {
 # for inline references like "mot v.19". Returns NULL when the slot
 # is missing or malformed so callers can fall back on neutral wording.
 .iso_week_number <- function(iso_week) {
-  if (is.null(iso_week) || is.na(iso_week)) return(NULL)
+  if (is.null(iso_week) || is.na(iso_week)) {
+    return(NULL)
+  }
   parts <- strsplit(as.character(iso_week), "W", fixed = TRUE)[[1]]
-  if (length(parts) != 2L) return(NULL)
+  if (length(parts) != 2L) {
+    return(NULL)
+  }
   num <- suppressWarnings(as.integer(parts[2]))
-  if (is.na(num)) return(NULL)
-  as.character(num)  # drops the leading zero in "05" -> "5"
+  if (is.na(num)) {
+    return(NULL)
+  }
+  as.character(num) # drops the leading zero in "05" -> "5"
 }
 
 # Build the displayed numbers for one week's recap: a single rounded
@@ -1701,8 +1847,10 @@ health_insight_delta <- function(before, after) {
   per <- weekly$per_sport
   total_km <- weekly$total_km
   if (is.null(per) || nrow(per) == 0) {
-    return(list(per_str = character(0), total_num = total_km,
-                total_str = .fmt_km(total_km)))
+    return(list(
+      per_str = character(0), total_num = total_km,
+      total_str = .fmt_km(total_km)
+    ))
   }
   if (!is.finite(total_km) || total_km < 10) {
     # Under 10 km the line renders one-decimal precision throughout
@@ -1717,8 +1865,10 @@ health_insight_delta <- function(before, after) {
     # next to per-sport entries still rendered with one decimal, so
     # the line would read "10 km (sport 5.0, sport 5.0)" with mixed
     # precision.
-    return(list(per_str = per_str, total_num = total_num,
-                total_str = fmt_dec_sv(total_num)))
+    return(list(
+      per_str = per_str, total_num = total_num,
+      total_str = fmt_dec_sv(total_num)
+    ))
   }
   use_decimal <- per$km < 1
   per_num <- ifelse(use_decimal, round(per$km, 1), round(per$km))
@@ -1726,16 +1876,22 @@ health_insight_delta <- function(before, after) {
   # precision for the whole vector, which would force "50.0" alongside
   # "0.3" rather than "50" alongside "0.3".
   per_str <- vapply(seq_along(per_num), function(i) {
-    if (use_decimal[i]) fmt_dec_sv(per_num[i])
-    else format(per_num[i], big.mark = "", trim = TRUE)
+    if (use_decimal[i]) {
+      fmt_dec_sv(per_num[i])
+    } else {
+      format(per_num[i], big.mark = "", trim = TRUE)
+    }
   }, character(1))
   total_num <- sum(per_num)
   # If any per-sport entry is sub-1 we render it with one decimal, so
   # the total has to match that precision — otherwise "50.3 km
   # (löpning 50, styrketräning 0.3)" would print as "50 km (...)"
   # and lose the .3 from the sum.
-  total_str <- if (any(use_decimal)) fmt_dec_sv(total_num) else
-               format(round(total_num), big.mark = "", trim = TRUE)
+  total_str <- if (any(use_decimal)) {
+    fmt_dec_sv(total_num)
+  } else {
+    format(round(total_num), big.mark = "", trim = TRUE)
+  }
   list(per_str = per_str, total_num = total_num, total_str = total_str)
 }
 
@@ -1744,8 +1900,10 @@ health_insight_delta <- function(before, after) {
 # easy cycling km doesn't outrank a hard running week — falls back to
 # km-delta when no HR-anchored TRIMP is available.
 .format_weekly_summary_line <- function(weekly, previous = NULL,
-                                         prefix = "Förra veckan") {
-  if (is.null(weekly) || weekly$total_km < 0.1) return(NULL)
+                                        prefix = "Förra veckan") {
+  if (is.null(weekly) || weekly$total_km < 0.1) {
+    return(NULL)
+  }
   per <- weekly$per_sport
   n_sports <- nrow(per)
   disp <- .weekly_recap_display(weekly)
@@ -1756,40 +1914,51 @@ health_insight_delta <- function(before, after) {
   } else if (n_sports == 2) {
     s1 <- tolower(.sport_label_sv(per$sport[1]))
     s2 <- tolower(.sport_label_sv(per$sport[2]))
-    paste0(disp$total_str, " km (", s1, " ", disp$per_str[1],
-           ", ", s2, " ", disp$per_str[2], ")")
+    paste0(
+      disp$total_str, " km (", s1, " ", disp$per_str[1],
+      ", ", s2, " ", disp$per_str[2], ")"
+    )
   } else {
     detail <- vapply(seq_len(n_sports), function(i) {
       paste0(tolower(.sport_label_sv(per$sport[i])), " ", disp$per_str[i])
     }, character(1))
-    paste0(disp$total_str, " km över ", n_sports, " sporter (",
-           paste(detail, collapse = ", "), ")")
+    paste0(
+      disp$total_str, " km över ", n_sports, " sporter (",
+      paste(detail, collapse = ", "), ")"
+    )
   }
 
   delta_part <- ""
   if (!is.null(previous)) {
     prev_week_num <- .iso_week_number(previous$iso_week)
-    prev_label <- if (is.null(prev_week_num)) "veckan innan" else
-                  paste0("v.", prev_week_num)
+    prev_label <- if (is.null(prev_week_num)) {
+      "veckan innan"
+    } else {
+      paste0("v.", prev_week_num)
+    }
 
     prev_trimp <- previous$total_trimp
-    cur_trimp  <- weekly$total_trimp
+    cur_trimp <- weekly$total_trimp
     have_trimp <- !is.null(prev_trimp) && !is.null(cur_trimp) &&
-                  is.finite(prev_trimp) && is.finite(cur_trimp) &&
-                  prev_trimp > 0
+      is.finite(prev_trimp) && is.finite(cur_trimp) &&
+      prev_trimp > 0
 
     if (have_trimp) {
       pct <- (cur_trimp - prev_trimp) / prev_trimp * 100
       if (abs(pct) >= 5) {
         sign_str <- if (pct > 0) "+" else "-"
-        delta_part <- paste0(" ", sign_str, round(abs(pct)),
-                              " % belastning mot ", prev_label, ".")
+        delta_part <- paste0(
+          " ", sign_str, round(abs(pct)),
+          " % belastning mot ", prev_label, "."
+        )
       } else {
-        delta_part <- paste0(" Som ", prev_label,
-                              " belastningsmässigt.")
+        delta_part <- paste0(
+          " Som ", prev_label,
+          " belastningsmässigt."
+        )
       }
     } else if (!is.null(previous$total_km) &&
-               is.finite(previous$total_km)) {
+      is.finite(previous$total_km)) {
       # Compute the delta off the displayed totals so a week that
       # shows as "20 km" doesn't read as "-1.4 km mot v.X" because
       # raw totals (19 vs 20.4) say something different from what
@@ -1801,8 +1970,10 @@ health_insight_delta <- function(before, after) {
       diff_km <- round(disp$total_num - prev_disp$total_num, 1)
       if (abs(diff_km) >= 0.5) {
         sign_str <- if (diff_km > 0) "+" else "-"
-        delta_part <- paste0(" ", sign_str, .fmt_km(abs(diff_km)),
-                              " km mot ", prev_label, ".")
+        delta_part <- paste0(
+          " ", sign_str, .fmt_km(abs(diff_km)),
+          " km mot ", prev_label, "."
+        )
       } else {
         delta_part <- paste0(" Som ", prev_label, ".")
       }
@@ -1822,12 +1993,16 @@ health_insight_delta <- function(before, after) {
 # caller passes explicit overrides — otherwise the two lines in the
 # same Monday push could disagree about how the week's load looked.
 .weekly_line_for_date <- function(summaries, on_date,
-                                   notify_sport = TRUE,
-                                   hr_max = NULL, hr_rest = NULL,
-                                   health_daily = NULL) {
-  if (!isTRUE(notify_sport)) return(NULL)
-  wday <- as.POSIXlt(as.Date(on_date))$wday  # 0=Sun, 1=Mon ... 6=Sat
-  if (wday != 1L) return(NULL)
+                                  notify_sport = TRUE,
+                                  hr_max = NULL, hr_rest = NULL,
+                                  health_daily = NULL) {
+  if (!isTRUE(notify_sport)) {
+    return(NULL)
+  }
+  wday <- as.POSIXlt(as.Date(on_date))$wday # 0=Sun, 1=Mon ... 6=Sat
+  if (wday != 1L) {
+    return(NULL)
+  }
   # compute_trimp() drives the load delta but errors on NULL summaries
   # or a stub data.frame without the expected columns (which
   # my_dbs_load() can return on a fresh cache). Treat that as "no
@@ -1839,17 +2014,23 @@ health_insight_delta <- function(before, after) {
   # just logged workouts.
   required_cols <- c("sessionStart", "avgHeartRateMoving", "durationMoving")
   daily_trimp <- if (is.null(summaries) || !is.data.frame(summaries) ||
-                      nrow(summaries) == 0 ||
-                      !all(required_cols %in% names(summaries))) {
+    nrow(summaries) == 0 ||
+    !all(required_cols %in% names(summaries))) {
     NULL
   } else {
-    compute_trimp(summaries, hr_max = hr_max, hr_rest = hr_rest,
-                  health_daily = health_daily)
+    compute_trimp(summaries,
+      hr_max = hr_max, hr_rest = hr_rest,
+      health_daily = health_daily
+    )
   }
-  last <- .weekly_sport_aggregate(summaries, on_date, week_offset = -1L,
-                                   daily_trimp = daily_trimp)
-  prev <- .weekly_sport_aggregate(summaries, on_date, week_offset = -2L,
-                                   daily_trimp = daily_trimp)
+  last <- .weekly_sport_aggregate(summaries, on_date,
+    week_offset = -1L,
+    daily_trimp = daily_trimp
+  )
+  prev <- .weekly_sport_aggregate(summaries, on_date,
+    week_offset = -2L,
+    daily_trimp = daily_trimp
+  )
   .format_weekly_summary_line(last, prev, prefix = "Förra veckan")
 }
 
@@ -1883,15 +2064,17 @@ health_insight_delta <- function(before, after) {
   absent <- function(x) is.null(x) || length(x) == 0L || is.na(x)
 
   missing <- character()
-  if (absent(comps$hrv$value))   missing <- c(missing, "HRV")
+  if (absent(comps$hrv$value)) missing <- c(missing, "HRV")
   if (absent(comps$sleep$value)) missing <- c(missing, "sömn")
-  if (absent(comps$rhr$value))   missing <- c(missing, "vilopuls")
+  if (absent(comps$rhr$value)) missing <- c(missing, "vilopuls")
 
   suffix <- ""
   if (isTRUE(kvalitet %in% c("partial", "minimal"))) {
     suffix <- if (length(missing) > 0) {
-      paste0(" (", kvalitet, ", ", paste(missing, collapse = "/"),
-             " saknas än)")
+      paste0(
+        " (", kvalitet, ", ", paste(missing, collapse = "/"),
+        " saknas än)"
+      )
     } else {
       paste0(" (", kvalitet, ")")
     }
@@ -1921,12 +2104,14 @@ health_insight_delta <- function(before, after) {
 #'   notify-state tracking).
 #' @export
 health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
-                                      on_date = NULL) {
+                                     on_date = NULL) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
-  ctx <- .readiness_for_insight(health_daily, summaries, on_date,
-                                 hr_max, hr_rest)
+  ctx <- .readiness_for_insight(
+    health_daily, summaries, on_date,
+    hr_max, hr_rest
+  )
   if (is.null(ctx)) {
     # No readiness verdict is computable — but the alcohol account needs
     # none. A morning where the watch uploaded nothing is exactly the
@@ -1936,16 +2121,24 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
     fallback_date <- if (is.null(on_date)) {
       if (!is.null(health_daily) && nrow(health_daily) > 0) {
         max(as.Date(health_daily$date), na.rm = TRUE)
-      } else NA
-    } else as.Date(on_date)
+      } else {
+        NA
+      }
+    } else {
+      as.Date(on_date)
+    }
     alcohol_only <- if (!is.na(fallback_date)) {
       .alcohol_notification_lines(health_daily, summaries, fallback_date)
-    } else character()
-    return(list(prosa = paste(alcohol_only, collapse = " "),
-                datum = if (length(alcohol_only) > 0) fallback_date else NA,
-                status = NA_character_,
-                score = NA_real_, kvalitet = NA_character_,
-                components = list(), components_present = list()))
+    } else {
+      character()
+    }
+    return(list(
+      prosa = paste(alcohol_only, collapse = " "),
+      datum = if (length(alcohol_only) > 0) fallback_date else NA,
+      status = NA_character_,
+      score = NA_real_, kvalitet = NA_character_,
+      components = list(), components_present = list()
+    ))
   }
   row <- ctx$row
   comps <- .readiness_component_summary(ctx)
@@ -1958,13 +2151,16 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   # iPhone push carries its own timestamp). Coloured ball matches the
   # Status word so the state is readable at a glance.
   ball <- switch(status %||% "",
-                 "Gr\u00f6n" = "\U0001F7E2",
-                 "Gul"  = "\U0001F7E1",
-                 "R\u00f6d"  = "\U0001F534",
-                 "")
+    "Gr\u00f6n" = "\U0001F7E2",
+    "Gul" = "\U0001F7E1",
+    "R\u00f6d" = "\U0001F534",
+    ""
+  )
   if (!is.na(status) && !is.na(score)) {
-    header <- paste0("Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
-                      status, " ", score)
+    header <- paste0(
+      "Dagsform ", if (nzchar(ball)) paste0(ball, " ") else "",
+      status, " ", score
+    )
     header <- paste0(header, .readiness_quality_note(kvalitet, comps)$suffix)
     header <- paste0(header, ".")
   } else {
@@ -1992,10 +2188,12 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   }
 
   parts <- c(header)
-  if (length(drar_ner) > 0)
+  if (length(drar_ner) > 0) {
     parts <- c(parts, paste0("Drar ner: ", paste(drar_ner, collapse = ", "), "."))
-  if (length(ok_parts) > 0)
+  }
+  if (length(ok_parts) > 0) {
     parts <- c(parts, paste0("OK: ", paste(ok_parts, collapse = ", "), "."))
+  }
 
   # Sport-aware additions: last-24h activity + Monday weekly recap.
   # Both are silent when there's nothing useful to say, and opt-out
@@ -2007,10 +2205,11 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
     if (!is.null(activity_line)) parts <- c(parts, activity_line)
 
     weekly_line <- .weekly_line_for_date(summaries, row$date,
-                                          notify_sport = TRUE,
-                                          hr_max = hr_max,
-                                          hr_rest = hr_rest,
-                                          health_daily = health_daily)
+      notify_sport = TRUE,
+      hr_max = hr_max,
+      hr_rest = hr_rest,
+      health_daily = health_daily
+    )
     if (!is.null(weekly_line)) parts <- c(parts, weekly_line)
   }
 
@@ -2028,8 +2227,10 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   # carry their own, since silencing the streak and ACWR lines is a
   # different decision from silencing the energy account. Both are
   # silent on a dry night, so this cannot turn into a daily fixture.
-  parts <- c(parts, .alcohol_notification_lines(health_daily, summaries,
-                                                 row$date))
+  parts <- c(parts, .alcohol_notification_lines(
+    health_daily, summaries,
+    row$date
+  ))
 
   prosa <- paste(parts, collapse = " ")
 
@@ -2088,21 +2289,29 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
 #'   plus the same fields as \code{health_insight_readiness} when re-rendering.
 #' @export
 health_insight_update <- function(data, prev_state,
-                                   hr_max = NULL, hr_rest = NULL,
-                                   on_date = NULL) {
+                                  hr_max = NULL, hr_rest = NULL,
+                                  on_date = NULL) {
   td <- .as_traning_data(data)
   health_daily <- td@health_daily
-  empty <- list(prosa = "", trigger = "", datum = NA, status = NA_character_,
-                score = NA_real_, kvalitet = NA_character_,
-                components = list(), components_present = list(),
-                tier1_metric = NA_character_)
+  empty <- list(
+    prosa = "", trigger = "", datum = NA, status = NA_character_,
+    score = NA_real_, kvalitet = NA_character_,
+    components = list(), components_present = list(),
+    tier1_metric = NA_character_
+  )
 
-  if (is.null(prev_state) || is.null(prev_state$date)) return(empty)
+  if (is.null(prev_state) || is.null(prev_state$date)) {
+    return(empty)
+  }
   current <- health_insight_readiness(td, hr_max, hr_rest, on_date)
-  if (is.na(current$datum)) return(empty)
+  if (is.na(current$datum)) {
+    return(empty)
+  }
 
   prev_date <- as.Date(prev_state$date)
-  if (current$datum != prev_date) return(empty)  # different day → caller handles
+  if (current$datum != prev_date) {
+    return(empty)
+  } # different day → caller handles
 
   # --- Trigger 1: re-render after partial morning -------------------------
   was_partial <- isTRUE(prev_state$morning_kvalitet %in% c("partial", "minimal"))
@@ -2121,28 +2330,36 @@ health_insight_update <- function(data, prev_state,
         spec <- .readiness_components[[k]]
         if (!is.null(c) && !is.na(c$value) && !is.null(spec)) {
           unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
-          added_parts <- c(added_parts,
-                            paste0(spec$label_ok, " ",
-                                   fmt_dec_sv(c$value, digits = spec$digits), unit_str))
+          added_parts <- c(
+            added_parts,
+            paste0(
+              spec$label_ok, " ",
+              fmt_dec_sv(c$value, digits = spec$digits), unit_str
+            )
+          )
         }
       }
       transition <- ""
       prev_status <- prev_state$morning_status
-      prev_score  <- prev_state$morning_score
+      prev_score <- prev_state$morning_score
       if (!is.null(prev_status) && !is.na(current$status) &&
-          length(prev_status) == 1 && !is.na(prev_status)) {
+        length(prev_status) == 1 && !is.na(prev_status)) {
         if (prev_status != current$status ||
-            (!is.null(prev_score) && length(prev_score) == 1 &&
-             !is.na(prev_score) && abs(prev_score - current$score) >= 5)) {
-          transition <- paste0(" ", prev_status, " ", prev_score,
-                                " ⇒ ", current$status, " ", current$score, ".")
+          (!is.null(prev_score) && length(prev_score) == 1 &&
+            !is.na(prev_score) && abs(prev_score - current$score) >= 5)) {
+          transition <- paste0(
+            " ", prev_status, " ", prev_score,
+            " ⇒ ", current$status, " ", current$score, "."
+          )
         } else {
           transition <- paste0(" ", current$status, " ", current$score, ".")
         }
       }
-      prosa <- paste0("Dagsform uppdaterad: ",
-                      paste(added_parts, collapse = ", "), ".",
-                      transition)
+      prosa <- paste0(
+        "Dagsform uppdaterad: ",
+        paste(added_parts, collapse = ", "), ".",
+        transition
+      )
       out <- current
       out$prosa <- prosa
       out$trigger <- "rerender"
@@ -2161,8 +2378,10 @@ health_insight_update <- function(data, prev_state,
     if (length(today) == 0 || all(is.na(today))) next
     val <- mean(today, na.rm = TRUE)
     hist <- health_daily |>
-      dplyr::filter(metric == m,
-                    date >= current$datum - 7, date < current$datum) |>
+      dplyr::filter(
+        metric == m,
+        date >= current$datum - 7, date < current$datum
+      ) |>
       dplyr::pull(value)
     if (length(hist) < 2) next
     avg7d <- mean(hist, na.rm = TRUE)
@@ -2170,12 +2389,14 @@ health_insight_update <- function(data, prev_state,
     if (!is.finite(delta) || abs(delta) < .tier1_update_thresholds[[m]]) next
 
     label <- if (m %in% names(.metric_labels)) .metric_labels[[m]] else m
-    unit  <- if (m %in% names(.metric_units))  .metric_units[[m]]  else ""
+    unit <- if (m %in% names(.metric_units)) .metric_units[[m]] else ""
     unit_str <- if (nzchar(unit)) paste0(" ", unit) else ""
     sign_str <- if (delta > 0) "+" else ""
-    prosa <- paste0(toupper(substr(label, 1, 1)), substr(label, 2, nchar(label)),
-                    " ", fmt_dec_sv(val, trim_zero = TRUE), unit_str,
-                    " (", sign_str, fmt_dec_sv(delta, trim_zero = TRUE), " vs 7d).")
+    prosa <- paste0(
+      toupper(substr(label, 1, 1)), substr(label, 2, nchar(label)),
+      " ", fmt_dec_sv(val, trim_zero = TRUE), unit_str,
+      " (", sign_str, fmt_dec_sv(delta, trim_zero = TRUE), " vs 7d)."
+    )
     out <- current
     out$prosa <- prosa
     out$trigger <- "tier1"
@@ -2209,7 +2430,9 @@ health_insight_update <- function(data, prev_state,
   args <- list(...)
   n <- length(args)
   for (x in args[-n]) {
-    if (!is.null(x) && length(x) > 0) return(x)
+    if (!is.null(x) && length(x) > 0) {
+      return(x)
+    }
   }
   args[[n]]
 }
@@ -2257,13 +2480,16 @@ recent_data_dump <- function(data, hours = 24) {
   }
 
   # Sessions — sessionStart is timestamped
-  sess_cols <- c("sessionStart", "sport", "duration", "distance",
-                 "avgPace", "avgHeartRate")
+  sess_cols <- c(
+    "sessionStart", "sport", "duration", "distance",
+    "avgPace", "avgHeartRate"
+  )
   available <- intersect(sess_cols, names(summaries))
   sessions <- summaries
   if ("sessionStart" %in% names(sessions)) {
     sessions <- sessions[as.POSIXct(sessions$sessionStart) >= cutoff_ts, ,
-                          drop = FALSE]
+      drop = FALSE
+    ]
     if (length(available) > 0 && nrow(sessions) > 0) {
       sessions <- sessions[, available, drop = FALSE]
     }
@@ -2304,15 +2530,17 @@ latest_known_metrics <- function(data) {
   td <- .as_traning_data(data)
   health_daily <- td@health_daily
   if (nrow(health_daily) == 0) {
-    return(tibble::tibble(metric = character(), date = as.Date(character()),
-                          value = numeric(), age_hours = numeric()))
+    return(tibble::tibble(
+      metric = character(), date = as.Date(character()),
+      value = numeric(), age_hours = numeric()
+    ))
   }
   now <- Sys.time()
   health_daily |>
     dplyr::filter(!is.na(value)) |>
     dplyr::group_by(metric) |>
     dplyr::summarise(
-      date  = max(date),
+      date = max(date),
       value = round(value[which.max(date)], 3),
       .groups = "drop"
     ) |>
@@ -2328,32 +2556,45 @@ latest_known_metrics <- function(data) {
 #' @keywords internal
 .read_recent_pushes <- function(cutoff_ts) {
   data_dir <- Sys.getenv("TRANING_DATA", "")
-  empty <- tibble::tibble(ts = character(), trigger = character(),
-                          title = character(), sent = logical())
-  if (data_dir == "") return(empty)
+  empty <- tibble::tibble(
+    ts = character(), trigger = character(),
+    title = character(), sent = logical()
+  )
+  if (data_dir == "") {
+    return(empty)
+  }
   log_path <- file.path(data_dir, "logs", "notifications.jsonl")
-  if (!file.exists(log_path)) return(empty)
+  if (!file.exists(log_path)) {
+    return(empty)
+  }
   lines <- tryCatch(readLines(log_path, warn = FALSE),
-                     error = function(e) character())
-  if (length(lines) == 0) return(empty)
+    error = function(e) character()
+  )
+  if (length(lines) == 0) {
+    return(empty)
+  }
   # Tail efficiently: only consider the last N lines, recent ones at end
   tail_lines <- utils::tail(lines, 200)
   parsed <- lapply(tail_lines, function(ln) {
     tryCatch(jsonlite::fromJSON(ln), error = function(e) NULL)
   })
   parsed <- parsed[!vapply(parsed, is.null, logical(1))]
-  if (length(parsed) == 0) return(empty)
+  if (length(parsed) == 0) {
+    return(empty)
+  }
   df <- do.call(rbind, lapply(parsed, function(x) {
     data.frame(
-      ts      = .coalesce_scalar(x$ts, NA_character_),
+      ts = .coalesce_scalar(x$ts, NA_character_),
       trigger = .coalesce_scalar(x$trigger, NA_character_),
-      title   = .coalesce_scalar(x$title, NA_character_),
-      sent    = isTRUE(x$sent),
+      title = .coalesce_scalar(x$title, NA_character_),
+      sent = isTRUE(x$sent),
       stringsAsFactors = FALSE
     )
   }))
   df <- df[!is.na(df$ts), , drop = FALSE]
-  if (nrow(df) == 0) return(empty)
+  if (nrow(df) == 0) {
+    return(empty)
+  }
   df$ts_parsed <- as.POSIXct(df$ts, format = "%Y-%m-%dT%H:%M:%S")
   df <- df[!is.na(df$ts_parsed) & df$ts_parsed >= cutoff_ts, , drop = FALSE]
   df$ts_parsed <- NULL

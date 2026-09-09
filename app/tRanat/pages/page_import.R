@@ -24,8 +24,10 @@ page_import_ui <- function(id) {
           ),
           shiny::fileInput(
             ns("zip"), "Välj zip-arkiv",
-            accept  = c(".zip", "application/zip",
-                        "application/x-zip-compressed"),
+            accept = c(
+              ".zip", "application/zip",
+              "application/x-zip-compressed"
+            ),
             buttonLabel = "Bläddra",
             placeholder = "Ingen fil vald"
           ),
@@ -46,23 +48,28 @@ page_import_server <- function(id) {
     # Three reactive values: dry-run preview, the in-flight flag for
     # the commit step (prevents a second Confirm click while we're
     # still writing files), and the committed result.
-    preview_rv    <- shiny::reactiveVal(NULL)
+    preview_rv <- shiny::reactiveVal(NULL)
     committing_rv <- shiny::reactiveVal(FALSE)
-    result_rv     <- shiny::reactiveVal(NULL)
+    result_rv <- shiny::reactiveVal(NULL)
 
     # Wipe previous state when a new file lands.
-    shiny::observeEvent(input$zip, {
-      result_rv(NULL)
-      shiny::req(input$zip)
-      shiny::withProgress(message = "Förhandsgranskar …", value = 0.3, {
-        out <- traning_backfill(input$zip$datapath, dry_run = TRUE)
-        preview_rv(out)
-      })
-    }, ignoreInit = TRUE)
+    shiny::observeEvent(input$zip,
+      {
+        result_rv(NULL)
+        shiny::req(input$zip)
+        shiny::withProgress(message = "Förhandsgranskar …", value = 0.3, {
+          out <- traning_backfill(input$zip$datapath, dry_run = TRUE)
+          preview_rv(out)
+        })
+      },
+      ignoreInit = TRUE
+    )
 
     output$preview <- shiny::renderUI({
       out <- preview_rv()
-      if (is.null(out)) return(NULL)
+      if (is.null(out)) {
+        return(NULL)
+      }
       if (!out$success) {
         return(bslib::card(
           class = "section-spacer",
@@ -90,9 +97,11 @@ page_import_server <- function(id) {
             "Förhandsgranskning — kunde inte tolka räknarna"
           ),
           bslib::card_body(
-            shiny::p("CLI:n gick igenom utan fel men varken ",
-                     "per-mått-rader eller no-op-signalen kände ",
-                     "vi igen. Rå-utskrift:"),
+            shiny::p(
+              "CLI:n gick igenom utan fel men varken ",
+              "per-mått-rader eller no-op-signalen kände ",
+              "vi igen. Rå-utskrift:"
+            ),
             shiny::pre(paste(out$stdout, collapse = "\n"))
           )
         ))
@@ -103,8 +112,10 @@ page_import_server <- function(id) {
           class = "section-spacer",
           bslib::card_header("Förhandsgranskning"),
           bslib::card_body(
-            shiny::p("Inga nya datum att backfilla — alla värden ",
-                     "i arkivet finns redan i datalagret.")
+            shiny::p(
+              "Inga nya datum att backfilla — alla värden ",
+              "i arkivet finns redan i datalagret."
+            )
           )
         ))
       }
@@ -137,8 +148,12 @@ page_import_server <- function(id) {
     output$confirm_btn <- shiny::renderUI({
       out <- preview_rv()
       committed <- result_rv()
-      if (is.null(out) || !out$success || sum(out$counts) == 0L) return(NULL)
-      if (!is.null(committed)) return(NULL)
+      if (is.null(out) || !out$success || sum(out$counts) == 0L) {
+        return(NULL)
+      }
+      if (!is.null(committed)) {
+        return(NULL)
+      }
       shiny::actionButton(
         ns("confirm"), "Skriv canonical-filer",
         class = "btn-primary",
@@ -154,19 +169,26 @@ page_import_server <- function(id) {
       # Guard against the observer re-firing before the disabled
       # attribute reaches the client (the renderUI round-trip lags
       # the first click).
-      if (isTRUE(committing_rv())) return(NULL)
+      if (isTRUE(committing_rv())) {
+        return(NULL)
+      }
       committing_rv(TRUE)
       on.exit(committing_rv(FALSE), add = TRUE)
-      shiny::withProgress(message = "Skriver canonical-filer …",
-                           value = 0.5, {
-        out <- traning_backfill(input$zip$datapath, dry_run = FALSE)
-        result_rv(out)
-      })
+      shiny::withProgress(
+        message = "Skriver canonical-filer …",
+        value = 0.5,
+        {
+          out <- traning_backfill(input$zip$datapath, dry_run = FALSE)
+          result_rv(out)
+        }
+      )
     })
 
     output$result <- shiny::renderUI({
       out <- result_rv()
-      if (is.null(out)) return(NULL)
+      if (is.null(out)) {
+        return(NULL)
+      }
       if (!out$success) {
         return(bslib::card(
           class = "section-spacer",
@@ -191,12 +213,16 @@ page_import_server <- function(id) {
             "Backfill klart — kunde inte tolka räknarna"
           ),
           bslib::card_body(
-            shiny::p("CLI:n rapporterade lyckat men varken ",
-                     "per-mått-rader eller no-op-signalen kände ",
-                     "vi igen. Rå-utskrift:"),
+            shiny::p(
+              "CLI:n rapporterade lyckat men varken ",
+              "per-mått-rader eller no-op-signalen kände ",
+              "vi igen. Rå-utskrift:"
+            ),
             shiny::pre(paste(out$stdout, collapse = "\n")),
-            shiny::p("Kör ", shiny::code("traning import health --force"),
-                     " för att hämta in eventuellt nyskrivna filer.")
+            shiny::p(
+              "Kör ", shiny::code("traning import health --force"),
+              " för att hämta in eventuellt nyskrivna filer."
+            )
           )
         ))
       }
@@ -206,8 +232,10 @@ page_import_server <- function(id) {
           class = "section-spacer",
           bslib::card_header("Backfill klart"),
           bslib::card_body(
-            shiny::p("Inga nya datum att skriva — datalagret var ",
-                     "redan komplett.")
+            shiny::p(
+              "Inga nya datum att skriva — datalagret var ",
+              "redan komplett."
+            )
           )
         ))
       }
@@ -218,13 +246,15 @@ page_import_server <- function(id) {
           paste0("Klart — ", total, " nya filer skrivna")
         ),
         bslib::card_body(
-          shiny::p("Kör ",
-                   shiny::code("traning import health --force"),
-                   " för att läsa in dem i R-cachen — receiverns ",
-                   "automatiska health-flush importerar bara filer ",
-                   "som pushas via HAE. När importen är klar visas en ",
-                   "notis i dashboarden; klicka ", shiny::strong("Uppdatera nu"),
-                   " för att ladda om sidan med den nya datan.")
+          shiny::p(
+            "Kör ",
+            shiny::code("traning import health --force"),
+            " för att läsa in dem i R-cachen — receiverns ",
+            "automatiska health-flush importerar bara filer ",
+            "som pushas via HAE. När importen är klar visas en ",
+            "notis i dashboarden; klicka ", shiny::strong("Uppdatera nu"),
+            " för att ladda om sidan med den nya datan."
+          )
         )
       )
     })

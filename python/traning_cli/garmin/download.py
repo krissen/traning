@@ -146,9 +146,7 @@ def fetch_new_activities(
                 if new_count % 10 == 0:
                     log.info("Fetched %d new activities so far ...", new_count)
             else:
-                summary_still_missing = not any(
-                    gc_dir.glob(f"*_{activity_id}_summary.json")
-                )
+                summary_still_missing = not any(gc_dir.glob(f"*_{activity_id}_summary.json"))
                 if summary_still_missing:
                     # No summary left behind — the next run's dedup scan
                     # (get_existing_activity_ids) won't find one for this

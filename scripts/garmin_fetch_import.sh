@@ -16,7 +16,7 @@ echo "$fetch_output"
 
 # Check if anything new was fetched
 if echo "$fetch_output" | grep -q "fetched 0"; then
-    exit 0
+  exit 0
 fi
 
 # Something new — import
@@ -26,9 +26,9 @@ echo "$import_output"
 # Notify: fetch result
 fetch_summary=$(echo "$fetch_output" | tail -1)
 TRANING_NOTIFY_TITLE="tRäning" \
-TRANING_NOTIFY_MSG="Garmin (timer): $fetch_summary" \
-TRANING_NOTIFY_TRIGGER="garmin_timer" \
-    "$VENV/python" -c "
+  TRANING_NOTIFY_MSG="Garmin (timer): $fetch_summary" \
+  TRANING_NOTIFY_TRIGGER="garmin_timer" \
+  "$VENV/python" -c "
 import os
 from traning_cli.server.notify import notify, log_notification
 title = os.environ['TRANING_NOTIFY_TITLE']
@@ -41,10 +41,10 @@ log_notification(trigger, title, msg, sent)
 # Notify: import result
 import_line=$(echo "$import_output" | grep -iE 'import|distance' | tail -1)
 if [ -n "$import_line" ]; then
-    TRANING_NOTIFY_TITLE="tRäning" \
+  TRANING_NOTIFY_TITLE="tRäning" \
     TRANING_NOTIFY_MSG="Import garmin: $import_line" \
     TRANING_NOTIFY_TRIGGER="garmin_timer" \
-        "$VENV/python" -c "
+    "$VENV/python" -c "
 import os
 from traning_cli.server.notify import notify, log_notification
 title = os.environ['TRANING_NOTIFY_TITLE']
@@ -57,7 +57,7 @@ fi
 
 # Insight
 TRANING_NOTIFY_REPO_ROOT="$REPO_ROOT" \
-    "$VENV/python" -c "
+  "$VENV/python" -c "
 import os
 import subprocess
 from traning_cli.server.notify import notify, log_notification

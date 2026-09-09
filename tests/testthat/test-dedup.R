@@ -4,13 +4,16 @@
   data.frame(
     sessionStart = as.POSIXct(
       c("2026-08-01 11:00:49", "2026-08-01 11:02:36", "2026-07-20 06:00:00"),
-      tz = "UTC"),
+      tz = "UTC"
+    ),
     sport = c("running", "running", "cycling"),
     distance = c(5234, 5292, 20000),
     duration = as.difftime(c(1391, 1376, 3600), units = "secs"),
-    file = c("hae:Utomhus_Kor-20260801_130049.json",
-             "/data/tcx/20260801-110236.tcx",
-             "hae:Cykling-20260720.json"),
+    file = c(
+      "hae:Utomhus_Kor-20260801_130049.json",
+      "/data/tcx/20260801-110236.tcx",
+      "hae:Cykling-20260720.json"
+    ),
     source = c("hae", "tcx", "hae"),
     stringsAsFactors = FALSE
   )
@@ -31,7 +34,8 @@ test_that("dedup_summaries dry-run reports without touching the cache", {
   before <- file.mtime(paths$summaries)
 
   dups <- dedup_summaries(paths$summaries, paths$myruns,
-                          dry_run = TRUE, verbose = FALSE)
+    dry_run = TRUE, verbose = FALSE
+  )
 
   expect_equal(nrow(dups), 1)
   expect_equal(dups$idx, 1L)
@@ -45,7 +49,8 @@ test_that("dedup_summaries removes the HAE row and its myruns slot", {
   paths <- .write_fixture_cache(tmp, s, list(NULL, "run-object", NULL))
 
   dedup_summaries(paths$summaries, paths$myruns,
-                  dry_run = FALSE, verbose = FALSE)
+    dry_run = FALSE, verbose = FALSE
+  )
 
   after <- my_dbs_load(paths$summaries, paths$myruns)
   expect_equal(nrow(after$summaries), 2)
@@ -65,7 +70,8 @@ test_that("dedup_summaries leaves genuine Apple-Watch-only sessions alone", {
   paths <- .write_fixture_cache(tmp, s, list(NULL, NULL))
 
   dups <- dedup_summaries(paths$summaries, paths$myruns,
-                          dry_run = TRUE, verbose = FALSE)
+    dry_run = TRUE, verbose = FALSE
+  )
   expect_equal(nrow(dups), 0)
 })
 
@@ -73,7 +79,8 @@ test_that("my_dbs_save keeps myruns aligned with the sorted summaries", {
   tmp <- withr::local_tempdir()
   summaries <- data.frame(
     sessionStart = as.POSIXct(c("2026-03-03", "2026-01-01", "2026-02-02"),
-                              tz = "UTC"),
+      tz = "UTC"
+    ),
     sport = "running",
     file = c("c.tcx", "a.tcx", "b.tcx"),
     source = "tcx",
@@ -122,8 +129,10 @@ test_that("my_dbs_save repairs a myruns list that is too short", {
   db_s <- file.path(tmp, "summaries.RData")
   db_m <- file.path(tmp, "myruns.RData")
 
-  expect_message(my_dbs_save(db_s, db_m, summaries, list("a")),
-                 "ur synk")
+  expect_message(
+    my_dbs_save(db_s, db_m, summaries, list("a")),
+    "ur synk"
+  )
 
   after <- my_dbs_load(db_s, db_m)
   expect_equal(nrow(after$summaries), length(after$myruns))
@@ -152,11 +161,11 @@ test_that("my_dbs_save preserves the garmin augmentation stamp", {
 test_that(".garmin_wins defers only when Garmin caught a fragment", {
   # The ordinary GPS-versus-wrist disagreement stays with Garmin.
   expect_true(.garmin_wins(10000, 9000))
-  expect_true(.garmin_wins(10000, 8300))   # ratio 1.2
-  expect_true(.garmin_wins(10000, 5000))   # ratio 2.0, the boundary
+  expect_true(.garmin_wins(10000, 8300)) # ratio 1.2
+  expect_true(.garmin_wins(10000, 5000)) # ratio 2.0, the boundary
   # Below half the Apple Watch distance, Garmin is only a fragment.
   expect_false(.garmin_wins(10000, 4999))
-  expect_false(.garmin_wins(10274, 460))   # 2023-04-10
+  expect_false(.garmin_wins(10274, 460)) # 2023-04-10
   # A missing distance leaves the default in place.
   expect_true(.garmin_wins(NA_real_, 460))
   expect_true(.garmin_wins(10274, NA_real_))
@@ -178,7 +187,8 @@ test_that("dedup_summaries keeps the Apple Watch row when Garmin has a fragment"
   paths <- .write_fixture_cache(tmp, summaries, list(NULL, "garmin-run"))
 
   dups <- dedup_summaries(paths$summaries, paths$myruns,
-                          dry_run = TRUE, verbose = FALSE)
+    dry_run = TRUE, verbose = FALSE
+  )
   expect_equal(dups$winner, "aw")
 
   dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE, verbose = FALSE)
@@ -201,15 +211,18 @@ test_that("dedup_summaries keeps Garmin when a second row covers the session", {
     sport = "running",
     distance = c(11124, 4292, 6961),
     duration = as.difftime(c(5400, 2495, 2800), units = "secs"),
-    file = c("hae:Utomhus_Kor-20250707.json",
-             "/data/tcx/20250707-a.tcx", "/data/tcx/20250707-b.tcx"),
+    file = c(
+      "hae:Utomhus_Kor-20250707.json",
+      "/data/tcx/20250707-a.tcx", "/data/tcx/20250707-b.tcx"
+    ),
     source = c("hae", "tcx", "tcx"),
     stringsAsFactors = FALSE
   )
   paths <- .write_fixture_cache(tmp, summaries, list(NULL, "a", "b"))
 
   dups <- dedup_summaries(paths$summaries, paths$myruns,
-                          dry_run = TRUE, verbose = FALSE)
+    dry_run = TRUE, verbose = FALSE
+  )
   expect_equal(dups$winner, "garmin")
 
   dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE, verbose = FALSE)
@@ -232,21 +245,26 @@ test_that("dedup_summaries removes every fragment of a session in one pass", {
     sport = "running",
     distance = c(10000, 300, 400),
     duration = as.difftime(c(2700, 195, 240), units = "secs"),
-    file = c("hae:Utomhus_Kor-20191223.json",
-             "/data/tcx/20191223-091822.tcx",
-             "/data/tcx/20191223-094423.tcx"),
+    file = c(
+      "hae:Utomhus_Kor-20191223.json",
+      "/data/tcx/20191223-091822.tcx",
+      "/data/tcx/20191223-094423.tcx"
+    ),
     source = c("hae", "tcx", "tcx"),
     stringsAsFactors = FALSE
   )
   paths <- .write_fixture_cache(tmp, summaries, list(NULL, "frag-a", "frag-b"))
 
   dups <- dedup_summaries(paths$summaries, paths$myruns,
-                          dry_run = TRUE, verbose = FALSE)
+    dry_run = TRUE, verbose = FALSE
+  )
   expect_equal(dups$winner, "aw")
   expect_equal(length(dups$tcx_drop[[1]]), 2)
 
-  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
-                  verbose = FALSE)
+  dedup_summaries(paths$summaries, paths$myruns,
+    dry_run = FALSE,
+    verbose = FALSE
+  )
   after <- my_dbs_load(paths$summaries, paths$myruns)
 
   # One pass, one row left, and the total is the session — not the
@@ -258,7 +276,8 @@ test_that("dedup_summaries removes every fragment of a session in one pass", {
 
   # A second pass has nothing left to do.
   again <- dedup_summaries(paths$summaries, paths$myruns,
-                           dry_run = TRUE, verbose = FALSE)
+    dry_run = TRUE, verbose = FALSE
+  )
   expect_equal(nrow(again), 0)
 })
 
@@ -276,16 +295,20 @@ test_that("dedup_summaries keeps one Apple Watch copy when a fragment loses to t
     # The mirrored copy caught slightly less; the richer one survives.
     distance = c(10274, 10101, 460),
     duration = as.difftime(c(3180, 3176, 180), units = "secs"),
-    file = c("hae:Utomhus_Kor-20230410.json",
-             "hae:Utomhus_Kor-20230410-connect.json",
-             "/data/tcx/20230410-154142.tcx"),
+    file = c(
+      "hae:Utomhus_Kor-20230410.json",
+      "hae:Utomhus_Kor-20230410-connect.json",
+      "/data/tcx/20230410-154142.tcx"
+    ),
     source = c("hae", "hae", "tcx"),
     stringsAsFactors = FALSE
   )
   paths <- .write_fixture_cache(tmp, summaries, list(NULL, NULL, "garmin-run"))
 
-  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
-                  verbose = FALSE)
+  dedup_summaries(paths$summaries, paths$myruns,
+    dry_run = FALSE,
+    verbose = FALSE
+  )
   after <- my_dbs_load(paths$summaries, paths$myruns)
 
   expect_equal(nrow(after$summaries), 1)
@@ -307,8 +330,10 @@ test_that("dedup_summaries keeps one Apple Watch copy when a fragment loses to t
     sport = "running",
     distance = c(aw_distance, leg_distances),
     duration = as.difftime(c(3600, rep(850, n)), units = "secs"),
-    file = c("hae:Utomhus_Kor.json",
-             sprintf("/data/tcx/leg%d.tcx", seq_len(n))),
+    file = c(
+      "hae:Utomhus_Kor.json",
+      sprintf("/data/tcx/leg%d.tcx", seq_len(n))
+    ),
     source = c("hae", rep("tcx", n)),
     stringsAsFactors = FALSE
   )
@@ -319,7 +344,8 @@ test_that("dedup_summaries keeps one Apple Watch copy when a fragment loses to t
   tmp <- withr::local_tempdir()
   paths <- .split_session_cache(tmp, aw_distance, leg_distances)
   dups <- dedup_summaries(paths$summaries, paths$myruns,
-                          dry_run = TRUE, verbose = FALSE)
+    dry_run = TRUE, verbose = FALSE
+  )
   if (nrow(dups) == 0) "none" else dups$winner[1]
 }
 
@@ -336,7 +362,7 @@ test_that("a split Garmin session is judged on the sum of its legs", {
   expect_equal(.winner_for(10000, c(4500, 4500)), "garmin")
 
   # (d) the boundary sits on the total, not on any one leg.
-  expect_equal(.winner_for(10000, c(2500, 2400)), "aw")     # 49 %
+  expect_equal(.winner_for(10000, c(2500, 2400)), "aw") # 49 %
   expect_equal(.winner_for(10000, c(2500, 2500)), "garmin") # 50 %
 })
 
@@ -374,10 +400,14 @@ test_that("which Apple Watch copy survives does not depend on scan order", {
   survivors <- lapply(list(c(1, 2), c(2, 1)), function(ord) {
     tmp <- withr::local_tempdir()
     summaries <- .copies_and_fragments(ord)
-    paths <- .write_fixture_cache(tmp, summaries,
-                                  as.list(seq_len(nrow(summaries))))
-    dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
-                    verbose = FALSE)
+    paths <- .write_fixture_cache(
+      tmp, summaries,
+      as.list(seq_len(nrow(summaries)))
+    )
+    dedup_summaries(paths$summaries, paths$myruns,
+      dry_run = FALSE,
+      verbose = FALSE
+    )
     after <- my_dbs_load(paths$summaries, paths$myruns)
     after$summaries[after$summaries$source == "hae", ]
   })
@@ -409,14 +439,18 @@ test_that("dedup_summaries collapses Apple Watch copies with no Garmin row", {
   )
   paths <- .write_fixture_cache(tmp, summaries, list("a", "b", "c"))
 
-  dups <- dedup_summaries(paths$summaries, paths$myruns, dry_run = TRUE,
-                          verbose = FALSE)
+  dups <- dedup_summaries(paths$summaries, paths$myruns,
+    dry_run = TRUE,
+    verbose = FALSE
+  )
   # No Garmin row anywhere, so nothing for the Garmin sweep to report.
   expect_equal(nrow(dups), 0)
   expect_length(attr(dups, "hae_copies"), 1)
 
-  dedup_summaries(paths$summaries, paths$myruns, dry_run = FALSE,
-                  verbose = FALSE)
+  dedup_summaries(paths$summaries, paths$myruns,
+    dry_run = FALSE,
+    verbose = FALSE
+  )
   after <- my_dbs_load(paths$summaries, paths$myruns)
 
   # The fuller copy of the pair survives; the unrelated evening session
@@ -426,7 +460,9 @@ test_that("dedup_summaries collapses Apple Watch copies with no Garmin row", {
   expect_equal(length(after$myruns), 2)
 
   # And a second pass has nothing left to do.
-  again <- dedup_summaries(paths$summaries, paths$myruns, dry_run = TRUE,
-                           verbose = FALSE)
+  again <- dedup_summaries(paths$summaries, paths$myruns,
+    dry_run = TRUE,
+    verbose = FALSE
+  )
   expect_length(attr(again, "hae_copies"), 0)
 })

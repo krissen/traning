@@ -11,8 +11,10 @@ run_bridge <- function(func, args = "{}", plot = FALSE) {
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
   cmd_args <- c(bridge, paste0("--func=", func), paste0("--args=", shQuote(args)))
   if (plot) cmd_args <- c(cmd_args, "--plot")
-  result <- system2("Rscript", args = cmd_args, stdout = TRUE, stderr = NULL,
-                     env = "TRANING_BRIDGE_LOADER=load_all")
+  result <- system2("Rscript",
+    args = cmd_args, stdout = TRUE, stderr = NULL,
+    env = "TRANING_BRIDGE_LOADER=load_all"
+  )
   jsonlite::fromJSON(paste(result, collapse = "\n"), simplifyVector = FALSE)
 }
 
@@ -27,9 +29,11 @@ test_that("unknown function returns error", {
 test_that("NULL function returns error", {
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
   result <- suppressWarnings(
-    system2("Rscript", args = c(bridge, paste0("--args=", shQuote("{}"))),
-            stdout = TRUE, stderr = NULL,
-            env = "TRANING_BRIDGE_LOADER=load_all")
+    system2("Rscript",
+      args = c(bridge, paste0("--args=", shQuote("{}"))),
+      stdout = TRUE, stderr = NULL,
+      env = "TRANING_BRIDGE_LOADER=load_all"
+    )
   )
   out <- jsonlite::fromJSON(paste(result, collapse = "\n"), simplifyVector = FALSE)
   expect_equal(out$type, "error")
@@ -125,7 +129,7 @@ test_that("plot mode returns plot JSON with path", {
 
 test_that("plot mode with health data works", {
   skip_if(Sys.getenv("TRANING_DATA") == "", "TRANING_DATA not set")
-  out <- run_bridge("fetch.plot.sleep", '{}', plot = TRUE)
+  out <- run_bridge("fetch.plot.sleep", "{}", plot = TRUE)
   expect_equal(out$type, "plot")
   expect_true(nchar(out$path) > 0)
   expect_match(out$path, "\\.png$")
@@ -143,19 +147,23 @@ test_that("plot_path argument writes to caller-owned path", {
   target <- file.path(target_dir, "probe.png")
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
   result <- system2("Rscript",
-                    args = c(bridge,
-                             "--func=fetch.plot.ef",
-                             paste0("--args=", shQuote('{"from":"2025-01-01"}')),
-                             "--plot",
-                             paste0("--plot_path=", target)),
-                    stdout = TRUE, stderr = NULL,
-                    env = "TRANING_BRIDGE_LOADER=load_all")
+    args = c(
+      bridge,
+      "--func=fetch.plot.ef",
+      paste0("--args=", shQuote('{"from":"2025-01-01"}')),
+      "--plot",
+      paste0("--plot_path=", target)
+    ),
+    stdout = TRUE, stderr = NULL,
+    env = "TRANING_BRIDGE_LOADER=load_all"
+  )
   out <- jsonlite::fromJSON(paste(result, collapse = "\n"),
-                            simplifyVector = FALSE)
+    simplifyVector = FALSE
+  )
   expect_equal(out$type, "plot")
   expect_equal(out$path, target)
   expect_true(file.exists(target))
-  expect_gt(file.info(target)$size, 1000)  # sanity: real PNG, not stub
+  expect_gt(file.info(target)$size, 1000) # sanity: real PNG, not stub
 })
 
 # --- Args passing ---
@@ -168,10 +176,14 @@ test_that("empty args object is valid", {
 
 test_that("invalid JSON args handled gracefully", {
   bridge <- file.path(testthat::test_path("..", ".."), "inst", "mcp_bridge.R")
-  rc <- system2("Rscript", args = c(bridge, "--func=report_monthstatus",
-                                     "--args=not-json"),
-                stdout = FALSE, stderr = NULL,
-                env = "TRANING_BRIDGE_LOADER=load_all")
+  rc <- system2("Rscript",
+    args = c(
+      bridge, "--func=report_monthstatus",
+      "--args=not-json"
+    ),
+    stdout = FALSE, stderr = NULL,
+    env = "TRANING_BRIDGE_LOADER=load_all"
+  )
   # Should exit non-zero
   expect_true(rc != 0)
 })
@@ -184,8 +196,10 @@ test_that("sport= reaches sport-aware report functions", {
   # the bridge must forward the value so the result has zero rows.
   # If the sport_funcs whitelist or arg-mapping ever drops sport, the
   # call would silently return running monthly tops instead.
-  out <- run_bridge("report_monthtop",
-                    '{"n":3,"sport":"__no_such_sport__"}')
+  out <- run_bridge(
+    "report_monthtop",
+    '{"n":3,"sport":"__no_such_sport__"}'
+  )
   expect_equal(out$type, "data")
   expect_equal(out$rows, 0)
 })

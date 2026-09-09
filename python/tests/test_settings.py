@@ -6,7 +6,6 @@ same default and (where applicable) the exact same .Renviron fallback
 order. These tests pin that contract down.
 """
 
-
 from traning_cli.settings import Settings, get_settings
 
 # ---------------------------------------------------------------------------
@@ -268,12 +267,7 @@ def test_read_renviron_helper_parses_comments_and_blank_lines(tmp_path):
     from traning_cli.settings import _read_renviron
 
     p = tmp_path / ".Renviron"
-    p.write_text(
-        "# comment\n"
-        "\n"
-        "TRANING_DATA=/some/path\n"
-        "GARMIN_EMAIL = spaced@example.com \n"
-    )
+    p.write_text("# comment\n\nTRANING_DATA=/some/path\nGARMIN_EMAIL = spaced@example.com \n")
     parsed = _read_renviron(p)
     assert parsed["TRANING_DATA"] == "/some/path"
     assert parsed["GARMIN_EMAIL"] == "spaced@example.com"

@@ -39,9 +39,9 @@ cat(paste(missing, collapse = "\n"))
 
 INSTALLED_COUNT=$(echo "$DEPS" | wc -l | tr -d ' ')
 if [ -z "$MISSING" ]; then
-    MISSING_COUNT=0
+  MISSING_COUNT=0
 else
-    MISSING_COUNT=$(echo "$MISSING" | wc -l | tr -d ' ')
+  MISSING_COUNT=$(echo "$MISSING" | wc -l | tr -d ' ')
 fi
 
 echo "R dependency status for tRäning"
@@ -49,54 +49,54 @@ echo "================================"
 echo "  Total:     $INSTALLED_COUNT"
 echo "  Missing:   $MISSING_COUNT"
 if [ -n "$MISSING" ]; then
-    echo "  Packages:  $(echo "$MISSING" | tr '\n' ', ' | sed 's/,$//')"
+  echo "  Packages:  $(echo "$MISSING" | tr '\n' ', ' | sed 's/,$//')"
 fi
 
 if $CHECK_ONLY || [ -z "$MISSING" ]; then
-    [ -z "$MISSING" ] && echo "All dependencies installed."
-    exit 0
+  [ -z "$MISSING" ] && echo "All dependencies installed."
+  exit 0
 fi
 
 # --- Install ---
 # Map R package names to Arch pacman names (lowercase, r- prefix)
 arch_pkg_name() {
-    local pkg="$1"
-    # Some R packages have different Arch names
-    case "$pkg" in
-        Rcpp)       echo "r-rcpp" ;;
-        *)          echo "r-$(echo "$pkg" | tr '[:upper:]' '[:lower:]')" ;;
-    esac
+  local pkg="$1"
+  # Some R packages have different Arch names
+  case "$pkg" in
+    Rcpp) echo "r-rcpp" ;;
+    *) echo "r-$(echo "$pkg" | tr '[:upper:]' '[:lower:]')" ;;
+  esac
 }
 
 PACMAN_PKGS=""
 CRAN_PKGS=""
 
 if command -v pacman &>/dev/null; then
-    echo ""
-    echo "Arch Linux detected — trying pacman first..."
-    for pkg in $MISSING; do
-        arch_name=$(arch_pkg_name "$pkg")
-        if pacman -Si "$arch_name" &>/dev/null; then
-            PACMAN_PKGS="$PACMAN_PKGS $arch_name"
-        else
-            CRAN_PKGS="$CRAN_PKGS $pkg"
-        fi
-    done
-
-    if [ -n "$PACMAN_PKGS" ]; then
-        echo "  pacman: $PACMAN_PKGS"
-        sudo pacman -S --needed --noconfirm $PACMAN_PKGS
+  echo ""
+  echo "Arch Linux detected — trying pacman first..."
+  for pkg in $MISSING; do
+    arch_name=$(arch_pkg_name "$pkg")
+    if pacman -Si "$arch_name" &>/dev/null; then
+      PACMAN_PKGS="$PACMAN_PKGS $arch_name"
+    else
+      CRAN_PKGS="$CRAN_PKGS $pkg"
     fi
+  done
+
+  if [ -n "$PACMAN_PKGS" ]; then
+    echo "  pacman: $PACMAN_PKGS"
+    sudo pacman -S --needed --noconfirm $PACMAN_PKGS
+  fi
 else
-    CRAN_PKGS="$MISSING"
+  CRAN_PKGS="$MISSING"
 fi
 
 # Fall back to CRAN for packages not in pacman
 if [ -n "$(echo "$CRAN_PKGS" | tr -d ' ')" ]; then
-    echo ""
-    echo "Installing from CRAN: $CRAN_PKGS"
-    # Ensure user library exists
-    Rscript -e '
+  echo ""
+  echo "Installing from CRAN: $CRAN_PKGS"
+  # Ensure user library exists
+  Rscript -e '
     lib <- Sys.getenv("R_LIBS_USER", unset = file.path(Sys.getenv("HOME"), "R", "library"))
     if (!dir.exists(lib)) dir.create(lib, recursive = TRUE)
     pkgs <- commandArgs(trailingOnly = TRUE)
@@ -114,8 +114,8 @@ cat(paste(missing, collapse = "\n"))
 ')
 
 if [ -n "$STILL_MISSING" ]; then
-    echo "FAILED to install: $STILL_MISSING"
-    exit 1
+  echo "FAILED to install: $STILL_MISSING"
+  exit 1
 else
-    echo "All dependencies installed successfully."
+  echo "All dependencies installed successfully."
 fi

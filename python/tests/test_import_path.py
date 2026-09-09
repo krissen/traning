@@ -17,9 +17,7 @@ def test_package_comes_from_this_worktree():
     about the wrong code.
     """
     resolved = Path(traning_cli.__file__).resolve().parent.parent
-    assert resolved == PYTHON_ROOT, (
-        f"traning_cli resolved to {resolved}, expected {PYTHON_ROOT}"
-    )
+    assert resolved == PYTHON_ROOT, f"traning_cli resolved to {resolved}, expected {PYTHON_ROOT}"
 
 
 def test_root_ends_up_first_exactly_once():

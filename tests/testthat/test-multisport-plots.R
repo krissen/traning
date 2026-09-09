@@ -3,7 +3,7 @@
 .fixture_multisport_plots <- function() {
   base <- as.POSIXct("2026-01-01 08:00:00", tz = "UTC")
   data.frame(
-    sessionStart = base + (0:23) * 86400 * 7,  # weekly for 24 weeks
+    sessionStart = base + (0:23) * 86400 * 7, # weekly for 24 weeks
     sport = rep(c("running", "cycling", "walking", "strength"), 6),
     distance = rep(c(8000, 25000, 4000, 0), 6),
     durationMoving = as.difftime(rep(c(40, 60, 30, 45), 6), units = "mins"),
@@ -44,8 +44,10 @@ test_that(".sport_mix_data returns empty tibble on empty input", {
 
 test_that(".sport_mix_data metric=duration sums active minutes", {
   df <- .fixture_multisport_plots()
-  res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m",
-                                    metric = "duration")
+  res <- traning:::.sport_mix_data(df,
+    period_fmt = "%Y-%m",
+    metric = "duration"
+  )
   expect_true(all(res$metric == "duration"))
   # The fixture has strength sessions at 45 min each — zero distance
   # would drop them in metric=distance, but they survive on duration.
@@ -54,21 +56,27 @@ test_that(".sport_mix_data metric=duration sums active minutes", {
 
 test_that(".sport_mix_data metric=trimp picks up sessions with HR + duration > 10 min", {
   df <- .fixture_multisport_plots()
-  res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m",
-                                    metric = "trimp")
+  res <- traning:::.sport_mix_data(df,
+    period_fmt = "%Y-%m",
+    metric = "trimp"
+  )
   expect_true(all(res$metric == "trimp"))
   # All four sports have avgHeartRateMoving + durationMoving > 10
   # in the fixture, so every sport surfaces under TRIMP.
-  expect_setequal(unique(res$sport),
-                   c("running", "cycling", "walking", "strength"))
+  expect_setequal(
+    unique(res$sport),
+    c("running", "cycling", "walking", "strength")
+  )
   expect_true(all(res$value > 0))
 })
 
 test_that(".sport_mix_data metric=trimp returns no rows when HR data is missing", {
   df <- .fixture_multisport_plots()
   df$avgHeartRateMoving <- NA_real_
-  res <- traning:::.sport_mix_data(df, period_fmt = "%Y-%m",
-                                    metric = "trimp")
+  res <- traning:::.sport_mix_data(df,
+    period_fmt = "%Y-%m",
+    metric = "trimp"
+  )
   expect_equal(nrow(res), 0)
 })
 
@@ -104,7 +112,7 @@ test_that("plot_sport_mix builds without error when many periods crowd the x-axi
   # the expect_s3_class checks above.
   base <- as.POSIXct("2010-01-01 08:00:00", tz = "UTC")
   many <- data.frame(
-    sessionStart = base + (0:259) * 86400 * 7,  # 5 years, weekly
+    sessionStart = base + (0:259) * 86400 * 7, # 5 years, weekly
     sport = rep(c("running", "cycling"), length.out = 260),
     distance = 5000,
     durationMoving = as.difftime(rep(40, 260), units = "mins"),
@@ -137,22 +145,24 @@ test_that("plot_sport_ctl_overlay rejects empty sports", {
 test_that("plot_sport_calendar returns a ggplot heatmap", {
   df <- .fixture_multisport_plots()
   p <- plot_sport_calendar(df,
-                            from = as.Date("2026-01-01"),
-                            to = as.Date("2026-06-30"))
+    from = as.Date("2026-01-01"),
+    to = as.Date("2026-06-30")
+  )
   expect_s3_class(p, "ggplot")
 })
 
 test_that("plot_sport_calendar handles empty input gracefully", {
   empty <- .fixture_multisport_plots()[0, ]
   p <- plot_sport_calendar(empty,
-                            from = as.Date("2026-01-01"),
-                            to = as.Date("2026-01-31"))
+    from = as.Date("2026-01-01"),
+    to = as.Date("2026-01-31")
+  )
   expect_s3_class(p, "ggplot")
 })
 
 test_that("plot_sport_calendar default window is one year", {
   df <- .fixture_multisport_plots()
-  p <- plot_sport_calendar(df)  # default from/to → today minus 365
+  p <- plot_sport_calendar(df) # default from/to → today minus 365
   expect_s3_class(p, "ggplot")
 })
 
@@ -172,8 +182,9 @@ test_that("plot_sport_calendar builds without error over a multi-year span", {
     stringsAsFactors = FALSE
   )
   p <- plot_sport_calendar(many,
-                            from = as.Date("2024-01-01"),
-                            to = as.Date("2026-01-01"))
+    from = as.Date("2024-01-01"),
+    to = as.Date("2026-01-01")
+  )
   expect_silent(ggplot2::ggplot_build(p))
 })
 
@@ -186,8 +197,9 @@ test_that("plot_sport_calendar treats 'to' as exclusive upper bound", {
   df <- .fixture_multisport_plots()
   to_excl <- as.Date("2026-04-08")
   p <- plot_sport_calendar(df,
-                            from = as.Date("2026-01-01"),
-                            to = to_excl)
+    from = as.Date("2026-01-01"),
+    to = to_excl
+  )
   expect_s3_class(p, "ggplot")
   expect_true(grepl("2026-04-07", p$labels$title))
   expect_false(grepl("2026-04-08", p$labels$title))
@@ -211,8 +223,9 @@ test_that("plot_sport_calendar colours zero-distance gym days", {
     distance = c(8000, 0)
   )
   p <- plot_sport_calendar(s,
-                            from = as.Date("2026-04-22"),
-                            to = as.Date("2026-04-25"))
+    from = as.Date("2026-04-22"),
+    to = as.Date("2026-04-25")
+  )
   expect_s3_class(p, "ggplot")
   # The plot data should include strength as a labelled (non-NA) row
   layer <- p$data

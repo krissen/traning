@@ -12,7 +12,10 @@ from .utils import DEFAULT_TIMEOUT, hae_host, hae_port, health_metrics_dir
 log = logging.getLogger(__name__)
 
 __all__ = [
-    "HAEError", "HAEQueryError", "check_server", "fetch_tcp",
+    "HAEError",
+    "HAEQueryError",
+    "check_server",
+    "fetch_tcp",
 ]
 
 
@@ -50,9 +53,13 @@ def _latest_cached_date(metrics_dir: Path) -> str | None:
     return latest
 
 
-def fetch_tcp(data_dir: Path | None = None, days_back: int | None = None,
-              fetch_all: bool = False, dry_run: bool = False,
-              chunk_months: int = 3) -> int:
+def fetch_tcp(
+    data_dir: Path | None = None,
+    days_back: int | None = None,
+    fetch_all: bool = False,
+    dry_run: bool = False,
+    chunk_months: int = 3,
+) -> int:
     """Fetch health metrics from HAE TCP server.
 
     Returns the number of metric files written.
@@ -76,9 +83,13 @@ def fetch_tcp(data_dir: Path | None = None, days_back: int | None = None,
     end_date = datetime.now()
 
     if dry_run:
-        log.info("Dry run: would fetch %s .. %s from %s:%d",
-                 start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"),
-                 hae_host(), hae_port())
+        log.info(
+            "Dry run: would fetch %s .. %s from %s:%d",
+            start_date.strftime("%Y-%m-%d"),
+            end_date.strftime("%Y-%m-%d"),
+            hae_host(),
+            hae_port(),
+        )
         return 0
 
     metrics_dir.mkdir(parents=True, exist_ok=True)
@@ -92,8 +103,9 @@ def fetch_tcp(data_dir: Path | None = None, days_back: int | None = None,
         start_str = current.strftime("%Y-%m-%d 00:00:00 +0100")
         end_str = chunk_end.strftime("%Y-%m-%d 23:59:59 +0100")
 
-        log.info("Hämtar %s .. %s ...",
-                 current.strftime("%Y-%m-%d"), chunk_end.strftime("%Y-%m-%d"))
+        log.info(
+            "Hämtar %s .. %s ...", current.strftime("%Y-%m-%d"), chunk_end.strftime("%Y-%m-%d")
+        )
 
         # One automatic retry — HAE has a warm-up race where the first query
         # right after the iPhone app foregrounds returns truncated/malformed
@@ -146,11 +158,13 @@ def fetch_tcp(data_dir: Path | None = None, days_back: int | None = None,
 
         output = {
             "data": {
-                "metrics": [{
-                    "name": name,
-                    "units": info["units"],
-                    "data": samples,
-                }]
+                "metrics": [
+                    {
+                        "name": name,
+                        "units": info["units"],
+                        "data": samples,
+                    }
+                ]
             }
         }
 

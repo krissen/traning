@@ -1,0 +1,19 @@
+# Mechanical formatting/autofix commits, ignored by `git blame` (see
+# `git config blame.ignoreRevsFile .git-blame-ignore-revs` in this repo's
+# git config, and docs/dev/quality-gates.md).
+#
+# Only ORIGINAL commits belong here, never a rebased/rewritten copy — a
+# squash-merge or rebase changes these SHAs, and the mapping must be
+# updated afterwards.
+
+# refactor(lint): apply ruff autofixes and formatting across the tree
+41de47a66a8c08092e7915d9c3d41745370f6892
+
+# style(r): apply styler formatting across R sources
+6cb4c9a155085ee7fb09459b57f1c8d03a2729bc
+
+# style(r): apply styler formatting to inst/ scripts
+402ff861826fa7c60f2c88c25f77183afe0940bd
+
+# fix(deploy): resolve shellcheck findings and apply shfmt
+f455e85858db1d5a1b974cc7a7d2da9b2f5d6d5f

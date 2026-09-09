@@ -11,7 +11,8 @@ run_doctor <- function(json = TRUE, check = "packages") {
   args <- c(cli, "--doctor", paste0("--doctor-check=", check))
   if (json) args <- c(args, "--doctor-json")
   out <- suppressWarnings(
-    system2("Rscript", args = args, stdout = TRUE, stderr = NULL))
+    system2("Rscript", args = args, stdout = TRUE, stderr = NULL)
+  )
   list(
     text = paste(out, collapse = "\n"),
     exit = attr(out, "status") %||% 0L
@@ -31,7 +32,8 @@ test_that("--doctor --doctor-json --doctor-check=packages returns valid JSON", {
   parsed <- jsonlite::fromJSON(out$text, simplifyVector = FALSE)
   expect_named(parsed,
     c("ok", "timestamp", "r_version", "results", "summary"),
-    ignore.order = TRUE)
+    ignore.order = TRUE
+  )
   expect_named(parsed$results, "packages")
   expect_true(parsed$results$packages$status %in% c("ok", "warn", "fail"))
 })

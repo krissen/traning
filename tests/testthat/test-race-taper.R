@@ -1,12 +1,12 @@
 # Tests for compute_taper_plan() and compute_race_readiness().
 
 .fixture_summaries_for_taper <- function(weeks_back = 8L,
-                                          weekly_km = 40,
-                                          today = Sys.Date()) {
+                                         weekly_km = 40,
+                                         today = Sys.Date()) {
   # One running session per day for `weeks_back` weeks ending the
   # Sunday before today, with `weekly_km` km split over 4 sessions/week.
   iso_dow <- function(d) as.integer(format(d, "%u"))
-  end <- today - iso_dow(today)               # last Sunday
+  end <- today - iso_dow(today) # last Sunday
   start <- end - weeks_back * 7L + 1L
   dates <- seq.Date(start, end, by = "day")
   # 4 sessions per week, equal length
@@ -15,7 +15,7 @@
   d <- dates[is_run]
   tibble::tibble(
     sessionStart       = as.POSIXct(paste0(d, " 08:00:00"), tz = "UTC"),
-    distance           = per_run_km * 1000,    # metres
+    distance           = per_run_km * 1000, # metres
     sport              = "running",
     durationMoving     = as.difftime(per_run_km * 6, units = "mins"),
     duration           = as.difftime(per_run_km * 6, units = "mins"),
@@ -29,17 +29,23 @@
 test_that("compute_taper_plan produces one row per ISO week through race", {
   s <- .fixture_summaries_for_taper(weeks_back = 8L, weekly_km = 40)
   race_date <- Sys.Date() + 28L
-  plan <- compute_taper_plan(s, race_date, distance_km = 21.1,
-                              taper_weeks = 2L)
+  plan <- compute_taper_plan(s, race_date,
+    distance_km = 21.1,
+    taper_weeks = 2L
+  )
   expect_s3_class(plan, "data.frame")
   # Weeks span from this Monday through race week.
   iso_dow <- function(d) as.integer(format(d, "%u"))
-  expect_equal(plan$week_start[[1]],
-               Sys.Date() - (iso_dow(Sys.Date()) - 1L))
-  expect_equal(tail(plan$week_start, 1L),
-               race_date - (iso_dow(race_date) - 1L))
+  expect_equal(
+    plan$week_start[[1]],
+    Sys.Date() - (iso_dow(Sys.Date()) - 1L)
+  )
+  expect_equal(
+    tail(plan$week_start, 1L),
+    race_date - (iso_dow(race_date) - 1L)
+  )
   expect_true(all(plan$weeks_until_race[-nrow(plan)] >
-                  plan$weeks_until_race[-1]))
+    plan$weeks_until_race[-1]))
   expect_equal(tail(plan$weeks_until_race, 1L), 0L)
 })
 
@@ -53,23 +59,30 @@ test_that("compute_taper_plan applies 0.45 race-week floor", {
   expect_equal(race_row$relative_to_baseline, 0.45, tolerance = 0.01)
   baseline <- race_row$baseline_km[[1]]
   expect_equal(race_row$target_km, round(baseline * 0.45, 1),
-               tolerance = 0.1)
+    tolerance = 0.1
+  )
 })
 
 
 test_that("compute_taper_plan rejects past race_date", {
   s <- .fixture_summaries_for_taper(weeks_back = 4L)
-  expect_error(compute_taper_plan(s, Sys.Date() - 1L),
-               "race_date")
+  expect_error(
+    compute_taper_plan(s, Sys.Date() - 1L),
+    "race_date"
+  )
 })
 
 
 test_that("compute_taper_plan rejects invalid taper_weeks", {
   s <- .fixture_summaries_for_taper(weeks_back = 4L)
-  expect_error(compute_taper_plan(s, Sys.Date() + 14L, taper_weeks = 0L),
-               "taper_weeks")
-  expect_error(compute_taper_plan(s, Sys.Date() + 14L, taper_weeks = 5L),
-               "taper_weeks")
+  expect_error(
+    compute_taper_plan(s, Sys.Date() + 14L, taper_weeks = 0L),
+    "taper_weeks"
+  )
+  expect_error(
+    compute_taper_plan(s, Sys.Date() + 14L, taper_weeks = 5L),
+    "taper_weeks"
+  )
 })
 
 
@@ -107,7 +120,7 @@ test_that("compute_taper_plan baseline_km is the 4-week median, not mean", {
   # overshoot week doesn't pull the entire schedule above maintenance.
   iso_dow <- function(d) as.integer(format(d, "%u"))
   today <- Sys.Date()
-  end <- today - iso_dow(today)  # last Sunday
+  end <- today - iso_dow(today) # last Sunday
   weekly_km <- c(30, 30, 80, 30)
   rows <- lapply(seq_along(weekly_km), function(i) {
     wk_start <- end - (length(weekly_km) - i + 1) * 7L + 1L
@@ -118,7 +131,7 @@ test_that("compute_taper_plan baseline_km is the 4-week median, not mean", {
       distance = per_km * 1000,
       sport = "running",
       durationMoving = as.difftime(per_km * 6, units = "mins"),
-      duration       = as.difftime(per_km * 6, units = "mins")
+      duration = as.difftime(per_km * 6, units = "mins")
     )
   })
   s <- dplyr::bind_rows(rows)
@@ -130,8 +143,10 @@ test_that("compute_taper_plan baseline_km is the 4-week median, not mean", {
 test_that("render_taper_plan_prose mentions baseline, race date and distance", {
   s <- .fixture_summaries_for_taper(weeks_back = 8L, weekly_km = 40)
   race_date <- Sys.Date() + 28L
-  plan <- compute_taper_plan(s, race_date, distance_km = 21.1,
-                              taper_weeks = 2L)
+  plan <- compute_taper_plan(s, race_date,
+    distance_km = 21.1,
+    taper_weeks = 2L
+  )
   prose <- render_taper_plan_prose(plan)
   expect_match(prose, "baseline", ignore.case = TRUE)
   expect_match(prose, "21.1")
@@ -150,11 +165,12 @@ test_that("compute_taper_plan handles a zero baseline (no recent running)", {
   # Place the only run well outside the lookback window.
   s <- tibble::tibble(
     sessionStart = as.POSIXct(paste0(today - 90L, " 08:00:00"),
-                               tz = "UTC"),
+      tz = "UTC"
+    ),
     distance = 8000,
     sport = "running",
     durationMoving = as.difftime(45, units = "mins"),
-    duration       = as.difftime(45, units = "mins")
+    duration = as.difftime(45, units = "mins")
   )
   plan <- compute_taper_plan(s, today + 14L, taper_weeks = 2L)
   expect_equal(nrow(plan), 0L)
@@ -166,14 +182,22 @@ test_that("compute_taper_plan handles a zero baseline (no recent running)", {
 
 test_that("compute_race_readiness validates inputs", {
   s <- .fixture_summaries_for_taper(weeks_back = 12L, weekly_km = 40)
-  expect_error(compute_race_readiness(s, NA),
-               "target_date")
-  expect_error(compute_race_readiness(s, Sys.Date() + 14L,
-                                       taper_weeks = 0L),
-               "taper_weeks")
-  expect_error(compute_race_readiness(s, Sys.Date() + 14L,
-                                       taper_weeks = 9L),
-               "taper_weeks")
+  expect_error(
+    compute_race_readiness(s, NA),
+    "target_date"
+  )
+  expect_error(
+    compute_race_readiness(s, Sys.Date() + 14L,
+      taper_weeks = 0L
+    ),
+    "taper_weeks"
+  )
+  expect_error(
+    compute_race_readiness(s, Sys.Date() + 14L,
+      taper_weeks = 9L
+    ),
+    "taper_weeks"
+  )
 })
 
 
@@ -183,8 +207,10 @@ test_that("render_taper_plan_prose dates are locale-invariant ISO", {
   # dates regardless of locale (or via an explicit Swedish mapping).
   s <- .fixture_summaries_for_taper(weeks_back = 8L, weekly_km = 40)
   race_date <- Sys.Date() + 28L
-  plan <- compute_taper_plan(s, race_date, distance_km = 10.0,
-                              taper_weeks = 2L)
+  plan <- compute_taper_plan(s, race_date,
+    distance_km = 10.0,
+    taper_weeks = 2L
+  )
   withr::with_locale(c("LC_TIME" = "C"), {
     prose <- render_taper_plan_prose(plan)
   })
@@ -214,8 +240,9 @@ test_that("compute_race_readiness produces a score with PMC data only", {
   expect_true(r$score >= 0 && r$score <= 100)
   # CTL trend + TSB projection are present; HRV / RHR absent.
   expect_named(r$components,
-               c("ctl_trend", "tsb_projection"),
-               ignore.order = TRUE)
+    c("ctl_trend", "tsb_projection"),
+    ignore.order = TRUE
+  )
 })
 
 
@@ -244,19 +271,26 @@ test_that("readiness prose lists missing components", {
 test_that(".score_stability hits the linear band", {
   # Symmetric "higher-is-better" semantics: good = within 0.5 of
   # baseline, bad = >3 below. Score 100 at delta=0, 0 at delta=-3.
-  expect_equal(traning:::.score_stability(0,    0.5, 3), 100)
+  expect_equal(traning:::.score_stability(0, 0.5, 3), 100)
   expect_equal(traning:::.score_stability(-0.5, 0.5, 3), 100)
-  expect_equal(traning:::.score_stability(-3.0, 0.5, 3),   0)
+  expect_equal(traning:::.score_stability(-3.0, 0.5, 3), 0)
   # Linear region: at -1.75 ms, expect ~50/100 (midpoint of -0.5..-3).
   expect_equal(traning:::.score_stability(-1.75, 0.5, 3), 50,
-               tolerance = 0.5)
+    tolerance = 0.5
+  )
   # Lower-is-better flips the sign convention.
-  expect_equal(traning:::.score_stability(3, 1, 3,
-                                           direction = "lower-is-better"),
-               0)
-  expect_equal(traning:::.score_stability(-1, 1, 3,
-                                           direction = "lower-is-better"),
-               100)
+  expect_equal(
+    traning:::.score_stability(3, 1, 3,
+      direction = "lower-is-better"
+    ),
+    0
+  )
+  expect_equal(
+    traning:::.score_stability(-1, 1, 3,
+      direction = "lower-is-better"
+    ),
+    100
+  )
 })
 
 

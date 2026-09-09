@@ -123,8 +123,8 @@ traning_palette <- list(
   # contrast pair so current period reads against the multi-year
   # backdrop. Two browns would smear together in density overlays.
   run_profile = list(
-    current = "#C97B4A",  # terracotta for current period
-    history = "#4682B4",  # steelblue for historical backdrop
+    current = "#C97B4A", # terracotta for current period
+    history = "#4682B4", # steelblue for historical backdrop
     fill = list(
       light  = "#FFE082",
       dark   = "#7B5C00",
@@ -165,10 +165,10 @@ traning_palette <- list(
 theme_traning <- function(base_size = 12, rotated_x = FALSE, angle = 45) {
   th <- ggplot2::theme_minimal(base_size = base_size) +
     ggplot2::theme(
-      plot.title    = ggplot2::element_text(face = "bold"),
+      plot.title = ggplot2::element_text(face = "bold"),
       plot.subtitle = ggplot2::element_text(colour = "grey40"),
       panel.grid.minor = ggplot2::element_blank(),
-      strip.text    = ggplot2::element_text(face = "bold")
+      strip.text = ggplot2::element_text(face = "bold")
     )
   if (isTRUE(rotated_x)) {
     th <- th + ggplot2::theme(
@@ -184,8 +184,11 @@ theme_traning <- function(base_size = 12, rotated_x = FALSE, angle = 45) {
 # "Insufficient values in manual scale" error.
 .traning_sequence_n <- function(n) {
   anchors <- unname(traning_palette$sequence)
-  if (n <= length(anchors)) anchors[seq_len(n)]
-  else grDevices::colorRampPalette(anchors)(n)
+  if (n <= length(anchors)) {
+    anchors[seq_len(n)]
+  } else {
+    grDevices::colorRampPalette(anchors)(n)
+  }
 }
 
 #' Discrete fill scale using `traning_palette$sequence`

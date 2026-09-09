@@ -70,10 +70,10 @@
 #'   }
 #' @export
 compute_zone_distribution <- function(summaries,
-                                      hr_max    = NULL,
-                                      vt1_pct   = 0.80,
-                                      vt2_pct   = 0.90,
-                                      sport     = "running") {
+                                      hr_max = NULL,
+                                      vt1_pct = 0.80,
+                                      vt2_pct = 0.90,
+                                      sport = "running") {
   if (!.has_garmin_zones(summaries)) {
     stop(
       "summaries saknar garmin_hrTimeInZone-kolumner. ",
@@ -88,15 +88,15 @@ compute_zone_distribution <- function(summaries,
     dplyr::filter(dplyr::if_all(dplyr::all_of(zone_cols), ~ !is.na(.x))) %>%
     dplyr::mutate(
       sessionStart = as.Date(sessionStart),
-      distance_km  = distance / 1000,
+      distance_km = distance / 1000,
       # Seiler Z1 = Garmin Z1 + Z2
-      z1_sec   = as.numeric(garmin_hrTimeInZone_1) +
-                 as.numeric(garmin_hrTimeInZone_2),
+      z1_sec = as.numeric(garmin_hrTimeInZone_1) +
+        as.numeric(garmin_hrTimeInZone_2),
       # Seiler Z2 = Garmin Z3
-      z2_sec   = as.numeric(garmin_hrTimeInZone_3),
+      z2_sec = as.numeric(garmin_hrTimeInZone_3),
       # Seiler Z3 = Garmin Z4 + Z5
-      z3_sec   = as.numeric(garmin_hrTimeInZone_4) +
-                 as.numeric(garmin_hrTimeInZone_5),
+      z3_sec = as.numeric(garmin_hrTimeInZone_4) +
+        as.numeric(garmin_hrTimeInZone_5),
       total_sec = z1_sec + z2_sec + z3_sec
     ) %>%
     dplyr::filter(total_sec > 0) %>%
@@ -207,17 +207,19 @@ compute_zone_distribution <- function(summaries,
 #' @export
 compute_zone_distribution_persecond <- function(summaries,
                                                 myruns,
-                                                hr_max  = NULL,
+                                                hr_max = NULL,
                                                 vt1_pct = 0.80,
                                                 vt2_pct = 0.90,
-                                                sport   = "running") {
+                                                sport = "running") {
   if (is.null(hr_max)) hr_max <- get_hr_max(summaries, sport = sport)
 
   vt1 <- hr_max * vt1_pct
   vt2 <- hr_max * vt2_pct
 
-  message("HRmax: ", hr_max, " bpm | VT1: ", round(vt1), " bpm | VT2: ",
-          round(vt2), " bpm")
+  message(
+    "HRmax: ", hr_max, " bpm | VT1: ", round(vt1), " bpm | VT2: ",
+    round(vt2), " bpm"
+  )
 
   # Identifiera kvalificerande sessioner — håll index mot myruns-listan
   run_idx <- which(.sport_match_mask(summaries, sport))
@@ -237,7 +239,7 @@ compute_zone_distribution_persecond <- function(summaries,
   if (length(run_idx) == 0) {
     return(list(
       per_activity = empty_per_activity,
-      monthly      = tibble::tibble(
+      monthly = tibble::tibble(
         year_month   = character(0),
         z1_pct       = numeric(0),
         z2_pct       = numeric(0),
@@ -249,9 +251,9 @@ compute_zone_distribution_persecond <- function(summaries,
     ))
   }
 
-  n_runs   <- length(run_idx)
-  n_skip   <- 0L
-  results  <- vector("list", n_runs)
+  n_runs <- length(run_idx)
+  n_skip <- 0L
+  results <- vector("list", n_runs)
 
   for (k in seq_along(run_idx)) {
     i <- run_idx[k]
@@ -313,7 +315,8 @@ compute_zone_distribution_persecond <- function(summaries,
 
   if (n_skip > 0) {
     warning(n_skip, " sessioner hoppades över (NULL eller saknar HR-data).",
-            call. = FALSE)
+      call. = FALSE
+    )
   }
 
   # Slå ihop per-session-resultat
@@ -334,9 +337,11 @@ compute_zone_distribution_persecond <- function(summaries,
       n_activities = integer(0),
       total_min    = numeric(0)
     )
-    return(list(per_activity = per_activity,
-                monthly      = empty_monthly,
-                skipped      = n_skip))
+    return(list(
+      per_activity = per_activity,
+      monthly = empty_monthly,
+      skipped = n_skip
+    ))
   }
 
   monthly <- per_activity %>%
@@ -371,9 +376,12 @@ compute_zone_distribution_persecond <- function(summaries,
 # Default cache path for zone distribution
 .zone_cache_path <- function() {
   traning_data <- Sys.getenv("TRANING_DATA")
-  if (traning_data == "") return(NULL)
+  if (traning_data == "") {
+    return(NULL)
+  }
   normalizePath(file.path(traning_data, "cache", "zone_distribution.RData"),
-                mustWork = FALSE)
+    mustWork = FALSE
+  )
 }
 
 #' Load zone distribution with incremental caching
@@ -401,12 +409,12 @@ compute_zone_distribution_persecond <- function(summaries,
 #' @export
 load_zone_distribution <- function(summaries,
                                    myruns,
-                                   hr_max     = NULL,
-                                   vt1_pct    = 0.80,
-                                   vt2_pct    = 0.90,
-                                   force      = FALSE,
+                                   hr_max = NULL,
+                                   vt1_pct = 0.80,
+                                   vt2_pct = 0.90,
+                                   force = FALSE,
                                    cache_path = NULL,
-                                   sport      = "running") {
+                                   sport = "running") {
   if (is.null(cache_path)) cache_path <- .zone_cache_path()
 
   cached_activity <- NULL
@@ -414,19 +422,21 @@ load_zone_distribution <- function(summaries,
   cache_valid <- FALSE
 
   if (!force && !is.null(cache_path) && file.exists(cache_path)) {
-    load(cache_path)  # loads: zone_cache
+    load(cache_path) # loads: zone_cache
     # Cache must also match `sport`. Without it, a cache built for
     # running could be merged with a cycling request via shared
     # sessionStart dates, returning cross-sport zones.
     if (exists("zone_cache") &&
-        identical(zone_cache$vt1_pct, vt1_pct) &&
-        identical(zone_cache$vt2_pct, vt2_pct) &&
-        identical(zone_cache$sport %||% NULL, sport)) {
+      identical(zone_cache$vt1_pct, vt1_pct) &&
+      identical(zone_cache$vt2_pct, vt2_pct) &&
+      identical(zone_cache$sport %||% NULL, sport)) {
       cached_activity <- zone_cache$per_activity
       cached_skipped_dates <- zone_cache$skipped_dates %||% as.Date(character(0))
       cache_valid <- TRUE
-      message("Zoncache: ", nrow(cached_activity), " sessioner (",
-              length(cached_skipped_dates), " utan HR-data).")
+      message(
+        "Zoncache: ", nrow(cached_activity), " sessioner (",
+        length(cached_skipped_dates), " utan HR-data)."
+      )
     } else {
       message("Zoncache: parametrar \u00e4ndrade, r\u00e4knar om allt.")
     }
@@ -509,29 +519,38 @@ load_zone_distribution <- function(summaries,
 
       session <- tryCatch(myruns[[i]], error = function(e) NULL)
       if (is.null(session)) {
-        n_skip <- n_skip + 1L; new_skipped <- c(new_skipped, skip_date); next
+        n_skip <- n_skip + 1L
+        new_skipped <- c(new_skipped, skip_date)
+        next
       }
 
       session_df <- tryCatch(as.data.frame(session), error = function(e) NULL)
       if (is.null(session_df) || !"heart_rate" %in% names(session_df)) {
-        n_skip <- n_skip + 1L; new_skipped <- c(new_skipped, skip_date); next
+        n_skip <- n_skip + 1L
+        new_skipped <- c(new_skipped, skip_date)
+        next
       }
 
       hr_vals <- as.numeric(session_df[["heart_rate"]])
       hr_vals <- hr_vals[!is.na(hr_vals) & hr_vals > 0]
       if (length(hr_vals) == 0) {
-        n_skip <- n_skip + 1L; new_skipped <- c(new_skipped, skip_date); next
+        n_skip <- n_skip + 1L
+        new_skipped <- c(new_skipped, skip_date)
+        next
       }
 
       z1_sec <- sum(hr_vals < vt1)
       z2_sec <- sum(hr_vals >= vt1 & hr_vals < vt2)
       z3_sec <- sum(hr_vals >= vt2)
       total_sec <- z1_sec + z2_sec + z3_sec
-      if (total_sec == 0) { n_skip <- n_skip + 1L; next }
+      if (total_sec == 0) {
+        n_skip <- n_skip + 1L
+        next
+      }
 
       new_results[[k]] <- tibble::tibble(
         sessionStart = as.Date(summaries$sessionStart[[i]]),
-        distance_km  = as.numeric(summaries$distance[[i]]) / 1000,
+        distance_km = as.numeric(summaries$distance[[i]]) / 1000,
         z1_sec = as.numeric(z1_sec), z2_sec = as.numeric(z2_sec),
         z3_sec = as.numeric(z3_sec), total_sec = as.numeric(total_sec),
         z1_pct = 100 * z1_sec / total_sec,
@@ -542,7 +561,8 @@ load_zone_distribution <- function(summaries,
 
     if (n_skip > 0) {
       warning(n_skip, " sessioner hoppades \u00f6ver (NULL eller saknar HR-data).",
-              call. = FALSE)
+        call. = FALSE
+      )
     }
 
     new_activity <- dplyr::bind_rows(new_results)
@@ -560,9 +580,11 @@ load_zone_distribution <- function(summaries,
   }
 
   per_activity <- per_activity %>%
-    dplyr::select(sessionStart, distance_km,
-                  z1_pct, z2_pct, z3_pct,
-                  z1_sec, z2_sec, z3_sec, total_sec)
+    dplyr::select(
+      sessionStart, distance_km,
+      z1_pct, z2_pct, z3_pct,
+      z1_sec, z2_sec, z3_sec, total_sec
+    )
 
   # Save cache
   if (!is.null(cache_path)) {
@@ -592,12 +614,12 @@ load_zone_distribution <- function(summaries,
       )) %>%
       dplyr::mutate(
         sessionStart = as.Date(sessionStart),
-        distance_km  = distance / 1000,
-        z1_sec   = as.numeric(garmin_hrTimeInZone_1) +
-                   as.numeric(garmin_hrTimeInZone_2),
-        z2_sec   = as.numeric(garmin_hrTimeInZone_3),
-        z3_sec   = as.numeric(garmin_hrTimeInZone_4) +
-                   as.numeric(garmin_hrTimeInZone_5),
+        distance_km = distance / 1000,
+        z1_sec = as.numeric(garmin_hrTimeInZone_1) +
+          as.numeric(garmin_hrTimeInZone_2),
+        z2_sec = as.numeric(garmin_hrTimeInZone_3),
+        z3_sec = as.numeric(garmin_hrTimeInZone_4) +
+          as.numeric(garmin_hrTimeInZone_5),
         total_sec = z1_sec + z2_sec + z3_sec
       ) %>%
       dplyr::filter(total_sec > 0) %>%
@@ -607,13 +629,17 @@ load_zone_distribution <- function(summaries,
         z3_pct = 100 * z3_sec / total_sec,
         source = "garmin"
       ) %>%
-      dplyr::select(sessionStart, distance_km,
-                    z1_pct, z2_pct, z3_pct,
-                    z1_sec, z2_sec, z3_sec, total_sec, source)
+      dplyr::select(
+        sessionStart, distance_km,
+        z1_pct, z2_pct, z3_pct,
+        z1_sec, z2_sec, z3_sec, total_sec, source
+      )
 
     if (nrow(garmin_fallback) > 0) {
-      message("Garmin JSON-fallback: ", nrow(garmin_fallback),
-              " sessioner utan per-sekundsdata.")
+      message(
+        "Garmin JSON-fallback: ", nrow(garmin_fallback),
+        " sessioner utan per-sekundsdata."
+      )
       per_activity <- dplyr::bind_rows(per_activity, garmin_fallback) %>%
         dplyr::arrange(sessionStart)
     }
@@ -634,7 +660,7 @@ load_zone_distribution <- function(summaries,
         z1_sec_sum = sum(z1_sec, na.rm = TRUE),
         z2_sec_sum = sum(z2_sec, na.rm = TRUE),
         z3_sec_sum = sum(z3_sec, na.rm = TRUE),
-        total_sec  = sum(total_sec, na.rm = TRUE),
+        total_sec = sum(total_sec, na.rm = TRUE),
         n_activities = dplyr::n(), .groups = "drop"
       ) %>%
       dplyr::filter(total_sec > 0) %>%
@@ -644,8 +670,10 @@ load_zone_distribution <- function(summaries,
         z3_pct = 100 * z3_sec_sum / total_sec,
         total_min = total_sec / 60
       ) %>%
-      dplyr::select(year_month, z1_pct, z2_pct, z3_pct,
-                    n_activities, total_min) %>%
+      dplyr::select(
+        year_month, z1_pct, z2_pct, z3_pct,
+        n_activities, total_min
+      ) %>%
       dplyr::arrange(year_month)
   }
 
@@ -654,8 +682,10 @@ load_zone_distribution <- function(summaries,
   # (carried over from earlier runs) and new_skipped (from this call), so
   # the count remains accurate even when this call returns purely cached
   # results.
-  list(per_activity = per_activity, monthly = monthly,
-       skipped = length(all_skipped))
+  list(
+    per_activity = per_activity, monthly = monthly,
+    skipped = length(all_skipped)
+  )
 }
 
 #' Compute Polarization Index (Treff 2019)
@@ -691,9 +721,11 @@ load_zone_distribution <- function(summaries,
 #' @export
 compute_polarization_index <- function(zone_data, window = "monthly") {
   if (!"monthly" %in% names(zone_data)) {
-    stop("zone_data saknar '$monthly'-element. ",
-         "Skicka in utdata fr\u00e5n compute_zone_distribution() eller ",
-         "compute_zone_distribution_persecond().")
+    stop(
+      "zone_data saknar '$monthly'-element. ",
+      "Skicka in utdata fr\u00e5n compute_zone_distribution() eller ",
+      "compute_zone_distribution_persecond()."
+    )
   }
 
   monthly <- zone_data$monthly
@@ -720,10 +752,10 @@ compute_polarization_index <- function(zone_data, window = "monthly") {
       has_zero_zone = (p2 == 0 | p3 == 0),
       # Treff (2019) PI: beräkna råvärde, sedan log10
       pi_raw = dplyr::case_when(
-        p3 == 0             ~ 0,
+        p3 == 0 ~ 0,
         p2 == 0 & p3 < 0.01 ~ 0,
-        p2 == 0             ~ (p1 / 0.01) * (p3 - 0.01) * 100,
-        TRUE                ~ (p1 / p2) * p3 * 100
+        p2 == 0 ~ (p1 / 0.01) * (p3 - 0.01) * 100,
+        TRUE ~ (p1 / p2) * p3 * 100
       ),
       pi = dplyr::if_else(pi_raw > 0, log10(pi_raw), 0)
     ) %>%
@@ -763,10 +795,10 @@ compute_polarization_index <- function(zone_data, window = "monthly") {
 #' @export
 cross_validate_zones <- function(summaries,
                                  myruns,
-                                 hr_max  = NULL,
+                                 hr_max = NULL,
                                  vt1_pct = 0.80,
                                  vt2_pct = 0.90,
-                                 sport   = "running") {
+                                 sport = "running") {
   if (!.has_garmin_zones(summaries)) {
     stop(
       "summaries saknar garmin_hrTimeInZone-kolumner. ",
@@ -778,8 +810,6 @@ cross_validate_zones <- function(summaries,
 
   vt1 <- hr_max * vt1_pct
   vt2 <- hr_max * vt2_pct
-
-  zone_cols <- paste0("garmin_hrTimeInZone_", 1:5)
 
   # Identifiera kvalificerande sessioner med kompletta Garmin-zondata
   run_idx <- which(
@@ -827,13 +857,13 @@ cross_validate_zones <- function(summaries,
     if (is.null(session_df) || !"heart_rate" %in% names(session_df)) next
 
     hr_vals <- as.numeric(session_df[["heart_rate"]])
-    hr_vals  <- hr_vals[!is.na(hr_vals) & hr_vals > 0]
+    hr_vals <- hr_vals[!is.na(hr_vals) & hr_vals > 0]
 
     if (length(hr_vals) == 0) next
 
-    ps_z1  <- sum(hr_vals < vt1)
-    ps_z2  <- sum(hr_vals >= vt1 & hr_vals < vt2)
-    ps_z3  <- sum(hr_vals >= vt2)
+    ps_z1 <- sum(hr_vals < vt1)
+    ps_z2 <- sum(hr_vals >= vt1 & hr_vals < vt2)
+    ps_z3 <- sum(hr_vals >= vt2)
     ps_tot <- ps_z1 + ps_z2 + ps_z3
 
     if (ps_tot == 0) next

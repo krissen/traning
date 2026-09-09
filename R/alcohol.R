@@ -139,11 +139,17 @@
 #'   \code{units}. Empty tibble when the directory is absent or empty.
 #' @keywords internal
 .read_canonical_samples <- function(dir) {
-  empty <- tibble::tibble(date = as.Date(character()), qty = numeric(),
-                          source = character(), units = character())
-  if (is.null(dir) || !dir.exists(dir)) return(empty)
+  empty <- tibble::tibble(
+    date = as.Date(character()), qty = numeric(),
+    source = character(), units = character()
+  )
+  if (is.null(dir) || !dir.exists(dir)) {
+    return(empty)
+  }
   files <- list.files(dir, pattern = "\\.json$", full.names = TRUE)
-  if (length(files) == 0) return(empty)
+  if (length(files) == 0) {
+    return(empty)
+  }
 
   rows <- lapply(files, function(f) {
     raw <- tryCatch(
@@ -153,20 +159,26 @@
         # drinks, and a silent loss is one nobody ever finds. Matches the
         # treatment in read_canonical_file() (R/health_export.R).
         warning("Kunde inte l\u00e4sa canonical-fil, hoppar \u00f6ver: ", f,
-                " (", conditionMessage(e), ")", call. = FALSE)
+          " (", conditionMessage(e), ")",
+          call. = FALSE
+        )
         NULL
       }
     )
-    if (is.null(raw) || length(raw$samples) == 0) return(NULL)
+    if (is.null(raw) || length(raw$samples) == 0) {
+      return(NULL)
+    }
     units <- .coalesce_scalar(raw$units, NA_character_)
     doc_date <- suppressWarnings(as.Date(
-      as.character(.coalesce_scalar(raw$date, NA_character_))))
+      as.character(.coalesce_scalar(raw$date, NA_character_))
+    ))
     parts <- lapply(raw$samples, function(s) {
       qty <- suppressWarnings(as.numeric(.coalesce_scalar(s$qty, NA_real_)))
       d <- doc_date
       if (is.na(d)) {
         d <- suppressWarnings(as.Date(substr(
-          as.character(.coalesce_scalar(s$date, NA_character_)), 1, 10)))
+          as.character(.coalesce_scalar(s$date, NA_character_)), 1, 10
+        )))
       }
       tibble::tibble(
         date   = d,
@@ -178,7 +190,9 @@
     dplyr::bind_rows(parts)
   })
   out <- dplyr::bind_rows(rows)
-  if (nrow(out) == 0) return(empty)
+  if (nrow(out) == 0) {
+    return(empty)
+  }
   out[!is.na(out$date) & !is.na(out$qty), , drop = FALSE]
 }
 
@@ -194,13 +208,22 @@
 #' @keywords internal
 .read_canonical_units <- function(canonical_dir, metric) {
   dir <- file.path(canonical_dir, metric)
-  if (!dir.exists(dir)) return(NA_character_)
+  if (!dir.exists(dir)) {
+    return(NA_character_)
+  }
   files <- sort(list.files(dir, pattern = "\\.json$", full.names = TRUE))
-  if (length(files) == 0) return(NA_character_)
-  raw <- tryCatch(jsonlite::fromJSON(utils::tail(files, 1),
-                                      simplifyVector = FALSE),
-                  error = function(e) NULL)
-  if (is.null(raw)) return(NA_character_)
+  if (length(files) == 0) {
+    return(NA_character_)
+  }
+  raw <- tryCatch(
+    jsonlite::fromJSON(utils::tail(files, 1),
+      simplifyVector = FALSE
+    ),
+    error = function(e) NULL
+  )
+  if (is.null(raw)) {
+    return(NA_character_)
+  }
   as.character(.coalesce_scalar(raw$units, NA_character_))
 }
 
@@ -276,11 +299,15 @@
 #' @return Tibble; see \code{.empty_alcohol_nights()} for the columns.
 #' @export
 build_alcohol_nights <- function(samples, energy = NULL,
-                                  active_window_days = .alcohol_active_window_days,
-                                  today = Sys.Date()) {
-  if (is.null(samples) || nrow(samples) == 0) return(.empty_alcohol_nights())
+                                 active_window_days = .alcohol_active_window_days,
+                                 today = Sys.Date()) {
+  if (is.null(samples) || nrow(samples) == 0) {
+    return(.empty_alcohol_nights())
+  }
   samples <- samples[!is.na(samples$date) & !is.na(samples$qty), , drop = FALSE]
-  if (nrow(samples) == 0) return(.empty_alcohol_nights())
+  if (nrow(samples) == 0) {
+    return(.empty_alcohol_nights())
+  }
   samples$date <- as.Date(samples$date)
 
   sample_dates <- sort(unique(samples$date))
@@ -302,13 +329,17 @@ build_alcohol_nights <- function(samples, energy = NULL,
   # fed straight into the alcohol-free baseline, where up to ten
   # pre-install nights could make up most of its fourteen.
   first_date <- min(sample_dates)
-  if (spine_end < first_date) return(.empty_alcohol_nights())
+  if (spine_end < first_date) {
+    return(.empty_alcohol_nights())
+  }
   spine <- tibble::tibble(date = seq(first_date, spine_end, by = "day"))
 
   by_day <- samples |>
     dplyr::group_by(.data$date) |>
-    dplyr::summarise(alcohol_units = sum(.data$qty, na.rm = TRUE),
-                     .groups = "drop")
+    dplyr::summarise(
+      alcohol_units = sum(.data$qty, na.rm = TRUE),
+      .groups = "drop"
+    )
 
   by_night <- by_day
   by_night$date <- .alcohol_night_date(by_night$date)
@@ -326,8 +357,10 @@ build_alcohol_nights <- function(samples, energy = NULL,
       e$kcal <- .energy_to_kcal(e$qty, e$units)
       kcal_by_night <- e |>
         dplyr::group_by(.data$date) |>
-        dplyr::summarise(alcohol_kcal = sum(.data$kcal, na.rm = TRUE),
-                         .groups = "drop")
+        dplyr::summarise(
+          alcohol_kcal = sum(.data$kcal, na.rm = TRUE),
+          .groups = "drop"
+        )
     }
   }
 
@@ -349,26 +382,30 @@ build_alcohol_nights <- function(samples, energy = NULL,
   out$alcohol_logging_active <- active
 
   out$alcohol_units <- dplyr::if_else(
-    active & is.na(out$alcohol_units), 0, out$alcohol_units)
+    active & is.na(out$alcohol_units), 0, out$alcohol_units
+  )
   # The first row's night ran the evening BEFORE logging existed, so it
   # is unknowable in the same way the pre-history is. Its calendar-day
   # total above is real and stays.
   known_night <- out$date > first_date
   out$alcohol_night_units <- dplyr::if_else(
     active & known_night & is.na(out$alcohol_night_units), 0,
-    out$alcohol_night_units)
+    out$alcohol_night_units
+  )
   # A dry night has no energy to report, and 0 kcal is the honest value
   # there; a night with drinks but no app energy stays NA so the gram
   # figure can be flagged as computed rather than measured.
   dry <- !is.na(out$alcohol_night_units) & out$alcohol_night_units == 0
   out$alcohol_kcal <- dplyr::if_else(dry & is.na(out$alcohol_kcal), 0,
-                                      out$alcohol_kcal)
+    out$alcohol_kcal
+  )
 
   units <- out$alcohol_night_units
   kcal <- out$alcohol_kcal
   from_energy <- !is.na(kcal) & kcal > 0
   out$alcohol_grams <- dplyr::if_else(from_energy, kcal / .alcohol_kcal_per_g,
-                                       NA_real_)
+    NA_real_
+  )
   # Fallback: no energy sample for a night that had drinks. The constant
   # is the app's documented default unit, and the result is flagged so no
   # caller can present it as the app's own figure.
@@ -383,17 +420,20 @@ build_alcohol_nights <- function(samples, energy = NULL,
   # are not what they claim to be.
   out$alcohol_g_per_unit <- dplyr::if_else(
     !is.na(units) & units > 0 & !is.na(out$alcohol_grams),
-    out$alcohol_grams / units, NA_real_)
+    out$alcohol_grams / units, NA_real_
+  )
   expected <- .alcohol_grams_per_unit()
   out$alcohol_unit_mismatch <- !is.na(out$alcohol_g_per_unit) &
     !out$alcohol_grams_estimated &
     abs(out$alcohol_g_per_unit - expected) / expected > .alcohol_unit_tolerance
 
   out |>
-    dplyr::select("date", "alcohol_units", "alcohol_night_units",
-                  "alcohol_kcal", "alcohol_grams", "alcohol_grams_estimated",
-                  "alcohol_g_per_unit", "alcohol_unit_mismatch",
-                  "alcohol_logging_active") |>
+    dplyr::select(
+      "date", "alcohol_units", "alcohol_night_units",
+      "alcohol_kcal", "alcohol_grams", "alcohol_grams_estimated",
+      "alcohol_g_per_unit", "alcohol_unit_mismatch",
+      "alcohol_logging_active"
+    ) |>
     dplyr::arrange(.data$date)
 }
 
@@ -414,11 +454,16 @@ load_alcohol_data <- function(cache_path = NULL) {
     return(.empty_alcohol_nights())
   }
   alcohol_nights <- NULL
-  loaded <- tryCatch({
-    load(cache_path)
-    alcohol_nights
-  }, error = function(e) NULL)
-  if (is.null(loaded) || !is.data.frame(loaded)) return(.empty_alcohol_nights())
+  loaded <- tryCatch(
+    {
+      load(cache_path)
+      alcohol_nights
+    },
+    error = function(e) NULL
+  )
+  if (is.null(loaded) || !is.data.frame(loaded)) {
+    return(.empty_alcohol_nights())
+  }
   tibble::as_tibble(loaded)
 }
 
@@ -456,11 +501,12 @@ save_alcohol_data <- function(alcohol_nights, cache_path = NULL) {
 #' @return The night table, invisibly.
 #' @export
 import_alcohol <- function(save = TRUE, cache_path = NULL,
-                            canonical_dir = NULL, verbose = TRUE,
-                            today = Sys.Date()) {
+                           canonical_dir = NULL, verbose = TRUE,
+                           today = Sys.Date()) {
   if (is.null(canonical_dir)) {
     canonical_dir <- tryCatch(file.path(.hae_dir(), "canonical"),
-                              error = function(e) NULL)
+      error = function(e) NULL
+    )
   }
   if (is.null(canonical_dir) || !dir.exists(canonical_dir)) {
     if (verbose) cat("Ingen canonical-katalog, hoppar \u00f6ver alkoholimport\n")
@@ -468,7 +514,8 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   }
 
   samples <- .read_canonical_samples(
-    file.path(canonical_dir, "alcohol_consumption"))
+    file.path(canonical_dir, "alcohol_consumption")
+  )
   if (nrow(samples) == 0) {
     if (verbose) cat("Inga alkoholsamples i canonical/\n")
     return(invisible(.empty_alcohol_nights()))
@@ -487,15 +534,19 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   # assumed; see .energy_to_kcal().
   attr(nights, "energy_units") <- c(
     active_energy = .read_canonical_units(canonical_dir, "active_energy"),
-    basal_energy_burned = .read_canonical_units(canonical_dir,
-                                                 "basal_energy_burned"),
+    basal_energy_burned = .read_canonical_units(
+      canonical_dir,
+      "basal_energy_burned"
+    ),
     dietary_energy = .read_canonical_units(canonical_dir, "dietary_energy")
   )
 
   if (verbose) {
     logged <- sum(nights$alcohol_night_units > 0, na.rm = TRUE)
-    cat("Alkohol:", nrow(samples), "samples,", nrow(nights), "dygn,",
-        logged, "n\u00e4tter med registrerad alkohol\n")
+    cat(
+      "Alkohol:", nrow(samples), "samples,", nrow(nights), "dygn,",
+      logged, "n\u00e4tter med registrerad alkohol\n"
+    )
   }
   # A unit-setting drift is never swallowed, whatever the verbosity: it
   # means every gram figure on those nights rests on a different
@@ -503,11 +554,14 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
   mismatch <- nights[which(nights$alcohol_unit_mismatch), , drop = FALSE]
   if (nrow(mismatch) > 0) {
     message(sprintf(
-      paste0("Alkohol: %d natt(er) med avvikande gram per glas ",
-             "(f\u00f6rv\u00e4ntat %s g, sett %s g). ",
-             "Kontrollera DrinkControls glasinst\u00e4llning."),
+      paste0(
+        "Alkohol: %d natt(er) med avvikande gram per glas ",
+        "(f\u00f6rv\u00e4ntat %s g, sett %s g). ",
+        "Kontrollera DrinkControls glasinst\u00e4llning."
+      ),
       nrow(mismatch), format(.alcohol_grams_per_unit()),
-      paste(unique(round(mismatch$alcohol_g_per_unit, 1)), collapse = ", ")))
+      paste(unique(round(mismatch$alcohol_g_per_unit, 1)), collapse = ", ")
+    ))
   }
   if (save) {
     path <- if (is.null(cache_path)) .alcohol_cache_path() else cache_path
@@ -528,15 +582,20 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 #' @return TRUE when the table was rebuilt, FALSE otherwise.
 #' @keywords internal
 .refresh_alcohol_cache <- function(health_cache_path = NULL, verbose = FALSE) {
-  res <- tryCatch({
-    import_alcohol(save = TRUE,
-                   cache_path = .alcohol_cache_path(health_cache_path),
-                   verbose = verbose)
-    TRUE
-  }, error = function(e) {
-    if (verbose) cat("Alkoholtabellen kunde inte byggas:", conditionMessage(e), "\n")
-    FALSE
-  })
+  res <- tryCatch(
+    {
+      import_alcohol(
+        save = TRUE,
+        cache_path = .alcohol_cache_path(health_cache_path),
+        verbose = verbose
+      )
+      TRUE
+    },
+    error = function(e) {
+      if (verbose) cat("Alkoholtabellen kunde inte byggas:", conditionMessage(e), "\n")
+      FALSE
+    }
+  )
   isTRUE(res)
 }
 
@@ -552,9 +611,13 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 #' Unit string for one expenditure metric, defaulting to kilojoules
 #' @keywords internal
 .metric_energy_unit <- function(energy_units, metric) {
-  if (is.null(energy_units) || !metric %in% names(energy_units)) return("kJ")
+  if (is.null(energy_units) || !metric %in% names(energy_units)) {
+    return("kJ")
+  }
   u <- energy_units[[metric]]
-  if (is.null(u) || is.na(u) || !nzchar(u)) return("kJ")
+  if (is.null(u) || is.na(u) || !nzchar(u)) {
+    return("kJ")
+  }
   u
 }
 
@@ -593,18 +656,23 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 #' @return Tibble with \code{date} and \code{tdee_kcal}, ascending.
 #' @keywords internal
 .alcohol_daily_energy <- function(health_daily, summaries = NULL,
-                                   energy_units = NULL) {
+                                  energy_units = NULL) {
   empty <- tibble::tibble(date = as.Date(character()), tdee_kcal = numeric())
   if (is.null(health_daily) || !is.data.frame(health_daily) ||
-      nrow(health_daily) == 0 ||
-      !all(c("date", "metric", "value") %in% names(health_daily))) {
+    nrow(health_daily) == 0 ||
+    !all(c("date", "metric", "value") %in% names(health_daily))) {
     return(empty)
   }
-  e <- health_daily[health_daily$metric %in%
-                      c("active_energy", "basal_energy_burned"),
-                    c("date", "metric", "value"), drop = FALSE]
+  e <- health_daily[
+    health_daily$metric %in%
+      c("active_energy", "basal_energy_burned"),
+    c("date", "metric", "value"),
+    drop = FALSE
+  ]
   e <- e[!is.na(e$value), , drop = FALSE]
-  if (nrow(e) == 0) return(empty)
+  if (nrow(e) == 0) {
+    return(empty)
+  }
   e$date <- as.Date(e$date)
 
   wide <- e |>
@@ -615,19 +683,31 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
     return(empty)
   }
   out <- wide |>
-    dplyr::filter(!is.na(.data$active_energy),
-                  !is.na(.data$basal_energy_burned)) |>
+    dplyr::filter(
+      !is.na(.data$active_energy),
+      !is.na(.data$basal_energy_burned)
+    ) |>
     dplyr::transmute(
       date = .data$date,
-      tdee_kcal = .energy_to_kcal(.data$active_energy,
-                                   .metric_energy_unit(energy_units,
-                                                        "active_energy")) +
-        .energy_to_kcal(.data$basal_energy_burned,
-                         .metric_energy_unit(energy_units,
-                                              "basal_energy_burned"))
+      tdee_kcal = .energy_to_kcal(
+        .data$active_energy,
+        .metric_energy_unit(
+          energy_units,
+          "active_energy"
+        )
+      ) +
+        .energy_to_kcal(
+          .data$basal_energy_burned,
+          .metric_energy_unit(
+            energy_units,
+            "basal_energy_burned"
+          )
+        )
     ) |>
-    dplyr::filter(.data$tdee_kcal >= .alcohol_tdee_plausible_kcal[1],
-                  .data$tdee_kcal <= .alcohol_tdee_plausible_kcal[2]) |>
+    dplyr::filter(
+      .data$tdee_kcal >= .alcohol_tdee_plausible_kcal[1],
+      .data$tdee_kcal <= .alcohol_tdee_plausible_kcal[2]
+    ) |>
     dplyr::arrange(.data$date)
 
   if (nrow(out) > 0) {
@@ -651,13 +731,17 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 #' @return Numeric vector, NA where the window is too thin.
 #' @keywords internal
 .alcohol_tdee_baseline <- function(energy, dates, window_days = 28,
-                                    min_days = 20) {
-  if (is.null(energy) || nrow(energy) == 0) return(rep(NA_real_, length(dates)))
+                                   min_days = 20) {
+  if (is.null(energy) || nrow(energy) == 0) {
+    return(rep(NA_real_, length(dates)))
+  }
   ed <- as.numeric(energy$date)
   ev <- energy$tdee_kcal
   vapply(as.numeric(dates), function(d) {
     vals <- ev[ed <= d & ed > d - window_days]
-    if (length(vals) < min_days) return(NA_real_)
+    if (length(vals) < min_days) {
+      return(NA_real_)
+    }
     mean(vals, na.rm = TRUE)
   }, numeric(1))
 }
@@ -679,17 +763,20 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 .alcohol_energy_contaminated <- function(summaries, health_daily, dates) {
   out <- rep(FALSE, length(dates))
   if (is.null(summaries) || !is.data.frame(summaries) ||
-      nrow(summaries) == 0 || !"sessionStart" %in% names(summaries)) {
+    nrow(summaries) == 0 || !"sessionStart" %in% names(summaries)) {
     return(out)
   }
   session_dates <- unique(as.Date(summaries$sessionStart))
   session_dates <- session_dates[!is.na(session_dates)]
-  if (length(session_dates) == 0) return(out)
+  if (length(session_dates) == 0) {
+    return(out)
+  }
   for (i in seq_along(dates)) {
     d <- as.Date(dates[i])
     if (!(d %in% session_dates)) next
     verdict <- tryCatch(.day_energy_verdict(health_daily, d),
-                        error = function(e) "insufficient")
+      error = function(e) "insufficient"
+    )
     out[i] <- identical(verdict, "rest")
   }
   out
@@ -724,8 +811,8 @@ import_alcohol <- function(save = TRUE, cache_path = NULL,
 #'   \code{tdee_kcal_28d} and \code{alcohol_share} added.
 #' @export
 compute_alcohol_energy <- function(alcohol, health_daily = NULL,
-                                    summaries = NULL,
-                                    window_days = 28, min_days = 20) {
+                                   summaries = NULL,
+                                   window_days = 28, min_days = 20) {
   if (is.null(alcohol) || nrow(alcohol) == 0) {
     out <- .empty_alcohol_nights()
     out$alcohol_standardglas <- numeric()
@@ -767,10 +854,14 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
   # date happens to look suspect. The old per-day suppression also keyed
   # off the morning date while the questionable energy reading sits on
   # the evening before, so it fired on the wrong day in both directions.
-  energy <- .alcohol_daily_energy(health_daily, summaries,
-                                   attr(alcohol, "energy_units"))
+  energy <- .alcohol_daily_energy(
+    health_daily, summaries,
+    attr(alcohol, "energy_units")
+  )
   alcohol$tdee_kcal_28d <- .alcohol_tdee_baseline(
-    energy, alcohol$date, window_days = window_days, min_days = min_days)
+    energy, alcohol$date,
+    window_days = window_days, min_days = min_days
+  )
 
   share <- alcohol$alcohol_kcal / alcohol$tdee_kcal_28d
   share[!is.finite(share)] <- NA_real_
@@ -807,10 +898,14 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
   # Monday lands on the Monday of any given week.
   vapply(iso_week, function(k) {
     parts <- strsplit(k, "-W", fixed = TRUE)[[1]]
-    if (length(parts) != 2L) return(7L)
+    if (length(parts) != 2L) {
+      return(7L)
+    }
     year <- suppressWarnings(as.integer(parts[1]))
     week <- suppressWarnings(as.integer(parts[2]))
-    if (is.na(year) || is.na(week)) return(7L)
+    if (is.na(year) || is.na(week)) {
+      return(7L)
+    }
     jan4 <- as.Date(sprintf("%04d-01-04", year))
     week1_monday <- jan4 - (as.integer(format(jan4, "%u")) - 1L)
     monday <- week1_monday + (week - 1L) * 7L
@@ -842,15 +937,17 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
 #'   \code{week_tdee_kcal}, \code{share}.
 #' @export
 compute_alcohol_week <- function(alcohol, health_daily = NULL,
-                                  summaries = NULL, min_days_in_week = 5,
-                                  today = Sys.Date()) {
+                                 summaries = NULL, min_days_in_week = 5,
+                                 today = Sys.Date()) {
   empty <- tibble::tibble(
     iso_week = character(), week_start = as.Date(character()),
     units = numeric(), standardglas = numeric(), grams = numeric(),
     kcal = numeric(), drinking_days = integer(), dry_days = integer(),
     week_tdee_kcal = numeric(), share = numeric()
   )
-  if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
+  if (is.null(alcohol) || nrow(alcohol) == 0) {
+    return(empty)
+  }
   if (!"alcohol_share" %in% names(alcohol)) {
     alcohol <- compute_alcohol_energy(alcohol, health_daily, summaries)
   }
@@ -860,7 +957,9 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
   keep <- !is.na(alcohol$alcohol_logging_active) &
     alcohol$alcohol_logging_active
   a <- alcohol[keep, , drop = FALSE]
-  if (nrow(a) == 0) return(empty)
+  if (nrow(a) == 0) {
+    return(empty)
+  }
 
   # The week is a week of EVENINGS, so it is keyed by the drinking date,
   # which is the morning date minus one. Grouping on the morning splits a
@@ -872,8 +971,10 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 
   # Same pool as the daily share, so the two percentages cannot be
   # computed under different rules and disagree about the same week.
-  energy <- .alcohol_daily_energy(health_daily, summaries,
-                                   attr(alcohol, "energy_units"))
+  energy <- .alcohol_daily_energy(
+    health_daily, summaries,
+    attr(alcohol, "energy_units")
+  )
   energy$iso_week <- format(energy$date, "%G-W%V")
   # Mean times seven, not the raw sum. The numerator covers every
   # logging-active night in the week, up to seven, while the denominator
@@ -904,27 +1005,30 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
   # day before it, so that is where the account reaches.
   last_evening <- suppressWarnings(max(a$drink_date, na.rm = TRUE))
   if (!is.finite(last_evening)) last_evening <- as.Date(today) - 1L
-  week_energy$week_days <- .alcohol_week_elapsed_days(week_energy$iso_week,
-                                                       last_evening)
+  week_energy$week_days <- .alcohol_week_elapsed_days(
+    week_energy$iso_week,
+    last_evening
+  )
   week_energy$week_tdee_kcal <- week_energy$tdee_mean * week_energy$week_days
   week_energy$week_tdee_kcal[week_energy$n_days < min_days_in_week] <- NA_real_
 
   out <- a |>
     dplyr::group_by(.data$iso_week) |>
     dplyr::summarise(
-      week_start    = min(.data$drink_date),
-      units         = sum(.data$alcohol_night_units, na.rm = TRUE),
-      standardglas  = sum(.data$alcohol_standardglas, na.rm = TRUE),
-      grams         = sum(.data$alcohol_grams, na.rm = TRUE),
-      kcal          = sum(.data$alcohol_kcal, na.rm = TRUE),
+      week_start = min(.data$drink_date),
+      units = sum(.data$alcohol_night_units, na.rm = TRUE),
+      standardglas = sum(.data$alcohol_standardglas, na.rm = TRUE),
+      grams = sum(.data$alcohol_grams, na.rm = TRUE),
+      kcal = sum(.data$alcohol_kcal, na.rm = TRUE),
       drinking_days = sum(!is.na(.data$alcohol_night_units) &
-                            .data$alcohol_night_units > 0),
-      dry_days      = sum(!is.na(.data$alcohol_night_units) &
-                            .data$alcohol_night_units == 0),
+        .data$alcohol_night_units > 0),
+      dry_days = sum(!is.na(.data$alcohol_night_units) &
+        .data$alcohol_night_units == 0),
       .groups = "drop"
     ) |>
     dplyr::left_join(week_energy[, c("iso_week", "week_tdee_kcal")],
-                     by = "iso_week")
+      by = "iso_week"
+    )
 
   out$share <- out$kcal / out$week_tdee_kcal
   out$share[!is.finite(out$share)] <- NA_real_
@@ -980,8 +1084,8 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 # An earlier version of this comment claimed these were reused from the
 # tier-1 update thresholds. They were not; .tier1_metrics carries no
 # numbers at all and .tier2_thresholds does not cover these metrics.
-.alcohol_illness_wrist_temp <- 0.4   # degC above the trailing 14d median
-.alcohol_illness_resp_rate  <- 2     # breaths/min above the trailing 7d mean
+.alcohol_illness_wrist_temp <- 0.4 # degC above the trailing 14d median
+.alcohol_illness_resp_rate <- 2 # breaths/min above the trailing 7d mean
 
 #' Robust centre and spread of a numeric vector
 #'
@@ -993,10 +1097,14 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 #' @keywords internal
 .robust_stats <- function(x) {
   x <- x[is.finite(x)]
-  if (length(x) == 0) return(list(center = NA_real_, spread = NA_real_, n = 0L))
+  if (length(x) == 0) {
+    return(list(center = NA_real_, spread = NA_real_, n = 0L))
+  }
   s <- stats::mad(x, constant = 1.4826)
-  list(center = stats::median(x), spread = if (is.finite(s) && s > 0) s else NA_real_,
-       n = length(x))
+  list(
+    center = stats::median(x), spread = if (is.finite(s) && s > 0) s else NA_real_,
+    n = length(x)
+  )
 }
 
 #' Dates that look like illness and are excluded from the baseline
@@ -1016,16 +1124,19 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 .alcohol_illness_dates <- function(health_daily) {
   none <- as.Date(character())
   if (is.null(health_daily) || !is.data.frame(health_daily) ||
-      nrow(health_daily) == 0) {
+    nrow(health_daily) == 0) {
     return(none)
   }
   flagged <- none
 
   series <- function(metric) {
     s <- health_daily[health_daily$metric == metric, c("date", "value"),
-                      drop = FALSE]
+      drop = FALSE
+    ]
     s <- s[!is.na(s$value), , drop = FALSE]
-    if (nrow(s) == 0) return(NULL)
+    if (nrow(s) == 0) {
+      return(NULL)
+    }
     s$date <- as.Date(s$date)
     s[order(s$date), , drop = FALSE]
   }
@@ -1067,12 +1178,18 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 # a control: the same cohort found duration declining progressively with
 # intake.
 .alcohol_measures <- list(
-  rhr = list(metric = "resting_heart_rate", label = "vilopuls",
-             unit = "slag", digits = 0, scale = 1, log = FALSE, sign = 1),
-  hrv = list(metric = "heart_rate_variability", label = "HRV",
-             unit = "ms", digits = 0, scale = 1, log = TRUE, sign = -1),
-  sleep = list(metric = "sleep_totalSleep", label = "s\u00f6mn",
-               unit = "minuter", digits = 0, scale = 60, log = FALSE, sign = -1)
+  rhr = list(
+    metric = "resting_heart_rate", label = "vilopuls",
+    unit = "slag", digits = 0, scale = 1, log = FALSE, sign = 1
+  ),
+  hrv = list(
+    metric = "heart_rate_variability", label = "HRV",
+    unit = "ms", digits = 0, scale = 1, log = TRUE, sign = -1
+  ),
+  sleep = list(
+    metric = "sleep_totalSleep", label = "s\u00f6mn",
+    unit = "minuter", digits = 0, scale = 60, log = FALSE, sign = -1
+  )
 )
 
 #' Alcohol-free baseline for HRV, resting heart rate and sleep
@@ -1104,20 +1221,22 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 #'   is too thin.
 #' @export
 compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
-                                      window_days = .alcohol_baseline_window_days,
-                                      min_nights = .alcohol_baseline_min_nights,
-                                      illness_dates = NULL) {
+                                     window_days = .alcohol_baseline_window_days,
+                                     min_nights = .alcohol_baseline_min_nights,
+                                     illness_dates = NULL) {
   # The gate fields belong here too. compute_alcohol_deviation() happens
   # to test `center` first today, so their absence is unreachable — but
   # is.finite(NULL) inside && is an error rather than FALSE, so the
   # omission would become a crash the day the guard order changed.
   empty <- list(on_date = as.Date(NA), n_nights = 0L)
   for (nm in names(.alcohol_measures)) {
-    empty[[nm]] <- list(center = NA_real_, spread = NA_real_, n = 0L,
-                        gate_center = NA_real_, gate_spread = NA_real_)
+    empty[[nm]] <- list(
+      center = NA_real_, spread = NA_real_, n = 0L,
+      gate_center = NA_real_, gate_spread = NA_real_
+    )
   }
   if (is.null(alcohol) || nrow(alcohol) == 0 ||
-      is.null(health_daily) || nrow(health_daily) == 0) {
+    is.null(health_daily) || nrow(health_daily) == 0) {
     return(empty)
   }
   alcohol <- tibble::as_tibble(alcohol)
@@ -1151,10 +1270,12 @@ compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
     # are not.
     stats_raw <- .robust_stats(vals)
     stats_gate <- if (isTRUE(spec$log)) .robust_stats(log(vals[vals > 0])) else stats_raw
-    out[[nm]] <- list(center = stats_raw$center, spread = stats_raw$spread,
-                       n = stats_raw$n,
-                       gate_center = stats_gate$center,
-                       gate_spread = stats_gate$spread)
+    out[[nm]] <- list(
+      center = stats_raw$center, spread = stats_raw$spread,
+      n = stats_raw$n,
+      gate_center = stats_gate$center,
+      gate_spread = stats_gate$spread
+    )
   }
   out
 }
@@ -1177,42 +1298,55 @@ compute_alcohol_baseline <- function(health_daily, alcohol, on_date = NULL,
 #'   are dropped rather than carried as placeholders.
 #' @export
 compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
-                                       baseline = NULL,
-                                       z_threshold = .alcohol_deviation_z,
-                                       illness_dates = NULL,
-                                       ...) {
+                                      baseline = NULL,
+                                      z_threshold = .alcohol_deviation_z,
+                                      illness_dates = NULL,
+                                      ...) {
   empty <- tibble::tibble(
     measure = character(), label = character(), unit = character(),
     value = numeric(), baseline = numeric(), delta = numeric(),
     z = numeric(), flagged = logical()
   )
-  if (is.null(health_daily) || nrow(health_daily) == 0) return(empty)
+  if (is.null(health_daily) || nrow(health_daily) == 0) {
+    return(empty)
+  }
   if (is.null(baseline)) {
     baseline <- compute_alcohol_baseline(health_daily, alcohol,
-                                          on_date = on_date,
-                                          illness_dates = illness_dates, ...)
+      on_date = on_date,
+      illness_dates = illness_dates, ...
+    )
   }
   on_date <- if (is.null(on_date)) baseline$on_date else as.Date(on_date)
-  if (is.na(on_date) || baseline$n_nights == 0L) return(empty)
+  if (is.na(on_date) || baseline$n_nights == 0L) {
+    return(empty)
+  }
 
   hd <- health_daily
   hd$date <- as.Date(hd$date)
   rows <- lapply(names(.alcohol_measures), function(nm) {
     spec <- .alcohol_measures[[nm]]
     b <- baseline[[nm]]
-    if (is.null(b) || !is.finite(b$center)) return(NULL)
+    if (is.null(b) || !is.finite(b$center)) {
+      return(NULL)
+    }
     v <- hd$value[hd$metric == spec$metric & hd$date == on_date]
     v <- v[is.finite(v)]
-    if (length(v) == 0) return(NULL)
+    if (length(v) == 0) {
+      return(NULL)
+    }
     v <- mean(v) * spec$scale
 
     gate_v <- if (isTRUE(spec$log)) {
       if (v > 0) log(v) else NA_real_
-    } else v
+    } else {
+      v
+    }
     z <- if (is.finite(gate_v) && is.finite(b$gate_center) &&
-             is.finite(b$gate_spread)) {
+      is.finite(b$gate_spread)) {
       (gate_v - b$gate_center) / b$gate_spread
-    } else NA_real_
+    } else {
+      NA_real_
+    }
 
     tibble::tibble(
       measure = nm, label = spec$label, unit = spec$unit,
@@ -1222,7 +1356,9 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
     )
   })
   out <- dplyr::bind_rows(rows)
-  if (nrow(out) == 0) return(empty)
+  if (nrow(out) == 0) {
+    return(empty)
+  }
   out
 }
 
@@ -1258,27 +1394,35 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #'   it without a type check.
 #' @keywords internal
 .alcohol_notification_lines <- function(health_daily, summaries, on_date,
-                                         alcohol = NULL) {
-  if (!.notify_alcohol_enabled()) return(character())
+                                        alcohol = NULL) {
+  if (!.notify_alcohol_enabled()) {
+    return(character())
+  }
   if (is.null(alcohol)) {
     alcohol <- tryCatch(load_alcohol_data(), error = function(e) NULL)
   }
-  if (is.null(alcohol) || nrow(alcohol) == 0) return(character())
+  if (is.null(alcohol) || nrow(alcohol) == 0) {
+    return(character())
+  }
 
   enriched <- tryCatch(
     compute_alcohol_energy(alcohol, health_daily, summaries),
     error = function(e) NULL
   )
-  if (is.null(enriched)) return(character())
+  if (is.null(enriched)) {
+    return(character())
+  }
 
   daily <- tryCatch(
     .insight_alcohol_line(enriched, health_daily, on_date,
-                           summaries = summaries),
+      summaries = summaries
+    ),
     error = function(e) NULL
   )
   weekly <- tryCatch(
     .alcohol_weekly_line(enriched, health_daily, on_date,
-                          summaries = summaries),
+      summaries = summaries
+    ),
     error = function(e) NULL
   )
   # Built up from character(), not c(daily, weekly): both lines are NULL
@@ -1303,7 +1447,9 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #' @return Character scalar, NA_character_ when x is not finite.
 #' @keywords internal
 .fmt_kcal <- function(x) {
-  if (!is.finite(x)) return(NA_character_)
+  if (!is.finite(x)) {
+    return(NA_character_)
+  }
   format(round(x), big.mark = " ", trim = TRUE, scientific = FALSE)
 }
 
@@ -1316,24 +1462,32 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #' @return Character vector of clauses (possibly empty).
 #' @keywords internal
 .alcohol_deviation_clauses <- function(dev) {
-  if (is.null(dev) || nrow(dev) == 0) return(character())
+  if (is.null(dev) || nrow(dev) == 0) {
+    return(character())
+  }
   flagged <- dev[!is.na(dev$flagged) & dev$flagged, , drop = FALSE]
-  if (nrow(flagged) == 0) return(character())
+  if (nrow(flagged) == 0) {
+    return(character())
+  }
   vapply(seq_len(nrow(flagged)), function(i) {
     r <- flagged[i, ]
     if (identical(r$measure, "hrv")) {
-      sprintf("HRV %s ms mot %s p\u00e5 alkoholfria n\u00e4tter",
-              fmt_dec_sv(r$value, digits = 0, trim_zero = TRUE),
-              fmt_dec_sv(r$baseline, digits = 0, trim_zero = TRUE))
+      sprintf(
+        "HRV %s ms mot %s p\u00e5 alkoholfria n\u00e4tter",
+        fmt_dec_sv(r$value, digits = 0, trim_zero = TRUE),
+        fmt_dec_sv(r$baseline, digits = 0, trim_zero = TRUE)
+      )
     } else {
       direction <- if (identical(r$measure, "sleep")) {
         if (r$delta < 0) "kortare" else "l\u00e4ngre"
       } else {
         if (r$delta > 0) "h\u00f6gre" else "l\u00e4gre"
       }
-      sprintf("%s %s %s %s", r$label,
-              fmt_dec_sv(abs(r$delta), digits = 0, trim_zero = TRUE),
-              r$unit, direction)
+      sprintf(
+        "%s %s %s %s", r$label,
+        fmt_dec_sv(abs(r$delta), digits = 0, trim_zero = TRUE),
+        r$unit, direction
+      )
     }
   }, character(1))
 }
@@ -1366,18 +1520,26 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #' @return Character scalar, or NULL when there is nothing to say.
 #' @keywords internal
 .insight_alcohol_line <- function(alcohol, health_daily, on_date,
-                                   summaries = NULL) {
-  if (is.null(alcohol) || nrow(alcohol) == 0) return(NULL)
+                                  summaries = NULL) {
+  if (is.null(alcohol) || nrow(alcohol) == 0) {
+    return(NULL)
+  }
   on_date <- as.Date(on_date)
   if (!"alcohol_share" %in% names(alcohol)) {
     alcohol <- compute_alcohol_energy(alcohol, health_daily, summaries)
   }
   row <- alcohol[!is.na(alcohol$date) & alcohol$date == on_date, , drop = FALSE]
-  if (nrow(row) != 1L) return(NULL)
-  if (!isTRUE(row$alcohol_logging_active)) return(NULL)
+  if (nrow(row) != 1L) {
+    return(NULL)
+  }
+  if (!isTRUE(row$alcohol_logging_active)) {
+    return(NULL)
+  }
 
   units <- row$alcohol_night_units
-  if (!is.finite(units) || units <= 0) return(NULL)
+  if (!is.finite(units) || units <= 0) {
+    return(NULL)
+  }
 
   glas <- fmt_dec_sv(units, digits = 1, trim_zero = TRUE)
   standard <- fmt_dec_sv(row$alcohol_standardglas, digits = 1, trim_zero = TRUE)
@@ -1386,8 +1548,10 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   kcal <- row$alcohol_kcal
   if (is.finite(kcal)) {
     suffix <- if (isTRUE(row$alcohol_kcal_estimated)) " (ber\u00e4knat)" else ""
-    parts <- paste0(parts, sprintf(", %s kcal fr\u00e5n alkoholen%s.",
-                                   .fmt_kcal(kcal), suffix))
+    parts <- paste0(parts, sprintf(
+      ", %s kcal fr\u00e5n alkoholen%s.",
+      .fmt_kcal(kcal), suffix
+    ))
   } else {
     parts <- paste0(parts, ".")
   }
@@ -1396,7 +1560,8 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   if (is.finite(share)) {
     parts <- paste0(parts, sprintf(
       " Det motsvarar %d procent av din genomsnittliga dygnsf\u00f6rbrukning.",
-      as.integer(round(share * 100))))
+      as.integer(round(share * 100))
+    ))
   }
 
   dev <- tryCatch(
@@ -1415,9 +1580,13 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
       # invisibly.
       present <- dev$label[!is.na(dev$value)]
       if (length(present) > 0) {
-        subject <- if (length(present) == 1) present else {
-          paste0(paste(utils::head(present, -1), collapse = ", "), " och ",
-                 utils::tail(present, 1))
+        subject <- if (length(present) == 1) {
+          present
+        } else {
+          paste0(
+            paste(utils::head(present, -1), collapse = ", "), " och ",
+            utils::tail(present, 1)
+          )
         }
         # "ligger inte sämre än vanligt", not "ligger på dina normala
         # nivåer". The gate is one-sided: only adverse moves are
@@ -1425,7 +1594,8 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
         # and calling that normal would be a small untruth in the
         # direction of the feature's own thesis.
         parts <- paste0(parts, sprintf(
-          " I dag: %s ligger inte s\u00e4mre \u00e4n vanligt.", subject))
+          " I dag: %s ligger inte s\u00e4mre \u00e4n vanligt.", subject
+        ))
       }
     }
   }
@@ -1446,20 +1616,30 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #' @return Character scalar, or NULL.
 #' @keywords internal
 .alcohol_weekly_line <- function(alcohol, health_daily, on_date,
-                                  summaries = NULL) {
-  if (is.null(alcohol) || nrow(alcohol) == 0) return(NULL)
+                                 summaries = NULL) {
+  if (is.null(alcohol) || nrow(alcohol) == 0) {
+    return(NULL)
+  }
   on_date <- as.Date(on_date)
-  if (as.POSIXlt(on_date)$wday != 1L) return(NULL)
+  if (as.POSIXlt(on_date)$wday != 1L) {
+    return(NULL)
+  }
 
   target <- format(on_date - 7, "%G-W%V")
   weeks <- tryCatch(
     compute_alcohol_week(alcohol, health_daily, summaries),
     error = function(e) NULL
   )
-  if (is.null(weeks) || nrow(weeks) == 0) return(NULL)
+  if (is.null(weeks) || nrow(weeks) == 0) {
+    return(NULL)
+  }
   w <- weeks[weeks$iso_week == target, , drop = FALSE]
-  if (nrow(w) != 1L) return(NULL)
-  if (!is.finite(w$drinking_days) || w$drinking_days == 0) return(NULL)
+  if (nrow(w) != 1L) {
+    return(NULL)
+  }
+  if (!is.finite(w$drinking_days) || w$drinking_days == 0) {
+    return(NULL)
+  }
 
   kvall <- if (w$drinking_days == 1) "kv\u00e4ll" else "kv\u00e4llar"
   # "Alkohol förra veckan", not "Förra veckan": on a Monday the training
@@ -1467,11 +1647,13 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   # with the same three words read as one line repeating itself.
   line <- sprintf(
     "Alkohol f\u00f6rra veckan: %s kcal, f\u00f6rdelat p\u00e5 %d %s.",
-    .fmt_kcal(w$kcal), as.integer(w$drinking_days), kvall)
+    .fmt_kcal(w$kcal), as.integer(w$drinking_days), kvall
+  )
   if (is.finite(w$share)) {
     line <- paste0(line, sprintf(
       " Det motsvarar %d procent av veckans energif\u00f6rbrukning.",
-      as.integer(round(w$share * 100))))
+      as.integer(round(w$share * 100))
+    ))
   }
   if (is.finite(w$dry_days) && w$dry_days > 0) {
     dag <- if (w$dry_days == 1) "alkoholfri dag" else "alkoholfria dagar"
@@ -1492,8 +1674,12 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #' @return Date or NULL.
 #' @keywords internal
 .alcohol_as_date <- function(x) {
-  if (is.null(x)) return(NULL)
-  if (inherits(x, "Date")) return(x)
+  if (is.null(x)) {
+    return(NULL)
+  }
+  if (inherits(x, "Date")) {
+    return(x)
+  }
   if (is.character(x) && length(x) == 1L && nzchar(x)) {
     return(tryCatch(parse_date_expr(x), error = function(e) as.Date(x)))
   }
@@ -1520,7 +1706,7 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
 #' @return Tibble with Swedish column names, newest first.
 #' @export
 report_alcohol <- function(data, after = NULL, before = NULL,
-                            alcohol = NULL) {
+                           alcohol = NULL) {
   td <- .as_traning_data(data)
   health_daily <- td@health_daily
   summaries <- td@summaries
@@ -1534,11 +1720,14 @@ report_alcohol <- function(data, after = NULL, before = NULL,
     "S\u00f6mn avvik" = numeric(), "Ber\u00e4knad kcal" = logical(),
     "Avvikande enhet" = logical()
   )
-  if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
+  if (is.null(alcohol) || nrow(alcohol) == 0) {
+    return(empty)
+  }
 
   a <- compute_alcohol_energy(alcohol, health_daily, summaries)
   a <- a[!is.na(a$alcohol_logging_active) & a$alcohol_logging_active, ,
-         drop = FALSE]
+    drop = FALSE
+  ]
   # The first morning of the record has an unknowable night, since it
   # ran the evening before logging existed. Honest, but the row carries
   # nothing: every column that would say something about the night is
@@ -1546,10 +1735,15 @@ report_alcohol <- function(data, after = NULL, before = NULL,
   # where they belong.
   a <- a[!is.na(a$alcohol_night_units), , drop = FALSE]
   a <- filter_by_daterange(a,
-                           list(from = .alcohol_as_date(after),
-                                to = .alcohol_as_date(before)),
-                           date_col = "date", closed_upper = TRUE)
-  if (nrow(a) == 0) return(empty)
+    list(
+      from = .alcohol_as_date(after),
+      to = .alcohol_as_date(before)
+    ),
+    date_col = "date", closed_upper = TRUE
+  )
+  if (nrow(a) == 0) {
+    return(empty)
+  }
 
   # One deviation pass per night, not one per night per measure, and one
   # illness scan for the whole report rather than one per call. The old
@@ -1563,15 +1757,19 @@ report_alcohol <- function(data, after = NULL, before = NULL,
   # "origin must be supplied", the tryCatch swallowed it, and every
   # deviation column came back silently NA.
   illness <- tryCatch(.alcohol_illness_dates(health_daily),
-                      error = function(e) as.Date(character()))
+    error = function(e) as.Date(character())
+  )
   measures <- names(.alcohol_measures)
-  deltas <- matrix(NA_real_, nrow = nrow(a), ncol = length(measures),
-                   dimnames = list(NULL, measures))
+  deltas <- matrix(NA_real_,
+    nrow = nrow(a), ncol = length(measures),
+    dimnames = list(NULL, measures)
+  )
   for (i in seq_along(a$date)) {
     dv <- tryCatch(
       compute_alcohol_deviation(health_daily, alcohol,
-                                 on_date = a$date[[i]],
-                                 illness_dates = illness),
+        on_date = a$date[[i]],
+        illness_dates = illness
+      ),
       error = function(e) NULL
     )
     if (is.null(dv) || nrow(dv) == 0) next
@@ -1607,7 +1805,7 @@ report_alcohol <- function(data, after = NULL, before = NULL,
 #' @return Tibble with Swedish column names, newest first.
 #' @export
 report_alcohol_weekly <- function(data, after = NULL, before = NULL,
-                                   alcohol = NULL) {
+                                  alcohol = NULL) {
   td <- .as_traning_data(data)
   health_daily <- td@health_daily
   summaries <- td@summaries
@@ -1620,26 +1818,35 @@ report_alcohol_weekly <- function(data, after = NULL, before = NULL,
     "Andel %" = numeric(), "Kv\u00e4llar" = integer(),
     "Alkoholfria dagar" = integer()
   )
-  if (is.null(alcohol) || nrow(alcohol) == 0) return(empty)
+  if (is.null(alcohol) || nrow(alcohol) == 0) {
+    return(empty)
+  }
 
   w <- compute_alcohol_week(alcohol, health_daily, summaries)
-  if (nrow(w) == 0) return(empty)
+  if (nrow(w) == 0) {
+    return(empty)
+  }
   w <- filter_by_daterange(w,
-                           list(from = .alcohol_as_date(after),
-                                to = .alcohol_as_date(before)),
-                           date_col = "week_start", closed_upper = TRUE)
-  if (nrow(w) == 0) return(empty)
+    list(
+      from = .alcohol_as_date(after),
+      to = .alcohol_as_date(before)
+    ),
+    date_col = "week_start", closed_upper = TRUE
+  )
+  if (nrow(w) == 0) {
+    return(empty)
+  }
 
   tibble::tibble(
-    Vecka                = w$iso_week,
-    Start                = w$week_start,
-    Glas                 = round(w$units, 1),
-    Standardglas         = round(w$standardglas, 1),
-    Gram                 = round(w$grams, 1),
-    kcal                 = round(w$kcal),
-    `Andel %`            = round(w$share * 100, 1),
-    `Kvällar`       = as.integer(w$drinking_days),
-    `Alkoholfria dagar`  = as.integer(w$dry_days)
+    Vecka = w$iso_week,
+    Start = w$week_start,
+    Glas = round(w$units, 1),
+    Standardglas = round(w$standardglas, 1),
+    Gram = round(w$grams, 1),
+    kcal = round(w$kcal),
+    `Andel %` = round(w$share * 100, 1),
+    `Kvällar` = as.integer(w$drinking_days),
+    `Alkoholfria dagar` = as.integer(w$dry_days)
   ) |>
     dplyr::arrange(dplyr::desc(.data$Start))
 }

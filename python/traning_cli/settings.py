@@ -103,15 +103,9 @@ class Settings(BaseSettings):
     # an env var present-but-empty is indistinguishable from unset — the
     # call site applies `or "127.0.0.1"` / `or "8421"`, exactly matching
     # the historical `os.environ.get(key) or default` there.
-    traning_receiver_url: str | None = Field(
-        default=None, validation_alias="TRANING_RECEIVER_URL"
-    )
-    traning_receiver_host: str = Field(
-        default="", validation_alias="TRANING_RECEIVER_HOST"
-    )
-    traning_receiver_port: str = Field(
-        default="", validation_alias="TRANING_RECEIVER_PORT"
-    )
+    traning_receiver_url: str | None = Field(default=None, validation_alias="TRANING_RECEIVER_URL")
+    traning_receiver_host: str = Field(default="", validation_alias="TRANING_RECEIVER_HOST")
+    traning_receiver_port: str = Field(default="", validation_alias="TRANING_RECEIVER_PORT")
 
     # -- API key, shared by server/auth.py and mcp/tools.py --------------
     traning_api_key: str | None = Field(default=None, validation_alias="TRANING_API_KEY")
@@ -121,9 +115,7 @@ class Settings(BaseSettings):
     ha_token: str | None = Field(default=None, validation_alias="HA_TOKEN")
 
     # -- Debounce windows (server/app.py) ---------------------------------
-    traning_health_debounce: int = Field(
-        default=600, validation_alias="TRANING_HEALTH_DEBOUNCE"
-    )
+    traning_health_debounce: int = Field(default=600, validation_alias="TRANING_HEALTH_DEBOUNCE")
     # Historical default mirrors _DEBOUNCE_SECS (i.e. traning_health_debounce)
     # when TRANING_WORKOUTS_DEBOUNCE is unset — see model_validator below,
     # since the default is dynamic (depends on another field), not static.
@@ -161,8 +153,7 @@ class Settings(BaseSettings):
             raw = renviron.get("TRANING_DATA")
         if not raw:
             raise OSError(
-                "TRANING_DATA is not set. "
-                "Add it to .Renviron or export it in your shell."
+                "TRANING_DATA is not set. Add it to .Renviron or export it in your shell."
             )
         p = Path(raw)
         if not p.is_dir():

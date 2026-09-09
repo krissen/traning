@@ -12,7 +12,11 @@
 set -euo pipefail
 
 REMOTE="kailash"
+# SC2088: the tilde is meant to expand on the remote side, inside the ssh
+# command strings below — not locally.
+# shellcheck disable=SC2088
 REMOTE_CODE="~/dev/traning"
+# shellcheck disable=SC2088
 REMOTE_DATA="~/dokument/traning-data"
 DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$DEPLOY_DIR/../../../../" && pwd)"
@@ -20,74 +24,92 @@ REPO_ROOT="$(cd "$DEPLOY_DIR/../../../../" && pwd)"
 # Resolve local data dir from .Renviron or env
 LOCAL_DATA="${TRANING_DATA:-$(grep '^TRANING_DATA=' "$REPO_ROOT/.Renviron" 2>/dev/null | cut -d= -f2 || echo "$HOME/Documents/traning-data")}"
 
-_info()  { echo "==> $*"; }
-_warn()  { echo "WARN: $*" >&2; }
+_info() { echo "==> $*"; }
+_warn() { echo "WARN: $*" >&2; }
 
 cmd_code() {
-    _info "Pulling latest code on $REMOTE ..."
-    ssh "$REMOTE" "cd $REMOTE_CODE && git pull --ff-only"
+  _info "Pulling latest code on $REMOTE ..."
+  ssh "$REMOTE" "cd $REMOTE_CODE && git pull --ff-only"
 
-    _info "Installing Python dependencies ..."
-    ssh "$REMOTE" "cd $REMOTE_CODE && \
+  _info "Installing Python dependencies ..."
+  ssh "$REMOTE" "cd $REMOTE_CODE && \
         (test -d python/.venv || python3 -m venv python/.venv) && \
         python/.venv/bin/pip install --quiet --upgrade pip && \
         python/.venv/bin/pip install --quiet -e ."
 
-    _info "Installing R dependencies ..."
-    ssh "$REMOTE" "cd $REMOTE_CODE && bash scripts/install_r_deps.sh"
+  # R_LIBS_USER exported (and the directory created) for BOTH R steps
+  # below, not just the package install: on a fresh host, cmd_code runs
+  # before cmd_secrets, so the .Renviron that would otherwise set it
+  # doesn't exist yet. Without this on install_r_deps.sh too, its CRAN
+  # fallback can install into R's default versioned user library —
+  # invisible once R_LIBS_USER is set for the later R CMD INSTALL step —
+  # and if every dependency instead comes from pacman, the directory is
+  # never created at all, so R drops the nonexistent path from
+  # .libPaths() and R CMD INSTALL falls back to the non-writable system
+  # library. Neither of those is where the running services (cmd_check,
+  # traning-vayu.service) actually load from
+  # (/home/krisse/R/library, per docs/dev/pipeline-design.md) — so a
+  # package can appear to install successfully while staying
+  # unavailable to the service that needs it.
+  _info "Installing R dependencies ..."
+  ssh "$REMOTE" "set -e; export R_LIBS_USER=/home/krisse/R/library && \
+        mkdir -p \$R_LIBS_USER && \
+        cd $REMOTE_CODE && bash scripts/install_r_deps.sh"
 
-    # The MCP bridge (inst/mcp_bridge.R) now loads via library(traning)
-    # against the INSTALLED package rather than devtools::load_all() on
-    # the live checkout (~0.45s faster per call — see mcp_bridge.R for
-    # details). That means `git pull` alone no longer updates the R code
-    # the running server actually serves; the installed package must be
-    # refreshed on every code deploy, or traning-vayu keeps serving stale
-    # R code after this point. `set -e` on the remote side means a build
-    # failure here aborts the deploy before the restart below, so we never
-    # restart onto a half-installed package.
-    _info "Installing traning R package ..."
-    ssh "$REMOTE" "set -e; cd $REMOTE_CODE && \
+  # The MCP bridge (inst/mcp_bridge.R) now loads via library(traning)
+  # against the INSTALLED package rather than devtools::load_all() on
+  # the live checkout (~0.45s faster per call — see mcp_bridge.R for
+  # details). That means `git pull` alone no longer updates the R code
+  # the running server actually serves; the installed package must be
+  # refreshed on every code deploy, or traning-vayu keeps serving stale
+  # R code after this point. `set -e` on the remote side means a build
+  # failure here aborts the deploy before the restart below, so we never
+  # restart onto a half-installed package.
+  _info "Installing traning R package ..."
+  ssh "$REMOTE" "set -e; export R_LIBS_USER=/home/krisse/R/library && \
+        mkdir -p \$R_LIBS_USER && \
+        cd $REMOTE_CODE && \
         R CMD INSTALL --no-multiarch --with-keep.source ."
 
-    _info "Copying systemd units ..."
-    ssh "$REMOTE" "sudo cp \
+  _info "Copying systemd units ..."
+  ssh "$REMOTE" "sudo cp \
         $REMOTE_CODE/python/traning_cli/server/deploy/traning-*.service \
         $REMOTE_CODE/python/traning_cli/server/deploy/traning-*.timer \
         /etc/systemd/system/ && \
         sudo systemctl daemon-reload"
 
-    _info "Installing pacman post-upgrade hook ..."
-    # /etc/pacman.d/hooks/ is optional on Arch; create it before
-    # dropping the file so a fresh install doesn't fail here.
-    ssh "$REMOTE" "sudo install -d -m 755 -o root -g root /etc/pacman.d/hooks && \
+  _info "Installing pacman post-upgrade hook ..."
+  # /etc/pacman.d/hooks/ is optional on Arch; create it before
+  # dropping the file so a fresh install doesn't fail here.
+  ssh "$REMOTE" "sudo install -d -m 755 -o root -g root /etc/pacman.d/hooks && \
         sudo install -m 644 -o root -g root \
         $REMOTE_CODE/python/traning_cli/server/deploy/traning-r-postupgrade.hook \
         /etc/pacman.d/hooks/"
 
-    _info "Restarting traning-receiver, traning-shiny, traning-vayu ..."
-    ssh "$REMOTE" "sudo systemctl restart traning-receiver.service && \
+  _info "Restarting traning-receiver, traning-shiny, traning-vayu ..."
+  ssh "$REMOTE" "sudo systemctl restart traning-receiver.service && \
         sudo systemctl restart traning-shiny.service && \
         sudo systemctl restart traning-vayu.service"
 
-    _info "Code deployed"
+  _info "Code deployed"
 }
 
 cmd_secrets() {
-    local env_local="$DEPLOY_DIR/traning-env.local"
-    if [ ! -f "$env_local" ]; then
-        _warn "Missing $env_local — copy traning-env.example and fill in values"
-        exit 1
-    fi
+  local env_local="$DEPLOY_DIR/traning-env.local"
+  if [ ! -f "$env_local" ]; then
+    _warn "Missing $env_local — copy traning-env.example and fill in values"
+    exit 1
+  fi
 
-    _info "Copying env file to $REMOTE:/etc/traning/env ..."
-    scp "$env_local" "$REMOTE:/tmp/traning-env"
-    ssh "$REMOTE" "sudo mkdir -p /etc/traning && \
+  _info "Copying env file to $REMOTE:/etc/traning/env ..."
+  scp "$env_local" "$REMOTE:/tmp/traning-env"
+  ssh "$REMOTE" "sudo mkdir -p /etc/traning && \
         sudo mv /tmp/traning-env /etc/traning/env && \
         sudo chmod 600 /etc/traning/env"
 
-    # Create .Renviron on kailash pointing to the env file
-    _info "Creating .Renviron on $REMOTE (sources /etc/traning/env) ..."
-    ssh "$REMOTE" "cat > $REMOTE_CODE/.Renviron <<'RENV'
+  # Create .Renviron on kailash pointing to the env file
+  _info "Creating .Renviron on $REMOTE (sources /etc/traning/env) ..."
+  ssh "$REMOTE" "cat > $REMOTE_CODE/.Renviron <<'RENV'
 # Auto-generated by deploy.sh — sources server env
 TRANING_DATA=/home/krisse/dokument/traning-data
 TRANING_OPEN=false
@@ -95,26 +117,26 @@ R_LIBS_USER=~/R/library
 LANG=sv_SE.utf8
 RENV"
 
-    _info "Secrets deployed"
+  _info "Secrets deployed"
 }
 
 cmd_tokens() {
-    local token_dir="$LOCAL_DATA/.garmin_tokens"
-    if [ ! -d "$token_dir" ]; then
-        _warn "No .garmin_tokens/ found in $LOCAL_DATA"
-        _warn "Run: traning fetch garmin --reauth --dry-run"
-        exit 1
-    fi
+  local token_dir="$LOCAL_DATA/.garmin_tokens"
+  if [ ! -d "$token_dir" ]; then
+    _warn "No .garmin_tokens/ found in $LOCAL_DATA"
+    _warn "Run: traning fetch garmin --reauth --dry-run"
+    exit 1
+  fi
 
-    _info "Copying Garmin tokens to $REMOTE:$REMOTE_DATA/ ..."
-    scp -r "$token_dir" "$REMOTE:$REMOTE_DATA/"
+  _info "Copying Garmin tokens to $REMOTE:$REMOTE_DATA/ ..."
+  scp -r "$token_dir" "$REMOTE:$REMOTE_DATA/"
 
-    _info "Tokens deployed"
+  _info "Tokens deployed"
 }
 
 cmd_status() {
-    _info "Service status on $REMOTE:"
-    ssh "$REMOTE" "
+  _info "Service status on $REMOTE:"
+  ssh "$REMOTE" "
         echo '--- traning-receiver ---'
         systemctl status traning-receiver.service --no-pager 2>&1 || true
         echo ''
@@ -136,26 +158,26 @@ cmd_status() {
 }
 
 cmd_check() {
-    _info "Running traning doctor on $REMOTE ..."
-    # Mirror the systemd unit's runtime environment (env file, R lib
-    # path, working directory) so that .libPaths() and config paths
-    # resolve identically — otherwise an unprivileged ssh invocation
-    # could read different libraries than the daily timer and report
-    # "healthy" while production is broken. set -e + ssh propagate
-    # exit code; doctor exits 1 on any check fail.
-    ssh "$REMOTE" "set -a && . /etc/traning/env && set +a && \
+  _info "Running traning doctor on $REMOTE ..."
+  # Mirror the systemd unit's runtime environment (env file, R lib
+  # path, working directory) so that .libPaths() and config paths
+  # resolve identically — otherwise an unprivileged ssh invocation
+  # could read different libraries than the daily timer and report
+  # "healthy" while production is broken. set -e + ssh propagate
+  # exit code; doctor exits 1 on any check fail.
+  ssh "$REMOTE" "set -a && . /etc/traning/env && set +a && \
         export R_LIBS_USER=/home/krisse/R/library && \
         cd /home/krisse/dev/traning && \
         python/.venv/bin/traning doctor run"
 }
 
 cmd_all() {
-    cmd_code
-    cmd_secrets
-    cmd_tokens
+  cmd_code
+  cmd_secrets
+  cmd_tokens
 
-    _info "Enabling services and timers ..."
-    ssh "$REMOTE" "
+  _info "Enabling services and timers ..."
+  ssh "$REMOTE" "
         sudo systemctl enable --now traning-receiver.service
         sudo systemctl enable --now traning-shiny.service
         sudo systemctl enable --now traning-vayu.service
@@ -165,26 +187,26 @@ cmd_all() {
         sudo systemctl enable --now traning-doctor.timer
     "
 
-    cmd_status
+  cmd_status
 }
 
 # Main
 case "${1:-}" in
-    code)    cmd_code ;;
-    secrets) cmd_secrets ;;
-    tokens)  cmd_tokens ;;
-    status)  cmd_status ;;
-    check)   cmd_check ;;
-    all)     cmd_all ;;
-    *)
-        echo "Usage: deploy.sh {code|secrets|tokens|status|check|all}"
-        echo ""
-        echo "  code      Pull code, install deps, restart services"
-        echo "  secrets   SCP credentials (traning-env.local) to kailash"
-        echo "  tokens    SCP Garmin auth tokens to kailash"
-        echo "  status    Show service status and recent logs"
-        echo "  check     Run \`traning doctor\` against kailash"
-        echo "  all       code + secrets + tokens + enable all services"
-        exit 1
-        ;;
+  code) cmd_code ;;
+  secrets) cmd_secrets ;;
+  tokens) cmd_tokens ;;
+  status) cmd_status ;;
+  check) cmd_check ;;
+  all) cmd_all ;;
+  *)
+    echo "Usage: deploy.sh {code|secrets|tokens|status|check|all}"
+    echo ""
+    echo "  code      Pull code, install deps, restart services"
+    echo "  secrets   SCP credentials (traning-env.local) to kailash"
+    echo "  tokens    SCP Garmin auth tokens to kailash"
+    echo "  status    Show service status and recent logs"
+    echo "  check     Run \`traning doctor\` against kailash"
+    echo "  all       code + secrets + tokens + enable all services"
+    exit 1
+    ;;
 esac

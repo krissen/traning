@@ -3,17 +3,21 @@
 page_performance_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
-    bslib::layout_columns(col_widths = 6, class = "section-spacer",
-      metric_panel_ui(ns("ef"),  "Efficiency Factor (EF)"),
+    bslib::layout_columns(
+      col_widths = 6, class = "section-spacer",
+      metric_panel_ui(ns("ef"), "Efficiency Factor (EF)"),
       metric_panel_ui(ns("hre"), "Heart Rate Efficiency (HRE)")
     ),
-    tags$div(class = "section-spacer",
+    tags$div(
+      class = "section-spacer",
       metric_panel_ui(ns("decoupling"), "Aerob dekopp.",
-        use_plotly = FALSE)
+        use_plotly = FALSE
+      )
     ),
-    bslib::layout_columns(col_widths = 6, class = "section-spacer",
-      metric_panel_ui(ns("hr_zones"),     "HR-zoner (Seiler)"),
-      metric_panel_ui(ns("recovery_hr"),  "Recovery HR")
+    bslib::layout_columns(
+      col_widths = 6, class = "section-spacer",
+      metric_panel_ui(ns("hr_zones"), "HR-zoner (Seiler)"),
+      metric_panel_ui(ns("recovery_hr"), "Recovery HR")
     )
   )
 }
@@ -22,8 +26,8 @@ page_performance_server <- function(id, data, dates, is_mobile, sport, data_vers
   force(data)
   shiny::moduleServer(id, function(input, output, session) {
     dr_from <- shiny::reactive(dates()$from)
-    dr_to   <- shiny::reactive(dates()$to)
-    sp      <- shiny::reactive(sport())
+    dr_to <- shiny::reactive(dates()$to)
+    sp <- shiny::reactive(sport())
 
     # perf_bundle: the ONLY place on this page (and in the whole app —
     # see the @myruns grep noted in R/shiny_helpers.R's load_session_data()
@@ -50,7 +54,8 @@ page_performance_server <- function(id, data, dates, is_mobile, sport, data_vers
       b <- data
       b@myruns <- load_myruns()
       b@decoupling_data <- load_decoupling(b@summaries, b@myruns,
-                                            read_only = TRUE)
+        read_only = TRUE
+      )
       b
     })
 
@@ -58,23 +63,31 @@ page_performance_server <- function(id, data, dates, is_mobile, sport, data_vers
     # arg (not @sport-keyed), so the base bundle is safe to pass as-is
     # for any sport selection.
     metric_panel_server("ef",
-      plot_fn   = shiny::reactive(fetch.plot.ef(data, from = dr_from(),
-                                                  to = dr_to(),
-                                                  sport = sp())),
-      report_fn = shiny::reactive(report_ef(data, from = dr_from(),
-                                              to = dr_to(),
-                                              sport = sp())),
+      plot_fn = shiny::reactive(fetch.plot.ef(data,
+        from = dr_from(),
+        to = dr_to(),
+        sport = sp()
+      )),
+      report_fn = shiny::reactive(report_ef(data,
+        from = dr_from(),
+        to = dr_to(),
+        sport = sp()
+      )),
       is_mobile = is_mobile
     )
 
     # HRE
     metric_panel_server("hre",
-      plot_fn   = shiny::reactive(fetch.plot.hre(data, from = dr_from(),
-                                                   to = dr_to(),
-                                                   sport = sp())),
-      report_fn = shiny::reactive(report_hre(data, from = dr_from(),
-                                               to = dr_to(),
-                                               sport = sp())),
+      plot_fn = shiny::reactive(fetch.plot.hre(data,
+        from = dr_from(),
+        to = dr_to(),
+        sport = sp()
+      )),
+      report_fn = shiny::reactive(report_hre(data,
+        from = dr_from(),
+        to = dr_to(),
+        sport = sp()
+      )),
       is_mobile = is_mobile
     )
 
@@ -104,7 +117,8 @@ page_performance_server <- function(id, data, dates, is_mobile, sport, data_vers
       b@sport <- sp()
       if (!identical(sp(), "running")) {
         b@decoupling_data <- compute_decoupling(b@summaries, b@myruns,
-                                                 sport = sp())
+          sport = sp()
+        )
       }
       # @decoupling_data is now populated for both branches, and
       # fetch.plot.decoupling()/report_decoupling() read it directly
@@ -128,11 +142,13 @@ page_performance_server <- function(id, data, dates, is_mobile, sport, data_vers
     metric_panel_server("decoupling",
       plot_fn = shiny::reactive({
         fetch.plot.decoupling(decoupling_bundle(),
-          from = dr_from(), to = dr_to(), sport = sp())
+          from = dr_from(), to = dr_to(), sport = sp()
+        )
       }) |> shiny::bindCache(dr_from(), dr_to(), sp(), data_version),
       report_fn = shiny::reactive({
         report_decoupling(decoupling_bundle(),
-          from = dr_from(), to = dr_to(), sport = sp())
+          from = dr_from(), to = dr_to(), sport = sp()
+        )
       }) |> shiny::bindCache(dr_from(), dr_to(), sp(), data_version),
       use_plotly = FALSE,
       is_mobile = is_mobile
@@ -151,12 +167,16 @@ page_performance_server <- function(id, data, dates, is_mobile, sport, data_vers
 
     metric_panel_server("hr_zones",
       plot_fn = shiny::reactive({
-        fetch.plot.hr_zones(hr_zones_bundle(), from = dr_from(), to = dr_to(),
-                             sport = sp())
+        fetch.plot.hr_zones(hr_zones_bundle(),
+          from = dr_from(), to = dr_to(),
+          sport = sp()
+        )
       }),
       report_fn = shiny::reactive({
-        report_hr_zones(hr_zones_bundle(), from = dr_from(), to = dr_to(),
-                        sport = sp())
+        report_hr_zones(hr_zones_bundle(),
+          from = dr_from(), to = dr_to(),
+          sport = sp()
+        )
       }),
       is_mobile = is_mobile
     )
@@ -172,12 +192,16 @@ page_performance_server <- function(id, data, dates, is_mobile, sport, data_vers
 
     metric_panel_server("recovery_hr",
       plot_fn = shiny::reactive({
-        fetch.plot.recovery_hr(recovery_hr_bundle(), from = dr_from(), to = dr_to(),
-                                sport = sp())
+        fetch.plot.recovery_hr(recovery_hr_bundle(),
+          from = dr_from(), to = dr_to(),
+          sport = sp()
+        )
       }),
       report_fn = shiny::reactive({
-        report_recovery_hr(recovery_hr_bundle(), from = dr_from(), to = dr_to(),
-                           sport = sp())
+        report_recovery_hr(recovery_hr_bundle(),
+          from = dr_from(), to = dr_to(),
+          sport = sp()
+        )
       }),
       is_mobile = is_mobile
     )

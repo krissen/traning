@@ -33,8 +33,9 @@
 .r_xy <- function(version = NULL) {
   if (is.null(version)) {
     return(paste(R.version$major,
-                  strsplit(R.version$minor, "\\.")[[1]][1],
-                  sep = "."))
+      strsplit(R.version$minor, "\\.")[[1]][1],
+      sep = "."
+    ))
   }
   # Normalise caller-supplied versions ("4.6", "4.6.0", "R 4.6.0",
   # even "R 4.6.0; ...") down to "X.Y" so equality compares against
@@ -46,13 +47,19 @@
 }
 
 .parse_built_xy <- function(built) {
-  if (is.na(built) || !nzchar(built)) return(NA_character_)
+  if (is.na(built) || !nzchar(built)) {
+    return(NA_character_)
+  }
   first <- trimws(strsplit(built, ";", fixed = TRUE)[[1]][1])
   parts <- strsplit(first, "\\s+")[[1]]
-  if (length(parts) < 2L) return(NA_character_)
+  if (length(parts) < 2L) {
+    return(NA_character_)
+  }
   ver <- parts[[2]]
   bits <- strsplit(ver, "\\.")[[1]]
-  if (length(bits) < 2L) return(NA_character_)
+  if (length(bits) < 2L) {
+    return(NA_character_)
+  }
   paste(bits[1], bits[2], sep = ".")
 }
 
@@ -63,20 +70,25 @@
 }
 
 check_stale_builds <- function(installed_pkgs = NULL,
-                                r_version = NULL,
-                                marker_file = .REBUILD_MARKER) {
+                               r_version = NULL,
+                               marker_file = .REBUILD_MARKER) {
   current <- .r_xy(r_version)
   if (is.null(installed_pkgs)) {
     installed_pkgs <- utils::installed.packages(
-      lib.loc = .libPaths(), fields = "Built")
+      lib.loc = .libPaths(), fields = "Built"
+    )
   }
   if (nrow(installed_pkgs) == 0L) {
-    return(.check_result("packages", "ok",
-      sprintf("No packages installed (R %s).", current)))
+    return(.check_result(
+      "packages", "ok",
+      sprintf("No packages installed (R %s).", current)
+    ))
   }
 
-  built_xy <- vapply(installed_pkgs[, "Built"],
-                     .parse_built_xy, character(1))
+  built_xy <- vapply(
+    installed_pkgs[, "Built"],
+    .parse_built_xy, character(1)
+  )
   pkg_names <- installed_pkgs[, "Package"]
   lib_paths <- installed_pkgs[, "LibPath"]
 
@@ -86,43 +98,59 @@ check_stale_builds <- function(installed_pkgs = NULL,
   details <- list(
     current_r = current,
     stale = unname(Map(list,
-                        package = as.list(pkg_names[stale]),
-                        lib = as.list(lib_paths[stale]),
-                        built = as.list(built_xy[stale]))),
+      package = as.list(pkg_names[stale]),
+      lib = as.list(lib_paths[stale]),
+      built = as.list(built_xy[stale])
+    )),
     unknown = unname(Map(list,
-                          package = as.list(pkg_names[unknown]),
-                          lib = as.list(lib_paths[unknown])))
+      package = as.list(pkg_names[unknown]),
+      lib = as.list(lib_paths[unknown])
+    ))
   )
 
   marker_present <- file.exists(marker_file)
   if (any(stale)) {
-    msg <- sprintf("%d package(s) built against R != %s.",
-                    sum(stale), current)
+    msg <- sprintf(
+      "%d package(s) built against R != %s.",
+      sum(stale), current
+    )
     if (marker_present) {
-      msg <- paste(msg,
+      msg <- paste(
+        msg,
         "Marker", marker_file,
-        "exists — run `traning doctor rebuild-stale`.")
+        "exists — run `traning doctor rebuild-stale`."
+      )
     }
     return(.check_result("packages", "fail", msg, details))
   }
   if (any(unknown)) {
-    return(.check_result("packages", "warn",
-      sprintf("%d package(s) have an unparseable Built tag.",
-              sum(unknown)), details))
+    return(.check_result(
+      "packages", "warn",
+      sprintf(
+        "%d package(s) have an unparseable Built tag.",
+        sum(unknown)
+      ), details
+    ))
   }
 
-  msg <- sprintf("All %d package(s) built against R %s.",
-                  nrow(installed_pkgs), current)
+  msg <- sprintf(
+    "All %d package(s) built against R %s.",
+    nrow(installed_pkgs), current
+  )
   if (marker_present) {
-    msg <- paste(msg, "Marker", marker_file,
-                  "is present but no stale builds found.")
+    msg <- paste(
+      msg, "Marker", marker_file,
+      "is present but no stale builds found."
+    )
   }
   .check_result("packages", "ok", msg, details)
 }
 
 .systemctl_active <- function(unit) {
   status <- suppressWarnings(system2("systemctl",
-    c("is-active", "--quiet", unit), stdout = FALSE, stderr = FALSE))
+    c("is-active", "--quiet", unit),
+    stdout = FALSE, stderr = FALSE
+  ))
   identical(as.integer(status), 0L)
 }
 
@@ -140,21 +168,26 @@ check_stale_builds <- function(installed_pkgs = NULL,
   # we want to assert that Shiny is genuinely serving — capture the
   # actual status and compare. `--max-time` covers connect+transfer.
   out <- suppressWarnings(system2("curl",
-    c("-s", "--max-time", as.character(timeout),
+    c(
+      "-s", "--max-time", as.character(timeout),
       "-o", "/dev/null",
-      "-w", "%{http_code}", url),
-    stdout = TRUE, stderr = FALSE))
+      "-w", "%{http_code}", url
+    ),
+    stdout = TRUE, stderr = FALSE
+  ))
   identical(as.character(out)[1], expected_status)
 }
 
-check_services <- function(services = c("traning-receiver",
-                                          "traning-shiny",
-                                          "traning-vayu",
-                                          "caddy"),
-                            shiny_url = "http://127.0.0.1:8423/",
-                            receiver_url = .receiver_health_url(),
-                            systemctl_check = .systemctl_active,
-                            http_check = .http_ok) {
+check_services <- function(services = c(
+                             "traning-receiver",
+                             "traning-shiny",
+                             "traning-vayu",
+                             "caddy"
+                           ),
+                           shiny_url = "http://127.0.0.1:8423/",
+                           receiver_url = .receiver_health_url(),
+                           systemctl_check = .systemctl_active,
+                           http_check = .http_ok) {
   active <- vapply(services, systemctl_check, logical(1))
   shiny_ok <- http_check(shiny_url)
   # systemd is-active only proves the unit didn't exit — a receiver
@@ -175,44 +208,64 @@ check_services <- function(services = c("traning-receiver",
   down <- services[!active]
   problems <- character(0)
   if (length(down) > 0L) {
-    problems <- c(problems,
-      sprintf("inactive: %s", paste(down, collapse = ", ")))
+    problems <- c(
+      problems,
+      sprintf("inactive: %s", paste(down, collapse = ", "))
+    )
   }
   if (!shiny_ok) {
-    problems <- c(problems,
-      sprintf("Shiny did not respond at %s", shiny_url))
+    problems <- c(
+      problems,
+      sprintf("Shiny did not respond at %s", shiny_url)
+    )
   }
   if (!receiver_ok) {
-    problems <- c(problems,
-      sprintf("receiver did not respond at %s", receiver_url))
+    problems <- c(
+      problems,
+      sprintf("receiver did not respond at %s", receiver_url)
+    )
   }
 
   if (length(problems) > 0L) {
-    return(.check_result("services", "fail",
-      paste(problems, collapse = "; "), details))
+    return(.check_result(
+      "services", "fail",
+      paste(problems, collapse = "; "), details
+    ))
   }
-  .check_result("services", "ok",
-    sprintf("All %d service(s) active; Shiny and receiver responding.",
-            length(services)), details)
+  .check_result(
+    "services", "ok",
+    sprintf(
+      "All %d service(s) active; Shiny and receiver responding.",
+      length(services)
+    ), details
+  )
 }
 
 check_configs <- function(expected = .EXPECTED_CONFIG_DIGESTS) {
   if (length(expected) == 0L) {
-    return(.check_result("configs", "ok",
-      "No config digests pinned."))
+    return(.check_result(
+      "configs", "ok",
+      "No config digests pinned."
+    ))
   }
 
   results <- lapply(names(expected), function(path) {
     want <- expected[[path]]
     if (!file.exists(path)) {
-      return(list(path = path, state = "missing",
-                   want = want, got = NA_character_))
+      return(list(
+        path = path, state = "missing",
+        want = want, got = NA_character_
+      ))
     }
     if (is.na(want)) {
-      return(list(path = path, state = "unpinned",
-                   want = NA_character_,
-                   got = unname(digest::digest(file = path,
-                                                 algo = "sha256"))))
+      return(list(
+        path = path, state = "unpinned",
+        want = NA_character_,
+        got = unname(digest::digest(
+          file = path,
+          algo = "sha256"
+        ))
+      ))
     }
     got <- unname(digest::digest(file = path, algo = "sha256"))
     state <- if (identical(got, want)) "ok" else "mismatch"
@@ -223,43 +276,65 @@ check_configs <- function(expected = .EXPECTED_CONFIG_DIGESTS) {
   details <- list(entries = results)
 
   if (any(states == "missing")) {
-    missing_paths <- vapply(results[states == "missing"],
-                              `[[`, character(1), "path")
-    return(.check_result("configs", "fail",
+    missing_paths <- vapply(
+      results[states == "missing"],
+      `[[`, character(1), "path"
+    )
+    return(.check_result(
+      "configs", "fail",
       sprintf("missing: %s", paste(missing_paths, collapse = ", ")),
-      details))
+      details
+    ))
   }
   if (any(states == "mismatch")) {
-    bad <- vapply(results[states == "mismatch"],
-                    `[[`, character(1), "path")
-    return(.check_result("configs", "warn",
+    bad <- vapply(
+      results[states == "mismatch"],
+      `[[`, character(1), "path"
+    )
+    return(.check_result(
+      "configs", "warn",
       sprintf("digest mismatch: %s", paste(bad, collapse = ", ")),
-      details))
+      details
+    ))
   }
   if (any(states == "unpinned")) {
-    unpinned <- vapply(results[states == "unpinned"],
-                         `[[`, character(1), "path")
-    return(.check_result("configs", "warn",
-      sprintf("present but no digest pinned: %s",
-              paste(unpinned, collapse = ", ")),
-      details))
+    unpinned <- vapply(
+      results[states == "unpinned"],
+      `[[`, character(1), "path"
+    )
+    return(.check_result(
+      "configs", "warn",
+      sprintf(
+        "present but no digest pinned: %s",
+        paste(unpinned, collapse = ", ")
+      ),
+      details
+    ))
   }
-  .check_result("configs", "ok",
+  .check_result(
+    "configs", "ok",
     sprintf("All %d config digest(s) match.", length(expected)),
-    details)
+    details
+  )
 }
 
 # Load just the summaries cache — the doctor only needs the newest
 # sessionStart, so skip load_traning_data()'s myruns/decoupling slots
 # and its legacy Garmin-augment fallback.
 .freshness_load_summaries <- function(data_dir = Sys.getenv("TRANING_DATA")) {
-  if (!nzchar(data_dir)) return(NULL)
+  if (!nzchar(data_dir)) {
+    return(NULL)
+  }
   path <- file.path(data_dir, "cache", "summaries.RData")
-  if (!file.exists(path)) return(NULL)
+  if (!file.exists(path)) {
+    return(NULL)
+  }
   env <- new.env(parent = emptyenv())
   load(path, envir = env)
   s <- env$summaries
-  if (!inherits(s, "data.frame")) return(NULL)
+  if (!inherits(s, "data.frame")) {
+    return(NULL)
+  }
   # trackeRdataSummary's [ method conflicts with dplyr; we only read
   # one column here, but strip it for consistency with my_dbs_load().
   if (inherits(s, "trackeRdataSummary")) class(s) <- "data.frame"
@@ -275,12 +350,12 @@ check_configs <- function(expected = .EXPECTED_CONFIG_DIGESTS) {
 #
 # `...` is passed to data_freshness() — thresholds, inbox directories.
 check_data_freshness <- function(health_daily = NULL,
-                                  summaries = NULL,
-                                  now = Sys.time(),
-                                  status_payload = NULL,
-                                  status_fetch = .receiver_status,
-                                  receiver_configured = .receiver_key_present(),
-                                  ...) {
+                                 summaries = NULL,
+                                 now = Sys.time(),
+                                 status_payload = NULL,
+                                 status_fetch = .receiver_status,
+                                 receiver_configured = .receiver_key_present(),
+                                 ...) {
   if (is.null(status_payload) && is.function(status_fetch)) {
     status_payload <- tryCatch(status_fetch(), error = function(e) NULL)
   }
@@ -292,14 +367,16 @@ check_data_freshness <- function(health_daily = NULL,
     health_daily <- tryCatch(load_health_data(), error = function(e) NULL)
   }
   if (is.null(summaries) &&
-      is.na(.parse_iso_time(status_payload[["last_workouts_import"]]))) {
+    is.na(.parse_iso_time(status_payload[["last_workouts_import"]]))) {
     summaries <- tryCatch(.freshness_load_summaries(), error = function(e) NULL)
   }
 
-  fresh <- data_freshness(health_daily = health_daily, summaries = summaries,
-                           now = now,
-                           status_payload = status_payload,
-                           status_fetch = NULL, ...)
+  fresh <- data_freshness(
+    health_daily = health_daily, summaries = summaries,
+    now = now,
+    status_payload = status_payload,
+    status_fetch = NULL, ...
+  )
 
   # "unknown" means we could not measure at all — report it as warn so
   # the timer's OnFailure= path fires rather than passing green on a
@@ -319,16 +396,19 @@ check_data_freshness <- function(health_daily = NULL,
     message <- paste(
       "Receiver not queried (TRANING_API_KEY not set) — pipeline freshness",
       "cannot be assessed from this host; judged on local files only.",
-      message)
+      message
+    )
   }
 
   details <- c(
-    list(freshness_status = fresh$status,
-         worst_flow = fresh$worst_flow,
-         asymmetric = fresh$asymmetric,
-         receiver_configured = isTRUE(receiver_configured),
-         prose = fresh$prose,
-         flows = lapply(fresh$flows, .freshness_flow_details)),
+    list(
+      freshness_status = fresh$status,
+      worst_flow = fresh$worst_flow,
+      asymmetric = fresh$asymmetric,
+      receiver_configured = isTRUE(receiver_configured),
+      prose = fresh$prose,
+      flows = lapply(fresh$flows, .freshness_flow_details)
+    ),
     fresh$details
   )
   .check_result("freshness", status, message, details)
@@ -346,8 +426,11 @@ check_data_freshness <- function(health_daily = NULL,
     status = flow$status,
     source = flow$source,
     age_hours = flow$age_hours,
-    last_data = if (is.na(flow$last_data)) NA_character_
-                else format(flow$last_data, "%Y-%m-%d %H:%M:%S"),
+    last_data = if (is.na(flow$last_data)) {
+      NA_character_
+    } else {
+      format(flow$last_data, "%Y-%m-%d %H:%M:%S")
+    },
     warn_hours = flow$warn_hours,
     fail_hours = flow$fail_hours,
     tightened = flow$tightened,
@@ -359,37 +442,41 @@ check_data_freshness <- function(health_daily = NULL,
 # --- Orchestration -------------------------------------------------------
 
 doctor_run <- function(checks = .VALID_DOCTOR_CHECKS,
-                        installed_pkgs = NULL,
-                        services = NULL,
-                        shiny_url = "http://127.0.0.1:8423/",
-                        receiver_url = NULL,
-                        expected_configs = .EXPECTED_CONFIG_DIGESTS,
-                        marker_file = .REBUILD_MARKER,
-                        r_version = NULL,
-                        systemctl_check = NULL,
-                        http_check = NULL,
-                        freshness_status_payload = NULL,
-                        freshness_status_fetch = .receiver_status,
-                        freshness_args = list(),
-                        now = Sys.time()) {
+                       installed_pkgs = NULL,
+                       services = NULL,
+                       shiny_url = "http://127.0.0.1:8423/",
+                       receiver_url = NULL,
+                       expected_configs = .EXPECTED_CONFIG_DIGESTS,
+                       marker_file = .REBUILD_MARKER,
+                       r_version = NULL,
+                       systemctl_check = NULL,
+                       http_check = NULL,
+                       freshness_status_payload = NULL,
+                       freshness_status_fetch = .receiver_status,
+                       freshness_args = list(),
+                       now = Sys.time()) {
   invalid <- setdiff(checks, .VALID_DOCTOR_CHECKS)
   if (length(invalid) > 0L) {
-    stop("Unknown doctor check(s): ", paste(invalid, collapse = ", "),
-         ". Valid: ", paste(.VALID_DOCTOR_CHECKS, collapse = ", "))
+    stop(
+      "Unknown doctor check(s): ", paste(invalid, collapse = ", "),
+      ". Valid: ", paste(.VALID_DOCTOR_CHECKS, collapse = ", ")
+    )
   }
 
   results <- list()
   if ("packages" %in% checks) {
-    results$packages <- check_stale_builds(installed_pkgs = installed_pkgs,
-                                            r_version = r_version,
-                                            marker_file = marker_file)
+    results$packages <- check_stale_builds(
+      installed_pkgs = installed_pkgs,
+      r_version = r_version,
+      marker_file = marker_file
+    )
   }
   if ("services" %in% checks) {
     args <- list(shiny_url = shiny_url)
-    if (!is.null(services))         args$services <- services
-    if (!is.null(receiver_url))     args$receiver_url <- receiver_url
-    if (!is.null(systemctl_check))  args$systemctl_check <- systemctl_check
-    if (!is.null(http_check))       args$http_check <- http_check
+    if (!is.null(services)) args$services <- services
+    if (!is.null(receiver_url)) args$receiver_url <- receiver_url
+    if (!is.null(systemctl_check)) args$systemctl_check <- systemctl_check
+    if (!is.null(http_check)) args$http_check <- http_check
     results$services <- do.call(check_services, args)
   }
   if ("configs" %in% checks) {
@@ -397,10 +484,13 @@ doctor_run <- function(checks = .VALID_DOCTOR_CHECKS,
   }
   if ("freshness" %in% checks) {
     results$freshness <- do.call(check_data_freshness, c(
-      list(now = now,
-           status_payload = freshness_status_payload,
-           status_fetch = freshness_status_fetch),
-      freshness_args))
+      list(
+        now = now,
+        status_payload = freshness_status_payload,
+        status_fetch = freshness_status_fetch
+      ),
+      freshness_args
+    ))
   }
 
   statuses <- vapply(results, `[[`, character(1), "status")
@@ -413,17 +503,24 @@ doctor_run <- function(checks = .VALID_DOCTOR_CHECKS,
     timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S %z"),
     r_version = .r_xy(r_version),
     results = results,
-    summary = sprintf("%d ok, %d warn, %d fail",
-                       sum(statuses == "ok"),
-                       sum(statuses == "warn"),
-                       sum(statuses == "fail"))
+    summary = sprintf(
+      "%d ok, %d warn, %d fail",
+      sum(statuses == "ok"),
+      sum(statuses == "warn"),
+      sum(statuses == "fail")
+    )
   )
 }
 
 # --- Formatters ----------------------------------------------------------
 
 .status_glyph <- function(status) {
-  switch(status, ok = "OK  ", warn = "WARN", fail = "FAIL", "??  ")
+  switch(status,
+    ok = "OK  ",
+    warn = "WARN",
+    fail = "FAIL",
+    "??  "
+  )
 }
 
 format_doctor_human <- function(result) {
@@ -433,25 +530,33 @@ format_doctor_human <- function(result) {
     ""
   )
   for (r in result$results) {
-    lines <- c(lines,
-      sprintf("[%s] %s: %s", .status_glyph(r$status), r$name, r$message))
+    lines <- c(
+      lines,
+      sprintf("[%s] %s: %s", .status_glyph(r$status), r$name, r$message)
+    )
   }
-  lines <- c(lines, "",
-    if (result$ok) "All checks passed." else "Some checks failed.")
+  lines <- c(
+    lines, "",
+    if (result$ok) "All checks passed." else "Some checks failed."
+  )
   paste0(paste(lines, collapse = "\n"), "\n")
 }
 
 format_doctor_json <- function(result) {
-  jsonlite::toJSON(result, auto_unbox = TRUE, null = "null",
-                    na = "string", pretty = TRUE)
+  jsonlite::toJSON(result,
+    auto_unbox = TRUE, null = "null",
+    na = "string", pretty = TRUE
+  )
 }
 
 # --- Rebuild -------------------------------------------------------------
 
-rebuild_stale_userlib <- function(lib = Sys.getenv("R_LIBS_USER",
-                                                     "~/R/library"),
-                                   r_version = NULL,
-                                   marker_file = .REBUILD_MARKER) {
+rebuild_stale_userlib <- function(lib = Sys.getenv(
+                                    "R_LIBS_USER",
+                                    "~/R/library"
+                                  ),
+                                  r_version = NULL,
+                                  marker_file = .REBUILD_MARKER) {
   lib <- path.expand(lib)
   if (!dir.exists(lib)) {
     message("User library does not exist: ", lib)

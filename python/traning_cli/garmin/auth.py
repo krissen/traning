@@ -59,9 +59,8 @@ def _pirate_login(token_dir: Path, force_reauth: bool = False) -> Garmin:
         from pirate_garmin.auth import AuthManager, Credentials
     except ImportError:
         raise RuntimeError(
-            "Browser login requires pirate-garmin. Install it:\n"
-            "  pip install pirate-garmin"
-        )
+            "Browser login requires pirate-garmin. Install it:\n  pip install pirate-garmin"
+        ) from None
 
     app_dir = str(token_dir / "pirate-garmin")
 
@@ -116,9 +115,7 @@ def _native_login(tokenstore: str) -> Garmin:
         client.login(tokenstore=tokenstore)
     except (GarminConnectTooManyRequestsError, GarminConnectAuthenticationError) as e:
         if "429" in str(e) or "Rate Limit" in str(e):
-            raise RuntimeError(
-                "Garmin rate-limited the request. Try --login-method browser"
-            ) from e
+            raise RuntimeError("Garmin rate-limited the request. Try --login-method browser") from e
         raise
     log.info("Native login successful, tokens saved to %s", tokenstore)
     return client

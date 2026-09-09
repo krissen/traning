@@ -45,50 +45,82 @@ def _plot_dir() -> Path:
     getuid = getattr(os, "getuid", None)
     if getuid is None:
         raise OSError(
-            "vayu plot output requires a POSIX uid; "
-            "os.getuid() is not available on this platform"
+            "vayu plot output requires a POSIX uid; os.getuid() is not available on this platform"
         )
     return Path(tempfile.gettempdir()) / f"vayu_plots_uid{getuid()}"
 
 
 # Date expression pattern: YYYY, YYYY-MM, YYYY-MM-DD, or relative (-3w, -1y, etc.)
-_DATE_EXPR_RE = re.compile(
-    r"^(\d{4}(-\d{2}(-\d{2})?)?|-\d+[dwmy])$"
-)
+_DATE_EXPR_RE = re.compile(r"^(\d{4}(-\d{2}(-\d{2})?)?|-\d+[dwmy])$")
 
 # Functions known to the R bridge
-_KNOWN_FUNCTIONS = frozenset({
-    # Basic reports
-    "report_monthtop", "report_runs_year_month", "report_monthlast",
-    "report_yearstop", "report_yearstatus", "report_monthstatus",
-    "report_datesum", "report_ef", "report_hre", "report_acwr",
-    "report_monotony", "report_pmc", "report_recovery_hr",
-    "report_hr_zones", "report_decoupling", "report_readiness",
-    "report_metric",
-    # Alcohol
-    "report_alcohol", "report_alcohol_weekly",
-    # Report plots
-    "plot_monthtop", "plot_runs_month", "plot_monthstatus",
-    "plot_monthlast", "plot_yearstop", "plot_datesum",
-    # Advanced plots
-    "fetch.plot.ef", "fetch.plot.hre", "fetch.plot.acwr",
-    "fetch.plot.monotony", "fetch.plot.pmc", "fetch.plot.recovery_hr",
-    "fetch.plot.hr_zones", "fetch.plot.decoupling",
-    # Löpprofil — yearly characterization
-    "fetch.plot.pace_year", "fetch.plot.pace_year_ridges",
-    "fetch.plot.pace_tertile_share", "fetch.plot.longest_runs_year",
-    "fetch.plot.season_pace", "fetch.plot.heatmap_km",
-    "fetch.plot.cumulative_km", "fetch.plot.distance_pace_era",
-    # Health plots
-    "fetch.plot.resting_hr", "fetch.plot.hrv", "fetch.plot.sleep",
-    "fetch.plot.vo2max", "fetch.plot.readiness_score",
-    # State-based health insights + data inspection
-    "health_insight_readiness", "recent_data_dump", "latest_known_metrics",
-    # Multi-sport plots
-    "plot_sport_mix", "plot_sport_ctl_overlay", "plot_sport_calendar",
-    # Phase 5d race tools
-    "compute_taper_plan", "compute_race_readiness",
-})
+_KNOWN_FUNCTIONS = frozenset(
+    {
+        # Basic reports
+        "report_monthtop",
+        "report_runs_year_month",
+        "report_monthlast",
+        "report_yearstop",
+        "report_yearstatus",
+        "report_monthstatus",
+        "report_datesum",
+        "report_ef",
+        "report_hre",
+        "report_acwr",
+        "report_monotony",
+        "report_pmc",
+        "report_recovery_hr",
+        "report_hr_zones",
+        "report_decoupling",
+        "report_readiness",
+        "report_metric",
+        # Alcohol
+        "report_alcohol",
+        "report_alcohol_weekly",
+        # Report plots
+        "plot_monthtop",
+        "plot_runs_month",
+        "plot_monthstatus",
+        "plot_monthlast",
+        "plot_yearstop",
+        "plot_datesum",
+        # Advanced plots
+        "fetch.plot.ef",
+        "fetch.plot.hre",
+        "fetch.plot.acwr",
+        "fetch.plot.monotony",
+        "fetch.plot.pmc",
+        "fetch.plot.recovery_hr",
+        "fetch.plot.hr_zones",
+        "fetch.plot.decoupling",
+        # Löpprofil — yearly characterization
+        "fetch.plot.pace_year",
+        "fetch.plot.pace_year_ridges",
+        "fetch.plot.pace_tertile_share",
+        "fetch.plot.longest_runs_year",
+        "fetch.plot.season_pace",
+        "fetch.plot.heatmap_km",
+        "fetch.plot.cumulative_km",
+        "fetch.plot.distance_pace_era",
+        # Health plots
+        "fetch.plot.resting_hr",
+        "fetch.plot.hrv",
+        "fetch.plot.sleep",
+        "fetch.plot.vo2max",
+        "fetch.plot.readiness_score",
+        # State-based health insights + data inspection
+        "health_insight_readiness",
+        "recent_data_dump",
+        "latest_known_metrics",
+        # Multi-sport plots
+        "plot_sport_mix",
+        "plot_sport_ctl_overlay",
+        "plot_sport_calendar",
+        # Phase 5d race tools
+        "compute_taper_plan",
+        "compute_race_readiness",
+    }
+)
 
 
 def _sanitize(value: str) -> str:
@@ -120,31 +152,22 @@ def _prepare_plot_dir() -> Path:
         try:
             st = target.lstat()
         except OSError as e:
-            raise RuntimeError(
-                f"vayu plot dir lstat failed: {target}: {e}"
-            ) from e
+            raise RuntimeError(f"vayu plot dir lstat failed: {target}: {e}") from e
         if stat_lib.S_ISLNK(st.st_mode):
-            raise RuntimeError(
-                f"vayu plot dir is a symlink, refusing: {target}"
-            )
+            raise RuntimeError(f"vayu plot dir is a symlink, refusing: {target}") from None
         if not stat_lib.S_ISDIR(st.st_mode):
-            raise RuntimeError(
-                f"vayu plot path is not a directory: {target}"
-            )
+            raise RuntimeError(f"vayu plot path is not a directory: {target}") from None
         if st.st_uid != os.getuid():
             raise RuntimeError(
-                f"vayu plot dir owned by uid {st.st_uid}, expected "
-                f"{os.getuid()}: {target}"
-            )
+                f"vayu plot dir owned by uid {st.st_uid}, expected {os.getuid()}: {target}"
+            ) from None
 
     # Fail-closed chmod: if we cannot lock perms down, the dir is
     # not safe to keep using.
     try:
         os.chmod(target, 0o700)
     except OSError as e:
-        raise RuntimeError(
-            f"Could not chmod {target} to 0o700: {e}"
-        ) from e
+        raise RuntimeError(f"Could not chmod {target} to 0o700: {e}") from e
 
     cutoff = time.time() - VAYU_PLOTS_MAX_AGE_SEC
     for entry in target.iterdir():
@@ -296,8 +319,9 @@ class WarmRBridge:
                 proc.kill()
                 proc.wait(timeout=5)
             except Exception as e:
-                logger.warning("WarmRBridge: failed to kill pid=%s: %s",
-                              getattr(proc, "pid", "?"), e)
+                logger.warning(
+                    "WarmRBridge: failed to kill pid=%s: %s", getattr(proc, "pid", "?"), e
+                )
 
     def _ensure_alive(self) -> None:
         """(Re)spawn if needed, subject to the bounded-respawn budget.
@@ -307,9 +331,7 @@ class WarmRBridge:
         if self._proc is not None and self._proc.poll() is None:
             return
         now = time.monotonic()
-        self._respawn_times = [
-            t for t in self._respawn_times if now - t < self.RESPAWN_WINDOW_SEC
-        ]
+        self._respawn_times = [t for t in self._respawn_times if now - t < self.RESPAWN_WINDOW_SEC]
         if len(self._respawn_times) >= self.MAX_RESPAWNS:
             raise WarmBridgeUnavailable(
                 f"respawn budget exceeded ({self.MAX_RESPAWNS} in "
@@ -327,7 +349,9 @@ class WarmRBridge:
         if self._request_count >= self.MAX_REQUESTS or age >= self.MAX_AGE_SEC:
             logger.info(
                 "WarmRBridge: recycling pid=%s (requests=%d age=%.0fs)",
-                self._proc.pid, self._request_count, age,
+                self._proc.pid,
+                self._request_count,
+                age,
             )
             self._teardown()
             self._spawn()
@@ -411,7 +435,7 @@ class WarmRBridge:
                         buf += chunk
                         continue
 
-                    raw_line, buf = buf[:newline_idx], buf[newline_idx + 1:]
+                    raw_line, buf = buf[:newline_idx], buf[newline_idx + 1 :]
                     raw_line = raw_line.strip()
                     if not raw_line:
                         continue  # defensive: skip stray blank lines
@@ -492,14 +516,13 @@ def _run_r(
     # unchanged spawn-per-call code below.
     if _warm_bridge_enabled():
         try:
-            return WarmRBridge.singleton().request(
-                func, clean_args, plot, plot_path, timeout
-            )
+            return WarmRBridge.singleton().request(func, clean_args, plot, plot_path, timeout)
         except WarmBridgeUnavailable as e:
             logger.warning("Warm R bridge unavailable (%s); falling back to spawn", e)
 
     cmd = [
-        "Rscript", str(MCP_BRIDGE_R),
+        "Rscript",
+        str(MCP_BRIDGE_R),
         f"--func={func}",
         f"--args={json.dumps(clean_args)}",
     ]
@@ -634,17 +657,13 @@ def r_plot(
     if raw.get("type") != "plot":
         return {
             "type": "error",
-            "message": (
-                f"Unexpected response from R bridge: type="
-                f"{raw.get('type')!r}"
-            ),
+            "message": (f"Unexpected response from R bridge: type={raw.get('type')!r}"),
         }
     if raw.get("path") and raw["path"] != str(png_path):
         return {
             "type": "error",
             "message": (
-                f"R bridge wrote to unexpected path: {raw['path']!r} "
-                f"(expected {str(png_path)!r})"
+                f"R bridge wrote to unexpected path: {raw['path']!r} (expected {str(png_path)!r})"
             ),
         }
 

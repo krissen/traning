@@ -25,9 +25,12 @@ test_that("get_hr_rest matches a per-date reference implementation", {
   )
   reference <- function(date, rhr_data) {
     date <- as.Date(date)
-    rhr_min <- min(rhr_data$date); rhr_max <- max(rhr_data$date)
+    rhr_min <- min(rhr_data$date)
+    rhr_max <- max(rhr_data$date)
     vapply(date, function(d) {
-      if (d < rhr_min || d > rhr_max + 1) return(50)
+      if (d < rhr_min || d > rhr_max + 1) {
+        return(50)
+      }
       w <- rhr_data$rhr[rhr_data$date >= d - 30 & rhr_data$date <= d - 1]
       if (length(w) == 0) 50 else mean(w, na.rm = TRUE)
     }, numeric(1))
@@ -35,18 +38,24 @@ test_that("get_hr_rest matches a per-date reference implementation", {
 
   set.seed(7)
   dates <- sample(seq(as.Date("2026-01-15"), as.Date("2026-04-30"),
-                       by = "day"), 200, replace = TRUE)
+    by = "day"
+  ), 200, replace = TRUE)
   withr::with_envvar(c("HR_REST" = ""), {
-    expect_identical(get_hr_rest(dates, rhr_data = rhr),
-                     reference(dates, rhr))
+    expect_identical(
+      get_hr_rest(dates, rhr_data = rhr),
+      reference(dates, rhr)
+    )
   })
 })
 
 test_that("get_hr_rest returns scalar fallback when no AW data", {
   withr::with_envvar(c("HR_REST" = ""), {
     out <- get_hr_rest(as.Date(c("2026-01-01", "2026-01-02")),
-                       rhr_data = tibble::tibble(date = as.Date(character(0)),
-                                                  rhr = numeric(0)))
+      rhr_data = tibble::tibble(
+        date = as.Date(character(0)),
+        rhr = numeric(0)
+      )
+    )
     expect_equal(out, c(50, 50))
   })
 })
@@ -54,8 +63,11 @@ test_that("get_hr_rest returns scalar fallback when no AW data", {
 test_that("get_hr_rest honours HR_REST env override for missing data", {
   withr::with_envvar(c("HR_REST" = "55"), {
     out <- get_hr_rest(as.Date("2020-01-01"),
-                       rhr_data = tibble::tibble(date = as.Date(character(0)),
-                                                  rhr = numeric(0)))
+      rhr_data = tibble::tibble(
+        date = as.Date(character(0)),
+        rhr = numeric(0)
+      )
+    )
     expect_equal(out, 55)
   })
 })
