@@ -29,10 +29,17 @@ jobs:
         run: echo "PREK_HOME=${{ runner.temp }}/prek" >> "$GITHUB_ENV"
 
       - name: Cache prek hook environments
+        # No `py${{ env.PYTHON_VERSION }}` component here: unlike the test
+        # job, this job never installs or pins that Python version — prek
+        # (via pipx) builds its hook environments against whatever Python
+        # ubuntu-latest happens to default to. Including a Python-version
+        # label the job doesn't actually control would be misleading (and
+        # wrongly implies the cache is invalidated by a version this job
+        # never sets).
         uses: actions/cache@v4
         with:
           path: ${{ env.PREK_HOME }}
-          key: prek-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          key: prek-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       - name: prek
         # R lint (lintr/styler/parsable-R) is `language: system` against
@@ -77,7 +84,12 @@ jobs:
         run: uv python install ${{ env.PYTHON_VERSION }}
 
       - name: Install dependencies
-        run: uv sync --frozen --extra dev --python ${{ env.PYTHON_VERSION }}
+        # --locked, not --frozen: --frozen installs from uv.lock as-is
+        # without checking it still matches pyproject.toml, so a PR that
+        # changes a dependency but forgets to run `uv lock` would pass CI
+        # against a stale environment. --locked asserts the lockfile is
+        # already up to date and fails otherwise.
+        run: uv sync --locked --extra dev --python ${{ env.PYTHON_VERSION }}
 
       - name: Run tests
         run: uv run pytest -q python/tests
