@@ -6,7 +6,11 @@ Rust reimplementation of `pre-commit`), configured in
 hook dispatcher (`~/.config/git/hooks/_dispatch`) — nothing to install
 per clone beyond what the dispatcher already expects (`prek`, `gitleaks`,
 `shellcheck`, `shfmt`; R hooks use whatever `Rscript`/`styler`/`lintr` are
-already on `PATH`).
+already on `PATH`, plus the R packages `pkgload` (required by
+`.hooks/lintr.R` to load the package before linting — see below) and
+`devtools` (required by `.hooks/testthat.R`); both hooks fail fast with
+a clear message, rather than silently misbehaving, if either is
+missing: `install.packages(c("pkgload", "devtools"))`).
 
 ## Turning it on
 
