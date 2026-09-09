@@ -20,11 +20,15 @@ suppressMessages(devtools::load_all(pkg_root, quiet = TRUE))
 library(optparse)
 
 opts <- parse_args(OptionParser(option_list = list(
-  make_option("--files", type = "character", default = "",
-              help = "Comma-separated paths of HAE JSON files to import"),
-  make_option(c("--prev-state", "-p"), type = "character", default = "",
-              dest = "prev_state",
-              help = "Path to previous notify state JSON (empty = morning)")
+  make_option("--files",
+    type = "character", default = "",
+    help = "Comma-separated paths of HAE JSON files to import"
+  ),
+  make_option(c("--prev-state", "-p"),
+    type = "character", default = "",
+    dest = "prev_state",
+    help = "Path to previous notify state JSON (empty = morning)"
+  )
 )))
 
 files <- if (nchar(opts$files) == 0) {
@@ -42,42 +46,53 @@ if (nchar(opts$prev_state) > 0 && file.exists(opts$prev_state)) {
 }
 
 emit <- function(x) {
-  cat(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null",
-                       Date = "ISO8601"))
+  cat(jsonlite::toJSON(x,
+    auto_unbox = TRUE, null = "null",
+    Date = "ISO8601"
+  ))
 }
 
 emit_error <- function(msg) {
-  emit(list(kind = "error", error = msg, prosa = "",
-            trigger = "", components_present = list()))
+  emit(list(
+    kind = "error", error = msg, prosa = "",
+    trigger = "", components_present = list()
+  ))
   quit(status = 1, save = "no")
 }
 
-result <- tryCatch({
-  # Import files if provided. Failure here aborts.
-  if (length(files) > 0) {
-    invisible(import_health_export(path = files, verbose = FALSE))
+result <- tryCatch(
+  {
+    # Import files if provided. Failure here aborts.
+    if (length(files) > 0) {
+      invisible(import_health_export(path = files, verbose = FALSE))
+    }
+
+    td <- Sys.getenv("TRANING_DATA")
+    tl <- my_dbs_load(
+      file.path(td, "cache", "summaries.RData"),
+      file.path(td, "cache", "myruns.RData")
+    )
+    h <- load_health_data()
+
+    is_morning <- is.null(prev_state) || !isTRUE(prev_state$morning_sent)
+    bundle <- traning_data(summaries = tl[["summaries"]], health_daily = h)
+
+    if (is_morning) {
+      res <- health_insight_readiness(bundle)
+      res$kind <- "readiness"
+      res
+    } else {
+      res <- health_insight_update(bundle, prev_state)
+      res$kind <- "update"
+      res
+    }
+  },
+  error = function(e) {
+    list(
+      kind = "error", error = conditionMessage(e), prosa = "",
+      trigger = "", components_present = list()
+    )
   }
-
-  td <- Sys.getenv("TRANING_DATA")
-  tl <- my_dbs_load(file.path(td, "cache", "summaries.RData"),
-                     file.path(td, "cache", "myruns.RData"))
-  h <- load_health_data()
-
-  is_morning <- is.null(prev_state) || !isTRUE(prev_state$morning_sent)
-  bundle <- traning_data(summaries = tl[["summaries"]], health_daily = h)
-
-  if (is_morning) {
-    res <- health_insight_readiness(bundle)
-    res$kind <- "readiness"
-    res
-  } else {
-    res <- health_insight_update(bundle, prev_state)
-    res$kind <- "update"
-    res
-  }
-}, error = function(e) {
-  list(kind = "error", error = conditionMessage(e), prosa = "",
-       trigger = "", components_present = list())
-})
+)
 
 emit(result)

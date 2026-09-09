@@ -24,29 +24,44 @@ source(file.path(pkg_root, "inst", "mcp_bridge_shared.R"), local = FALSE)
 library(optparse)
 
 options <- parse_args(OptionParser(option_list = list(
-  make_option("--func", type = "character", default = NULL,
-              help = "Function name to call"),
-  make_option("--args", type = "character", default = "{}",
-              help = "JSON-encoded arguments"),
-  make_option("--plot", type = "logical", action = "store_true",
-              default = FALSE, help = "Return plot as PNG"),
-  make_option("--plot_path", type = "character", default = NULL,
-              help = paste("Target PNG path supplied by the caller.",
-                           "Used so the file outlives this R subprocess;",
-                           "without it, fall back to tempfile() and risk",
-                           "the path being wiped on exit."))
+  make_option("--func",
+    type = "character", default = NULL,
+    help = "Function name to call"
+  ),
+  make_option("--args",
+    type = "character", default = "{}",
+    help = "JSON-encoded arguments"
+  ),
+  make_option("--plot",
+    type = "logical", action = "store_true",
+    default = FALSE, help = "Return plot as PNG"
+  ),
+  make_option("--plot_path",
+    type = "character", default = NULL,
+    help = paste(
+      "Target PNG path supplied by the caller.",
+      "Used so the file outlives this R subprocess;",
+      "without it, fall back to tempfile() and risk",
+      "the path being wiped on exit."
+    )
+  )
 )))
 
 func_name <- options$func
 func_args <- jsonlite::fromJSON(options$args, simplifyVector = FALSE)
-do_plot   <- options$plot
+do_plot <- options$plot
 plot_path <- options$plot_path
 
 # --- Output helpers ---
 emit_json <- function(x) {
-  cat(jsonlite::toJSON(x, auto_unbox = TRUE, null = "null",
-                       dataframe = "rows", Date = "ISO8601"),
-      "\n", file = stdout())
+  cat(
+    jsonlite::toJSON(x,
+      auto_unbox = TRUE, null = "null",
+      dataframe = "rows", Date = "ISO8601"
+    ),
+    "\n",
+    file = stdout()
+  )
 }
 
 emit_error <- function(msg) {
@@ -77,8 +92,8 @@ if (traning_data == "") {
   emit_error("TRANING_DATA is not set")
 }
 db_summaries <- file.path(traning_data, "cache", "summaries.RData")
-db_myruns    <- file.path(traning_data, "cache", "myruns.RData")
-gc_json_dir  <- file.path(traning_data, "kristian", "filer", "gconnect")
+db_myruns <- file.path(traning_data, "cache", "myruns.RData")
+gc_json_dir <- file.path(traning_data, "kristian", "filer", "gconnect")
 
 # --- Conditional data loading ---
 deps <- func_registry[[func_name]]
