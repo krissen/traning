@@ -811,8 +811,6 @@ cross_validate_zones <- function(summaries,
   vt1 <- hr_max * vt1_pct
   vt2 <- hr_max * vt2_pct
 
-  zone_cols <- paste0("garmin_hrTimeInZone_", 1:5)
-
   # Identifiera kvalificerande sessioner med kompletta Garmin-zondata
   run_idx <- which(
     .sport_match_mask(summaries, sport) &

@@ -331,7 +331,6 @@ fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
 
   # Apple Watch series
   if (nrow(vo2) > 0) {
-    aw_colour <- if (has_both) aw_smooth_colour else "grey50"
     p <- p +
       ggplot2::geom_point(
         data = vo2,
