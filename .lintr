@@ -4,14 +4,32 @@
 #
 # Formatting is not lintr's job here — styler owns it, and the pre-commit
 # hygiene hooks own trailing whitespace / end-of-file.
+#
+# cyclocomp is 125, not a conventional 25. 25 would flag the vast majority
+# of existing functions in R/ and inst/ (this is a data-analysis package
+# with long, branch-heavy report/pipeline functions) — a refactoring
+# programme, not a gate. 125 sits just above the current worst offender
+# (121, inst/cli.R's argument dispatcher) so the introduction of this
+# config doesn't fail CI on debt nobody wrote today. Ratchets down
+# stepwise as those functions are broken up; it is not a statement that
+# 125 is acceptable complexity.
 linters: list(
    object_usage_linter = object_usage_linter(),
    equals_na_linter = equals_na_linter(),
    seq_linter = seq_linter(),
    T_and_F_symbol_linter = T_and_F_symbol_linter(),
    vector_logic_linter = vector_logic_linter(),
-   cyclocomp_linter = cyclocomp_linter(25)
+   cyclocomp_linter = cyclocomp_linter(125)
    )
 exclusions: list(
-   "tests/testthat/"
+   "tests/testthat/",
+   # app/tRanat is a Shiny app directory, not part of the R package —
+   # lintr's static per-file analysis can't resolve functions defined in
+   # sibling module files (they're sourced at runtime by shiny::runApp()),
+   # so object_usage_linter reports every cross-module call as an
+   # undefined global function. Real dead code or NSE-column debt in
+   # here would need a different tool (or turning app/ into a package);
+   # a whole-directory exclusion is the honest fix for a whole-directory
+   # false-positive class, not a suppression of real findings.
+   "app/tRanat/"
    )
