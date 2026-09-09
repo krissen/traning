@@ -117,7 +117,7 @@ def _compose_garmin_message(import_summary: str, insight: str) -> str:
 _import_lock = threading.Lock()
 
 
-def _import_and_notify(files: list, kind: str = "health"):
+def _import_and_notify(files: list, _kind: str = "health"):
     """Import files via R and emit a state-aware notification.
 
     First flush of the day → readiness/state notification.
@@ -587,7 +587,7 @@ _last_import_files: int = 0
 
 
 @asynccontextmanager
-async def _lifespan(application: FastAPI):
+async def _lifespan(_application: FastAPI):
     _resume_pending_state()
     yield
 

@@ -154,13 +154,13 @@ def _prepare_plot_dir() -> Path:
         except OSError as e:
             raise RuntimeError(f"vayu plot dir lstat failed: {target}: {e}") from e
         if stat_lib.S_ISLNK(st.st_mode):
-            raise RuntimeError(f"vayu plot dir is a symlink, refusing: {target}")
+            raise RuntimeError(f"vayu plot dir is a symlink, refusing: {target}") from None
         if not stat_lib.S_ISDIR(st.st_mode):
-            raise RuntimeError(f"vayu plot path is not a directory: {target}")
+            raise RuntimeError(f"vayu plot path is not a directory: {target}") from None
         if st.st_uid != os.getuid():
             raise RuntimeError(
                 f"vayu plot dir owned by uid {st.st_uid}, expected {os.getuid()}: {target}"
-            )
+            ) from None
 
     # Fail-closed chmod: if we cannot lock perms down, the dir is
     # not safe to keep using.

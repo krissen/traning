@@ -12,6 +12,7 @@ process and compares its output byte-for-byte against the spawn-per-call
 `inst/mcp_bridge.R` path.
 """
 
+import itertools
 import json
 import os
 import subprocess
@@ -407,7 +408,7 @@ def test_concurrent_requests_are_serialized(monkeypatch):
     # by _TimingLock must be pairwise non-overlapping.
     intervals = sorted(timing_lock.intervals)
     assert len(intervals) == 5
-    for (_, end_a), (start_b, _) in zip(intervals, intervals[1:]):
+    for (_, end_a), (start_b, _) in itertools.pairwise(intervals):
         assert start_b >= end_a
 
 

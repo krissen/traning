@@ -236,9 +236,11 @@ def test_flush_pending_workouts_can_flush_again_after_a_raising_attempt(
     # succeed normally (i.e. the guard isn't stuck).
     app_mod._pending_workouts_count = 5
 
-    def raise_once(payload, _state={"raised": False}):
-        if not _state["raised"]:
-            _state["raised"] = True
+    raised_state = {"raised": False}
+
+    def raise_once(payload):
+        if not raised_state["raised"]:
+            raised_state["raised"] = True
             raise OSError("disk full")
         return state.save_pending_state(payload)
 

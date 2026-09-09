@@ -54,9 +54,10 @@ def recover_deleted_files(data_dir: Path, delete_commit: str) -> list[Path]:
         check=True,
     )
     deleted_paths = [
-        l.strip()
-        for l in result.stdout.splitlines()
-        if l.strip().startswith("kristian/health_export/metrics/") and l.strip().endswith(".json")
+        line.strip()
+        for line in result.stdout.splitlines()
+        if line.strip().startswith("kristian/health_export/metrics/")
+        and line.strip().endswith(".json")
     ]
 
     recovered = []

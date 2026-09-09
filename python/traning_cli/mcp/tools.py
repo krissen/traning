@@ -390,7 +390,7 @@ def get_monthly_summary(
 
 
 def get_yearly_summary(
-    n: int = None,
+    n: int | None = None,
     after: str | None = None,
     before: str | None = None,
     top: bool = False,
@@ -1388,7 +1388,7 @@ def resource_metrics() -> str:
 def resource_thresholds() -> str:
     """Reference thresholds for all training metrics."""
     lines = []
-    for key, defn in _METRIC_DEFINITIONS.items():
+    for _key, defn in _METRIC_DEFINITIONS.items():
         if "thresholds" in defn:
             lines.append(f"## {defn['name']}")
             for level, value in defn["thresholds"].items():

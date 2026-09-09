@@ -60,7 +60,7 @@ def _pirate_login(token_dir: Path, force_reauth: bool = False) -> Garmin:
     except ImportError:
         raise RuntimeError(
             "Browser login requires pirate-garmin. Install it:\n  pip install pirate-garmin"
-        )
+        ) from None
 
     app_dir = str(token_dir / "pirate-garmin")
 

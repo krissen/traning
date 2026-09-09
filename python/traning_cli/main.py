@@ -197,13 +197,13 @@ def fetch_garmin(limit, fetch_all, dry_run, reauth, login_method, verbose):
     try:
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     try:
         tokens = token_dir(data_dir)
         client = authenticate(tokens, force_reauth=reauth, method=login_method)
     except Exception as e:
-        raise click.ClickException(f"Authentication failed: {e}")
+        raise click.ClickException(f"Authentication failed: {e}") from e
 
     try:
         n = fetch_new_activities(
@@ -218,7 +218,7 @@ def fetch_garmin(limit, fetch_all, dry_run, reauth, login_method, verbose):
         if n > 0 and not dry_run:
             _commit_data(data_dir, n)
     except Exception as e:
-        raise click.ClickException(f"Fetch failed: {e}")
+        raise click.ClickException(f"Fetch failed: {e}") from e
 
 
 @fetch.command(name="health")
@@ -240,7 +240,7 @@ def fetch_health(server, inbox, days_back, fetch_all, dry_run, verbose):
     try:
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     # Default: try both strategies
     do_server = server or (not server and not inbox)
@@ -297,7 +297,7 @@ def fetch_workouts(since, until, no_metadata, aggregation, dry_run, verbose):
     try:
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     if not check_server():
         raise click.ClickException("HAE-server inte nåbar — starta appen i förgrunden")
@@ -352,7 +352,7 @@ def backfill(zipfile, dry_run):
     try:
         counts = backfill_archive(zipfile, dry_run=dry_run)
     except ValueError as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     action = "Would write" if dry_run else "Wrote"
     for metric, n in sorted(counts.items()):
@@ -439,7 +439,7 @@ def import_canonical(paths, replace_source_days, dry_run, verbose):
     try:
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     n_files, n_metrics, changed = canonicalize_paths(
         list(paths), data_dir=data_dir, dry_run=dry_run, replace_source_days=replace_source_days
@@ -513,7 +513,7 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
     try:
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     _maybe_pull(data_dir)
 
@@ -521,7 +521,7 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
         tokens = token_dir(data_dir)
         client = authenticate(tokens, force_reauth=reauth, method=login_method)
     except Exception as e:
-        raise click.ClickException(f"Authentication failed: {e}")
+        raise click.ClickException(f"Authentication failed: {e}") from e
 
     try:
         n = fetch_new_activities(
@@ -536,7 +536,7 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
         if n > 0 and not dry_run:
             _commit_data(data_dir, n)
     except Exception as e:
-        raise click.ClickException(f"Fetch failed: {e}")
+        raise click.ClickException(f"Fetch failed: {e}") from e
 
     if dry_run:
         click.echo("Dry-run — hoppar över import")
@@ -572,7 +572,7 @@ def sync_health(server, inbox, days_back, fetch_all, force, dry_run, verbose):
     try:
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     _maybe_pull(data_dir)
 
@@ -629,7 +629,7 @@ def sync_all(dry_run, reauth, verbose):
     try:
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     _maybe_pull(data_dir)
 
@@ -926,7 +926,7 @@ def pull(verbose):
     try:
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
-        raise click.ClickException(str(e))
+        raise click.ClickException(str(e)) from e
 
     if not _has_remote(data_dir):
         raise click.ClickException("Inget remote konfigurerat för data-repot")
