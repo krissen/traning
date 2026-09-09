@@ -19,8 +19,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Set PREK_HOME
         # Outside the working tree so the gitleaks full-tree sweep below
@@ -36,32 +34,18 @@ jobs:
           path: ${{ env.PREK_HOME }}
           key: prek-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: prek (diff mode)
-        # R lint (lintr) still carries pre-existing debt outside the R
-        # package proper (app/, a Shiny script dir lintr can't fully
-        # resolve — see .pre-commit-config.yaml) plus a handful of
-        # cyclocomp findings. --all-files would fail on files this PR
-        # never touched; diff mode ratchets instead — only lines actually
-        # changed have to be clean. Switch to --all-files once that debt
-        # is paid down.
-        #
-        # The three R hooks (parsable-R, style-files, lintr) are
-        # `language: system` against the local Rscript/styler/lintr
-        # install (see .pre-commit-config.yaml — the renv-based mirror
-        # does not build). This runner has no R toolchain, so they're
+      - name: prek
+        # R lint (lintr/styler/parsable-R) is `language: system` against
+        # the local Rscript/styler/lintr install (see
+        # .pre-commit-config.yaml — the renv-based mirror does not
+        # build). This runner has no R toolchain, so those three are
         # skipped here; R changes are linted locally, at commit time.
+        # `prek run --all-files` is green (0 lintr findings, see the
+        # ORDER 1 report) — R/lintr debt was paid down as part of
+        # introducing this config, rather than deferred to diff mode.
         env:
           SKIP: parsable-R,style-files,lintr
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            pipx run --spec prek==0.5.2 prek run \
-              --from-ref "origin/${{ github.base_ref }}" --to-ref HEAD \
-              --show-diff-on-failure
-          else
-            pipx run --spec prek==0.5.2 prek run \
-              --from-ref "${{ github.event.before }}" --to-ref "${{ github.sha }}" \
-              --show-diff-on-failure
-          fi
+        run: pipx run --spec prek==0.5.2 prek run --all-files --show-diff-on-failure
 
       - name: Gitleaks full-tree scan
         # The prek gitleaks hook runs `gitleaks git --staged`, which only
