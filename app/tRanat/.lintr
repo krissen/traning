@@ -1,0 +1,21 @@
+# Scoped configuration for the Shiny application. lintr uses the nearest
+# .lintr walking up from the file being linted, so this replaces the one at
+# the repository root for everything under app/tRanat.
+#
+# It is the root set minus object_usage_linter. These are application
+# scripts, not package code: shiny is attached when they run and modules
+# are sourced across sibling files at runtime, so there is no namespace
+# for the linter to resolve tags, cross-module server/UI functions, or
+# NSE data-frame columns against — it reports all of them as undefined.
+# See the ORDER 1 report: 119 findings across app/tRanat before this file
+# existed, none of them a defect.
+#
+# Everything else still applies — seq_linter and friends catch real bugs
+# here just as they do in R/. Keep this list in step with the root .lintr.
+linters: list(
+   equals_na_linter = equals_na_linter(),
+   seq_linter = seq_linter(),
+   T_and_F_symbol_linter = T_and_F_symbol_linter(),
+   vector_logic_linter = vector_logic_linter(),
+   cyclocomp_linter = cyclocomp_linter(125)
+   )

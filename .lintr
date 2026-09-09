@@ -22,14 +22,9 @@ linters: list(
    cyclocomp_linter = cyclocomp_linter(125)
    )
 exclusions: list(
-   "tests/testthat/",
-   # app/tRanat is a Shiny app directory, not part of the R package —
-   # lintr's static per-file analysis can't resolve functions defined in
-   # sibling module files (they're sourced at runtime by shiny::runApp()),
-   # so object_usage_linter reports every cross-module call as an
-   # undefined global function. Real dead code or NSE-column debt in
-   # here would need a different tool (or turning app/ into a package);
-   # a whole-directory exclusion is the honest fix for a whole-directory
-   # false-positive class, not a suppression of real findings.
-   "app/tRanat/"
+   "tests/testthat/"
    )
+# app/tRanat/.lintr scopes object_usage_linter off for the Shiny app
+# directory (lintr uses the nearest .lintr walking up the tree, so that
+# file replaces this one there) — everything else in this list still
+# applies to app/tRanat.
