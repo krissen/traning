@@ -50,7 +50,17 @@ cmd_code() {
   # failure here aborts the deploy before the restart below, so we never
   # restart onto a half-installed package.
   _info "Installing traning R package ..."
-  ssh "$REMOTE" "set -e; cd $REMOTE_CODE && \
+  # R_LIBS_USER set explicitly: on a fresh host, cmd_code runs before
+  # cmd_secrets, so the .Renviron that would otherwise set it doesn't
+  # exist yet. Without this, R CMD INSTALL falls back to the
+  # non-writable system library or a default versioned user library —
+  # neither of which is where the running services (cmd_check,
+  # traning-vayu.service) actually load from
+  # (/home/krisse/R/library, per docs/dev/pipeline-design.md) — so
+  # the package can appear to install successfully while staying
+  # unavailable to the service that needs it.
+  ssh "$REMOTE" "set -e; export R_LIBS_USER=/home/krisse/R/library && \
+        cd $REMOTE_CODE && \
         R CMD INSTALL --no-multiarch --with-keep.source ."
 
   _info "Copying systemd units ..."
