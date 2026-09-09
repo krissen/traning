@@ -24,9 +24,10 @@ def _journal_tail(unit: str, since: str = "5min ago", lines: int = 20) -> str:
     """
     try:
         result = subprocess.run(
-            ["journalctl", "-u", unit, "--since", since,
-             "--no-pager", "-n", str(lines)],
-            capture_output=True, text=True, timeout=10,
+            ["journalctl", "-u", unit, "--since", since, "--no-pager", "-n", str(lines)],
+            capture_output=True,
+            text=True,
+            timeout=10,
         )
     except Exception as e:
         return f"(could not read journal: {e})"

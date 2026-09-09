@@ -88,7 +88,9 @@ def test_receive_health_empty_metrics_list_is_422(client):
 
 def test_receive_health_invalid_json_is_422(client):
     resp = client.post(
-        "/v1/health", content=b"not json", headers={**HEADERS, "Content-Type": "application/json"},
+        "/v1/health",
+        content=b"not json",
+        headers={**HEADERS, "Content-Type": "application/json"},
     )
     assert resp.status_code == 422
 
@@ -192,9 +194,7 @@ def test_client_logging_never_leaks_the_api_key(client, caplog):
         ("/v1/workouts", {"data": {"workouts": [{"name": "Running"}]}}, False, 401),
     ],
 )
-def test_rejected_push_still_logs_user_agent(
-    client, caplog, path, body, send_key, expected_status
-):
+def test_rejected_push_still_logs_user_agent(client, caplog, path, body, send_key, expected_status):
     """A rejected push is exactly when the app version matters.
 
     Both rejections happen before the handler — auth in a dependency,
@@ -234,9 +234,7 @@ def test_repeated_validation_failures_collapse_into_a_count(client, caplog):
     body = {"data": {"metrics": ["not-a-metric-object"] * 500}}
     with caplog.at_level("INFO", logger=app_mod.log.name):
         client.post("/v1/health", json=body, headers=HEADERS)
-    rejection = next(
-        line for line in caplog.text.splitlines() if "rejected by validation" in line
-    )
+    rejection = next(line for line in caplog.text.splitlines() if "rejected by validation" in line)
     assert "body.data.metrics.*: dict_type (x500)" in rejection
     assert len(rejection) < 200
 

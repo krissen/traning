@@ -79,8 +79,7 @@ def save_notify_state(state: dict[str, Any]) -> bool:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
-        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2),
-                        encoding="utf-8")
+        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, path)
         return True
     except Exception:
@@ -153,8 +152,7 @@ def save_pending_state(state: dict[str, Any]) -> bool:
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
-        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2),
-                        encoding="utf-8")
+        tmp.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
         os.replace(tmp, path)
         return True
     except Exception:

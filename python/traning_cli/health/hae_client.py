@@ -27,9 +27,15 @@ HAEQueryError = HAEError
 HAEWorkoutsError = HAEError
 
 
-def query_hae(name: str, arguments: dict, *, request_id: str = "fetch",
-              host: str | None = None, port: int | None = None,
-              timeout: float = DEFAULT_TIMEOUT) -> dict:
+def query_hae(
+    name: str,
+    arguments: dict,
+    *,
+    request_id: str = "fetch",
+    host: str | None = None,
+    port: int | None = None,
+    timeout: float = DEFAULT_TIMEOUT,
+) -> dict:
     """Send a ``callTool`` request to the HAE TCP server and return
     ``data["result"]["data"]``.
 
@@ -63,12 +69,14 @@ def query_hae(name: str, arguments: dict, *, request_id: str = "fetch",
         params["metrics"] = ""
     params["arguments"] = arguments
 
-    request = json.dumps({
-        "jsonrpc": "2.0",
-        "id": request_id,
-        "method": "callTool",
-        "params": params,
-    })
+    request = json.dumps(
+        {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "method": "callTool",
+            "params": params,
+        }
+    )
 
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -91,17 +99,14 @@ def query_hae(name: str, arguments: dict, *, request_id: str = "fetch",
 
     raw = b"".join(chunks)
     if len(raw) < 10:
-        raise HAEError(
-            f"empty/short response ({len(raw)} bytes) — HAE likely warming up"
-        )
+        raise HAEError(f"empty/short response ({len(raw)} bytes) — HAE likely warming up")
 
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as e:
         excerpt = raw[:200].decode("utf-8", errors="replace")
         raise HAEError(
-            f"JSON parse failed at byte {e.pos}/{len(raw)}: {e.msg}; "
-            f"first 200 bytes: {excerpt!r}"
+            f"JSON parse failed at byte {e.pos}/{len(raw)}: {e.msg}; first 200 bytes: {excerpt!r}"
         ) from e
 
     # tcp.py historically checked for a top-level "error" key (JSON-RPC
@@ -111,16 +116,12 @@ def query_hae(name: str, arguments: dict, *, request_id: str = "fetch",
     if "error" in data:
         raise HAEError(f"HAE returned error: {data['error']}")
     if "result" not in data:
-        raise HAEError(
-            f"unexpected response shape: top-level keys {list(data)}"
-        )
+        raise HAEError(f"unexpected response shape: top-level keys {list(data)}")
     result = data["result"]
     if "error" in result:
         raise HAEError(f"HAE error: {result['error']}")
     if "data" not in result:
-        raise HAEError(
-            f"unexpected response shape: top-level keys {list(data)}"
-        )
+        raise HAEError(f"unexpected response shape: top-level keys {list(data)}")
 
     return result["data"]
 

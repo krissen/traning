@@ -91,9 +91,7 @@ def test_endpoints_emit_the_expected_kinds_of_line(emitted_lines):
 
 def test_every_log_line_is_findable_from_the_docs(emitted_lines):
     patterns = [re.compile(p) for p in _grep_patterns()]
-    unfindable = [
-        line for line in emitted_lines if not any(p.search(line) for p in patterns)
-    ]
+    unfindable = [line for line in emitted_lines if not any(p.search(line) for p in patterns)]
     assert not unfindable, (
         "These log lines match no grep pattern in the troubleshooting "
         f"checklist, so a reader following it will never see them: {unfindable}. "

@@ -28,19 +28,17 @@ def _aggregate(ts, qty, source="DrinkControl"):
 
 
 def _payload(metric, units, samples):
-    return {"data": {"metrics": [
-        {"name": metric, "units": units, "data": samples}
-    ]}}
+    return {"data": {"metrics": [{"name": metric, "units": units, "data": samples}]}}
 
 
 def _canonical(tmp_path, metric, date):
-    path = (tmp_path / "kristian" / "health_export" / "canonical"
-            / metric / f"{date}.json")
+    path = tmp_path / "kristian" / "health_export" / "canonical" / metric / f"{date}.json"
     with open(path) as f:
         return json.load(f)
 
 
 # -- concurrent samples -------------------------------------------------------
+
 
 def test_three_samples_same_second_all_survive(tmp_path):
     """DrinkControl stamps a logging session with one second per drink."""
@@ -61,9 +59,9 @@ def test_food_type_survives_canonicalization(tmp_path):
     """Type, volume and strength ride along in foodType — do not strip."""
     ts = "2026-08-28 18:44:42 +0200"
     save_health_push(
-        _payload("dietary_energy", "kJ",
-                 [_energy(ts, 724.6634270186742, "beer, 330ml 9,5%")]),
-        tmp_path)
+        _payload("dietary_energy", "kJ", [_energy(ts, 724.6634270186742, "beer, 330ml 9,5%")]),
+        tmp_path,
+    )
 
     doc = _canonical(tmp_path, "dietary_energy", "2026-08-28")
     assert doc["samples"][0]["foodType"] == "beer, 330ml 9,5%"
@@ -75,8 +73,7 @@ def test_identical_samples_in_one_push_both_survive(tmp_path):
     """Two identical beers logged in the same second (seen 2026-08-28)."""
     ts = "2026-08-28 17:49:12 +0200"
     beer = _energy(ts, 462.30522928888485, "beer, 400ml 5,0%")
-    save_health_push(_payload("dietary_energy", "kJ", [beer, dict(beer)]),
-                     tmp_path)
+    save_health_push(_payload("dietary_energy", "kJ", [beer, dict(beer)]), tmp_path)
 
     doc = _canonical(tmp_path, "dietary_energy", "2026-08-28")
     assert len(doc["samples"]) == 2
@@ -84,12 +81,17 @@ def test_identical_samples_in_one_push_both_survive(tmp_path):
 
 # -- idempotence --------------------------------------------------------------
 
+
 def test_double_push_adds_nothing(tmp_path):
     ts = "2026-08-21 23:50:53 +0200"
-    payload = _payload("dietary_energy", "kJ", [
-        _energy(ts, 762.8036283266603, "beer, 660ml 5,0%"),
-        _energy(ts, 346.7289090500049, "wine, 125ml 12,0%"),
-    ])
+    payload = _payload(
+        "dietary_energy",
+        "kJ",
+        [
+            _energy(ts, 762.8036283266603, "beer, 660ml 5,0%"),
+            _energy(ts, 346.7289090500049, "wine, 125ml 12,0%"),
+        ],
+    )
     save_health_push(payload, tmp_path)
     _, changed = save_health_push(payload, tmp_path)
 
@@ -111,10 +113,22 @@ def test_double_push_of_identical_samples_stays_at_two(tmp_path):
 def test_key_order_does_not_create_duplicates(tmp_path):
     """HAE emits the same sample with fields in varying order."""
     ts = "2026-09-04 23:17:05 +0200"
-    a = {"date": ts, "start": ts, "end": ts, "source": "DrinkControl",
-         "qty": 762.8036283266603, "foodType": "beer, 660ml 5,0%"}
-    b = {"foodType": "beer, 660ml 5,0%", "qty": 762.8036283266603,
-         "source": "DrinkControl", "end": ts, "start": ts, "date": ts}
+    a = {
+        "date": ts,
+        "start": ts,
+        "end": ts,
+        "source": "DrinkControl",
+        "qty": 762.8036283266603,
+        "foodType": "beer, 660ml 5,0%",
+    }
+    b = {
+        "foodType": "beer, 660ml 5,0%",
+        "qty": 762.8036283266603,
+        "source": "DrinkControl",
+        "end": ts,
+        "start": ts,
+        "date": ts,
+    }
     save_health_push(_payload("dietary_energy", "kJ", [a]), tmp_path)
     save_health_push(_payload("dietary_energy", "kJ", [b]), tmp_path)
 
@@ -123,6 +137,7 @@ def test_key_order_does_not_create_duplicates(tmp_path):
 
 # -- aggregate beside per-sample detail: reported, never removed -------------
 
+
 def test_aggregate_and_detail_both_survive(tmp_path):
     """The 2026-09-05 case: pushed aggregate at :00, fetched detail at :35.
 
@@ -130,17 +145,22 @@ def test_aggregate_and_detail_both_survive(tmp_path):
     operator resolves it with --replace-source-days.
     """
     save_health_push(
-        _payload("dietary_energy", "kJ",
-                 [_aggregate("2026-09-05 18:44:00 +0200", 1768.3175020299848)]),
-        tmp_path)
+        _payload(
+            "dietary_energy", "kJ", [_aggregate("2026-09-05 18:44:00 +0200", 1768.3175020299848)]
+        ),
+        tmp_path,
+    )
     save_health_push(
-        _payload("dietary_energy", "kJ", [
-            _energy("2026-09-05 18:44:35 +0200", 381.40181416333013,
-                    "beer, 330ml 5,0%"),
-            _energy("2026-09-05 18:44:35 +0200", 1386.9156878666547,
-                    "wine, 500ml 12,0%"),
-        ]),
-        tmp_path)
+        _payload(
+            "dietary_energy",
+            "kJ",
+            [
+                _energy("2026-09-05 18:44:35 +0200", 381.40181416333013, "beer, 330ml 5,0%"),
+                _energy("2026-09-05 18:44:35 +0200", 1386.9156878666547, "wine, 500ml 12,0%"),
+            ],
+        ),
+        tmp_path,
+    )
 
     doc = _canonical(tmp_path, "dietary_energy", "2026-09-05")
     assert len(doc["samples"]) == 3
@@ -148,18 +168,19 @@ def test_aggregate_and_detail_both_survive(tmp_path):
 
 def test_suspected_aggregate_warns_once_on_write(tmp_path, caplog):
     save_health_push(
-        _payload("dietary_energy", "kJ",
-                 [_aggregate("2026-09-05 18:44:00 +0200", 500.0)]),
-        tmp_path)
+        _payload("dietary_energy", "kJ", [_aggregate("2026-09-05 18:44:00 +0200", 500.0)]), tmp_path
+    )
 
     with caplog.at_level("WARNING"):
         save_health_push(
-            _payload("dietary_energy", "kJ",
-                     [_energy("2026-09-05 18:44:35 +0200", 500.0,
-                              "beer, 440ml 5,0%")]),
-            tmp_path)
-    warnings = [r.getMessage() for r in caplog.records
-                if r.levelname == "WARNING"]
+            _payload(
+                "dietary_energy",
+                "kJ",
+                [_energy("2026-09-05 18:44:35 +0200", 500.0, "beer, 440ml 5,0%")],
+            ),
+            tmp_path,
+        )
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
     assert len(warnings) == 1
     for expected in ("dietary_energy", "2026-09-05", "18:44", "DrinkControl"):
         assert expected in warnings[0]
@@ -168,10 +189,13 @@ def test_suspected_aggregate_warns_once_on_write(tmp_path, caplog):
     caplog.clear()
     with caplog.at_level("WARNING"):
         save_health_push(
-            _payload("dietary_energy", "kJ",
-                     [_energy("2026-09-05 18:44:35 +0200", 500.0,
-                              "beer, 440ml 5,0%")]),
-            tmp_path)
+            _payload(
+                "dietary_energy",
+                "kJ",
+                [_energy("2026-09-05 18:44:35 +0200", 500.0, "beer, 440ml 5,0%")],
+            ),
+            tmp_path,
+        )
     assert [r for r in caplog.records if r.levelname == "WARNING"] == []
 
 
@@ -179,10 +203,16 @@ def test_bare_samples_in_one_minute_do_not_warn(tmp_path, caplog):
     """Nothing distinguishes them, so there is nothing to report."""
     with caplog.at_level("WARNING"):
         save_health_push(
-            _payload("alcohol_consumption", "count",
-                     [_aggregate("2026-09-02 20:00:00 +0200", 1.7),
-                      _aggregate("2026-09-02 20:00:31 +0200", 1.7)]),
-            tmp_path)
+            _payload(
+                "alcohol_consumption",
+                "count",
+                [
+                    _aggregate("2026-09-02 20:00:00 +0200", 1.7),
+                    _aggregate("2026-09-02 20:00:31 +0200", 1.7),
+                ],
+            ),
+            tmp_path,
+        )
 
     doc = _canonical(tmp_path, "alcohol_consumption", "2026-09-02")
     assert len(doc["samples"]) == 2
@@ -193,13 +223,11 @@ def test_bare_samples_in_one_minute_do_not_warn(tmp_path, caplog):
 def test_a_later_push_never_removes_a_persisted_sample(tmp_path):
     """Counts never shrink on the merge path."""
     save_health_push(
-        _payload("dietary_energy", "kJ",
-                 [_aggregate("2026-09-02 20:00:00 +0200", 500.0)]),
-        tmp_path)
+        _payload("dietary_energy", "kJ", [_aggregate("2026-09-02 20:00:00 +0200", 500.0)]), tmp_path
+    )
     save_health_push(
-        _payload("dietary_energy", "kJ",
-                 [_aggregate("2026-09-02 20:00:44 +0200", 500.0)]),
-        tmp_path)
+        _payload("dietary_energy", "kJ", [_aggregate("2026-09-02 20:00:44 +0200", 500.0)]), tmp_path
+    )
 
     doc = _canonical(tmp_path, "dietary_energy", "2026-09-02")
     assert len(doc["samples"]) == 2
@@ -208,10 +236,16 @@ def test_a_later_push_never_removes_a_persisted_sample(tmp_path):
 def test_detailed_sample_at_whole_minute_is_kept(tmp_path):
     """A real drink logged at exactly :00 beside another in the minute."""
     save_health_push(
-        _payload("dietary_energy", "kJ",
-                 [_energy("2026-09-02 20:00:00 +0200", 500.0, "beer, 440ml 5,0%"),
-                  _energy("2026-09-02 20:00:31 +0200", 500.0, "beer, 440ml 5,0%")]),
-        tmp_path)
+        _payload(
+            "dietary_energy",
+            "kJ",
+            [
+                _energy("2026-09-02 20:00:00 +0200", 500.0, "beer, 440ml 5,0%"),
+                _energy("2026-09-02 20:00:31 +0200", 500.0, "beer, 440ml 5,0%"),
+            ],
+        ),
+        tmp_path,
+    )
 
     doc = _canonical(tmp_path, "dietary_energy", "2026-09-02")
     assert len(doc["samples"]) == 2
@@ -219,12 +253,17 @@ def test_detailed_sample_at_whole_minute_is_kept(tmp_path):
 
 def test_daily_total_matches_surviving_samples(tmp_path):
     save_health_push(
-        _payload("alcohol_consumption", "count", [
-            _aggregate("2026-08-28 17:49:12 +0200", 3.2),
-            _aggregate("2026-08-28 18:10:59 +0200", 1.7),
-            _aggregate("2026-08-28 18:44:42 +0200", 2.5),
-        ]),
-        tmp_path)
+        _payload(
+            "alcohol_consumption",
+            "count",
+            [
+                _aggregate("2026-08-28 17:49:12 +0200", 3.2),
+                _aggregate("2026-08-28 18:10:59 +0200", 1.7),
+                _aggregate("2026-08-28 18:44:42 +0200", 2.5),
+            ],
+        ),
+        tmp_path,
+    )
 
     doc = _canonical(tmp_path, "alcohol_consumption", "2026-08-28")
     assert len(doc["samples"]) == 3
@@ -233,15 +272,25 @@ def test_daily_total_matches_surviving_samples(tmp_path):
 
 # -- replacing a day on operator instruction ---------------------------------
 
+
 def test_replace_source_days_supersedes_the_aggregate(tmp_path):
     save_health_push(
-        _payload("alcohol_consumption", "count",
-                 [_aggregate("2026-09-05 18:44:00 +0200", 5.999999761581421)]),
-        tmp_path)
+        _payload(
+            "alcohol_consumption",
+            "count",
+            [_aggregate("2026-09-05 18:44:00 +0200", 5.999999761581421)],
+        ),
+        tmp_path,
+    )
     save_health_push(
-        _payload("alcohol_consumption", "count",
-                 [_aggregate("2026-09-05 18:44:35 +0200", 5.999999761581421)]),
-        tmp_path, replace_source_days=True)
+        _payload(
+            "alcohol_consumption",
+            "count",
+            [_aggregate("2026-09-05 18:44:35 +0200", 5.999999761581421)],
+        ),
+        tmp_path,
+        replace_source_days=True,
+    )
 
     doc = _canonical(tmp_path, "alcohol_consumption", "2026-09-05")
     assert [s["date"] for s in doc["samples"]] == ["2026-09-05 18:44:35 +0200"]
@@ -250,15 +299,25 @@ def test_replace_source_days_supersedes_the_aggregate(tmp_path):
 
 def test_replace_source_days_leaves_other_sources_alone(tmp_path):
     save_health_push(
-        _payload("dietary_energy", "kJ", [
-            _aggregate("2026-09-05 12:00:00 +0200", 900.0, source="Lifesum"),
-            _aggregate("2026-09-05 18:44:00 +0200", 500.0),
-        ]),
-        tmp_path)
+        _payload(
+            "dietary_energy",
+            "kJ",
+            [
+                _aggregate("2026-09-05 12:00:00 +0200", 900.0, source="Lifesum"),
+                _aggregate("2026-09-05 18:44:00 +0200", 500.0),
+            ],
+        ),
+        tmp_path,
+    )
     save_health_push(
-        _payload("dietary_energy", "kJ",
-                 [_energy("2026-09-05 18:44:35 +0200", 500.0, "beer, 440ml 5,0%")]),
-        tmp_path, replace_source_days=True)
+        _payload(
+            "dietary_energy",
+            "kJ",
+            [_energy("2026-09-05 18:44:35 +0200", 500.0, "beer, 440ml 5,0%")],
+        ),
+        tmp_path,
+        replace_source_days=True,
+    )
 
     doc = _canonical(tmp_path, "dietary_energy", "2026-09-05")
     sources = sorted(s["source"] for s in doc["samples"])
@@ -268,73 +327,90 @@ def test_replace_source_days_leaves_other_sources_alone(tmp_path):
 
 def test_replace_source_days_leaves_untouched_days_alone(tmp_path):
     save_health_push(
-        _payload("alcohol_consumption", "count",
-                 [_aggregate("2026-09-04 23:17:05 +0200", 9.0)]),
-        tmp_path)
+        _payload("alcohol_consumption", "count", [_aggregate("2026-09-04 23:17:05 +0200", 9.0)]),
+        tmp_path,
+    )
     save_health_push(
-        _payload("alcohol_consumption", "count",
-                 [_aggregate("2026-09-05 18:44:35 +0200", 6.0)]),
-        tmp_path, replace_source_days=True)
+        _payload("alcohol_consumption", "count", [_aggregate("2026-09-05 18:44:35 +0200", 6.0)]),
+        tmp_path,
+        replace_source_days=True,
+    )
 
-    assert _canonical(tmp_path, "alcohol_consumption",
-                      "2026-09-04")["daily_total"] == pytest.approx(9.0)
+    assert _canonical(tmp_path, "alcohol_consumption", "2026-09-04")[
+        "daily_total"
+    ] == pytest.approx(9.0)
 
 
 def test_replace_source_days_keeps_identical_samples_verbatim(tmp_path):
     """The input is authoritative, duplicates and all."""
     ts = "2026-08-28 17:49:12 +0200"
     beer = _energy(ts, 462.30522928888485, "beer, 400ml 5,0%")
-    save_health_push(_payload("dietary_energy", "kJ", [beer, dict(beer)]),
-                     tmp_path, replace_source_days=True)
+    save_health_push(
+        _payload("dietary_energy", "kJ", [beer, dict(beer)]), tmp_path, replace_source_days=True
+    )
 
     assert len(_canonical(tmp_path, "dietary_energy", "2026-08-28")["samples"]) == 2
 
 
 def test_replace_is_off_by_default(tmp_path):
     save_health_push(
-        _payload("alcohol_consumption", "count",
-                 [_aggregate("2026-09-05 18:44:00 +0200", 6.0)]),
-        tmp_path)
+        _payload("alcohol_consumption", "count", [_aggregate("2026-09-05 18:44:00 +0200", 6.0)]),
+        tmp_path,
+    )
     save_health_push(
-        _payload("alcohol_consumption", "count",
-                 [_aggregate("2026-09-05 18:44:35 +0200", 6.0)]),
-        tmp_path)
+        _payload("alcohol_consumption", "count", [_aggregate("2026-09-05 18:44:35 +0200", 6.0)]),
+        tmp_path,
+    )
 
-    assert len(_canonical(tmp_path, "alcohol_consumption",
-                          "2026-09-05")["samples"]) == 2
+    assert len(_canonical(tmp_path, "alcohol_consumption", "2026-09-05")["samples"]) == 2
 
 
 def test_dry_run_lists_what_replace_would_displace(tmp_path, caplog):
     save_health_push(
-        _payload("alcohol_consumption", "count",
-                 [_aggregate("2026-09-05 18:44:00 +0200", 6.0)]),
-        tmp_path)
+        _payload("alcohol_consumption", "count", [_aggregate("2026-09-05 18:44:00 +0200", 6.0)]),
+        tmp_path,
+    )
     f = tmp_path / "fetch.json"
-    f.write_text(json.dumps(_payload("alcohol_consumption", "count", [
-        _aggregate("2026-09-05 18:44:35 +0200", 4.0),
-        _aggregate("2026-09-05 19:10:02 +0200", 2.0),
-    ])))
+    f.write_text(
+        json.dumps(
+            _payload(
+                "alcohol_consumption",
+                "count",
+                [
+                    _aggregate("2026-09-05 18:44:35 +0200", 4.0),
+                    _aggregate("2026-09-05 19:10:02 +0200", 2.0),
+                ],
+            )
+        )
+    )
 
     with caplog.at_level("INFO"):
-        canonicalize_paths([f], data_dir=tmp_path, dry_run=True,
-                           replace_source_days=True)
+        canonicalize_paths([f], data_dir=tmp_path, dry_run=True, replace_source_days=True)
     lines = [r.getMessage() for r in caplog.records]
-    assert any("alcohol_consumption 2026-09-05 (DrinkControl): 1 sample → 2"
-               in m for m in lines)
-    assert _canonical(tmp_path, "alcohol_consumption",
-                      "2026-09-05")["daily_total"] == pytest.approx(6.0)
+    assert any("alcohol_consumption 2026-09-05 (DrinkControl): 1 sample → 2" in m for m in lines)
+    assert _canonical(tmp_path, "alcohol_consumption", "2026-09-05")[
+        "daily_total"
+    ] == pytest.approx(6.0)
 
 
 # -- CLI-facing helper --------------------------------------------------------
 
+
 def test_canonicalize_paths_reads_a_directory(tmp_path):
     src = tmp_path / "incoming"
     src.mkdir()
-    (src / "dietary_energy_2026-08-21_2026-08-21.json").write_text(json.dumps(
-        _payload("dietary_energy", "kJ", [
-            _energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml 5,0%"),
-            _energy("2026-08-21 23:50:53 +0200", 346.7, "wine, 125ml 12,0%"),
-        ])))
+    (src / "dietary_energy_2026-08-21_2026-08-21.json").write_text(
+        json.dumps(
+            _payload(
+                "dietary_energy",
+                "kJ",
+                [
+                    _energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml 5,0%"),
+                    _energy("2026-08-21 23:50:53 +0200", 346.7, "wine, 125ml 12,0%"),
+                ],
+            )
+        )
+    )
     (src / "not-hae.json").write_text('{"hello": "world"}')
 
     n_files, n_metrics, changed = canonicalize_paths([src], data_dir=tmp_path)
@@ -345,11 +421,17 @@ def test_canonicalize_paths_reads_a_directory(tmp_path):
 
 def test_canonicalize_paths_dry_run_writes_nothing(tmp_path):
     f = tmp_path / "one.json"
-    f.write_text(json.dumps(_payload("dietary_energy", "kJ", [
-        _energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml 5,0%")])))
+    f.write_text(
+        json.dumps(
+            _payload(
+                "dietary_energy",
+                "kJ",
+                [_energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml 5,0%")],
+            )
+        )
+    )
 
-    n_files, n_metrics, changed = canonicalize_paths(
-        [f], data_dir=tmp_path, dry_run=True)
+    n_files, n_metrics, changed = canonicalize_paths([f], data_dir=tmp_path, dry_run=True)
 
     assert (n_files, n_metrics, changed) == (1, 1, [])
     assert not (tmp_path / "kristian" / "health_export" / "canonical").exists()
@@ -357,45 +439,84 @@ def test_canonicalize_paths_dry_run_writes_nothing(tmp_path):
 
 def test_canonicalize_paths_accepts_bare_metrics_envelope(tmp_path):
     f = tmp_path / "bare.json"
-    f.write_text(json.dumps({"metrics": [
-        {"name": "alcohol_consumption", "units": "count",
-         "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)]}
-    ]}))
+    f.write_text(
+        json.dumps(
+            {
+                "metrics": [
+                    {
+                        "name": "alcohol_consumption",
+                        "units": "count",
+                        "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)],
+                    }
+                ]
+            }
+        )
+    )
 
     n_files, _, changed = canonicalize_paths([f], data_dir=tmp_path)
 
     assert n_files == 1 and len(changed) == 1
-    assert _canonical(tmp_path, "alcohol_consumption",
-                      "2026-08-29")["daily_total"] == pytest.approx(8.1)
+    assert _canonical(tmp_path, "alcohol_consumption", "2026-08-29")[
+        "daily_total"
+    ] == pytest.approx(8.1)
 
 
 def test_dry_run_counts_only_metrics_that_would_be_written(tmp_path):
     """A nameless, empty or malformed group is skipped on the real run."""
     f = tmp_path / "mixed.json"
-    f.write_text(json.dumps({"data": {"metrics": [
-        {"name": "dietary_energy", "units": "kJ",
-         "data": [_energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml")]},
-        {"name": "", "units": "count", "data": [_aggregate("2026-08-21 23:50:53 +0200", 1)]},
-        {"name": "alcohol_consumption", "units": "count", "data": []},
-        {"name": "step_count", "units": "count", "data": "1234"},
-        {"name": "flights_climbed", "units": "count", "data": ["nope"]},
-        {"name": "resting_heart_rate", "units": "count", "data": 7},
-        "not a dict",
-    ]}}))
+    f.write_text(
+        json.dumps(
+            {
+                "data": {
+                    "metrics": [
+                        {
+                            "name": "dietary_energy",
+                            "units": "kJ",
+                            "data": [_energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml")],
+                        },
+                        {
+                            "name": "",
+                            "units": "count",
+                            "data": [_aggregate("2026-08-21 23:50:53 +0200", 1)],
+                        },
+                        {"name": "alcohol_consumption", "units": "count", "data": []},
+                        {"name": "step_count", "units": "count", "data": "1234"},
+                        {"name": "flights_climbed", "units": "count", "data": ["nope"]},
+                        {"name": "resting_heart_rate", "units": "count", "data": 7},
+                        "not a dict",
+                    ]
+                }
+            }
+        )
+    )
 
-    n_files, n_metrics, _ = canonicalize_paths(
-        [f], data_dir=tmp_path, dry_run=True)
+    n_files, n_metrics, _ = canonicalize_paths([f], data_dir=tmp_path, dry_run=True)
 
     assert (n_files, n_metrics) == (1, 1)
 
 
 def test_dry_run_count_matches_the_real_run(tmp_path):
     f = tmp_path / "mixed.json"
-    f.write_text(json.dumps({"data": {"metrics": [
-        {"name": "dietary_energy", "units": "kJ",
-         "data": [_energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml")]},
-        {"name": None, "units": "count", "data": [_aggregate("2026-08-21 23:50:53 +0200", 1)]},
-    ]}}))
+    f.write_text(
+        json.dumps(
+            {
+                "data": {
+                    "metrics": [
+                        {
+                            "name": "dietary_energy",
+                            "units": "kJ",
+                            "data": [_energy("2026-08-21 23:50:53 +0200", 762.8, "beer, 660ml")],
+                        },
+                        {
+                            "name": None,
+                            "units": "count",
+                            "data": [_aggregate("2026-08-21 23:50:53 +0200", 1)],
+                        },
+                    ]
+                }
+            }
+        )
+    )
 
     _, dry_metrics, _ = canonicalize_paths([f], data_dir=tmp_path, dry_run=True)
     _, real_metrics, _ = canonicalize_paths([f], data_dir=tmp_path)
@@ -405,11 +526,21 @@ def test_dry_run_count_matches_the_real_run(tmp_path):
 
 def test_unwritable_metric_group_does_not_abort_the_push(tmp_path):
     """A truncated group costs itself, not the file it travelled in."""
-    save_health_push({"data": {"metrics": [
-        "not a dict",
-        {"name": "alcohol_consumption", "units": "count",
-         "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)]},
-    ]}}, tmp_path)
+    save_health_push(
+        {
+            "data": {
+                "metrics": [
+                    "not a dict",
+                    {
+                        "name": "alcohol_consumption",
+                        "units": "count",
+                        "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)],
+                    },
+                ]
+            }
+        },
+        tmp_path,
+    )
 
     doc = _canonical(tmp_path, "alcohol_consumption", "2026-08-29")
     assert doc["daily_total"] == pytest.approx(8.1)
@@ -418,12 +549,17 @@ def test_unwritable_metric_group_does_not_abort_the_push(tmp_path):
 def test_changed_files_are_not_repeated_across_inputs(tmp_path):
     """Two input files covering the same day touch one canonical file."""
     for i, qty in enumerate([381.40181416333013, 1386.9156878666547]):
-        (tmp_path / f"part{i}.json").write_text(json.dumps(
-            _payload("dietary_energy", "kJ",
-                     [_energy("2026-09-05 18:44:35 +0200", qty, f"beer {i}")])))
+        (tmp_path / f"part{i}.json").write_text(
+            json.dumps(
+                _payload(
+                    "dietary_energy", "kJ", [_energy("2026-09-05 18:44:35 +0200", qty, f"beer {i}")]
+                )
+            )
+        )
 
     _, _, changed = canonicalize_paths(
-        [tmp_path / "part0.json", tmp_path / "part1.json"], data_dir=tmp_path)
+        [tmp_path / "part0.json", tmp_path / "part1.json"], data_dir=tmp_path
+    )
 
     assert len(changed) == len(set(changed)) == 1
     assert len(_canonical(tmp_path, "dietary_energy", "2026-09-05")["samples"]) == 2
@@ -432,36 +568,59 @@ def test_changed_files_are_not_repeated_across_inputs(tmp_path):
 def test_non_dict_samples_do_not_reach_the_writer(tmp_path, caplog):
     """A group whose data is not a list of dicts is skipped and named."""
     with caplog.at_level("WARNING"):
-        n, changed = save_health_push({"data": {"metrics": [
-            {"name": "step_count", "units": "count", "data": "1234"},
-            {"name": "alcohol_consumption", "units": "count",
-             "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)]},
-        ]}}, tmp_path)
+        n, changed = save_health_push(
+            {
+                "data": {
+                    "metrics": [
+                        {"name": "step_count", "units": "count", "data": "1234"},
+                        {
+                            "name": "alcohol_consumption",
+                            "units": "count",
+                            "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)],
+                        },
+                    ]
+                }
+            },
+            tmp_path,
+        )
 
     assert n == 1
     assert len(changed) == 1
-    assert not (tmp_path / "kristian" / "health_export" / "canonical"
-                / "step_count").exists()
-    assert any("step_count" in r.getMessage() for r in caplog.records
-               if r.levelname == "WARNING")
+    assert not (tmp_path / "kristian" / "health_export" / "canonical" / "step_count").exists()
+    assert any("step_count" in r.getMessage() for r in caplog.records if r.levelname == "WARNING")
 
 
 def test_partly_malformed_sample_list_is_skipped_whole(tmp_path):
     """One bad element condemns its group, not the groups beside it."""
-    save_health_push({"data": {"metrics": [
-        {"name": "step_count", "units": "count",
-         "data": [{"date": "2026-08-29 10:00:00 +0200", "qty": 100}, "oops"]},
-        {"name": "alcohol_consumption", "units": "count",
-         "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)]},
-    ]}}, tmp_path)
+    save_health_push(
+        {
+            "data": {
+                "metrics": [
+                    {
+                        "name": "step_count",
+                        "units": "count",
+                        "data": [{"date": "2026-08-29 10:00:00 +0200", "qty": 100}, "oops"],
+                    },
+                    {
+                        "name": "alcohol_consumption",
+                        "units": "count",
+                        "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)],
+                    },
+                ]
+            }
+        },
+        tmp_path,
+    )
 
     canonical = tmp_path / "kristian" / "health_export" / "canonical"
     assert not (canonical / "step_count").exists()
-    assert _canonical(tmp_path, "alcohol_consumption",
-                      "2026-08-29")["daily_total"] == pytest.approx(8.1)
+    assert _canonical(tmp_path, "alcohol_consumption", "2026-08-29")[
+        "daily_total"
+    ] == pytest.approx(8.1)
 
 
 # -- overlapping input files --------------------------------------------------
+
 
 def _write_metric_file(path, metric, units, samples):
     path.write_text(json.dumps(_payload(metric, units, samples)))
@@ -480,10 +639,12 @@ def test_overlapping_files_do_not_replace_each_other(tmp_path):
         _energy("2026-09-01 20:40:00 +0200", 700.0, "wine, 250ml 12,0%"),
         _energy("2026-09-01 21:15:00 +0200", 300.0, "beer, 250ml 5,0%"),
     ]
-    _write_metric_file(src / "dietary_energy_2026-08-21_2026-09-05.json",
-                       "dietary_energy", "kJ", drinks)
-    _write_metric_file(src / "dietary_energy_2026-09-01_2026-09-05.json",
-                       "dietary_energy", "kJ", [drinks[0]])
+    _write_metric_file(
+        src / "dietary_energy_2026-08-21_2026-09-05.json", "dietary_energy", "kJ", drinks
+    )
+    _write_metric_file(
+        src / "dietary_energy_2026-09-01_2026-09-05.json", "dietary_energy", "kJ", [drinks[0]]
+    )
 
     canonicalize_paths([src], data_dir=tmp_path, replace_source_days=True)
 
@@ -495,9 +656,9 @@ def test_overlapping_files_do_not_replace_each_other(tmp_path):
 def test_dry_run_models_the_folded_input(tmp_path, caplog):
     """The plan must describe the union, not one file against disk."""
     save_health_push(
-        _payload("dietary_energy", "kJ",
-                 [_aggregate("2026-09-01 20:00:00 +0200", 1500.0)]),
-        tmp_path)
+        _payload("dietary_energy", "kJ", [_aggregate("2026-09-01 20:00:00 +0200", 1500.0)]),
+        tmp_path,
+    )
 
     src = tmp_path / "in"
     src.mkdir()
@@ -506,22 +667,17 @@ def test_dry_run_models_the_folded_input(tmp_path, caplog):
         _energy("2026-09-01 20:40:00 +0200", 700.0, "wine, 250ml 12,0%"),
         _energy("2026-09-01 21:15:00 +0200", 300.0, "beer, 250ml 5,0%"),
     ]
-    _write_metric_file(src / "a_2026-08-21_2026-09-05.json",
-                       "dietary_energy", "kJ", drinks)
-    _write_metric_file(src / "b_2026-09-01_2026-09-05.json",
-                       "dietary_energy", "kJ", [drinks[0]])
+    _write_metric_file(src / "a_2026-08-21_2026-09-05.json", "dietary_energy", "kJ", drinks)
+    _write_metric_file(src / "b_2026-09-01_2026-09-05.json", "dietary_energy", "kJ", [drinks[0]])
 
     with caplog.at_level("INFO"):
-        canonicalize_paths([src], data_dir=tmp_path, dry_run=True,
-                           replace_source_days=True)
+        canonicalize_paths([src], data_dir=tmp_path, dry_run=True, replace_source_days=True)
     lines = [r.getMessage() for r in caplog.records]
-    assert any("dietary_energy 2026-09-01 (DrinkControl): 1 sample → 3" in m
-               for m in lines)
+    assert any("dietary_energy 2026-09-01 (DrinkControl): 1 sample → 3" in m for m in lines)
 
     # And the real run does what the plan said.
     canonicalize_paths([src], data_dir=tmp_path, replace_source_days=True)
-    assert len(_canonical(tmp_path, "dietary_energy",
-                          "2026-09-01")["samples"]) == 3
+    assert len(_canonical(tmp_path, "dietary_energy", "2026-09-01")["samples"]) == 3
 
 
 def test_overlapping_files_do_not_duplicate_on_the_merge_path(tmp_path):
@@ -534,33 +690,37 @@ def test_overlapping_files_do_not_duplicate_on_the_merge_path(tmp_path):
 
     canonicalize_paths([src], data_dir=tmp_path)
 
-    assert len(_canonical(tmp_path, "dietary_energy",
-                          "2026-09-01")["samples"]) == 1
+    assert len(_canonical(tmp_path, "dietary_energy", "2026-09-01")["samples"]) == 1
 
 
 def test_identical_samples_within_one_file_still_both_survive(tmp_path):
     """Folding files must not collapse a file's own multiplicity."""
     src = tmp_path / "in"
     src.mkdir()
-    beer = _energy("2026-08-28 17:49:12 +0200", 462.30522928888485,
-                   "beer, 400ml 5,0%")
-    _write_metric_file(src / "a.json", "dietary_energy", "kJ",
-                       [beer, dict(beer)])
+    beer = _energy("2026-08-28 17:49:12 +0200", 462.30522928888485, "beer, 400ml 5,0%")
+    _write_metric_file(src / "a.json", "dietary_energy", "kJ", [beer, dict(beer)])
     _write_metric_file(src / "b.json", "dietary_energy", "kJ", [dict(beer)])
 
     canonicalize_paths([src], data_dir=tmp_path)
 
-    assert len(_canonical(tmp_path, "dietary_energy",
-                          "2026-08-28")["samples"]) == 2
+    assert len(_canonical(tmp_path, "dietary_energy", "2026-08-28")["samples"]) == 2
 
 
 def test_metrics_from_different_files_are_all_written(tmp_path):
     src = tmp_path / "in"
     src.mkdir()
-    _write_metric_file(src / "a.json", "dietary_energy", "kJ",
-                       [_energy("2026-09-01 20:10:00 +0200", 500.0, "beer")])
-    _write_metric_file(src / "b.json", "alcohol_consumption", "count",
-                       [_aggregate("2026-09-01 20:10:00 +0200", 1.7)])
+    _write_metric_file(
+        src / "a.json",
+        "dietary_energy",
+        "kJ",
+        [_energy("2026-09-01 20:10:00 +0200", 500.0, "beer")],
+    )
+    _write_metric_file(
+        src / "b.json",
+        "alcohol_consumption",
+        "count",
+        [_aggregate("2026-09-01 20:10:00 +0200", 1.7)],
+    )
 
     n_files, n_metrics, changed = canonicalize_paths([src], data_dir=tmp_path)
 

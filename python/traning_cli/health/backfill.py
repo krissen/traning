@@ -22,6 +22,7 @@ SOURCE = "Withings"
 
 # -- Archive identification ---------------------------------------------------
 
+
 def identify_archive(zip_path: str | Path) -> str | None:
     """Detect export type from zip contents.
 
@@ -37,6 +38,7 @@ def identify_archive(zip_path: str | Path) -> str | None:
 
 # -- Canonical helpers --------------------------------------------------------
 
+
 def _existing_dates(canonical_base: Path, metric: str) -> set[str]:
     """Return set of YYYY-MM-DD dates that already have canonical files."""
     metric_dir = canonical_base / metric
@@ -45,8 +47,9 @@ def _existing_dates(canonical_base: Path, metric: str) -> set[str]:
     return {f.stem for f in metric_dir.glob("*.json")}
 
 
-def _write_canonical(canonical_base: Path, metric: str, date: str,
-                     units: str, samples: list[dict]) -> None:
+def _write_canonical(
+    canonical_base: Path, metric: str, date: str, units: str, samples: list[dict]
+) -> None:
     """Write a single canonical JSON file."""
     metric_dir = canonical_base / metric
     metric_dir.mkdir(parents=True, exist_ok=True)
@@ -62,6 +65,7 @@ def _write_canonical(canonical_base: Path, metric: str, date: str,
 
 
 # -- Withings -----------------------------------------------------------------
+
 
 def _parse_withings_weight(csv_text: str) -> dict[str, list[dict]]:
     """Parse Withings weight.csv text, grouping samples by date."""
@@ -90,8 +94,9 @@ def _parse_withings_weight(csv_text: str) -> dict[str, list[dict]]:
     return dict(by_date)
 
 
-def backfill_withings(zip_path: str | Path, data_dir: Path | None = None,
-                      dry_run: bool = False) -> dict[str, int]:
+def backfill_withings(
+    zip_path: str | Path, data_dir: Path | None = None, dry_run: bool = False
+) -> dict[str, int]:
     """Backfill weight/fat metrics from a Withings export zip.
 
     Returns dict of {metric_name: n_new_files_written}.
@@ -122,15 +127,16 @@ def backfill_withings(zip_path: str | Path, data_dir: Path | None = None,
             for s in samples:
                 if s["timestamp"] not in seen_ts:
                     seen_ts.add(s["timestamp"])
-                    weight_samples.append({
-                        "date": f"{s['timestamp']} +0100",
-                        "qty": s["weight_kg"],
-                        "source": SOURCE,
-                    })
+                    weight_samples.append(
+                        {
+                            "date": f"{s['timestamp']} +0100",
+                            "qty": s["weight_kg"],
+                            "source": SOURCE,
+                        }
+                    )
             if weight_samples:
                 if not dry_run:
-                    _write_canonical(canonical_base, "weight_body_mass",
-                                     date, "kg", weight_samples)
+                    _write_canonical(canonical_base, "weight_body_mass", date, "kg", weight_samples)
                 counts["weight_body_mass"] += 1
 
         # --- body_fat_percentage + lean_body_mass ---
@@ -143,15 +149,18 @@ def backfill_withings(zip_path: str | Path, data_dir: Path | None = None,
                     if s["timestamp"] not in seen_ts:
                         seen_ts.add(s["timestamp"])
                         pct = (s["fat_mass_kg"] / s["weight_kg"]) * 100
-                        bf_samples.append({
-                            "date": f"{s['timestamp']} +0100",
-                            "qty": round(pct, 6),
-                            "source": SOURCE,
-                        })
+                        bf_samples.append(
+                            {
+                                "date": f"{s['timestamp']} +0100",
+                                "qty": round(pct, 6),
+                                "source": SOURCE,
+                            }
+                        )
                 if bf_samples:
                     if not dry_run:
-                        _write_canonical(canonical_base, "body_fat_percentage",
-                                         date, "%", bf_samples)
+                        _write_canonical(
+                            canonical_base, "body_fat_percentage", date, "%", bf_samples
+                        )
                     counts["body_fat_percentage"] += 1
 
             if date not in existing_lean:
@@ -161,15 +170,16 @@ def backfill_withings(zip_path: str | Path, data_dir: Path | None = None,
                     if s["timestamp"] not in seen_ts:
                         seen_ts.add(s["timestamp"])
                         lean = s["weight_kg"] - s["fat_mass_kg"]
-                        lean_samples.append({
-                            "date": f"{s['timestamp']} +0100",
-                            "qty": round(lean, 6),
-                            "source": SOURCE,
-                        })
+                        lean_samples.append(
+                            {
+                                "date": f"{s['timestamp']} +0100",
+                                "qty": round(lean, 6),
+                                "source": SOURCE,
+                            }
+                        )
                 if lean_samples:
                     if not dry_run:
-                        _write_canonical(canonical_base, "lean_body_mass",
-                                         date, "kg", lean_samples)
+                        _write_canonical(canonical_base, "lean_body_mass", date, "kg", lean_samples)
                     counts["lean_body_mass"] += 1
 
     return counts
@@ -182,8 +192,9 @@ HANDLERS = {
 }
 
 
-def backfill_archive(zip_path: str | Path, data_dir: Path | None = None,
-                     dry_run: bool = False) -> dict[str, int]:
+def backfill_archive(
+    zip_path: str | Path, data_dir: Path | None = None, dry_run: bool = False
+) -> dict[str, int]:
     """Identify archive type and run the appropriate backfill handler.
 
     Returns dict of {metric_name: n_new_files}.

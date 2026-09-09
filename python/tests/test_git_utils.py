@@ -19,8 +19,11 @@ def _init_repo(path):
 
 def _log_messages(path):
     result = subprocess.run(
-        ["git", "log", "--format=%s"], cwd=path, check=True,
-        capture_output=True, text=True,
+        ["git", "log", "--format=%s"],
+        cwd=path,
+        check=True,
+        capture_output=True,
+        text=True,
     )
     return result.stdout.strip().splitlines()
 

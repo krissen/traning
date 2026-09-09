@@ -13,6 +13,7 @@ from .r_bridge import _run_r, r_plot, r_report
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _data_or_plot(
     report_func: str,
     plot_func: str,
@@ -54,6 +55,7 @@ def _build_args(
 # ---------------------------------------------------------------------------
 # Health & Readiness
 # ---------------------------------------------------------------------------
+
 
 def get_readiness(
     n: int = 14,
@@ -122,6 +124,7 @@ def get_hrv(
 # ---------------------------------------------------------------------------
 # Training Load
 # ---------------------------------------------------------------------------
+
 
 def get_training_load(
     metric: str = "pmc",
@@ -317,10 +320,7 @@ def get_run_character(
     if plot_func is None:
         return {
             "type": "error",
-            "message": (
-                f"Unknown chart: {chart!r}. Valid charts: "
-                f"{sorted(_RUN_CHARACTER_CHARTS)}"
-            ),
+            "message": (f"Unknown chart: {chart!r}. Valid charts: {sorted(_RUN_CHARACTER_CHARTS)}"),
         }
     args = _build_args(after, before, sport=sport)
     return r_plot(plot_func, args)
@@ -329,6 +329,7 @@ def get_run_character(
 # ---------------------------------------------------------------------------
 # Sessions
 # ---------------------------------------------------------------------------
+
 
 def get_sessions(
     n: int = 20,
@@ -413,8 +414,7 @@ def get_yearly_summary(
     args = _build_args(after, before, n, sport=sport)
     if top:
         return _data_or_plot("report_yearstop", "plot_yearstop", args, plot)
-    return _data_or_plot("report_yearstatus", "fetch.plot.cumulative_km",
-                         args, plot)
+    return _data_or_plot("report_yearstatus", "fetch.plot.cumulative_km", args, plot)
 
 
 # ---------------------------------------------------------------------------
@@ -448,17 +448,13 @@ def get_taper_plan(
     try:
         rd = date.fromisoformat(race_date)
     except ValueError as e:
-        return {"type": "error",
-                "message": f"race_date must be YYYY-MM-DD: {e}"}
+        return {"type": "error", "message": f"race_date must be YYYY-MM-DD: {e}"}
     if rd < date.today():
-        return {"type": "error",
-                "message": f"race_date must be today or later: {race_date}"}
+        return {"type": "error", "message": f"race_date must be today or later: {race_date}"}
     if not (1 <= taper_weeks <= 4):
-        return {"type": "error",
-                "message": "taper_weeks must be between 1 and 4"}
+        return {"type": "error", "message": "taper_weeks must be between 1 and 4"}
 
-    args: dict = {"race_date": rd.isoformat(),
-                  "taper_weeks": int(taper_weeks)}
+    args: dict = {"race_date": rd.isoformat(), "taper_weeks": int(taper_weeks)}
     if distance_km is not None:
         args["distance_km"] = float(distance_km)
     out = r_report("compute_taper_plan", args)
@@ -504,14 +500,11 @@ def get_race_readiness(
     try:
         td = date.fromisoformat(target_date)
     except ValueError as e:
-        return {"type": "error",
-                "message": f"target_date must be YYYY-MM-DD: {e}"}
+        return {"type": "error", "message": f"target_date must be YYYY-MM-DD: {e}"}
     if not (1 <= taper_weeks <= 4):
-        return {"type": "error",
-                "message": "taper_weeks must be between 1 and 4"}
+        return {"type": "error", "message": "taper_weeks must be between 1 and 4"}
 
-    args: dict = {"target_date": td.isoformat(),
-                  "taper_weeks": int(taper_weeks)}
+    args: dict = {"target_date": td.isoformat(), "taper_weeks": int(taper_weeks)}
     raw = _run_r("compute_race_readiness", args)
     # r_report() assumes tabular data; compute_race_readiness returns
     # a structured list (score / status / prose / components) so we
@@ -520,8 +513,7 @@ def get_race_readiness(
     if raw.get("type") == "error":
         return {
             "schema_version": "1.0",
-            "summary": {"status": "error",
-                         "message": raw.get("message", "")},
+            "summary": {"status": "error", "message": raw.get("message", "")},
             "details": {},
             "_meta": {
                 "func": "compute_race_readiness",
@@ -578,23 +570,15 @@ def get_sport_mix(
     if period_norm not in _SPORT_MIX_PERIODS:
         return {
             "type": "error",
-            "message": (
-                f"period must be one of {_SPORT_MIX_PERIODS}, "
-                f"got {period!r}"
-            ),
+            "message": (f"period must be one of {_SPORT_MIX_PERIODS}, got {period!r}"),
         }
     metric_norm = (metric or "").strip().lower()
     if metric_norm not in _SPORT_MIX_METRICS:
         return {
             "type": "error",
-            "message": (
-                f"metric must be one of {_SPORT_MIX_METRICS}, "
-                f"got {metric!r}"
-            ),
+            "message": (f"metric must be one of {_SPORT_MIX_METRICS}, got {metric!r}"),
         }
-    args = _build_args(after, before,
-                       period=period_norm, metric=metric_norm,
-                       min_value=min_value)
+    args = _build_args(after, before, period=period_norm, metric=metric_norm, min_value=min_value)
     return r_plot("plot_sport_mix", args)
 
 
@@ -646,6 +630,7 @@ def get_sport_calendar(
 # ---------------------------------------------------------------------------
 # Trends
 # ---------------------------------------------------------------------------
+
 
 def get_decoupling(
     n: int = 28,
@@ -906,16 +891,17 @@ _METRIC_DEFINITIONS = {
             "session. Generalises to cycling/walking with steady speed + HR samples."
         ),
         "thresholds": {
-            "well_coupled": "<3%", "acceptable": "3-5%",
-            "moderate_drift": "5-8%", "significant": ">8%",
+            "well_coupled": "<3%",
+            "acceptable": "3-5%",
+            "moderate_drift": "5-8%",
+            "significant": ">8%",
         },
         "references": ["Friel 2009"],
     },
     "monotony": {
         "name": "Training Monotony",
         "description": (
-            "7-day mean daily load / SD. High monotony (>2.0) increases "
-            "illness/injury risk."
+            "7-day mean daily load / SD. High monotony (>2.0) increases illness/injury risk."
         ),
         "thresholds": {"low": "<1.5", "moderate": "1.5-2.0", "high": ">2.0"},
         "references": ["Foster 1998"],
@@ -941,72 +927,81 @@ _METRIC_DEFINITIONS = {
 _HEALTH_METRIC_INFO: dict[str, tuple[str, str]] = {
     # (category, human-readable description)
     # Body
-    "weight_body_mass":       ("Body", "Body weight (kg)"),
-    "body_mass_index":        ("Body", "BMI"),
-    "body_fat_percentage":    ("Body", "Body fat (%)"),
-    "lean_body_mass":         ("Body", "Lean body mass (kg)"),
-    "height":                 ("Body", "Height (cm)"),
-    "body_temperature":       ("Body", "Body temperature"),
+    "weight_body_mass": ("Body", "Body weight (kg)"),
+    "body_mass_index": ("Body", "BMI"),
+    "body_fat_percentage": ("Body", "Body fat (%)"),
+    "lean_body_mass": ("Body", "Lean body mass (kg)"),
+    "height": ("Body", "Height (cm)"),
+    "body_temperature": ("Body", "Body temperature"),
     # Heart
-    "heart_rate":             ("Heart", "Heart rate (avg/min/max per day)"),
+    "heart_rate": ("Heart", "Heart rate (avg/min/max per day)"),
     "heart_rate_variability": ("Heart", "HRV as Ln(RMSSD)"),
-    "resting_heart_rate":     ("Heart", "Resting heart rate"),
+    "resting_heart_rate": ("Heart", "Resting heart rate"),
     "walking_heart_rate_average": ("Heart", "Walking heart rate average"),
-    "cardio_recovery":        ("Heart", "Cardio recovery HR after exercise"),
+    "cardio_recovery": ("Heart", "Cardio recovery HR after exercise"),
     # Respiratory
-    "respiratory_rate":       ("Respiratory", "Respiratory rate (breaths/min)"),
+    "respiratory_rate": ("Respiratory", "Respiratory rate (breaths/min)"),
     "blood_oxygen_saturation": ("Respiratory", "SpO2 (%)"),
-    "vo2_max":                ("Fitness", "VO2max estimate"),
+    "vo2_max": ("Fitness", "VO2max estimate"),
     "six_minute_walking_test_distance": ("Fitness", "6-minute walk test distance"),
     # Activity
-    "active_energy":          ("Activity", (
-        "Active energy burned; unit depends on HAE configuration "
-        "(typically kJ for Apple Watch, kcal possible)"
-    )),
-    "basal_energy_burned":    ("Activity", (
-        "Basal metabolic energy; unit depends on HAE configuration "
-        "(typically kJ, same as active_energy)"
-    )),
-    "step_count":             ("Activity", "Daily steps"),
+    "active_energy": (
+        "Activity",
+        (
+            "Active energy burned; unit depends on HAE configuration "
+            "(typically kJ for Apple Watch, kcal possible)"
+        ),
+    ),
+    "basal_energy_burned": (
+        "Activity",
+        (
+            "Basal metabolic energy; unit depends on HAE configuration "
+            "(typically kJ, same as active_energy)"
+        ),
+    ),
+    "step_count": ("Activity", "Daily steps"),
     "walking_running_distance": ("Activity", "Walking + running distance (km)"),
-    "flights_climbed":        ("Activity", "Flights of stairs climbed"),
-    "apple_exercise_time":    ("Activity", "Exercise minutes (Apple Watch ring)"),
-    "apple_stand_hour":       ("Activity", "Stand hours"),
-    "apple_stand_time":       ("Activity", "Stand time (min)"),
-    "cycling_distance":       ("Activity", "Cycling distance (km)"),
-    "swimming_distance":      ("Activity", "Swimming distance (m)"),
-    "swimming_stroke_count":  ("Activity", "Swimming stroke count"),
-    "physical_effort":        ("Activity", "Physical effort (AppleExerciseIntensity)"),
-    "mindful_minutes":        ("Activity", "Mindfulness minutes"),
+    "flights_climbed": ("Activity", "Flights of stairs climbed"),
+    "apple_exercise_time": ("Activity", "Exercise minutes (Apple Watch ring)"),
+    "apple_stand_hour": ("Activity", "Stand hours"),
+    "apple_stand_time": ("Activity", "Stand time (min)"),
+    "cycling_distance": ("Activity", "Cycling distance (km)"),
+    "swimming_distance": ("Activity", "Swimming distance (m)"),
+    "swimming_stroke_count": ("Activity", "Swimming stroke count"),
+    "physical_effort": ("Activity", "Physical effort (AppleExerciseIntensity)"),
+    "mindful_minutes": ("Activity", "Mindfulness minutes"),
     # Running mechanics
     "running_ground_contact_time": ("Running", "Ground contact time (ms)"),
-    "running_power":          ("Running", "Running power (W)"),
-    "running_speed":          ("Running", "Running speed (m/s)"),
-    "running_stride_length":  ("Running", "Stride length (m)"),
+    "running_power": ("Running", "Running power (W)"),
+    "running_speed": ("Running", "Running speed (m/s)"),
+    "running_stride_length": ("Running", "Stride length (m)"),
     "running_vertical_oscillation": ("Running", "Vertical oscillation (cm)"),
     # Lifestyle
-    "alcohol_consumption":    ("Lifestyle", (
-        "Alcohol, as counted by DrinkControl, in the standard-drink size "
-        "the app is configured for (10 g of ethanol in this installation; "
-        "the app offers 8 to 14 g by jurisdiction). Grams of ethanol are "
-        "derived from the app's energy record, not from this count. "
-        "Use get_alcohol for energy and next-morning comparison"
-    )),
+    "alcohol_consumption": (
+        "Lifestyle",
+        (
+            "Alcohol, as counted by DrinkControl, in the standard-drink size "
+            "the app is configured for (10 g of ethanol in this installation; "
+            "the app offers 8 to 14 g by jurisdiction). Grams of ethanol are "
+            "derived from the app's energy record, not from this count. "
+            "Use get_alcohol for energy and next-morning comparison"
+        ),
+    ),
     # Sleep
     "apple_sleeping_wrist_temperature": ("Sleep", "Wrist temperature deviation during sleep"),
     # Walking / Gait
-    "walking_speed":          ("Walking", "Walking speed (km/h)"),
-    "walking_step_length":    ("Walking", "Walking step length (cm)"),
+    "walking_speed": ("Walking", "Walking speed (km/h)"),
+    "walking_step_length": ("Walking", "Walking step length (cm)"),
     "walking_asymmetry_percentage": ("Walking", "Walking asymmetry (%)"),
     "walking_double_support_percentage": ("Walking", "Double support time (%)"),
-    "stair_speed_up":         ("Walking", "Stair ascent speed (m/s)"),
-    "stair_speed_down":       ("Walking", "Stair descent speed (m/s)"),
+    "stair_speed_up": ("Walking", "Stair ascent speed (m/s)"),
+    "stair_speed_down": ("Walking", "Stair descent speed (m/s)"),
     # Environment
     "environmental_audio_exposure": ("Environment", "Environmental noise (dB)"),
     "headphone_audio_exposure": ("Environment", "Headphone audio level (dB)"),
-    "time_in_daylight":       ("Environment", "Time in daylight (min)"),
+    "time_in_daylight": ("Environment", "Time in daylight (min)"),
     # Other
-    "handwashing":            ("Other", "Handwashing events"),
+    "handwashing": ("Other", "Handwashing events"),
     "number_of_times_fallen": ("Other", "Fall detection events"),
     "distance_downhill_snow_sports": ("Other", "Downhill snow sports distance"),
 }
@@ -1136,16 +1131,14 @@ def _discover_health_metrics() -> list[str]:
     if not data_dir:
         try:
             from ..garmin.utils import get_data_dir
+
             data_dir = str(get_data_dir())
         except Exception:
             return sorted(_HEALTH_METRIC_INFO.keys())
     canonical = Path(data_dir) / "kristian" / "health_export" / "canonical"
     if not canonical.is_dir():
         return sorted(_HEALTH_METRIC_INFO.keys())
-    return sorted(
-        d.name for d in canonical.iterdir()
-        if d.is_dir() and not d.name.startswith(".")
-    )
+    return sorted(d.name for d in canonical.iterdir() if d.is_dir() and not d.name.startswith("."))
 
 
 def explain_metric(metric_name: str) -> dict:
@@ -1180,6 +1173,7 @@ def explain_metric(metric_name: str) -> dict:
 # ---------------------------------------------------------------------------
 # Form / state-based insight + raw data inspection
 # ---------------------------------------------------------------------------
+
 
 def get_form(date: str | None = None) -> dict:
     """Today's form ("dagsform") in Swedish prose, with structured drivers.
@@ -1267,6 +1261,7 @@ def get_latest_known() -> dict:
 # Pipeline status
 # ---------------------------------------------------------------------------
 
+
 def _cache_mtime(filename: str) -> str | None:
     """Return ISO timestamp of a cache file's mtime, or None if missing."""
     data_dir = get_settings().traning_data
@@ -1345,6 +1340,7 @@ def get_pipeline_status() -> dict:
 # Resources
 # ---------------------------------------------------------------------------
 
+
 def resource_metrics() -> str:
     """List of all available metrics (training + health) with descriptions."""
     lines = ["# Training metrics (dedicated tools)\n"]
@@ -1365,8 +1361,17 @@ def resource_metrics() -> str:
     lines.append("\n# Health metrics (use get_health_metric)\n")
     lines.append("All metrics below are queried via `get_health_metric(metric='name')`.\n")
     for cat in [
-        "Body", "Heart", "Respiratory", "Fitness", "Activity",
-        "Lifestyle", "Running", "Sleep", "Walking", "Environment", "Other",
+        "Body",
+        "Heart",
+        "Respiratory",
+        "Fitness",
+        "Activity",
+        "Lifestyle",
+        "Running",
+        "Sleep",
+        "Walking",
+        "Environment",
+        "Other",
     ]:
         if cat in by_category:
             lines.append(f"## {cat}")

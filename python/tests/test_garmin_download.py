@@ -283,9 +283,7 @@ def test_partial_download_success_clears_retry_counter(gc_tc_dirs, tmp_path):
     dl._save_retry_state(retry_state_path, {str(ACTIVITY["activityId"]): 2})
 
     client = FakeGarminClient()
-    ok = dl._download_activity(
-        client, ACTIVITY, gc_dir, tc_dir, retry_state_path=retry_state_path
-    )
+    ok = dl._download_activity(client, ACTIVITY, gc_dir, tc_dir, retry_state_path=retry_state_path)
 
     assert ok is True
     state = dl._load_retry_state(retry_state_path)

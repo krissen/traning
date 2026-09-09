@@ -63,9 +63,7 @@ def test_decrement_after_flush_never_goes_negative():
 # --- _flush_pending_workouts: end-to-end decrement race ---------------------
 
 
-def test_flush_pending_workouts_decrements_snapshot_not_live_count(
-    traning_data_dir, monkeypatch
-):
+def test_flush_pending_workouts_decrements_snapshot_not_live_count(traning_data_dir, monkeypatch):
     app_mod._pending_workouts_count = 5
 
     class FakeResult:
@@ -87,9 +85,7 @@ def test_flush_pending_workouts_decrements_snapshot_not_live_count(
     assert app_mod._workouts_flushing is False
 
 
-def test_flush_pending_workouts_failure_keeps_full_batch_pending(
-    traning_data_dir, monkeypatch
-):
+def test_flush_pending_workouts_failure_keeps_full_batch_pending(traning_data_dir, monkeypatch):
     app_mod._pending_workouts_count = 5
 
     class FailingResult:
@@ -105,9 +101,7 @@ def test_flush_pending_workouts_failure_keeps_full_batch_pending(
     assert app_mod._workouts_flushing is False
 
 
-def test_flush_pending_workouts_success_stamps_the_ok_timestamp(
-    traning_data_dir, monkeypatch
-):
+def test_flush_pending_workouts_success_stamps_the_ok_timestamp(traning_data_dir, monkeypatch):
     app_mod._pending_workouts_count = 5
 
     class FakeResult:
@@ -192,9 +186,7 @@ def test_flush_pending_workouts_noop_when_nothing_pending(monkeypatch):
     assert app_mod._workouts_flushing is False
 
 
-def test_flush_pending_workouts_resets_guard_when_persist_raises(
-    traning_data_dir, monkeypatch
-):
+def test_flush_pending_workouts_resets_guard_when_persist_raises(traning_data_dir, monkeypatch):
     # Regression test: an unhandled exception anywhere in the flush body
     # (not just a subprocess failure, which is already caught internally)
     # must still clear _workouts_flushing via the try/finally — otherwise
@@ -301,9 +293,7 @@ def test_schedule_workouts_import_persists_count(traning_data_dir):
 
 
 def test_resume_pending_state_reloads_and_rearms_timers(traning_data_dir):
-    state.save_pending_state(
-        {"pending_files": ["x.json"], "pending_workouts_count": 2}
-    )
+    state.save_pending_state({"pending_files": ["x.json"], "pending_workouts_count": 2})
 
     app_mod._resume_pending_state()
 

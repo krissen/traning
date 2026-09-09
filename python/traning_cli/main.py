@@ -29,7 +29,9 @@ def _has_remote(data_dir: Path) -> bool:
     """Check if the data repo has a git remote configured."""
     result = subprocess.run(
         ["git", "remote"],
-        cwd=data_dir, capture_output=True, text=True,
+        cwd=data_dir,
+        capture_output=True,
+        text=True,
     )
     return bool(result.stdout.strip())
 
@@ -40,7 +42,8 @@ def _maybe_pull(data_dir: Path) -> None:
         return
     result = subprocess.run(
         ["git", "pull", "--ff-only"],
-        cwd=data_dir, capture_output=True,
+        cwd=data_dir,
+        capture_output=True,
     )
     if result.returncode == 0:
         log.info("Pulled latest data from remote")
@@ -71,36 +74,60 @@ def _get_version():
 def report_options(f):
     """Shared options for all report commands: --plot, --after, --before, --span,
     --output, --limit."""
+
     @click.option("--plot", "show_plot", is_flag=True, help="Show plot instead of table")
-    @click.option("--after", default=None,
-                  help="Start of date range (YYYY, YYYY-MM, YYYY-MM-DD, -Nw/-Nm/-Ny/-Nd)")
-    @click.option("--before", default=None,
-                  help="End of date range (same formats as --after)")
-    @click.option("--span", default=None,
-                  help="Duration from --after (e.g. 3m, 1y). Requires --after")
-    @click.option("--output", default=None,
-                  help="Save output to file (format from extension or --format)")
-    @click.option("--format", "fmt", default=None,
-                  help="Output format. Plots: pdf, png. Tables: csv, json, jsonl, xlsx")
+    @click.option(
+        "--after",
+        default=None,
+        help="Start of date range (YYYY, YYYY-MM, YYYY-MM-DD, -Nw/-Nm/-Ny/-Nd)",
+    )
+    @click.option("--before", default=None, help="End of date range (same formats as --after)")
+    @click.option(
+        "--span", default=None, help="Duration from --after (e.g. 3m, 1y). Requires --after"
+    )
+    @click.option(
+        "--output", default=None, help="Save output to file (format from extension or --format)"
+    )
+    @click.option(
+        "--format",
+        "fmt",
+        default=None,
+        help="Output format. Plots: pdf, png. Tables: csv, json, jsonl, xlsx",
+    )
     @click.option("--no-open", is_flag=True, help="Don't open output file after saving")
     @click.option("--limit", type=int, default=None, help="Limit table rows")
-    @click.option("--sport", default=None,
-                  help=("Sport bucket to filter on. When omitted the R "
-                        "CLI's own default is used (currently 'running' — "
-                        "back-compat). Examples: 'cycling', 'walking', "
-                        "'strength', 'all' (no filter), 'endurance' "
-                        "(running+cycling+walking+swimming). Swedish "
-                        "aliases ('löpning', 'cykling', 'gång') accepted. "
-                        "Pass an empty string ('') to match nothing."))
+    @click.option(
+        "--sport",
+        default=None,
+        help=(
+            "Sport bucket to filter on. When omitted the R "
+            "CLI's own default is used (currently 'running' — "
+            "back-compat). Examples: 'cycling', 'walking', "
+            "'strength', 'all' (no filter), 'endurance' "
+            "(running+cycling+walking+swimming). Swedish "
+            "aliases ('löpning', 'cykling', 'gång') accepted. "
+            "Pass an empty string ('') to match nothing."
+        ),
+    )
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         return f(*args, **kwargs)
+
     return wrapper
 
 
-def _r_report(flag, show_plot=False, after=None, before=None, span=None,
-              limit=None, output=None, fmt=None, no_open=False,
-              sport=None):
+def _r_report(
+    flag,
+    show_plot=False,
+    after=None,
+    before=None,
+    span=None,
+    limit=None,
+    output=None,
+    fmt=None,
+    no_open=False,
+    sport=None,
+):
     """Build and execute an R report/plot command."""
     cmd = ["Rscript", str(CLI_R), flag]
     if show_plot:
@@ -130,6 +157,7 @@ def _r_report(flag, show_plot=False, after=None, before=None, span=None,
 
 # -- top-level group -------------------------------------------------------
 
+
 @click.group(context_settings={"help_option_names": ["-h", "--help"]})
 @click.version_option(version=_get_version(), prog_name="traning")
 def cli():
@@ -138,22 +166,27 @@ def cli():
 
 # -- fetch group -----------------------------------------------------------
 
+
 @cli.group()
 def fetch():
     """Fetch raw data from external sources."""
 
 
 @fetch.command(name="garmin")
-@click.option("--limit", type=int, default=50,
-              help="Max number of new activities to fetch (default: 50)")
-@click.option("--all", "fetch_all", is_flag=True,
-              help="Fetch all missing activities (ignores --limit)")
-@click.option("--dry-run", is_flag=True,
-              help="Show what would be fetched without downloading")
-@click.option("--reauth", is_flag=True,
-              help="Force re-authentication (ignore saved tokens)")
-@click.option("--login-method", type=click.Choice(["browser", "native"]),
-              default="browser", help="Login method (default: browser)")
+@click.option(
+    "--limit", type=int, default=50, help="Max number of new activities to fetch (default: 50)"
+)
+@click.option(
+    "--all", "fetch_all", is_flag=True, help="Fetch all missing activities (ignores --limit)"
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be fetched without downloading")
+@click.option("--reauth", is_flag=True, help="Force re-authentication (ignore saved tokens)")
+@click.option(
+    "--login-method",
+    type=click.Choice(["browser", "native"]),
+    default="browser",
+    help="Login method (default: browser)",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
 def fetch_garmin(limit, fetch_all, dry_run, reauth, login_method, verbose):
     """Fetch new activities from Garmin Connect."""
@@ -174,8 +207,11 @@ def fetch_garmin(limit, fetch_all, dry_run, reauth, login_method, verbose):
 
     try:
         n = fetch_new_activities(
-            client, data_dir,
-            limit=limit, fetch_all=fetch_all, dry_run=dry_run,
+            client,
+            data_dir,
+            limit=limit,
+            fetch_all=fetch_all,
+            dry_run=dry_run,
         )
         action = "would fetch" if dry_run else "fetched"
         click.echo(f"Done — {action} {n} new activities")
@@ -188,10 +224,10 @@ def fetch_garmin(limit, fetch_all, dry_run, reauth, login_method, verbose):
 @fetch.command(name="health")
 @click.option("--server", is_flag=True, help="Only fetch from TCP server")
 @click.option("--inbox", is_flag=True, help="Only process inbox files")
-@click.option("--days-back", type=int, default=None,
-              help="Re-fetch last N days (instead of incremental)")
-@click.option("--all", "fetch_all", is_flag=True,
-              help="Full re-fetch from 2013 (slow)")
+@click.option(
+    "--days-back", type=int, default=None, help="Re-fetch last N days (instead of incremental)"
+)
+@click.option("--all", "fetch_all", is_flag=True, help="Full re-fetch from 2013 (slow)")
 @click.option("--dry-run", is_flag=True, help="Preview without downloading")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
 def fetch_health(server, inbox, days_back, fetch_all, dry_run, verbose):
@@ -215,8 +251,7 @@ def fetch_health(server, inbox, days_back, fetch_all, dry_run, verbose):
     if do_server:
         if check_server():
             click.echo("HAE-server nåbar, hämtar ...")
-            n = fetch_tcp(data_dir, days_back=days_back,
-                          fetch_all=fetch_all, dry_run=dry_run)
+            n = fetch_tcp(data_dir, days_back=days_back, fetch_all=fetch_all, dry_run=dry_run)
             action = "would write" if dry_run else "wrote"
             click.echo(f"TCP: {action} {n} metric files")
             total += n
@@ -234,17 +269,22 @@ def fetch_health(server, inbox, days_back, fetch_all, dry_run, verbose):
 
 
 @fetch.command(name="workouts")
-@click.option("--since", default="2014-01-01",
-              help="Start date YYYY-MM-DD (default: 2014-01-01, earliest AW data)")
-@click.option("--until", default=None,
-              help="End date YYYY-MM-DD (default: today)")
-@click.option("--no-metadata", is_flag=True,
-              help="Skip avgHR/heartRateData (smaller, faster, no PMC effect)")
-@click.option("--aggregation", default="minutes",
-              type=click.Choice(["minutes", "seconds"]),
-              help="HR sample granularity (default: minutes)")
-@click.option("--dry-run", is_flag=True,
-              help="Count what would be written without writing")
+@click.option(
+    "--since",
+    default="2014-01-01",
+    help="Start date YYYY-MM-DD (default: 2014-01-01, earliest AW data)",
+)
+@click.option("--until", default=None, help="End date YYYY-MM-DD (default: today)")
+@click.option(
+    "--no-metadata", is_flag=True, help="Skip avgHR/heartRateData (smaller, faster, no PMC effect)"
+)
+@click.option(
+    "--aggregation",
+    default="minutes",
+    type=click.Choice(["minutes", "seconds"]),
+    help="HR sample granularity (default: minutes)",
+)
+@click.option("--dry-run", is_flag=True, help="Count what would be written without writing")
 @click.option("-v", "--verbose", is_flag=True, help="Enable debug logging")
 def fetch_workouts(since, until, no_metadata, aggregation, dry_run, verbose):
     """Pull historical workouts from HAE TCP server month by month."""
@@ -263,7 +303,9 @@ def fetch_workouts(since, until, no_metadata, aggregation, dry_run, verbose):
         raise click.ClickException("HAE-server inte nåbar — starta appen i förgrunden")
 
     counts = fetch_workouts_tcp(
-        start_date=since, end_date=until, data_dir=data_dir,
+        start_date=since,
+        end_date=until,
+        data_dir=data_dir,
         dry_run=dry_run,
         include_metadata=not no_metadata,
         metadata_aggregation=aggregation,
@@ -282,7 +324,9 @@ def _commit_data(data_dir, n: int) -> None:
     """Git add + commit new files in the data repo."""
     message = f"(import) Fetch {n} new activities from Garmin Connect"
     committed = git_commit_paths(
-        data_dir, ["kristian/filer/gconnect/", "kristian/filer/tcx/"], message,
+        data_dir,
+        ["kristian/filer/gconnect/", "kristian/filer/tcx/"],
+        message,
     )
     if committed:
         log.info("Committed %d new activities to data repo", n)
@@ -292,10 +336,10 @@ def _commit_data(data_dir, n: int) -> None:
 
 # -- backfill --------------------------------------------------------------
 
+
 @cli.command()
 @click.argument("zipfile", type=click.Path(exists=True))
-@click.option("--dry-run", is_flag=True,
-              help="Show what would be written without writing")
+@click.option("--dry-run", is_flag=True, help="Show what would be written without writing")
 def backfill(zipfile, dry_run):
     """Backfill canonical health metrics from an export archive.
 
@@ -325,14 +369,14 @@ def backfill(zipfile, dry_run):
 
 # -- import group ----------------------------------------------------------
 
+
 @cli.group(name="import")
 def import_group():
     """Import fetched data into R analysis cache."""
 
 
 @import_group.command(name="garmin")
-@click.option("--repair", is_flag=True,
-              help="Repair NULL myruns entries (re-parse TCX files)")
+@click.option("--repair", is_flag=True, help="Repair NULL myruns entries (re-parse TCX files)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def import_garmin(repair, verbose):
     """Import TCX workouts into RData cache."""
@@ -346,8 +390,7 @@ def import_garmin(repair, verbose):
 
 
 @import_group.command(name="health")
-@click.option("--force", is_flag=True,
-              help="Re-import all files (bypass manifest)")
+@click.option("--force", is_flag=True, help="Re-import all files (bypass manifest)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def import_health(force, verbose):
     """Import health data (JSON) into RData cache."""
@@ -361,13 +404,14 @@ def import_health(force, verbose):
 
 
 @import_group.command(name="canonical")
-@click.argument("paths", nargs=-1, required=True,
-                type=click.Path(exists=True, path_type=Path))
-@click.option("--replace-source-days", is_flag=True,
-              help="Let the input replace existing samples for every "
-                   "(metric, date, source) it covers, instead of merging")
-@click.option("--dry-run", is_flag=True,
-              help="Show what would be canonicalized without writing")
+@click.argument("paths", nargs=-1, required=True, type=click.Path(exists=True, path_type=Path))
+@click.option(
+    "--replace-source-days",
+    is_flag=True,
+    help="Let the input replace existing samples for every "
+    "(metric, date, source) it covers, instead of merging",
+)
+@click.option("--dry-run", is_flag=True, help="Show what would be canonicalized without writing")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def import_canonical(paths, replace_source_days, dry_run, verbose):
     """Canonicalize HAE metric JSON files already on disk.
@@ -398,8 +442,8 @@ def import_canonical(paths, replace_source_days, dry_run, verbose):
         raise click.ClickException(str(e))
 
     n_files, n_metrics, changed = canonicalize_paths(
-        list(paths), data_dir=data_dir, dry_run=dry_run,
-        replace_source_days=replace_source_days)
+        list(paths), data_dir=data_dir, dry_run=dry_run, replace_source_days=replace_source_days
+    )
 
     if n_files == 0:
         click.echo("Inga HAE-metricfiler hittades")
@@ -407,15 +451,12 @@ def import_canonical(paths, replace_source_days, dry_run, verbose):
     if dry_run:
         click.echo(f"Dry run: {n_files} filer, {n_metrics} metrics")
         return
-    click.echo(f"{n_files} filer, {n_metrics} metrics, "
-               f"{len(changed)} canonical-filer uppdaterade")
+    click.echo(f"{n_files} filer, {n_metrics} metrics, {len(changed)} canonical-filer uppdaterade")
 
 
 @import_group.command(name="all")
-@click.option("--force", is_flag=True,
-              help="Re-import all health files (bypass manifest)")
-@click.option("--repair", is_flag=True,
-              help="Repair NULL myruns entries (re-parse TCX files)")
+@click.option("--force", is_flag=True, help="Re-import all health files (bypass manifest)")
+@click.option("--repair", is_flag=True, help="Repair NULL myruns entries (re-parse TCX files)")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def import_all(force, repair, verbose):
     """Import everything (Garmin + Health)."""
@@ -446,20 +487,22 @@ def import_all(force, repair, verbose):
 
 # -- sync group ------------------------------------------------------------
 
+
 @cli.group()
 def sync():
     """Fetch and import in one step."""
 
 
 @sync.command(name="garmin")
-@click.option("--all", "fetch_all", is_flag=True,
-              help="Fetch all missing activities")
-@click.option("--dry-run", is_flag=True,
-              help="Preview fetch without downloading (skips import)")
-@click.option("--reauth", is_flag=True,
-              help="Force re-authentication")
-@click.option("--login-method", type=click.Choice(["browser", "native"]),
-              default="browser", help="Login method")
+@click.option("--all", "fetch_all", is_flag=True, help="Fetch all missing activities")
+@click.option("--dry-run", is_flag=True, help="Preview fetch without downloading (skips import)")
+@click.option("--reauth", is_flag=True, help="Force re-authentication")
+@click.option(
+    "--login-method",
+    type=click.Choice(["browser", "native"]),
+    default="browser",
+    help="Login method",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
     """Fetch from Garmin Connect, then import into R cache."""
@@ -482,8 +525,11 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
 
     try:
         n = fetch_new_activities(
-            client, data_dir,
-            limit=50, fetch_all=fetch_all, dry_run=dry_run,
+            client,
+            data_dir,
+            limit=50,
+            fetch_all=fetch_all,
+            dry_run=dry_run,
         )
         action = "would fetch" if dry_run else "fetched"
         click.echo(f"Fetch: {action} {n} new activities")
@@ -511,12 +557,9 @@ def sync_garmin(fetch_all, dry_run, reauth, login_method, verbose):
 @sync.command(name="health")
 @click.option("--server", is_flag=True, help="Only fetch from TCP server")
 @click.option("--inbox", is_flag=True, help="Only process inbox files")
-@click.option("--days-back", type=int, default=None,
-              help="Re-fetch last N days")
-@click.option("--all", "fetch_all", is_flag=True,
-              help="Full re-fetch from 2013")
-@click.option("--force", is_flag=True,
-              help="Force re-import of all files (bypass manifest)")
+@click.option("--days-back", type=int, default=None, help="Re-fetch last N days")
+@click.option("--all", "fetch_all", is_flag=True, help="Full re-fetch from 2013")
+@click.option("--force", is_flag=True, help="Force re-import of all files (bypass manifest)")
 @click.option("--dry-run", is_flag=True, help="Preview without action")
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
 def sync_health(server, inbox, days_back, fetch_all, force, dry_run, verbose):
@@ -541,8 +584,7 @@ def sync_health(server, inbox, days_back, fetch_all, force, dry_run, verbose):
     if do_server:
         if check_server():
             click.echo("HAE-server nåbar, hämtar ...")
-            n = fetch_tcp(data_dir, days_back=days_back,
-                          fetch_all=fetch_all, dry_run=dry_run)
+            n = fetch_tcp(data_dir, days_back=days_back, fetch_all=fetch_all, dry_run=dry_run)
             action = "would write" if dry_run else "wrote"
             click.echo(f"TCP: {action} {n} metric files")
             total += n
@@ -597,7 +639,11 @@ def sync_all(dry_run, reauth, verbose):
         tokens = token_dir(data_dir)
         client = authenticate(tokens, force_reauth=reauth, method="browser")
         n_garmin = fetch_new_activities(
-            client, data_dir, limit=50, fetch_all=False, dry_run=dry_run,
+            client,
+            data_dir,
+            limit=50,
+            fetch_all=False,
+            dry_run=dry_run,
         )
         action = "would fetch" if dry_run else "fetched"
         click.echo(f"Fetch: {action} {n_garmin} new activities")
@@ -648,6 +694,7 @@ def sync_all(dry_run, reauth, verbose):
 
 
 # -- report group -----------------------------------------------------------
+
 
 @cli.group()
 def report():
@@ -704,6 +751,7 @@ def month_last(show_plot, after, before, span, output, fmt, no_open, limit, spor
 
 
 # -- plot commands (top-level) -----------------------------------------------
+
 
 @cli.command()
 @report_options
@@ -807,6 +855,7 @@ def decoupling(force, show_plot, after, before, span, output, fmt, no_open, limi
 
 # -- datesum ----------------------------------------------------------------
 
+
 @cli.command()
 @click.argument("range", required=False, default=None)
 @report_options
@@ -842,6 +891,7 @@ def datesum(range, show_plot, after, before, span, output, fmt, no_open, limit, 
 
 # -- shiny ------------------------------------------------------------------
 
+
 @cli.command()
 @click.option("--port", type=int, default=3838, help="Port (default: 3838)")
 def shiny(port):
@@ -852,6 +902,7 @@ def shiny(port):
 
 # -- server -----------------------------------------------------------------
 
+
 @cli.command()
 @click.option("--host", default="0.0.0.0", help="Bind address (default: 0.0.0.0)")
 @click.option("--port", type=int, default=8421, help="Port (default: 8421)")
@@ -859,10 +910,12 @@ def shiny(port):
 def serve(host, port, reload):
     """Start the health data receiver (FastAPI)."""
     import uvicorn
+
     uvicorn.run("traning_cli.server:app", host=host, port=port, reload=reload)
 
 
 # -- pull -------------------------------------------------------------------
+
 
 @cli.command()
 @click.option("-v", "--verbose", is_flag=True, help="Verbose output")
@@ -880,7 +933,8 @@ def pull(verbose):
 
     result = subprocess.run(
         ["git", "pull", "--ff-only"],
-        cwd=data_dir, capture_output=not verbose,
+        cwd=data_dir,
+        capture_output=not verbose,
     )
     if result.returncode != 0:
         raise click.ClickException("git pull misslyckades")
@@ -889,18 +943,18 @@ def pull(verbose):
 
 # -- insight ---------------------------------------------------------------
 
+
 @cli.group()
 def insight():
     """Qualitative training insights (Swedish prose)."""
 
 
 @insight.command(name="day")
-@click.option("--date", "ref_date", default=None,
-              help="Reference date YYYY-MM-DD (default today)")
-@click.option("--push", is_flag=True,
-              help="Send via Home Assistant push (kailash systemd timer use)")
-@click.option("--force", is_flag=True,
-              help="Re-send even if day_summary already marked sent today")
+@click.option("--date", "ref_date", default=None, help="Reference date YYYY-MM-DD (default today)")
+@click.option(
+    "--push", is_flag=True, help="Send via Home Assistant push (kailash systemd timer use)"
+)
+@click.option("--force", is_flag=True, help="Re-send even if day_summary already marked sent today")
 def insight_day(ref_date, push, force):
     """End-of-day qualitative summary across Garmin + HAE workouts."""
     cmd = ["Rscript", str(CLI_R), "--day-summary"]
@@ -908,9 +962,7 @@ def insight_day(ref_date, push, force):
         cmd.append(f"--date={ref_date}")
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
     if result.returncode != 0:
-        raise click.ClickException(
-            f"day-summary R-anrop misslyckades: {result.stderr.strip()}"
-        )
+        raise click.ClickException(f"day-summary R-anrop misslyckades: {result.stderr.strip()}")
     msg = result.stdout.strip()
     if not msg:
         raise click.ClickException("day-summary returnerade tom prosa")
@@ -943,12 +995,20 @@ def insight_day(ref_date, push, force):
 
 # -- dedup ------------------------------------------------------------------
 
+
 @cli.command()
-@click.option("--apply", "apply_changes", is_flag=True,
-              help="Actually remove the listed rows (default: report only)")
-@click.option("--dry-run", is_flag=True,
-              help="Report only. This is the default; the flag is accepted "
-                   "for symmetry with the other commands")
+@click.option(
+    "--apply",
+    "apply_changes",
+    is_flag=True,
+    help="Actually remove the listed rows (default: report only)",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="Report only. This is the default; the flag is accepted "
+    "for symmetry with the other commands",
+)
 def dedup(apply_changes, dry_run):
     """List Apple Watch sessions that duplicate a Garmin recording.
 
@@ -964,6 +1024,7 @@ def dedup(apply_changes, dry_run):
 
 # -- doctor -----------------------------------------------------------------
 
+
 @cli.group(invoke_without_command=True)
 @click.pass_context
 def doctor(ctx):
@@ -976,11 +1037,17 @@ _DOCTOR_CHECKS = ("all", "packages", "services", "configs", "freshness")
 
 
 @doctor.command(name="run")
-@click.option("--check", "checks", default=("all",), multiple=True,
-              type=click.Choice(_DOCTOR_CHECKS),
-              help="Subset of checks to run (repeatable, default: all)")
-@click.option("--json", "as_json", is_flag=True,
-              help="Emit results as JSON instead of human-readable text")
+@click.option(
+    "--check",
+    "checks",
+    default=("all",),
+    multiple=True,
+    type=click.Choice(_DOCTOR_CHECKS),
+    help="Subset of checks to run (repeatable, default: all)",
+)
+@click.option(
+    "--json", "as_json", is_flag=True, help="Emit results as JSON instead of human-readable text"
+)
 def doctor_run(checks, as_json):
     """Run deployment health checks. Exits 0 if all pass, 1 otherwise."""
     spec = "all" if "all" in checks else ",".join(checks)
@@ -998,8 +1065,10 @@ def doctor_rebuild():
 
 # -- mcp --------------------------------------------------------------------
 
+
 @cli.command()
 def mcp():
     """Start the Vayu MCP server (stdio transport)."""
     from .mcp.server import main as mcp_main
+
     mcp_main()

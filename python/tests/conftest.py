@@ -44,4 +44,3 @@ def traning_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("TRANING_DATA", str(tmp_path))
     get_settings.cache_clear()
     return tmp_path
-

@@ -50,6 +50,7 @@ def _daily_total(samples: list[dict]) -> float | None:
 
 # --- Canonical deduplication ------------------------------------------------
 
+
 def _sample_key(sample: dict) -> str:
     """Return a dedup key for a legacy (sleep_analysis) HAE sample.
 
@@ -89,8 +90,7 @@ def _canonical_sample_key(sample: dict) -> str:
     return json.dumps(sample, sort_keys=True, ensure_ascii=False, default=str)
 
 
-def _merge_samples(existing: list[dict],
-                   incoming: list[dict]) -> tuple[list[dict], int]:
+def _merge_samples(existing: list[dict], incoming: list[dict]) -> tuple[list[dict], int]:
     """Merge incoming samples into existing ones, preserving multiplicity.
 
     Deduplication is by *count* per content key, not by presence: a key
@@ -169,14 +169,14 @@ def _suspected_aggregates(samples: list[dict]) -> list[tuple[str, str]]:
         bare_zeros = []
         detailed_peers = 0
         for i in idx:
-            sec = _TS_RE.match(str(samples[i].get(
-                "date", samples[i].get("startDate", "")))).group(2)
+            sec = _TS_RE.match(str(samples[i].get("date", samples[i].get("startDate", "")))).group(
+                2
+            )
             if sec == "00":
                 bare_zeros.append(i)
             elif _has_detail(samples[i]):
                 detailed_peers += 1
-        if len(bare_zeros) == 1 and detailed_peers and not _has_detail(
-                samples[bare_zeros[0]]):
+        if len(bare_zeros) == 1 and detailed_peers and not _has_detail(samples[bare_zeros[0]]):
             found.append((source, minute))
     return found
 
@@ -226,15 +226,19 @@ def canonicalize_metric(
 
         if replace_source_days:
             sources = {str(s.get("source", "")) for s in new_samples}
-            kept = [s for s in existing_samples
-                    if str(s.get("source", "")) not in sources]
+            kept = [s for s in existing_samples if str(s.get("source", "")) not in sources]
             merged = kept + list(new_samples)
             n_added = len(new_samples)
             n_replaced = len(existing_samples) - len(kept)
             if n_replaced or not existing_samples:
-                log.info("  %s %s: ersätter %d sample från %s med %d",
-                         metric_name, date_str, n_replaced,
-                         ", ".join(sorted(sources)), len(new_samples))
+                log.info(
+                    "  %s %s: ersätter %d sample från %s med %d",
+                    metric_name,
+                    date_str,
+                    n_replaced,
+                    ", ".join(sorted(sources)),
+                    len(new_samples),
+                )
         else:
             merged, n_added = _merge_samples(existing_samples, new_samples)
 
@@ -251,9 +255,12 @@ def canonicalize_metric(
                 "dubbelräknat. Inget raderas; kör "
                 "'traning import canonical --replace-source-days' med en "
                 "per-sample-hämtning för att ersätta dygnet.",
-                metric_name, date_str, minute, source)
-        log.debug("  %s %s: +%d nya, %d totalt",
-                  metric_name, date_str, n_added, len(merged))
+                metric_name,
+                date_str,
+                minute,
+                source,
+            )
+        log.debug("  %s %s: +%d nya, %d totalt", metric_name, date_str, n_added, len(merged))
 
         doc = {
             "metric": metric_name,
@@ -275,6 +282,7 @@ def canonicalize_metric(
 
 # --- Legacy metric merge (sleep_analysis) -----------------------------------
 
+
 def _parse_legacy_filename(path: Path, metric_name: str) -> tuple[str, str] | None:
     """Extract (first, last) date from a legacy metric filename.
 
@@ -285,7 +293,7 @@ def _parse_legacy_filename(path: Path, metric_name: str) -> tuple[str, str] | No
     prefix = f"{metric_name}_"
     if not stem.startswith(prefix):
         return None
-    rest = stem[len(prefix):]
+    rest = stem[len(prefix) :]
     parts = rest.rsplit("_", 1)
     if len(parts) != 2:
         return None
@@ -316,8 +324,11 @@ def _save_legacy_metric(
 
     Non-overlapping files are left untouched.
     """
-    dates = [s.get("date", s.get("startDate", ""))[:10]
-             for s in samples if s.get("date") or s.get("startDate")]
+    dates = [
+        s.get("date", s.get("startDate", ""))[:10]
+        for s in samples
+        if s.get("date") or s.get("startDate")
+    ]
     if not dates:
         return []
     push_first, push_last = min(dates), max(dates)
@@ -356,14 +367,15 @@ def _save_legacy_metric(
     if not merged:
         return []
 
-    merged_dates = [s.get("date", s.get("startDate", ""))[:10] for s in merged
-                    if s.get("date") or s.get("startDate")]
+    merged_dates = [
+        s.get("date", s.get("startDate", ""))[:10]
+        for s in merged
+        if s.get("date") or s.get("startDate")
+    ]
     new_first, new_last = min(merged_dates), max(merged_dates)
     new_path = metrics_dir / f"{metric_name}_{new_first}_{new_last}.json"
 
-    output = {"data": {"metrics": [
-        {"name": metric_name, "units": units, "data": merged}
-    ]}}
+    output = {"data": {"metrics": [{"name": metric_name, "units": units, "data": merged}]}}
     tmp_path = new_path.with_suffix(".json.tmp")
     with open(tmp_path, "w") as fp:
         json.dump(output, fp, ensure_ascii=False)
@@ -374,14 +386,21 @@ def _save_legacy_metric(
         if f.resolve() != new_path.resolve() and f.exists():
             f.unlink()
 
-    log.info("  %s: %d new + %d existing → %d total (legacy, range %s..%s, "
-             "consolidated %d file(s))",
-             metric_name, n_added, len(existing_samples), len(merged),
-             new_first, new_last, len(overlapping))
+    log.info(
+        "  %s: %d new + %d existing → %d total (legacy, range %s..%s, consolidated %d file(s))",
+        metric_name,
+        n_added,
+        len(existing_samples),
+        len(merged),
+        new_first,
+        new_last,
+        len(overlapping),
+    )
     return [new_path]
 
 
 # --- Public API -------------------------------------------------------------
+
 
 def _metric_is_writable(metric: object) -> bool:
     """Whether ``save_health_push`` would write this metric group.
@@ -403,8 +422,9 @@ def _metric_is_writable(metric: object) -> bool:
     return all(isinstance(s, dict) for s in data)
 
 
-def save_health_push(payload: dict, data_dir: Path | None = None,
-                     replace_source_days: bool = False) -> tuple[int, list[Path]]:
+def save_health_push(
+    payload: dict, data_dir: Path | None = None, replace_source_days: bool = False
+) -> tuple[int, list[Path]]:
     """Save HAE JSON payload via canonical deduplication.
 
     1. Canonicalize each metric into per-day files under canonical/.
@@ -440,8 +460,9 @@ def save_health_push(payload: dict, data_dir: Path | None = None,
     for m in metrics:
         if not _metric_is_writable(m):
             name = m.get("name") if isinstance(m, dict) else None
-            log.warning("Hoppar över metrikgrupp utan namn eller giltiga "
-                        "samples: %s", name or "(namnlös)")
+            log.warning(
+                "Hoppar över metrikgrupp utan namn eller giltiga samples: %s", name or "(namnlös)"
+            )
             continue
         name = m.get("name")
         samples = m.get("data", [])
@@ -452,11 +473,12 @@ def save_health_push(payload: dict, data_dir: Path | None = None,
             all_changed.extend(changed)
         else:
             changed = canonicalize_metric(
-                name, units, samples, data_dir,
-                replace_source_days=replace_source_days)
+                name, units, samples, data_dir, replace_source_days=replace_source_days
+            )
             all_changed.extend(changed)
-            log.info("  %s: %d samples, %d canonical files updated",
-                     name, len(samples), len(changed))
+            log.info(
+                "  %s: %d samples, %d canonical files updated", name, len(samples), len(changed)
+            )
 
         n_written += 1
 
@@ -478,8 +500,7 @@ def _read_hae_payload(path: Path) -> dict | None:
         return None
     if not isinstance(raw, dict):
         return None
-    metrics = raw.get("data", {}).get("metrics") if isinstance(
-        raw.get("data"), dict) else None
+    metrics = raw.get("data", {}).get("metrics") if isinstance(raw.get("data"), dict) else None
     if metrics is None:
         metrics = raw.get("metrics")
     if not isinstance(metrics, list) or not metrics:
@@ -487,8 +508,7 @@ def _read_hae_payload(path: Path) -> dict | None:
     return {"data": {"metrics": metrics}}
 
 
-def plan_replacements(payload: dict,
-                      data_dir: Path) -> list[tuple[str, str, str, int, int]]:
+def plan_replacements(payload: dict, data_dir: Path) -> list[tuple[str, str, str, int, int]]:
     """What ``replace_source_days`` would displace, without writing.
 
     Returns (metric, date, source, n_existing, n_incoming) per
@@ -523,20 +543,20 @@ def plan_replacements(payload: dict,
                 log.warning("Kunde inte läsa %s: %s", path, e)
                 continue
             for source in sorted({str(s.get("source", "")) for s in incoming}):
-                n_existing = sum(1 for s in existing
-                                 if str(s.get("source", "")) == source)
+                n_existing = sum(1 for s in existing if str(s.get("source", "")) == source)
                 if not n_existing:
                     continue
-                n_incoming = sum(1 for s in incoming
-                                 if str(s.get("source", "")) == source)
+                n_incoming = sum(1 for s in incoming if str(s.get("source", "")) == source)
                 plan.append((name, date_str, source, n_existing, n_incoming))
     return plan
 
 
-def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
-                       dry_run: bool = False,
-                       replace_source_days: bool = False,
-                       ) -> tuple[int, int, list[Path]]:
+def canonicalize_paths(
+    paths: list[Path],
+    data_dir: Path | None = None,
+    dry_run: bool = False,
+    replace_source_days: bool = False,
+) -> tuple[int, int, list[Path]]:
     """Canonicalize HAE metric JSON files that are already on disk.
 
     Each path may be a file or a directory (searched non-recursively for
@@ -602,26 +622,28 @@ def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
         names: list[str] = []
         for m in payload["data"]["metrics"]:
             if not _metric_is_writable(m):
-                log.warning("%s: hoppar över metrikgrupp utan namn eller "
-                            "giltiga samples", f.name)
+                log.warning("%s: hoppar över metrikgrupp utan namn eller giltiga samples", f.name)
                 continue
             name = str(m["name"])
             names.append(name)
             units = str(m.get("units", "") or "")
             entry = merged.get(name)
             if entry is None:
-                merged[name] = {"name": name, "units": units,
-                                "data": list(m["data"])}
+                merged[name] = {"name": name, "units": units, "data": list(m["data"])}
                 continue
             if units and not entry["units"]:
                 entry["units"] = units
             elif units and units != entry["units"]:
-                log.warning("%s: %s anges i %s men %s sedan tidigare — "
-                            "behåller %s", f.name, name, units,
-                            entry["units"], entry["units"])
+                log.warning(
+                    "%s: %s anges i %s men %s sedan tidigare — behåller %s",
+                    f.name,
+                    name,
+                    units,
+                    entry["units"],
+                    entry["units"],
+                )
             entry["data"], _ = _merge_samples(entry["data"], m["data"])
-        log.info("%s → %s", f.name,
-                 ", ".join(names) if names else "inget att skriva")
+        log.info("%s → %s", f.name, ", ".join(names) if names else "inget att skriva")
 
     if not merged:
         return n_files, 0, []
@@ -630,14 +652,15 @@ def canonicalize_paths(paths: list[Path], data_dir: Path | None = None,
 
     if dry_run:
         if replace_source_days:
-            for metric, date_str, source, n_old, n_new in plan_replacements(
-                    payload, data_dir):
-                log.info("  ersätter %s %s (%s): %d sample → %d",
-                         metric, date_str, source, n_old, n_new)
+            for metric, date_str, source, n_old, n_new in plan_replacements(payload, data_dir):
+                log.info(
+                    "  ersätter %s %s (%s): %d sample → %d", metric, date_str, source, n_old, n_new
+                )
         return n_files, len(merged), []
 
     n_metrics, changed = save_health_push(
-        payload, data_dir, replace_source_days=replace_source_days)
+        payload, data_dir, replace_source_days=replace_source_days
+    )
 
     # One metric can still touch many canonical days, and a caller reads
     # this as the set of files to hand downstream (import, git add).
@@ -689,8 +712,9 @@ def save_workout_push(payload: dict, data_dir: Path | None = None) -> int:
     return n_written
 
 
-def commit_health_data(data_dir: Path | None = None, n_metrics: int = 0,
-                       n_workouts: int = 0) -> bool:
+def commit_health_data(
+    data_dir: Path | None = None, n_metrics: int = 0, n_workouts: int = 0
+) -> bool:
     """Git add + commit new health metric files.
 
     Returns True if commit succeeded.

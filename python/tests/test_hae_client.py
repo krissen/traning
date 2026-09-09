@@ -21,8 +21,12 @@ from traning_cli.health.hae_client import (
 class _FakeSocket:
     """Minimal stand-in for socket.socket, feeding back canned bytes."""
 
-    def __init__(self, response: bytes = b"", raise_on_connect: Exception | None = None,
-                 raise_on_recv: Exception | None = None):
+    def __init__(
+        self,
+        response: bytes = b"",
+        raise_on_connect: Exception | None = None,
+        raise_on_recv: Exception | None = None,
+    ):
         self._response = response
         self._raise_on_connect = raise_on_connect
         self._raise_on_recv = raise_on_recv
@@ -75,8 +79,12 @@ def test_metrics_query_sends_expected_request(monkeypatch):
 
     query_hae(
         "health_metrics",
-        {"start": "2024-01-01 00:00:00 +0100", "end": "2024-01-02 00:00:00 +0100",
-         "interval": "days", "aggregate": True},
+        {
+            "start": "2024-01-01 00:00:00 +0100",
+            "end": "2024-01-02 00:00:00 +0100",
+            "interval": "days",
+            "aggregate": True,
+        },
         request_id="fetch",
     )
 
@@ -96,9 +104,13 @@ def test_workouts_query_sends_expected_request(monkeypatch):
 
     query_hae(
         "workouts",
-        {"start": "2024-01-01 00:00:00 +0100", "end": "2024-02-01 00:00:00 +0100",
-         "includeMetadata": True, "includeRoutes": False,
-         "metadataAggregation": "minutes"},
+        {
+            "start": "2024-01-01 00:00:00 +0100",
+            "end": "2024-02-01 00:00:00 +0100",
+            "includeMetadata": True,
+            "includeRoutes": False,
+            "metadataAggregation": "minutes",
+        },
         request_id="fetch_workouts",
     )
 
@@ -214,8 +226,7 @@ def test_explicit_host_and_port_override_settings(monkeypatch):
     response = json.dumps({"result": {"data": {}}}).encode()
     fake = _install_fake_socket(monkeypatch, _FakeSocket(response))
 
-    query_hae("health_metrics", {"start": "a", "end": "b"},
-              host="other.local", port=1234)
+    query_hae("health_metrics", {"start": "a", "end": "b"}, host="other.local", port=1234)
     assert fake.connected_to == ("other.local", 1234)
 
 
