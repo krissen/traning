@@ -2,19 +2,34 @@
 
 This repo is gated by [`prek`](https://github.com/j178/prek) (a faster,
 Rust reimplementation of `pre-commit`), configured in
-`.pre-commit-config.yaml` and run automatically by the machine-global git
-hook dispatcher (`~/.config/git/hooks/_dispatch`) — nothing to install
-per clone beyond what the dispatcher already expects (`prek`, `gitleaks`,
-`shellcheck`, `shfmt`; R hooks use whatever `Rscript`/`styler`/`lintr` are
-already on `PATH`, plus the R packages `pkgload` (required by
+`.pre-commit-config.yaml`. R hooks use whatever `Rscript`/`styler`/`lintr`
+are already on `PATH`, plus the R packages `pkgload` (required by
 `.hooks/lintr.R` to load the package before linting — see below) and
 `devtools` (required by `.hooks/testthat.R`); both hooks fail fast with
 a clear message, rather than silently misbehaving, if either is
-missing: `install.packages(c("pkgload", "devtools"))`).
+missing: `install.packages(c("pkgload", "devtools"))`. `make setup`
+(below) installs `pkgload`, `devtools`, `lintr` and `styler` for you.
 
 ## Turning it on
 
-Two things, both in the repo root:
+`make setup` (`scripts/setup.sh`) bootstraps everything below in one
+step: a pinned, persistently-installed `prek`, a `gitleaks` presence/
+version check, `python/.venv` (via `python/setup_venv.sh`), and the four
+R packages the local hooks need. Which of the two paths it takes for
+wiring the actual git hook depends on `core.hooksPath`:
+
+**(a) Plain clone** (no `core.hooksPath` set) — `make setup` runs
+`prek install` **and** `prek install --hook-type pre-push`. Both are
+needed: every hook in `.pre-commit-config.yaml` is pinned to
+`stages: [pre-commit]` except `testthat`, which is pinned to
+`stages: [pre-push]` (see that file's header comment) — the pre-commit
+shim alone would select zero hooks for `git push` and testthat would
+silently never run.
+
+**(b) Maintainer machine** with a global git hook dispatcher
+(`~/.config/git/hooks/_dispatch`, `core.hooksPath` set repo-wide) — this
+clone's own `.git/hooks` never runs, so `make setup` skips the wiring
+step and instead prints a reminder to opt this repo into the dispatcher:
 
 ```sh
 git config prek.enabled true
@@ -23,15 +38,28 @@ git config prek.enabled true
 The dispatcher runs `prek run` at commit time only when this is `true`
 **and** `.pre-commit-config.yaml` exists (it already does here). This
 setting is repo-local git config, not a tracked file — a fresh clone on
-another machine needs to run it again.
+another machine needs to run it again. The dispatcher drives both
+stages itself (`prek run --hook-stage pre-commit` /
+`--hook-stage pre-push`), so `testthat` (pre-push) also runs under path
+(b) once `prek.enabled` is `true` — no separate wiring step needed.
 
 ## Escape hatches
 
-| situation | command |
-|---|---|
-| skip prek for one commit, keep the AI-attribution check | `SKIP_PREK=1 git commit ...` |
-| skip everything, including attribution | `git commit --no-verify` (last resort) |
-| turn the gate off for this repo | `git config prek.enabled false` |
+The escape hatch depends on which path above wired the hook — they are
+not interchangeable:
+
+| situation | path (a): plain clone, `prek install` | path (b): dispatcher (`core.hooksPath`) |
+|---|---|---|
+| skip one or more hooks for one commit | `SKIP=<hook-id,...> git commit ...` (or `PREK_SKIP=<hook-id,...>`) | `SKIP_PREK=1 git commit ...` (skips the whole sweep, keeps the AI-attribution check) |
+| skip everything, including attribution | `git commit --no-verify` (last resort, both paths) | `git commit --no-verify` (last resort, both paths) |
+| turn the gate off for this repo | uninstall the hook (`rm .git/hooks/pre-commit .git/hooks/pre-push`, or reinstall later with `make setup`) | `git config prek.enabled false` |
+
+`SKIP_PREK=1` is read by the dispatcher itself and has no effect on a
+plain `prek install` hook (path a) — it only checks `SKIP`/`PREK_SKIP`,
+which prek defines natively. Conversely, `SKIP=<hook-id>` also works
+under the dispatcher (prek still honours its own env var once invoked),
+but `SKIP_PREK=1` does nothing under path (a) since there is no
+dispatcher to read it.
 
 ## What runs
 

@@ -1,8 +1,25 @@
-.PHONY: check
+.PHONY: setup check
+
+# One-command contributor bootstrap: pinned prek (persistent, version-
+# scoped install), gitleaks presence/version check, python/.venv (via
+# python/setup_venv.sh), and the R packages the local hooks need (pkgload,
+# devtools, lintr, styler). See scripts/setup.sh and
+# docs/dev/quality-gates.md for the two-path rationale (plain clone vs.
+# a machine with a global core.hooksPath dispatcher).
+setup:
+	@sh scripts/setup.sh
 
 # The gate to run locally before commit/PR (mirrors CI's lint job, plus
 # both test suites). Full output goes to .check.log (gitignored) so a
 # green run prints one line, and a red run prints the relevant part.
+#
+# prek resolution prefers the version-scoped persistent binary `make
+# setup` installs (~/.local/state/traning-prek/<pinned-version>/bin/prek)
+# over a bare PATH lookup, falling back to PATH only when that persistent
+# install is absent. Without this preference, a contributor whose PATH
+# `prek` drifts from the version pinned in ci.yml would silently run a
+# different version here than CI runs — exactly what the persistent
+# install in scripts/setup.sh exists to prevent.
 #
 # `ruff check .` WITHOUT --fix runs as its own step even though prek
 # already runs ruff-check: `prek run --files <untracked file>` with a
@@ -28,29 +45,38 @@
 check:
 	@: > .check.log
 	@status=0; \
-	if command -v prek >/dev/null 2>&1; then \
-		prek run --all-files >> .check.log 2>&1 || status=1; \
+	prek_version=$$(grep -o 'prek==[0-9][0-9.]*' .github/workflows/ci.yml | head -n1 | cut -d= -f3); \
+	persist_bin="$$HOME/.local/state/traning-prek/$$prek_version/bin/prek"; \
+	if [ -x "$$persist_bin" ]; then \
+		prek_bin="$$persist_bin"; \
+	elif command -v prek >/dev/null 2>&1; then \
+		prek_bin="prek"; \
 	else \
-		echo "prek missing from PATH — cannot run the hook sweep (gitleaks, formatting, YAML/JSON, shellcheck, actionlint, size check, R lint/style all skipped)" >> .check.log; \
+		prek_bin=""; \
+	fi; \
+	if [ -n "$$prek_bin" ]; then \
+		"$$prek_bin" run --all-files >> .check.log 2>&1 || status=1; \
+	else \
+		echo "missing: prek — run make setup (hook sweep skipped: gitleaks, formatting, YAML/JSON, shellcheck, actionlint, size check, R lint/style)" >> .check.log; \
 		status=1; \
 	fi; \
 	if command -v gitleaks >/dev/null 2>&1; then \
 		gitleaks dir . --no-banner >> .check.log 2>&1 || status=1; \
 	else \
-		echo "gitleaks missing from PATH — cannot run the full secret sweep" >> .check.log; \
+		echo "missing: gitleaks — run make setup (full secret sweep skipped)" >> .check.log; \
 		status=1; \
 	fi; \
 	if [ -x python/.venv/bin/ruff ] && [ -x python/.venv/bin/python ]; then \
 		python/.venv/bin/ruff check . >> .check.log 2>&1 || status=1; \
 		python/.venv/bin/python -m pytest -q python/tests >> .check.log 2>&1 || status=1; \
 	else \
-		echo "python/.venv missing or incomplete — run 'bash python/setup_venv.sh' first (see python/setup_venv.sh)" >> .check.log; \
+		echo "missing: python/.venv — run make setup (or 'bash python/setup_venv.sh' directly)" >> .check.log; \
 		status=1; \
 	fi; \
 	if command -v Rscript >/dev/null 2>&1; then \
 		Rscript .hooks/testthat.R >> .check.log 2>&1 || status=1; \
 	else \
-		echo "Rscript missing from PATH — cannot run testthat" >> .check.log; \
+		echo "missing: Rscript — cannot run testthat (see docs/dev/quality-gates.md for R install)" >> .check.log; \
 		status=1; \
 	fi; \
 	if [ "$$status" -ne 0 ]; then \
