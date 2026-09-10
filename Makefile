@@ -13,6 +13,14 @@ setup:
 # both test suites). Full output goes to .check.log (gitignored) so a
 # green run prints one line, and a red run prints the relevant part.
 #
+# prek resolution prefers the version-scoped persistent binary `make
+# setup` installs (~/.local/state/traning-prek/<pinned-version>/bin/prek)
+# over a bare PATH lookup, falling back to PATH only when that persistent
+# install is absent. Without this preference, a contributor whose PATH
+# `prek` drifts from the version pinned in ci.yml would silently run a
+# different version here than CI runs — exactly what the persistent
+# install in scripts/setup.sh exists to prevent.
+#
 # `ruff check .` WITHOUT --fix runs as its own step even though prek
 # already runs ruff-check: `prek run --files <untracked file>` with a
 # --fix hook silently rewrites the file and reports Passed (nothing
@@ -37,8 +45,17 @@ setup:
 check:
 	@: > .check.log
 	@status=0; \
-	if command -v prek >/dev/null 2>&1; then \
-		prek run --all-files >> .check.log 2>&1 || status=1; \
+	prek_version=$$(grep -o 'prek==[0-9][0-9.]*' .github/workflows/ci.yml | head -n1 | cut -d= -f3); \
+	persist_bin="$$HOME/.local/state/traning-prek/$$prek_version/bin/prek"; \
+	if [ -x "$$persist_bin" ]; then \
+		prek_bin="$$persist_bin"; \
+	elif command -v prek >/dev/null 2>&1; then \
+		prek_bin="prek"; \
+	else \
+		prek_bin=""; \
+	fi; \
+	if [ -n "$$prek_bin" ]; then \
+		"$$prek_bin" run --all-files >> .check.log 2>&1 || status=1; \
 	else \
 		echo "missing: prek — run make setup (hook sweep skipped: gitleaks, formatting, YAML/JSON, shellcheck, actionlint, size check, R lint/style)" >> .check.log; \
 		status=1; \
