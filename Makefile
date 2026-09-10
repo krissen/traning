@@ -1,4 +1,13 @@
-.PHONY: check
+.PHONY: setup check
+
+# One-command contributor bootstrap: pinned prek (persistent, version-
+# scoped install), gitleaks presence/version check, python/.venv (via
+# python/setup_venv.sh), and the R packages the local hooks need (pkgload,
+# devtools, lintr, styler). See scripts/setup.sh and
+# docs/dev/quality-gates.md for the two-path rationale (plain clone vs.
+# a machine with a global core.hooksPath dispatcher).
+setup:
+	@sh scripts/setup.sh
 
 # The gate to run locally before commit/PR (mirrors CI's lint job, plus
 # both test suites). Full output goes to .check.log (gitignored) so a
@@ -31,26 +40,26 @@ check:
 	if command -v prek >/dev/null 2>&1; then \
 		prek run --all-files >> .check.log 2>&1 || status=1; \
 	else \
-		echo "prek missing from PATH — cannot run the hook sweep (gitleaks, formatting, YAML/JSON, shellcheck, actionlint, size check, R lint/style all skipped)" >> .check.log; \
+		echo "missing: prek — run make setup (hook sweep skipped: gitleaks, formatting, YAML/JSON, shellcheck, actionlint, size check, R lint/style)" >> .check.log; \
 		status=1; \
 	fi; \
 	if command -v gitleaks >/dev/null 2>&1; then \
 		gitleaks dir . --no-banner >> .check.log 2>&1 || status=1; \
 	else \
-		echo "gitleaks missing from PATH — cannot run the full secret sweep" >> .check.log; \
+		echo "missing: gitleaks — run make setup (full secret sweep skipped)" >> .check.log; \
 		status=1; \
 	fi; \
 	if [ -x python/.venv/bin/ruff ] && [ -x python/.venv/bin/python ]; then \
 		python/.venv/bin/ruff check . >> .check.log 2>&1 || status=1; \
 		python/.venv/bin/python -m pytest -q python/tests >> .check.log 2>&1 || status=1; \
 	else \
-		echo "python/.venv missing or incomplete — run 'bash python/setup_venv.sh' first (see python/setup_venv.sh)" >> .check.log; \
+		echo "missing: python/.venv — run make setup (or 'bash python/setup_venv.sh' directly)" >> .check.log; \
 		status=1; \
 	fi; \
 	if command -v Rscript >/dev/null 2>&1; then \
 		Rscript .hooks/testthat.R >> .check.log 2>&1 || status=1; \
 	else \
-		echo "Rscript missing from PATH — cannot run testthat" >> .check.log; \
+		echo "missing: Rscript — cannot run testthat (see docs/dev/quality-gates.md for R install)" >> .check.log; \
 		status=1; \
 	fi; \
 	if [ "$$status" -ne 0 ]; then \
