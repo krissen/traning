@@ -43,6 +43,21 @@ test_that("read_device_log parses a valid file, newest first", {
   expect_equal(out$model[out$valid_from == "2025-01-15"], "Ultra")
 })
 
+test_that("read_device_log treats origin='tcx' identically to 'manual'/'fit'", {
+  path <- .write_devices_csv(c(
+    "2025-06-01,garmin,Forerunner 965,20.34,known_since,tcx,Härlett från TCX <Creator>",
+    "2024-01-01,garmin,Forerunner 235,9.0,exact,manual,",
+    "2020-01-01,apple_watch,Ultra,watchOS 6,exact,fit,"
+  ))
+  out <- read_device_log(path)
+  expect_equal(out$origin, c("tcx", "manual", "fit"))
+  # No R/Vayu logic branches on origin — device_changes() filtering by
+  # platform/date must not discriminate against a tcx-origin row.
+  gc <- device_changes(out, platform = "garmin")
+  expect_equal(nrow(gc), 2)
+  expect_true("tcx" %in% gc$origin)
+})
+
 test_that("read_device_log falls back to empty tibble on unexpected schema", {
   dir <- tempfile()
   dir.create(file.path(dir, "kristian"), recursive = TRUE)
@@ -212,4 +227,79 @@ test_that(".device_change_label prefers model + os_version, falls back sensibly"
   expect_equal(labels[2], "Ultra 2")
   expect_equal(labels[3], "watchOS 26.6")
   expect_equal(labels[4], "Ny enhet")
+})
+
+# --- Many changes (20+ firmware bumps): label thinning ---
+
+.make_many_changes <- function(n = 25) {
+  model_names <- c("Forerunner 235", "Forerunner 965", "Fenix 8")
+  models <- model_names[cut(seq_len(n), 3, labels = FALSE)]
+  dates <- seq(as.Date("2010-01-01"), as.Date("2025-01-01"), length.out = n)
+  tibble::tibble(
+    valid_from = dates,
+    platform = "garmin",
+    model = models,
+    os_version = paste0("v", seq_len(n), ".0"),
+    certainty = "exact",
+    origin = "fit",
+    note = ""
+  ) |> dplyr::arrange(dplyr::desc(valid_from))
+}
+
+test_that(".is_device_model_change flags only genuine device swaps", {
+  changes <- .make_many_changes(25)
+  flags <- .is_device_model_change(changes)
+  expect_equal(sum(flags), 3)
+  expect_equal(changes$model[flags], c("Fenix 8", "Forerunner 965", "Forerunner 235"))
+})
+
+test_that(".is_device_model_change handles a single row (no older neighbour)", {
+  changes <- .make_many_changes(25)[1, ]
+  expect_true(.is_device_model_change(changes))
+})
+
+test_that(".is_device_model_change treats an empty model as never a labelled swap", {
+  changes <- .make_many_changes(3)
+  changes$model[1] <- ""
+  flags <- .is_device_model_change(changes)
+  expect_false(flags[1])
+})
+
+test_that(".device_change_layers labels only device swaps above many_threshold", {
+  changes <- .make_many_changes(25)
+  layers <- .device_change_layers(changes)
+  # 3 labelled vlines + 1 geom_text (3 rows) + 1 unlabelled vline (22 rows)
+  expect_length(layers, 3)
+  text_layer <- Filter(function(l) inherits(l$geom, "GeomText"), layers)
+  expect_length(text_layer, 1)
+  expect_equal(nrow(text_layer[[1]]$data), 3)
+})
+
+test_that(".device_change_layers labels every row at or below many_threshold", {
+  changes <- .make_many_changes(6)
+  layers <- .device_change_layers(changes)
+  text_layer <- Filter(function(l) inherits(l$geom, "GeomText"), layers)
+  expect_equal(nrow(text_layer[[1]]$data), 6)
+  # No separate "unlabelled" vline layer needed when nothing is thinned.
+  expect_length(layers, 2)
+})
+
+test_that("fetch.plot.ef renders successfully with 25 device changes in range", {
+  summaries <- .make_ef_summaries(200)
+  changes <- .make_many_changes(25)
+  # Spread the fixture's dates across the summaries' actual span so every
+  # row falls inside the plotted window.
+  span <- range(as.Date(summaries$sessionStart))
+  changes$valid_from <- seq(span[1], span[2], length.out = nrow(changes))
+  path <- .write_devices_csv(paste(
+    format(changes$valid_from), changes$platform, changes$model,
+    changes$os_version, changes$certainty, changes$origin, changes$note,
+    sep = ","
+  ))
+  data_root <- dirname(dirname(path))
+
+  withr::with_envvar(c(TRANING_DATA = data_root), {
+    p <- fetch.plot.ef(summaries)
+    expect_no_error(ggplot2::ggplot_build(p))
+  })
 })

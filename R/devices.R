@@ -9,7 +9,10 @@
 #   - platform:   apple_watch | garmin
 #   - model / os_version: may be empty
 #   - certainty:  exact | known_since
-#   - origin:     manual | fit
+#   - origin:     manual | fit | tcx (tcx = derived from a TCX
+#     <Creator> tag's device/version fields — treated identically to
+#     fit everywhere in R/Vayu; origin only matters as provenance for
+#     the row, never as a filter condition here)
 #   - note:       free text
 #
 # The file may not exist yet (or ever, for a user who never records
@@ -172,6 +175,26 @@ device_changes <- function(log, platform = NULL, after = NULL, before = NULL) {
   )
 }
 
+# Internal helper: flag which rows of a (desc-sorted) device-change
+# tibble represent an actual model swap, as opposed to a firmware/OS
+# bump on the same device. A row counts as a model change when its
+# `model` is non-empty and differs from the next OLDER row's model
+# (or there is no older row in view — the earliest known device in
+# the window is always worth labelling). Garmin firmware history in
+# particular can carry 20+ rows for the same handful of watches, so
+# this is what lets .device_change_layers() thin the label set down
+# to "device swaps" while still drawing every change as a line.
+.is_device_model_change <- function(changes) {
+  n <- nrow(changes)
+  if (n == 0) {
+    return(logical(0))
+  }
+  # changes is newest-first; row i's chronologically-older neighbour is
+  # row i+1. The oldest row (last) has no older neighbour → NA -> TRUE.
+  older_model <- c(changes$model[-1], NA_character_)
+  nzchar(changes$model) & (is.na(older_model) | changes$model != older_model)
+}
+
 # Internal helper: build the geom_vline + geom_text layer pair marking
 # device changes on a plot. Returns list() (a no-op when added to a
 # ggplot) when there's nothing to show, so callers can unconditionally
@@ -183,7 +206,12 @@ device_changes <- function(log, platform = NULL, after = NULL, before = NULL) {
 #   fetch.plot.ef / fetch.plot.decoupling on scale_x_datetime() but
 #   backed by a Date `sessionStart` column) plots against a Date-typed
 #   x aesthetic.
-.device_change_layers <- function(changes) {
+# @param many_threshold When more than this many changes fall in the
+#   window (Garmin firmware history can run to 20+ over the full
+#   2004-2026 history), only model swaps (see .is_device_model_change())
+#   get a text label; every change still gets a line, just fainter and
+#   unlabelled when it's "the same watch, new firmware".
+.device_change_layers <- function(changes, many_threshold = 6) {
   if (is.null(changes) || nrow(changes) == 0) {
     return(list())
   }
@@ -191,16 +219,34 @@ device_changes <- function(log, platform = NULL, after = NULL, before = NULL) {
   changes$.x <- changes$valid_from
   changes$.label <- .device_change_label(changes)
 
-  list(
+  many <- nrow(changes) > many_threshold
+  is_model_change <- if (many) .is_device_model_change(changes) else rep(TRUE, nrow(changes))
+
+  labelled <- changes[is_model_change, , drop = FALSE]
+  unlabelled <- changes[!is_model_change, , drop = FALSE]
+
+  layers <- list(
     ggplot2::geom_vline(
-      data = changes, ggplot2::aes(xintercept = .x),
+      data = labelled, ggplot2::aes(xintercept = .x),
       colour = traning_palette$secondary, linetype = "dashed",
       linewidth = 0.5, alpha = 0.6
     ),
     ggplot2::geom_text(
-      data = changes, ggplot2::aes(x = .x, y = Inf, label = .label),
+      data = labelled, ggplot2::aes(x = .x, y = Inf, label = .label),
       angle = 90, hjust = 1.1, vjust = -0.3, size = 2.6,
       colour = traning_palette$secondary
     )
   )
+
+  if (nrow(unlabelled) > 0) {
+    layers <- c(layers, list(
+      ggplot2::geom_vline(
+        data = unlabelled, ggplot2::aes(xintercept = .x),
+        colour = traning_palette$secondary, linetype = "dotted",
+        linewidth = 0.3, alpha = 0.25
+      )
+    ))
+  }
+
+  layers
 }
