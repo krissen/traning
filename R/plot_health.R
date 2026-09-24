@@ -15,9 +15,11 @@
 #'   Must carry \code{@health_daily}.
 #' @param from Start date (character or Date). NULL = all data.
 #' @param to End date (character or Date). NULL = all data.
+#' @param show_devices Logical; overlay Apple Watch device changes
+#'   (from the device log) as dashed reference lines. Default TRUE.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.resting_hr <- function(data, from = NULL, to = NULL) {
+fetch.plot.resting_hr <- function(data, from = NULL, to = NULL, show_devices = TRUE) {
   td <- .as_traning_data(data)
   health_daily <- td@health_daily
   rhr <- health_daily |>
@@ -76,6 +78,14 @@ fetch.plot.resting_hr <- function(data, from = NULL, to = NULL) {
       )
   }
 
+  if (isTRUE(show_devices)) {
+    bounds <- .plot_date_bounds(from, to, rhr$date)
+    changes <- device_changes(read_device_log(),
+      platform = "apple_watch", after = bounds$after, before = bounds$before
+    )
+    p <- p + .device_change_layers(changes)
+  }
+
   p <- p +
     .adaptive_date_scale(span_days) +
     ggplot2::labs(
@@ -96,9 +106,11 @@ fetch.plot.resting_hr <- function(data, from = NULL, to = NULL) {
 #'   Must carry \code{@health_daily}.
 #' @param from Start date. NULL = all data.
 #' @param to End date. NULL = all data.
+#' @param show_devices Logical; overlay Apple Watch device changes
+#'   (from the device log) as dashed reference lines. Default TRUE.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.hrv <- function(data, from = NULL, to = NULL) {
+fetch.plot.hrv <- function(data, from = NULL, to = NULL, show_devices = TRUE) {
   td <- .as_traning_data(data)
   health_daily <- td@health_daily
   hrv <- health_daily |>
@@ -136,7 +148,17 @@ fetch.plot.hrv <- function(data, from = NULL, to = NULL) {
     ) +
     ggplot2::geom_line(ggplot2::aes(y = roll_mean),
       colour = traning_palette$status[["blue"]], linewidth = 0.8, na.rm = TRUE
-    ) +
+    )
+
+  if (isTRUE(show_devices)) {
+    bounds <- .plot_date_bounds(from, to, hrv$date)
+    changes <- device_changes(read_device_log(),
+      platform = "apple_watch", after = bounds$after, before = bounds$before
+    )
+    p <- p + .device_change_layers(changes)
+  }
+
+  p <- p +
     .adaptive_date_scale(span_days) +
     ggplot2::labs(
       title = "HRV — Ln(RMSSD) med 7-dagars baseline",
@@ -156,9 +178,11 @@ fetch.plot.hrv <- function(data, from = NULL, to = NULL) {
 #'   Must carry \code{@health_daily}.
 #' @param from Start date. NULL = all data.
 #' @param to End date. NULL = all data.
+#' @param show_devices Logical; overlay Apple Watch device changes
+#'   (from the device log) as dashed reference lines. Default TRUE.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.sleep <- function(data, from = NULL, to = NULL) {
+fetch.plot.sleep <- function(data, from = NULL, to = NULL, show_devices = TRUE) {
   td <- .as_traning_data(data)
   health_daily <- td@health_daily
   sleep_metrics <- c("sleep_core", "sleep_deep", "sleep_rem", "sleep_awake")
@@ -249,6 +273,14 @@ fetch.plot.sleep <- function(data, from = NULL, to = NULL) {
       ggplot2::scale_fill_manual(values = stage_colours)
   }
 
+  if (isTRUE(show_devices)) {
+    bounds <- .plot_date_bounds(from, to, sleep$date)
+    changes <- device_changes(read_device_log(),
+      platform = "apple_watch", after = bounds$after, before = bounds$before
+    )
+    p <- p + .device_change_layers(changes)
+  }
+
   p <- p +
     .adaptive_date_scale(span_days) +
     ggplot2::labs(
@@ -283,9 +315,11 @@ fetch.plot.sleep <- function(data, from = NULL, to = NULL) {
 #'   the Garmin overlay series.
 #' @param from Start date. NULL = all data.
 #' @param to End date. NULL = all data.
+#' @param show_devices Logical; overlay Apple Watch device changes
+#'   (from the device log) as dashed reference lines. Default TRUE.
 #' @return ggplot2 object.
 #' @export
-fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
+fetch.plot.vo2max <- function(data, from = NULL, to = NULL, show_devices = TRUE) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   health_daily <- td@health_daily
@@ -367,6 +401,15 @@ fetch.plot.vo2max <- function(data, from = NULL, to = NULL) {
         linewidth = 1
       )
     }
+  }
+
+  if (isTRUE(show_devices)) {
+    vo2max_dates <- c(vo2$date, if (!is.null(garmin_vo2)) garmin_vo2$date)
+    bounds <- .plot_date_bounds(from, to, vo2max_dates)
+    changes <- device_changes(read_device_log(),
+      platform = "apple_watch", after = bounds$after, before = bounds$before
+    )
+    p <- p + .device_change_layers(changes)
   }
 
   title <- if (has_both) "VO2max (Apple Watch + Garmin)" else "VO2max (Apple Watch-estimat)"
