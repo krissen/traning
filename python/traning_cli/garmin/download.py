@@ -83,7 +83,7 @@ def _log_device_from_tcx(tcx_path: Path, activity_date: str) -> None:
             os_version=record.os_version,
             valid_from=activity_date,
             certainty="exact",
-            origin="fit",
+            origin="tcx",
             note=f"fetch: {tcx_path.name}",
         )
         if row is not None:

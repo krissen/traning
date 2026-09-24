@@ -9,7 +9,9 @@ Schema (fixed, shared with the R side building against the same file):
 - ``model``, ``os_version``: free text, may be empty.
 - ``certainty``: ``exact`` (derived from data) | ``known_since`` (manual;
   the change happened at or before an otherwise-unknown date).
-- ``origin``: ``manual`` | ``fit`` (derived from a FIT scan).
+- ``origin``: ``manual`` | ``fit`` (derived from the historical FIT
+  archive) | ``tcx`` (derived from a TCX ``<Creator>`` element — the
+  live Garmin fetch and the TCX archive scan).
 - ``note``: free text.
 
 One row = one change (a new model and/or a new OS version for a platform).
@@ -30,7 +32,7 @@ FIELDS = ["valid_from", "platform", "model", "os_version", "certainty", "origin"
 
 PLATFORMS = {"apple_watch", "garmin"}
 CERTAINTIES = {"exact", "known_since"}
-ORIGINS = {"manual", "fit"}
+ORIGINS = {"manual", "fit", "tcx"}
 
 
 class DeviceRow(TypedDict):
