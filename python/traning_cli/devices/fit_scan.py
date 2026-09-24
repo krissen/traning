@@ -13,20 +13,22 @@ FIT layout used, per file:
 - ``device_info`` where ``device_index == "creator"``: ``software_version``
   of the recording device itself (not a paired sensor like a HR strap).
 
-Corrupt files and FIT files that aren't activities (``file_id.type !=
-"activity"``) are skipped and counted, never raised.
+Corrupt files, FIT files that aren't activities (``file_id.type !=
+"activity"``), and files whose activity date is implausible (see
+``common.plausible_date``) are skipped and counted, never raised.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
 import fitparse
 
+from .common import collapse_device_changes, plausible_date
 from .log import DeviceRow
 
 log = logging.getLogger(__name__)
@@ -38,6 +40,8 @@ class FitScanStats:
     ok: int = 0
     corrupt: int = 0
     skipped_not_activity: int = 0
+    skipped_bad_date: int = 0
+    bad_date_examples: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -131,6 +135,11 @@ def scan_fit_directory(fit_dir: Path) -> tuple[list[FitDeviceRecord], FitScanSta
         if record is None:
             stats.skipped_not_activity += 1
             continue
+        if not plausible_date(record.activity_date):
+            stats.skipped_bad_date += 1
+            stats.bad_date_examples.append(f"{record.activity_date.isoformat()}  {path.name}")
+            log.warning("Skipping implausible activity date %s in %s", record.activity_date, path)
+            continue
         stats.ok += 1
         records.append(record)
 
@@ -138,34 +147,11 @@ def scan_fit_directory(fit_dir: Path) -> tuple[list[FitDeviceRecord], FitScanSta
 
 
 def collapse_changes(records: list[FitDeviceRecord]) -> list[DeviceRow]:
-    """Collapse a chronological record list into device-change candidates.
+    """Collapse a chronological FIT record list into device-change candidates.
 
-    Records are sorted by activity date first. One candidate row is
-    emitted per point where (model, os_version) differs from the
-    previous activity in the sequence — including the very first record,
-    which establishes the earliest known device.
+    See ``common.collapse_device_changes`` for the collapse rule.
     """
-    ordered = sorted(records, key=lambda r: r.activity_date)
-
-    candidates: list[DeviceRow] = []
-    prev: tuple[str, str] | None = None
-    for record in ordered:
-        current = (record.model, record.os_version)
-        if current == prev:
-            continue
-        prev = current
-        candidates.append(
-            {
-                "valid_from": record.activity_date.isoformat(),
-                "platform": "garmin",
-                "model": record.model,
-                "os_version": record.os_version,
-                "certainty": "exact",
-                "origin": "fit",
-                "note": f"scan-fit: {record.path.name}",
-            }
-        )
-    return candidates
+    return collapse_device_changes(records, platform="garmin", origin="fit", note_prefix="fit-scan")
 
 
 def scan_and_collapse(fit_dir: Path) -> tuple[list[DeviceRow], FitScanStats]:

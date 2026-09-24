@@ -251,3 +251,28 @@ def test_collapse_changes_sorts_out_of_order_input():
 
 def test_collapse_changes_empty_input():
     assert fit_scan.collapse_changes([]) == []
+
+
+# --- date sanity ------------------------------------------------------------
+
+
+def test_scan_fit_directory_skips_implausible_future_date(tmp_path):
+    (tmp_path / "a.FIT").write_bytes(b"")
+    _set_messages(_activity_messages(when=datetime(2061, 3, 3)))
+
+    records, stats = fit_scan.scan_fit_directory(tmp_path)
+
+    assert records == []
+    assert stats.ok == 0
+    assert stats.skipped_bad_date == 1
+    assert stats.bad_date_examples == ["2061-03-03  a.FIT"]
+
+
+def test_scan_fit_directory_skips_implausible_pre_2000_date(tmp_path):
+    (tmp_path / "a.FIT").write_bytes(b"")
+    _set_messages(_activity_messages(when=datetime(1999, 1, 1)))
+
+    records, stats = fit_scan.scan_fit_directory(tmp_path)
+
+    assert records == []
+    assert stats.skipped_bad_date == 1
