@@ -182,14 +182,22 @@ def test_normalize_os_version_tcx_and_fit_forms_converge():
 # --- is_generic_device --------------------------------------------------
 
 
-def test_is_generic_device_known_product_ids():
-    assert is_generic_device("1") is True  # Garmin Fitness Device
-    assert is_generic_device("1345") is True  # Allmän ANT-enhet
+def test_is_generic_device_known_names():
+    assert is_generic_device("Garmin Fitness Device") is True
+    assert is_generic_device("Allmän ANT-enhet") is True
 
 
-def test_is_generic_device_real_product_id():
-    assert is_generic_device("3113") is False  # Forerunner 945
+def test_is_generic_device_real_device_name():
+    assert is_generic_device("Forerunner 945") is False
+    assert is_generic_device("Garmin Forerunner 610") is False
 
 
 def test_is_generic_device_empty_string():
     assert is_generic_device("") is False
+
+
+def test_is_generic_device_not_fooled_by_shared_product_id():
+    """ProductID 1345 is both "Allmän ANT-enhet" (generic) and, in most
+    files, the real "Garmin Forerunner 610" — the filter must key on the
+    name, so a ProductID alone can't be used to infer genericness."""
+    assert is_generic_device("Garmin Forerunner 610") is False

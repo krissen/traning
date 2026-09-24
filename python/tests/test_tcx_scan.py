@@ -154,6 +154,25 @@ def test_scan_tcx_directory_counts_generic_device_separately(tmp_path):
     assert records[0].model == "Forerunner 945"
 
 
+def test_generic_filter_keys_on_name_not_product_id(tmp_path):
+    """Regression test: ProductID 1345 is ALSO Forerunner 610's real,
+    correctly-resolved product id in most files — filtering on ProductID
+    would wrongly drop those too. Only the literal generic name is
+    filtered."""
+    (tmp_path / "a.tcx").write_text(
+        _tcx("2011-11-09T16:54:16.000Z", "Allmän ANT-enhet", "0", "0", product_id="1345")
+    )
+    (tmp_path / "b.tcx").write_text(
+        _tcx("2012-07-16T00:00:00.000Z", "Garmin Forerunner 610", "2", "7", product_id="1345")
+    )
+
+    records, stats = tcx_scan.scan_tcx_directory(tmp_path)
+
+    assert stats.skipped_generic_device == 1
+    assert stats.ok == 1
+    assert records[0].model == "Forerunner 610"
+
+
 def test_extract_device_from_tcx_filters_generic_device(tmp_path):
     """The hook (extract_device_from_tcx) must also skip generic devices."""
     path = tmp_path / "a.tcx"

@@ -63,24 +63,26 @@ def normalize_model(model: str) -> str:
 
 # -- generic-device filter ---------------------------------------------------
 #
-# Two placeholder "devices" recur in the TCX Creator archive, keyed by
-# <ProductID> rather than name (the name itself is generic and tells us
-# nothing to key on): ProductID 1345 "Allmän ANT-enhet" (28 Running files,
-# 2011-11-09..2011-12-30, all the same UnitId — one real FR610 whose
-# firmware/export path briefly couldn't resolve a product name, not a
-# device swap) and ProductID 1 "Garmin Fitness Device" (2 files,
-# 2006-05-24/25 — an early desktop-export default template, UnitId 0).
-# Investigated 2026-09-24; product owner decision: filter, don't try to
-# attribute them to a real model.
-GENERIC_DEVICE_PRODUCT_IDS: dict[str, str] = {
-    "1": "Garmin Fitness Device",
-    "1345": "Allmän ANT-enhet",
-}
+# Two placeholder names recur in the TCX Creator archive: "Allmän
+# ANT-enhet" (28 Running files, 2011-11-09..2011-12-30, all the same
+# UnitId — one real FR610 whose export path briefly failed to resolve a
+# product name to text, not a device swap) and "Garmin Fitness Device"
+# (2 files, 2006-05-24/25 — an early desktop-export default template,
+# UnitId 0). Investigated 2026-09-24; product owner decision: filter,
+# don't try to attribute them to a real model.
+#
+# Keyed on the literal <Name>, not <ProductID>: the first investigation
+# assumed ProductID 1345 was exclusive to "Allmän ANT-enhet" and used it
+# as the filter key, but 1345 turned out to be Forerunner 610's real,
+# correctly-resolved product ID in 169 other files ("Garmin Forerunner
+# 610") — filtering on it would have dropped those too. The name IS the
+# generic part; that's what actually distinguishes the noise.
+GENERIC_DEVICE_NAMES = frozenset({"Allmän ANT-enhet", "Garmin Fitness Device"})
 
 
-def is_generic_device(product_id: str) -> bool:
-    """True if product_id names a known placeholder, not a real device."""
-    return product_id in GENERIC_DEVICE_PRODUCT_IDS
+def is_generic_device(name: str) -> bool:
+    """True if name is a known placeholder, not a real device name."""
+    return name in GENERIC_DEVICE_NAMES
 
 
 def normalize_os_version(version: str) -> str:

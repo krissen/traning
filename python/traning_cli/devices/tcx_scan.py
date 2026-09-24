@@ -73,9 +73,12 @@ def _parse_creator_element(root: ET.Element) -> tuple[TcxDeviceRecord | None, bo
     """Parse the raw <Creator> block. Returns (record, is_generic).
 
     ``record`` is None if there's no <Creator> element at all.
-    ``is_generic`` is True if a Creator was found but its <ProductID>
-    names a known placeholder device (see ``common.is_generic_device``)
-    — ``record`` is still populated in that case so a caller that needs
+    ``is_generic`` is True if a Creator was found but its raw <Name>
+    is a known placeholder (see ``common.is_generic_device`` — checked
+    on the raw name, not <ProductID>: the same ProductID can also be a
+    real, correctly-resolved device in other files, e.g. 1345 is both
+    "Allmän ANT-enhet" and, far more often, "Garmin Forerunner 610").
+    ``record`` is still populated when generic, so a caller that needs
     the raw values can use them; the two public functions below both
     treat generic as "no usable device", just counted separately.
     """
@@ -88,14 +91,11 @@ def _parse_creator_element(root: ET.Element) -> tuple[TcxDeviceRecord | None, bo
         return None, False
 
     name = ""
-    product_id = ""
     version_parts: list[str] = []
     for child in creator.iter():
         tag = _local(child.tag)
         if tag == "Name" and child.text:
             name = child.text.strip()
-        elif tag == "ProductID" and child.text:
-            product_id = child.text.strip()
         elif tag == "Version":
             for vchild in child:
                 vtag = _local(vchild.tag)
@@ -109,7 +109,7 @@ def _parse_creator_element(root: ET.Element) -> tuple[TcxDeviceRecord | None, bo
         model=normalize_model(name),
         os_version=normalize_os_version(os_version),
     )
-    return record, is_generic_device(product_id)
+    return record, is_generic_device(name)
 
 
 def _parse_creator(root: ET.Element) -> TcxDeviceRecord | None:
