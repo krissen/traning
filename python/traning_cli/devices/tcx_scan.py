@@ -10,6 +10,11 @@ whole history in ``kristian/filer/tcx/``, so this module covers two uses:
   post-fetch device-log hook in ``garmin/download.py``.
 - ``scan_tcx_directory()`` / ``scan_and_collapse()``: the same historical-
   archive scan ``fit_scan.py`` does, but over the TCX archive.
+
+Both normalize model/OS version (see ``common.normalize_model`` /
+``common.normalize_os_version``) in ``_parse_creator()``, the function
+they share — so the live hook's rows and the historical scan's rows use
+the same canonical strings and dedup against each other correctly.
 """
 
 from __future__ import annotations
@@ -21,7 +26,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
-from .common import collapse_device_changes, plausible_date
+from .common import collapse_device_changes, normalize_model, normalize_os_version, plausible_date
 from .log import DeviceRow
 
 log = logging.getLogger(__name__)
@@ -80,7 +85,10 @@ def _parse_creator(root: ET.Element) -> TcxDeviceRecord | None:
     # VersionMajor + VersionMinor -> "13.0" (BuildMajor/Minor are the
     # internal build counter, not a version number a human would log).
     os_version = ".".join(version_parts[:2]) if version_parts else ""
-    return TcxDeviceRecord(model=name, os_version=os_version)
+    return TcxDeviceRecord(
+        model=normalize_model(name),
+        os_version=normalize_os_version(os_version),
+    )
 
 
 def _parse_activity_date(root: ET.Element) -> date | None:

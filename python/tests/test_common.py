@@ -1,4 +1,4 @@
-"""Tests for devices/common.py: date sanity and cross-source merge."""
+"""Tests for devices/common.py: date sanity, normalization, and cross-source merge."""
 
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -8,6 +8,8 @@ from traning_cli.devices.common import (
     MIN_PLAUSIBLE_DATE,
     collapse_device_changes,
     merge_candidates,
+    normalize_model,
+    normalize_os_version,
     plausible_date,
 )
 
@@ -106,3 +108,71 @@ def test_merge_candidates_empty_lists():
 def test_merge_candidates_single_list_passthrough():
     rows = [_row(valid_from="2020-01-01"), _row(valid_from="2021-01-01", model="fr945x")]
     assert len(merge_candidates(rows)) == 2
+
+
+# --- normalize_model ---------------------------------------------------------
+
+
+def test_normalize_model_fit_code_table_lookup():
+    assert normalize_model("fr610") == "Forerunner 610"
+    assert normalize_model("fr620") == "Forerunner 620"
+    assert normalize_model("fr945") == "Forerunner 945"
+
+
+def test_normalize_model_tcx_garmin_prefix_stripped():
+    assert normalize_model("Garmin Forerunner 610") == "Forerunner 610"
+    assert normalize_model("Garmin Forerunner 620") == "Forerunner 620"
+
+
+def test_normalize_model_tcx_missing_space_inserted():
+    assert normalize_model("Forerunner305") == "Forerunner 305"
+
+
+def test_normalize_model_already_canonical_unchanged():
+    assert normalize_model("Forerunner 945") == "Forerunner 945"
+
+
+def test_normalize_model_unknown_left_untouched():
+    assert normalize_model("Allmän ANT-enhet") == "Allmän ANT-enhet"
+    assert normalize_model("Garmin Fitness Device") == "Garmin Fitness Device"
+    assert normalize_model("connect") == "connect"
+
+
+def test_normalize_model_empty_string():
+    assert normalize_model("") == ""
+
+
+def test_normalize_model_fit_and_tcx_forms_converge():
+    """The point of normalization: FIT's code and TCX's name for the same
+    physical device end up as the identical string."""
+    assert normalize_model("fr610") == normalize_model("Garmin Forerunner 610")
+
+
+# --- normalize_os_version ----------------------------------------------------
+
+
+def test_normalize_os_version_drops_trailing_zero_decimal():
+    assert normalize_os_version("2.70") == "2.7"
+
+
+def test_normalize_os_version_whole_number_loses_decimal_point():
+    assert normalize_os_version("13.0") == "13"
+    assert normalize_os_version("0.0") == "0"
+
+
+def test_normalize_os_version_already_minimal_unchanged():
+    assert normalize_os_version("3.3") == "3.3"
+
+
+def test_normalize_os_version_empty_string():
+    assert normalize_os_version("") == ""
+
+
+def test_normalize_os_version_non_numeric_passthrough():
+    assert normalize_os_version("n/a") == "n/a"
+
+
+def test_normalize_os_version_tcx_and_fit_forms_converge():
+    """ "2.70" (TCX's major.minor join) and "2.7" (FIT's float repr, or a
+    hand-typed --os-version) must compare equal after normalization."""
+    assert normalize_os_version("2.70") == normalize_os_version("2.7")

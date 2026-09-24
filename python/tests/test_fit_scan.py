@@ -92,7 +92,7 @@ def test_parse_fit_device_extracts_model_version_date():
 
     record = fit_scan.parse_fit_device(Path("dummy.fit"))
 
-    assert record.model == "fr620"
+    assert record.model == "Forerunner 620"  # normalized from the raw "fr620" code
     assert record.os_version == "3.3"
     assert record.activity_date == date(2020, 7, 3)
 

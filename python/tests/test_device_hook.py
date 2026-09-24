@@ -56,7 +56,7 @@ def test_successful_tcx_download_logs_new_device(data_dir):
         "valid_from": "2023-12-29",
         "platform": "garmin",
         "model": "Forerunner 945",
-        "os_version": "13.0",
+        "os_version": "13",  # normalize_os_version: "13.0" -> "13"
         "certainty": "exact",
         "origin": "tcx",
         "note": "fetch: 2023-12-29T05:48:33+00:00_555.tcx",

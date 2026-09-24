@@ -16,6 +16,11 @@ FIT layout used, per file:
 Corrupt files, FIT files that aren't activities (``file_id.type !=
 "activity"``), and files whose activity date is implausible (see
 ``common.plausible_date``) are skipped and counted, never raised.
+
+Model and OS version are normalized (see ``common.normalize_model`` /
+``common.normalize_os_version``) before a record is built, so a FIT-
+derived and a TCX-derived row for the same real device change compare
+equal in ``merge_candidates()``.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from pathlib import Path
 
 import fitparse
 
-from .common import collapse_device_changes, plausible_date
+from .common import collapse_device_changes, normalize_model, normalize_os_version, plausible_date
 from .log import DeviceRow
 
 log = logging.getLogger(__name__)
@@ -111,8 +116,8 @@ def parse_fit_device(path: Path) -> FitDeviceRecord | None:
     return FitDeviceRecord(
         path=path,
         activity_date=time_created.date(),
-        model=model_str,
-        os_version=_format_os_version(os_version),
+        model=normalize_model(model_str),
+        os_version=normalize_os_version(_format_os_version(os_version)),
     )
 
 

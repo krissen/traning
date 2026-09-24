@@ -46,7 +46,7 @@ def test_extract_device_from_tcx_parses_name_and_version(tmp_path):
     record = extract_device_from_tcx(path)
 
     assert record.model == "Forerunner 945"
-    assert record.os_version == "13.0"
+    assert record.os_version == "13"  # normalize_os_version: "13.0" -> "13"
 
 
 def test_extract_device_from_tcx_returns_none_without_creator(tmp_path):
@@ -95,7 +95,7 @@ def test_parse_tcx_scan_record_extracts_date_model_version(tmp_path):
     record = tcx_scan.parse_tcx_scan_record(path)
 
     assert record.model == "Forerunner 945"
-    assert record.os_version == "13.0"
+    assert record.os_version == "13"  # normalize_os_version: "13.0" -> "13"
     assert record.activity_date.isoformat() == "2020-07-03"
 
 
