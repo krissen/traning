@@ -574,6 +574,33 @@ def _run_r(
         }
 
 
+_DEVICE_PLATFORM_LABEL = {
+    "apple_watch": "klockbyte",
+    "garmin": "firmwarebyte",
+}
+
+
+def _format_device_changes_note(changes: list[dict]) -> str:
+    """Render device_changes() rows as a short Swedish caveat sentence.
+
+    One clause per change, newest first (R already sorts that way).
+    Falls back gracefully when model/os_version are empty — a row with
+    only a note still produces readable text.
+    """
+    clauses = []
+    for c in changes:
+        label = _DEVICE_PLATFORM_LABEL.get(c.get("platform"), "enhetsbyte")
+        desc = " ".join(p for p in (c.get("model"), c.get("os_version")) if p)
+        if desc:
+            desc_part = f" till {desc}"
+        elif c.get("note"):
+            desc_part = f" ({c['note']})"
+        else:
+            desc_part = ""
+        clauses.append(f"{label}{desc_part} den {c.get('valid_from', '?')}")
+    return "Obs: " + "; ".join(clauses) + " inom perioden; nivåskifte kan vara mätteknik."
+
+
 def r_report(
     func: str,
     args: dict[str, Any] | None = None,
@@ -610,7 +637,7 @@ def r_report(
                     date_range = {"from": min(dates), "to": max(dates)}
                 break
 
-    return {
+    envelope = {
         "schema_version": "1.0",
         "summary": {
             "status": "ok",
@@ -623,6 +650,17 @@ def r_report(
             "query_date": datetime.now().isoformat(),
         },
     }
+
+    # R only populates this for the handful of functions registered in
+    # .DEVICE_CHANGE_FUNCS (inst/mcp_bridge_shared.R) — absent means
+    # either the function isn't one of them, or there's nothing to
+    # report for the period. Either way: no key, no line of prose, no
+    # "?" placeholder (see the Insight = only imported data convention).
+    device_changes = raw.get("device_changes")
+    if device_changes:
+        envelope["device_changes_note"] = _format_device_changes_note(device_changes)
+
+    return envelope
 
 
 def r_plot(

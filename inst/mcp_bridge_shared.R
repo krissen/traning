@@ -335,6 +335,46 @@ build_call_args <- function(func_name, func_args, bundle) {
   c(list(data = bundle), a)
 }
 
+# --- Device-change annotation ---
+# Functions whose "data" response should carry device_changes() for the
+# requested period, and which platform they're keyed to. Kept small and
+# explicit rather than derived from func_registry: only functions whose
+# response text plausibly needs a "measurement may have shifted"
+# caveat get one. report_readiness backs get_resting_hr / get_hrv /
+# get_sleep / get_vo2max in data mode (they all fold into the
+# readiness report — see tools.py), so one entry covers all four.
+.DEVICE_CHANGE_FUNCS <- c(
+  report_readiness = "apple_watch",
+  report_ef = "garmin",
+  report_decoupling = "garmin"
+)
+
+# Attaches a `device_changes` field (a data.frame, possibly zero-row)
+# to a "data" envelope when func_name is registered above and the
+# device log has matching rows within call_args$from/call_args$to.
+# No-op (returns envelope unchanged) for every other function, or when
+# there's nothing to report — callers never see an empty/absent field
+# turn into a spurious "no changes" statement downstream.
+.attach_device_changes <- function(envelope, func_name, call_args) {
+  if (!func_name %in% names(.DEVICE_CHANGE_FUNCS)) {
+    return(envelope)
+  }
+  platform <- .DEVICE_CHANGE_FUNCS[[func_name]]
+  log <- tryCatch(read_device_log(), error = function(e) NULL)
+  if (is.null(log) || nrow(log) == 0) {
+    return(envelope)
+  }
+  changes <- device_changes(log,
+    platform = platform,
+    after = call_args$from, before = call_args$to
+  )
+  if (nrow(changes) == 0) {
+    return(envelope)
+  }
+  envelope$device_changes <- changes
+  envelope
+}
+
 # --- Execute + shape the response envelope ---
 # Runs func_name(call_args...) and returns a response envelope list
 # (never emits JSON, never quits) — same three shapes mcp_bridge.R has
@@ -367,9 +407,11 @@ run_dispatch <- function(func_name, call_args, do_plot, plot_path) {
         )
         list(type = "plot", path = out_path)
       } else if (is.data.frame(result)) {
-        list(type = "data", rows = nrow(result), data = result)
+        envelope <- list(type = "data", rows = nrow(result), data = result)
+        .attach_device_changes(envelope, func_name, call_args)
       } else {
-        list(type = "data", data = result)
+        envelope <- list(type = "data", data = result)
+        .attach_device_changes(envelope, func_name, call_args)
       }
     },
     error = function(e) {
