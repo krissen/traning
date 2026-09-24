@@ -1205,6 +1205,7 @@ def device_scan(source, apply_changes):
         click.echo(
             f"TCX: skannade {tcx_stats.scanned} filer: {tcx_stats.ok} ok, "
             f"{tcx_stats.skipped_no_creator} utan Creator, "
+            f"{tcx_stats.skipped_generic_device} med generisk enhet, "
             f"{tcx_stats.skipped_bad_date} orimligt datum, {tcx_stats.corrupt} korrupta/oläsbara"
         )
         for example in tcx_stats.bad_date_examples:

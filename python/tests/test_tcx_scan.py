@@ -68,7 +68,8 @@ def test_extract_device_from_tcx_raises_on_malformed_xml(tmp_path):
         extract_device_from_tcx(path)
 
 
-def _tcx(activity_id: str, name: str, major: str, minor: str = "0") -> str:
+def _tcx(activity_id: str, name: str, major: str, minor: str = "0", product_id: str = "") -> str:
+    product_id_xml = f"<ProductID>{product_id}</ProductID>" if product_id else ""
     return f"""<?xml version="1.0" encoding="UTF-8"?>
 <TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -77,6 +78,7 @@ def _tcx(activity_id: str, name: str, major: str, minor: str = "0") -> str:
       <Id>{activity_id}</Id>
       <Creator xsi:type="Device_t">
         <Name>{name}</Name>
+        {product_id_xml}
         <Version><VersionMajor>{major}</VersionMajor><VersionMinor>{minor}</VersionMinor></Version>
       </Creator>
     </Activity>
@@ -129,6 +131,46 @@ def test_scan_tcx_directory_counts_no_creator_and_corrupt(tmp_path):
     assert stats.skipped_no_creator == 1
     assert stats.corrupt == 1
     assert len(records) == 1
+
+
+def test_scan_tcx_directory_counts_generic_device_separately(tmp_path):
+    (tmp_path / "a.tcx").write_text(
+        _tcx("2011-11-09T16:54:16.000Z", "Allmän ANT-enhet", "0", "0", product_id="1345")
+    )
+    (tmp_path / "b.tcx").write_text(
+        _tcx("2006-05-24T17:12:44.000Z", "Garmin Fitness Device", "1", "0", product_id="1")
+    )
+    (tmp_path / "c.tcx").write_text(
+        _tcx("2020-01-01T00:00:00.000Z", "Forerunner 945", "13", "0", product_id="3113")
+    )
+
+    records, stats = tcx_scan.scan_tcx_directory(tmp_path)
+
+    assert stats.scanned == 3
+    assert stats.ok == 1
+    assert stats.skipped_generic_device == 2
+    assert stats.skipped_no_creator == 0
+    assert len(records) == 1
+    assert records[0].model == "Forerunner 945"
+
+
+def test_extract_device_from_tcx_filters_generic_device(tmp_path):
+    """The hook (extract_device_from_tcx) must also skip generic devices."""
+    path = tmp_path / "a.tcx"
+    path.write_text(
+        _tcx("2011-11-09T16:54:16.000Z", "Allmän ANT-enhet", "0", "0", product_id="1345")
+    )
+
+    assert extract_device_from_tcx(path) is None
+
+
+def test_parse_tcx_scan_record_none_for_generic_device(tmp_path):
+    path = tmp_path / "a.tcx"
+    path.write_text(
+        _tcx("2006-05-24T17:12:44.000Z", "Garmin Fitness Device", "1", "0", product_id="1")
+    )
+
+    assert tcx_scan.parse_tcx_scan_record(path) is None
 
 
 def test_scan_tcx_directory_skips_implausible_date(tmp_path):

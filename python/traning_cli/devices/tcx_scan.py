@@ -12,9 +12,10 @@ whole history in ``kristian/filer/tcx/``, so this module covers two uses:
   archive scan ``fit_scan.py`` does, but over the TCX archive.
 
 Both normalize model/OS version (see ``common.normalize_model`` /
-``common.normalize_os_version``) in ``_parse_creator()``, the function
-they share — so the live hook's rows and the historical scan's rows use
-the same canonical strings and dedup against each other correctly.
+``common.normalize_os_version``) and filter out known generic-device
+placeholders (see ``common.is_generic_device``) in ``_parse_creator()``,
+the function they share — so the live hook's rows and the historical
+scan's rows use the same canonical strings and skip the same noise.
 """
 
 from __future__ import annotations
@@ -26,7 +27,13 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 
-from .common import collapse_device_changes, normalize_model, normalize_os_version, plausible_date
+from .common import (
+    collapse_device_changes,
+    is_generic_device,
+    normalize_model,
+    normalize_os_version,
+    plausible_date,
+)
 from .log import DeviceRow
 
 log = logging.getLogger(__name__)
@@ -52,6 +59,7 @@ class TcxScanStats:
     ok: int = 0
     corrupt: int = 0
     skipped_no_creator: int = 0
+    skipped_generic_device: int = 0
     skipped_bad_date: int = 0
     bad_date_examples: list[str] = field(default_factory=list)
 
@@ -61,21 +69,33 @@ def _local(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
 
 
-def _parse_creator(root: ET.Element) -> TcxDeviceRecord | None:
+def _parse_creator_element(root: ET.Element) -> tuple[TcxDeviceRecord | None, bool]:
+    """Parse the raw <Creator> block. Returns (record, is_generic).
+
+    ``record`` is None if there's no <Creator> element at all.
+    ``is_generic`` is True if a Creator was found but its <ProductID>
+    names a known placeholder device (see ``common.is_generic_device``)
+    — ``record`` is still populated in that case so a caller that needs
+    the raw values can use them; the two public functions below both
+    treat generic as "no usable device", just counted separately.
+    """
     creator = None
     for elem in root.iter():
         if _local(elem.tag) == "Creator":
             creator = elem
             break
     if creator is None:
-        return None
+        return None, False
 
     name = ""
+    product_id = ""
     version_parts: list[str] = []
     for child in creator.iter():
         tag = _local(child.tag)
         if tag == "Name" and child.text:
             name = child.text.strip()
+        elif tag == "ProductID" and child.text:
+            product_id = child.text.strip()
         elif tag == "Version":
             for vchild in child:
                 vtag = _local(vchild.tag)
@@ -85,10 +105,19 @@ def _parse_creator(root: ET.Element) -> TcxDeviceRecord | None:
     # VersionMajor + VersionMinor -> "13.0" (BuildMajor/Minor are the
     # internal build counter, not a version number a human would log).
     os_version = ".".join(version_parts[:2]) if version_parts else ""
-    return TcxDeviceRecord(
+    record = TcxDeviceRecord(
         model=normalize_model(name),
         os_version=normalize_os_version(os_version),
     )
+    return record, is_generic_device(product_id)
+
+
+def _parse_creator(root: ET.Element) -> TcxDeviceRecord | None:
+    """Parse <Creator><Name>/<Version>, filtering out generic placeholders."""
+    record, is_generic = _parse_creator_element(root)
+    if record is None or is_generic:
+        return None
+    return record
 
 
 def _parse_activity_date(root: ET.Element) -> date | None:
@@ -121,27 +150,45 @@ def _iter_tcx_files(tcx_dir: Path):
                 yield Path(root) / name
 
 
-def parse_tcx_scan_record(path: Path) -> TcxScanRecord | None:
-    """Extract (model, os_version, activity_date) from one TCX file.
+def _scan_one_tcx_file(path: Path) -> tuple[TcxScanRecord | None, str | None]:
+    """Parse one TCX file for scan purposes.
 
-    Returns None if the file has no <Creator> or no parseable activity
-    date — common for older/foreign exports. Raises on malformed XML;
+    Returns (record, skip_reason). skip_reason is None on success, else
+    one of "no_creator" / "generic_device" / "no_date" — kept distinct
+    from the plausible-date check (a separate concern, checked by the
+    caller) so scan_tcx_directory can count each reason separately
+    without re-parsing the file. Raises ET.ParseError on malformed XML;
     callers count those as corrupt.
     """
     tree = ET.parse(path)
     root = tree.getroot()
 
-    device = _parse_creator(root)
+    device, is_generic = _parse_creator_element(root)
     if device is None:
-        return None
+        return None, "no_creator"
+    if is_generic:
+        return None, "generic_device"
 
     activity_date = _parse_activity_date(root)
     if activity_date is None:
-        return None
+        return None, "no_date"
 
-    return TcxScanRecord(
+    record = TcxScanRecord(
         path=path, activity_date=activity_date, model=device.model, os_version=device.os_version
     )
+    return record, None
+
+
+def parse_tcx_scan_record(path: Path) -> TcxScanRecord | None:
+    """Extract (model, os_version, activity_date) from one TCX file.
+
+    Returns None if the file has no usable device — no <Creator>, a
+    generic-placeholder device (see ``common.is_generic_device``), or no
+    parseable activity date. Raises on malformed XML; callers count
+    those as corrupt.
+    """
+    record, _skip_reason = _scan_one_tcx_file(path)
+    return record
 
 
 def scan_tcx_directory(tcx_dir: Path) -> tuple[list[TcxScanRecord], TcxScanStats]:
@@ -155,10 +202,13 @@ def scan_tcx_directory(tcx_dir: Path) -> tuple[list[TcxScanRecord], TcxScanStats
     for path in _iter_tcx_files(tcx_dir):
         stats.scanned += 1
         try:
-            record = parse_tcx_scan_record(path)
+            record, skip_reason = _scan_one_tcx_file(path)
         except ET.ParseError:
             log.debug("Corrupt or unreadable TCX file, skipping: %s", path, exc_info=True)
             stats.corrupt += 1
+            continue
+        if skip_reason == "generic_device":
+            stats.skipped_generic_device += 1
             continue
         if record is None:
             stats.skipped_no_creator += 1

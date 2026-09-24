@@ -61,6 +61,28 @@ def normalize_model(model: str) -> str:
     return spaced
 
 
+# -- generic-device filter ---------------------------------------------------
+#
+# Two placeholder "devices" recur in the TCX Creator archive, keyed by
+# <ProductID> rather than name (the name itself is generic and tells us
+# nothing to key on): ProductID 1345 "Allmän ANT-enhet" (28 Running files,
+# 2011-11-09..2011-12-30, all the same UnitId — one real FR610 whose
+# firmware/export path briefly couldn't resolve a product name, not a
+# device swap) and ProductID 1 "Garmin Fitness Device" (2 files,
+# 2006-05-24/25 — an early desktop-export default template, UnitId 0).
+# Investigated 2026-09-24; product owner decision: filter, don't try to
+# attribute them to a real model.
+GENERIC_DEVICE_PRODUCT_IDS: dict[str, str] = {
+    "1": "Garmin Fitness Device",
+    "1345": "Allmän ANT-enhet",
+}
+
+
+def is_generic_device(product_id: str) -> bool:
+    """True if product_id names a known placeholder, not a real device."""
+    return product_id in GENERIC_DEVICE_PRODUCT_IDS
+
+
 def normalize_os_version(version: str) -> str:
     """Canonicalize a firmware/OS version string to its minimal numeric form.
 

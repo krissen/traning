@@ -7,6 +7,7 @@ from pathlib import Path
 from traning_cli.devices.common import (
     MIN_PLAUSIBLE_DATE,
     collapse_device_changes,
+    is_generic_device,
     merge_candidates,
     normalize_model,
     normalize_os_version,
@@ -176,3 +177,19 @@ def test_normalize_os_version_tcx_and_fit_forms_converge():
     """ "2.70" (TCX's major.minor join) and "2.7" (FIT's float repr, or a
     hand-typed --os-version) must compare equal after normalization."""
     assert normalize_os_version("2.70") == normalize_os_version("2.7")
+
+
+# --- is_generic_device --------------------------------------------------
+
+
+def test_is_generic_device_known_product_ids():
+    assert is_generic_device("1") is True  # Garmin Fitness Device
+    assert is_generic_device("1345") is True  # Allmän ANT-enhet
+
+
+def test_is_generic_device_real_product_id():
+    assert is_generic_device("3113") is False  # Forerunner 945
+
+
+def test_is_generic_device_empty_string():
+    assert is_generic_device("") is False
