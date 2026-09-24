@@ -50,6 +50,29 @@ Rscript inst/cli.R --year-running --plot --after=2022
 | `traning dedup` | `--dedup` | List Apple Watch sessions that duplicate a Garmin recording. Reports only; add `--apply` to remove them |
 | `traning shiny` | — | Launch the tRanat Shiny app |
 
+### Device log
+
+Firmware and watch changes can shift how metrics (HR, cadence, ...) are
+computed, so `$TRANING_DATA/kristian/devices.csv` keeps a dated record of
+which device/OS version was active when. Columns: `valid_from` (date the
+change took effect), `platform` (`apple_watch` | `garmin`), `model`,
+`os_version`, `certainty` (`exact` — derived from data — or
+`known_since` — a manual, possibly-approximate date), `origin`
+(`manual` | `fit` | `tcx`), `note`. Newest change first.
+
+| Command | Description |
+|---------|-------------|
+| `traning device list` | Print devices.csv, newest first |
+| `traning device add --platform ... --model ... --os-version ...` | Log a manual device/OS change. `--from DATE` (default today), `--certainty` (default `known_since`), `--note` |
+| `traning device scan [--source fit\|tcx\|all] [--apply]` | Derive device-change candidates from the historical FIT/TCX archives, merged so the same real change isn't double-counted. Dry-run by default; `--apply` writes the new rows |
+
+**New Garmin changes are logged automatically**: every `traning fetch
+garmin` run reads the freshly downloaded TCX's device info and adds a
+row if it's new — no manual step needed. **Apple Watch changes are not
+auto-detected** (HAE's export doesn't carry a device identifier) and
+must be logged by hand with `traning device add --platform apple_watch
+...` whenever you get a new watch or install a new watchOS version.
+
 ## Date range filtering
 
 All report and plot commands accept date range flags.
