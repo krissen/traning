@@ -44,3 +44,11 @@ def traning_data_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("TRANING_DATA", str(tmp_path))
     get_settings.cache_clear()
     return tmp_path
+
+
+@pytest.fixture
+def data_dir(tmp_path):
+    """A TRANING_DATA-style root with the gconnect/tcx subtree Garmin fetch expects."""
+    (tmp_path / "kristian" / "filer" / "gconnect").mkdir(parents=True)
+    (tmp_path / "kristian" / "filer" / "tcx").mkdir(parents=True)
+    return tmp_path

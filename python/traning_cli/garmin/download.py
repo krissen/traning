@@ -57,6 +57,46 @@ def _save_retry_state(path: Path, state: dict[str, int]) -> None:
         log.warning("Could not write retry state %s", path)
 
 
+def _log_device_from_tcx(tcx_path: Path, activity_date: str) -> None:
+    """Best-effort: record a device-log row if the TCX's Creator differs.
+
+    Never raises — a failure here (missing Creator, malformed XML, a
+    devices.csv write error) must not fail the TCX download it's attached
+    to. Historical FIT-derived rows live in a separate scanner
+    (``devices/fit_scan.py``); this hook covers the live fetch path,
+    which downloads TCX, not FIT.
+    """
+    try:
+        from ..devices.log import add_device
+        from ..devices.tcx_scan import extract_device_from_tcx
+
+        record = extract_device_from_tcx(tcx_path)
+        if record is None:
+            return
+        # tcx_path = <data_dir>/kristian/filer/gconnect/<file>.tcx
+        # parents[0]=gconnect [1]=filer [2]=kristian [3]=data_dir
+        data_dir = tcx_path.parents[3]
+        row = add_device(
+            data_dir,
+            platform="garmin",
+            model=record.model,
+            os_version=record.os_version,
+            valid_from=activity_date,
+            certainty="exact",
+            origin="fit",
+            note=f"fetch: {tcx_path.name}",
+        )
+        if row is not None:
+            log.info(
+                "Device log: new garmin device/version %s %s (from %s)",
+                record.model,
+                record.os_version,
+                tcx_path.name,
+            )
+    except Exception:
+        log.warning("Could not update device log from %s", tcx_path, exc_info=True)
+
+
 def get_existing_activity_ids(gc_dir: Path) -> set[int]:
     """Scan gconnect/ for *_summary.json and extract activity IDs."""
     ids: set[int] = set()
@@ -276,6 +316,8 @@ def _download_activity(
             target = os.path.relpath(tcx_path, tc_dir)
             symlink_path.symlink_to(target)
             log.debug("Symlink %s -> %s", symlink_name, target)
+
+        _log_device_from_tcx(tcx_path, activity_date=iso_timestamp[:10])
     except Exception:
         log.warning("Could not download TCX for %s", activity_id)
         complete = False
