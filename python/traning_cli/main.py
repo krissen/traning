@@ -1072,3 +1072,124 @@ def mcp():
     from .mcp.server import main as mcp_main
 
     mcp_main()
+
+
+# -- device -------------------------------------------------------------
+
+
+@cli.group()
+def device():
+    """Dated device/OS log (devices.csv) — firmware and watch changes."""
+
+
+@device.command(name="list")
+def device_list():
+    """Print devices.csv (newest first)."""
+    from .devices.log import read_devices
+    from .garmin.utils import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+    except (OSError, FileNotFoundError) as e:
+        raise click.ClickException(str(e)) from e
+
+    rows = read_devices(data_dir)
+    if not rows:
+        click.echo("Inga enheter loggade.")
+        return
+    for row in rows:
+        note = f" — {row['note']}" if row["note"] else ""
+        click.echo(
+            f"{row['valid_from']}  {row['platform']:<12} {row['model']:<20} "
+            f"{row['os_version']:<10} {row['certainty']:<12} {row['origin']}{note}"
+        )
+
+
+@device.command(name="add")
+@click.option(
+    "--platform", required=True, type=click.Choice(["apple_watch", "garmin"]), help="Platform"
+)
+@click.option("--model", default="", help="Device model")
+@click.option("--os-version", "os_version", default="", help="OS/firmware version")
+@click.option(
+    "--from",
+    "valid_from",
+    default=None,
+    help="Date the change took effect (YYYY-MM-DD, default: today)",
+)
+@click.option(
+    "--certainty",
+    type=click.Choice(["exact", "known_since"]),
+    default="known_since",
+    help="exact: derived from data. known_since: manual, may predate --from",
+)
+@click.option("--note", default="", help="Free text note")
+def device_add(platform, model, os_version, valid_from, certainty, note):
+    """Add one manual device-change row."""
+    from .devices.log import add_device
+    from .garmin.utils import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+    except (OSError, FileNotFoundError) as e:
+        raise click.ClickException(str(e)) from e
+
+    try:
+        row = add_device(
+            data_dir,
+            platform=platform,
+            model=model,
+            os_version=os_version,
+            valid_from=valid_from,
+            certainty=certainty,
+            origin="manual",
+            note=note,
+        )
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+    if row is None:
+        click.echo(f"Redan loggad — hoppar över ({platform}, {model!r}, {os_version!r})")
+        return
+    click.echo(f"Tillagd: {row['valid_from']} {row['platform']} {row['model']} {row['os_version']}")
+
+
+@device.command(name="scan-fit")
+@click.option(
+    "--apply", "apply_changes", is_flag=True, help="Write new candidate rows (default: dry-run)"
+)
+def device_scan_fit(apply_changes):
+    """Derive device-change candidates from historical Garmin FIT files.
+
+    Dry-run by default: prints the candidates without writing. --apply
+    writes the ones not already present in devices.csv (origin=fit,
+    certainty=exact).
+    """
+    from .devices.fit_scan import scan_and_collapse
+    from .devices.log import add_devices_bulk
+    from .garmin.utils import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+    except (OSError, FileNotFoundError) as e:
+        raise click.ClickException(str(e)) from e
+
+    fit_dir = data_dir / "kristian" / "filer" / "fit"
+    candidates, stats = scan_and_collapse(fit_dir)
+
+    click.echo(
+        f"Skannade {stats.scanned} FIT-filer: {stats.ok} ok, "
+        f"{stats.skipped_not_activity} ej aktivitet, {stats.corrupt} korrupta/oläsbara"
+    )
+    if not candidates:
+        click.echo("Inga enhetsbyten hittade.")
+        return
+
+    if not apply_changes:
+        click.echo(f"{len(candidates)} föreslagna rader (dry-run, ingen skrivning):")
+        for row in candidates:
+            click.echo(f"  {row['valid_from']}  {row['model']}  {row['os_version']}")
+        return
+
+    added = add_devices_bulk(data_dir, candidates)
+    click.echo(f"Skrev {len(added)} nya rader ({len(candidates) - len(added)} redan loggade)")
