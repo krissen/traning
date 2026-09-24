@@ -1154,19 +1154,35 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
     click.echo(f"Tillagd: {row['valid_from']} {row['platform']} {row['model']} {row['os_version']}")
 
 
-@device.command(name="scan-fit")
+@device.command(name="scan")
+@click.option(
+    "--source",
+    type=click.Choice(["fit", "tcx", "all"]),
+    default="all",
+    help="Which historical archive to scan (default: all)",
+)
 @click.option(
     "--apply", "apply_changes", is_flag=True, help="Write new candidate rows (default: dry-run)"
 )
-def device_scan_fit(apply_changes):
-    """Derive device-change candidates from historical Garmin FIT files.
+def device_scan(source, apply_changes):
+    """Derive device-change candidates from the historical FIT and/or TCX archives.
+
+    The FIT archive (kristian/filer/fit/) only covers the fr610/fr620
+    era; the TCX archive (kristian/filer/tcx/) covers the full history.
+    --source all (default) scans both and merges: the same real device
+    change picked up by both archives collapses to one row (earliest
+    valid_from wins) instead of two.
 
     Dry-run by default: prints the candidates without writing. --apply
-    writes the ones not already present in devices.csv (origin=fit,
-    certainty=exact).
+    writes the ones not already present in devices.csv (certainty=exact,
+    origin=fit or tcx depending on which archive the row came from).
+
+    Rows with an implausible valid_from (before 2000-01-01 or after
+    today — corrupt file metadata, not a real device) are skipped and
+    counted, never silently dropped: the summary names the file.
     """
-    from .devices.fit_scan import scan_and_collapse
     from .devices.log import add_devices_bulk
+    from .devices.scan import scan as scan_devices
     from .garmin.utils import get_data_dir
 
     try:
@@ -1174,13 +1190,26 @@ def device_scan_fit(apply_changes):
     except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e)) from e
 
-    fit_dir = data_dir / "kristian" / "filer" / "fit"
-    candidates, stats = scan_and_collapse(fit_dir)
+    candidates, fit_stats, tcx_stats = scan_devices(data_dir, source=source)
 
-    click.echo(
-        f"Skannade {stats.scanned} FIT-filer: {stats.ok} ok, "
-        f"{stats.skipped_not_activity} ej aktivitet, {stats.corrupt} korrupta/oläsbara"
-    )
+    if fit_stats is not None:
+        click.echo(
+            f"FIT: skannade {fit_stats.scanned} filer: {fit_stats.ok} ok, "
+            f"{fit_stats.skipped_not_activity} ej aktivitet, "
+            f"{fit_stats.skipped_bad_date} orimligt datum, {fit_stats.corrupt} korrupta/oläsbara"
+        )
+        for example in fit_stats.bad_date_examples:
+            click.echo(f"  hoppad (orimligt datum): {example}")
+
+    if tcx_stats is not None:
+        click.echo(
+            f"TCX: skannade {tcx_stats.scanned} filer: {tcx_stats.ok} ok, "
+            f"{tcx_stats.skipped_no_creator} utan Creator, "
+            f"{tcx_stats.skipped_bad_date} orimligt datum, {tcx_stats.corrupt} korrupta/oläsbara"
+        )
+        for example in tcx_stats.bad_date_examples:
+            click.echo(f"  hoppad (orimligt datum): {example}")
+
     if not candidates:
         click.echo("Inga enhetsbyten hittade.")
         return
@@ -1188,7 +1217,9 @@ def device_scan_fit(apply_changes):
     if not apply_changes:
         click.echo(f"{len(candidates)} föreslagna rader (dry-run, ingen skrivning):")
         for row in candidates:
-            click.echo(f"  {row['valid_from']}  {row['model']}  {row['os_version']}")
+            click.echo(
+                f"  {row['valid_from']}  {row['model']}  {row['os_version']}  ({row['origin']})"
+            )
         return
 
     added = add_devices_bulk(data_dir, candidates)
