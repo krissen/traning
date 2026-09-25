@@ -263,6 +263,23 @@ def test_add_devices_bulk_rewrites_non_canonical_file_without_new_candidates(tmp
     assert "samma dag: 13" in winner["note"]
 
 
+def test_add_devices_bulk_reports_tidy_on_the_write_path(tmp_path):
+    """A new candidate plus a non-canonical file: the write collapses
+    the old duplicate day along the way, and the outcome says so."""
+    _pre_invariant_file(tmp_path)
+
+    added, updated, tidied = add_devices_bulk(
+        tmp_path, [_row(valid_from="2023-05-01", os_version="15")]
+    )
+
+    assert len(added) == 1
+    assert updated == []
+    assert tidied == 1
+    rows = read_devices(tmp_path)
+    assert len(rows) == 3
+    assert sum(1 for r in rows if r["valid_from"] == "2022-10-06") == 1
+
+
 def test_add_devices_bulk_leaves_canonical_file_untouched(tmp_path):
     """An already-canonical file is not rewritten (mtime unchanged) and
     the outcome is exactly what it was before: nothing added, nothing

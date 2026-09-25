@@ -131,6 +131,28 @@ def test_device_scan_apply_reports_tidy_of_pre_invariant_file(traning_data_dir):
     assert sum(1 for r in rows if r["valid_from"] == "2022-10-06") == 1
 
 
+def test_device_scan_apply_reports_added_and_tidy(traning_data_dir):
+    """The scan's candidate is new and the file holds a pre-invariant
+    duplicate day: --apply writes both and reports both."""
+    _tcx_archive(traning_data_dir)
+    _write_raw_devices_csv(
+        traning_data_dir,
+        [
+            _row(valid_from="2022-10-06", model="Forerunner 620", os_version="3.3"),
+            _row(valid_from="2022-10-06", model="Forerunner 620", os_version="3.5"),
+        ],
+    )
+
+    result = CliRunner().invoke(cli, ["device", "scan", "--source", "tcx", "--apply"])
+
+    assert result.exit_code == 0, result.output
+    assert "1 nya rader" in result.output
+    assert "Städade 1 dag med dubbletter" in result.output
+    rows = read_devices(traning_data_dir)
+    assert len(rows) == 2
+    assert sum(1 for r in rows if r["valid_from"] == "2022-10-06") == 1
+
+
 def test_device_scan_apply_canonical_file_reports_no_tidy(traning_data_dir):
     """An already-canonical file: today's outcome, word for word, no tidy line."""
     _tcx_archive(traning_data_dir)

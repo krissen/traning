@@ -103,21 +103,31 @@ def _multi_row_day_groups(rows: list[DeviceRow]) -> int:
     return sum(1 for n in counts.values() if n > 1)
 
 
+def _is_canonical(rows: list[DeviceRow]) -> bool:
+    """True when `rows` already equal what `write_devices()` would store."""
+    return _sort_rows(collapse_same_day_rows(rows)) == rows
+
+
+def _pending_tidy_count(rows: list[DeviceRow]) -> int:
+    """Multi-row day groups in `rows` — the tidy count, or 0 when canonical."""
+    if _is_canonical(rows):
+        return 0
+    return _multi_row_day_groups(rows)
+
+
 def _rewrite_if_non_canonical(data_dir: Path, rows: list[DeviceRow]) -> int:
     """Rewrite devices.csv when it isn't in canonical form. Returns tidied groups.
 
     Call with the rows just read from disk, while holding the lock (see
-    ``_locked_devices`` — this takes none itself). Compares against what
-    ``write_devices()`` would store (collapsed to one row per
-    (platform, day), newest first); an already-canonical file is left
-    untouched, mtime and all. The count is the number of same-day
-    groups that were folded together.
+    ``_locked_devices`` — this takes none itself). An already-canonical
+    file is left untouched, mtime and all. The count is the number of
+    same-day groups that were folded together.
     """
-    if _sort_rows(collapse_same_day_rows(rows)) != rows:
-        tidied = _multi_row_day_groups(rows)
-        write_devices(data_dir, rows)
-        return tidied
-    return 0
+    if _is_canonical(rows):
+        return 0
+    tidied = _multi_row_day_groups(rows)
+    write_devices(data_dir, rows)
+    return tidied
 
 
 def count_pending_tidy(data_dir: Path) -> int:
@@ -126,10 +136,7 @@ def count_pending_tidy(data_dir: Path) -> int:
     For dry-run reporting: computed without the lock and without
     writing, so a dry run never creates the lock file either.
     """
-    rows = read_devices(data_dir)
-    if _sort_rows(collapse_same_day_rows(rows)) != rows:
-        return _multi_row_day_groups(rows)
-    return 0
+    return _pending_tidy_count(read_devices(data_dir))
 
 
 def tidy_devices_log(data_dir: Path, *, lock_timeout: float | None = None) -> int:
@@ -643,14 +650,18 @@ def add_devices_bulk(
     Raises DeviceLogLockTimeout when the lock stays held past it.
 
     ``tidied`` is the number of pre-invariant same-day groups folded
-    together (see ``tidy_devices_log``): when no candidate is new, the
-    file is still rewritten if its collapsed form differs from what's
-    on disk — otherwise old duplicates would never be cleaned.
+    together (see ``tidy_devices_log``) — counted on the file as found,
+    before the merge, so a write that adds a row reports the old
+    duplicates it collapsed along the way too. When no candidate is
+    new, the file is still rewritten if its collapsed form differs
+    from what's on disk — otherwise old duplicates would never be
+    cleaned.
     """
     for candidate in candidates:
         validate_row(candidate)
     with _locked_devices(data_dir, timeout=lock_timeout):
         rows = read_devices(data_dir)
+        pending_tidy = _pending_tidy_count(rows)
         added: list[DeviceRow] = []
         updated: list[DeviceRow] = []
         for candidate in candidates:
@@ -667,5 +678,5 @@ def add_devices_bulk(
                 updated.append(result_row)
         if added or updated:
             write_devices(data_dir, rows)
-            return added, updated, 0
+            return added, updated, pending_tidy
         return added, updated, _rewrite_if_non_canonical(data_dir, rows)
