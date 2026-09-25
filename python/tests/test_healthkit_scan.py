@@ -1,6 +1,8 @@
 """Tests for devices/healthkit_scan.py — streaming Apple Health export parsing."""
 
+import io
 import zipfile
+from pathlib import Path
 
 import pytest
 from traning_cli.devices import healthkit_scan
@@ -208,6 +210,58 @@ def test_scan_export_unknown_watch_hardware_kept_as_raw_string(tmp_path):
     records, _stats = healthkit_scan.scan_export(export)
 
     assert records[0].model == "Watch99,99"  # not in WATCH_HARDWARE_NAMES, kept raw
+
+
+# --- root.clear() bound (Nagelfar issue-001) -----------------------------------
+#
+# elem.clear() only empties the matched element itself; without also
+# clearing the root <HealthData>, root's child list grows by one entry
+# per element regardless of tag, so len(root) right before each clear
+# would climb with the element count if the bug were present. It must
+# stay flat (small, constant) instead, for any number of elements.
+
+
+def _xml_stream(record_elements: list[str]):
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<HealthData locale="en_US">\n'
+        + "\n".join(record_elements)
+        + "\n</HealthData>\n"
+    )
+    return io.BytesIO(xml.encode("utf-8"))
+
+
+def test_root_child_count_stays_bounded_regardless_of_element_count():
+    # iterparse's underlying parser feeds input in fixed-size read
+    # chunks, and can append every element from a whole chunk to root
+    # before yielding the first event back to us — so len(root), probed
+    # right before each clear, isn't pinned at exactly 1. What matters is
+    # that its *peak* is a function of the (constant) read-chunk size,
+    # not of the element count: without root.clear(), it would instead
+    # climb to n and stay there. 100x more elements must not move the
+    # peak by anything close to 100x.
+    def _run(n: int) -> int:
+        records = [
+            _record(f"2023-01-{(i % 28) + 1:02d} 08:00:00 +0000", "Watch6,18", "10.1")
+            for i in range(n)
+        ]
+        stats = healthkit_scan.HealthKitScanStats()
+        earliest: dict = {}
+        seen_lengths: list[int] = []
+        healthkit_scan._scan_xml_stream(
+            _xml_stream(records),
+            Path("synthetic.xml"),
+            stats,
+            earliest,
+            _root_len_probe=seen_lengths.append,
+        )
+        assert stats.ok == n
+        return max(seen_lengths)
+
+    max_len_small = _run(50)
+    max_len_large = _run(5000)
+
+    assert max_len_large < max_len_small * 3
+    assert max_len_large < 5000 / 10  # nowhere near proportional to n
 
 
 # --- collapse_changes / scan_and_collapse: origin/platform -------------------

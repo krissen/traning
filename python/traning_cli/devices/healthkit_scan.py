@@ -25,13 +25,23 @@ other source still runs.
 export.xml itself can be tens of millions of Record elements over a
 multi-GB file — reading it whole, or even building one in-memory record
 per element the way fit_scan/tcx_scan do per *file*, isn't an option.
-Instead this reads it streaming (``ET.iterparse``, clearing each element
-right after use — straight off disk for a plain export.xml, or via
-``zipfile.ZipFile.open()`` for a zip), and collapses on the fly: only
-the earliest date seen for each (hardware, software) pair is kept, so
-memory is bounded by the number of distinct device/firmware
-combinations in the whole export (a handful), not the number of samples
-(tens of millions).
+Instead this reads it streaming (``ET.iterparse``, straight off disk for
+a plain export.xml or via ``zipfile.ZipFile.open()`` for a zip), and
+collapses on the fly: only the earliest date seen for each (hardware,
+software) pair is kept, so the *result* is bounded by the number of
+distinct device/firmware combinations in the whole export (a handful),
+not the number of samples (tens of millions).
+
+Bounding memory *while parsing* takes more than clearing each finished
+element: ``elem.clear()`` empties an element's own attributes/children,
+but the (now-empty) element stays in the root ``<HealthData>``'s child
+list forever, so that list — and memory — grows by one entry per Record
+regardless. The root itself is cleared too, once per element, dropping
+that list back to empty (Nagelfar issue-001; measured 1.12 GB peak RSS
+without this against 33 MB with it, on the real ~13M-element export).
+The parser keeps its own reference to whatever ``<Correlation>``/etc.
+parent is still open, so clearing root's list doesn't disturb parsing
+in progress — it only drops root's references to what's already done.
 """
 
 from __future__ import annotations
@@ -200,20 +210,42 @@ def _scan_xml_stream(
     export_path: Path,
     stats: HealthKitScanStats,
     earliest: dict[tuple[str, str], date],
+    *,
+    _root_len_probe=None,
 ) -> None:
     """Iterparse one export.xml stream, updating stats and earliest in place.
 
     Shared by the zip and plain-file branches of ``scan_export`` so the
     parsing logic exists exactly once regardless of how the bytes got
     here.
+
+    Parses with ``events=("start", "end")`` — not just ``"end"`` — to
+    capture the root ``<HealthData>`` element from its own "start" event.
+    Every matched element's own ``.clear()`` only empties that element;
+    without also clearing the root, root's child list (and memory) grows
+    by one entry per element regardless (Nagelfar issue-001). Clearing
+    root after each element keeps that list — and therefore memory —
+    bounded by one element's worth, not the whole export's.
+
+    ``_root_len_probe``, if given, is called with ``len(root)`` right
+    before each clear — test-only, to assert the bound holds without
+    measuring RSS.
     """
-    for _event, elem in ET.iterparse(fh, events=("end",)):
+    root = None
+    for event, elem in ET.iterparse(fh, events=("start", "end")):
+        if event == "start":
+            if root is None:
+                root = elem
+            continue
+
         if elem.tag not in WATCH_RECORD_TAGS:
             continue
+        if _root_len_probe is not None:
+            _root_len_probe(len(root))
         stats.elements_scanned += 1
 
         device = elem.get("device")
-        start = elem.get("startDate")
+        start_date = elem.get("startDate")
         hardware = software = None
         if device:
             hardware, software = _parse_device_fields(device)
@@ -221,24 +253,27 @@ def _scan_xml_stream(
         if not hardware:
             stats.skipped_no_device += 1
             elem.clear()
+            root.clear()
             continue
         if not hardware.startswith("Watch"):
             stats.skipped_non_watch += 1
             elem.clear()
+            root.clear()
             continue
 
-        record_date = _parse_local_date(start) if start else None
+        record_date = _parse_local_date(start_date) if start_date else None
         if record_date is None or not plausible_date(record_date):
             stats.skipped_bad_date += 1
-            example = f"{start!r}  ({elem.tag}, {hardware})"
+            example = f"{start_date!r}  ({elem.tag}, {hardware})"
             stats.bad_date_examples.append(example)
             log.warning(
                 "Skipping unparseable/implausible startDate %r for %s in %s",
-                start,
+                start_date,
                 hardware,
                 export_path,
             )
             elem.clear()
+            root.clear()
             continue
 
         key = (hardware, software)
@@ -246,6 +281,7 @@ def _scan_xml_stream(
             earliest[key] = record_date
         stats.ok += 1
         elem.clear()
+        root.clear()
 
 
 def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthKitScanStats]:
