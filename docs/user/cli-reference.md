@@ -58,20 +58,33 @@ which device/OS version was active when. Columns: `valid_from` (date the
 change took effect), `platform` (`apple_watch` | `garmin`), `model`,
 `os_version`, `certainty` (`exact` — derived from data — or
 `known_since` — a manual, possibly-approximate date), `origin`
-(`manual` | `fit` | `tcx`), `note`. Newest change first.
+(`manual` | `fit` | `tcx` | `healthkit`), `note`. Newest change first.
 
 | Command | Description |
 |---------|-------------|
 | `traning device list` | Print devices.csv, newest first |
 | `traning device add --platform ... --model ... --os-version ...` | Log a manual device/OS change. `--from DATE` (default today), `--certainty` (default `known_since`), `--note` |
-| `traning device scan [--source fit\|tcx\|all] [--apply]` | Derive device-change candidates from the historical FIT/TCX archives, merged so the same real change isn't double-counted. Dry-run by default; `--apply` writes the new rows |
+| `traning device scan [--source fit\|tcx\|healthkit\|all] [--healthkit-export PATH] [--apply]` | Derive device-change candidates from the historical FIT/TCX archives and an Apple Health export, merged so the same real change isn't double-counted. Dry-run by default; `--apply` writes the new rows |
 
 **New Garmin changes are logged automatically**: every `traning fetch
 garmin` run reads the freshly downloaded TCX's device info and adds a
-row if it's new — no manual step needed. **Apple Watch changes are not
-auto-detected** (HAE's export doesn't carry a device identifier) and
-must be logged by hand with `traning device add --platform apple_watch
-...` whenever you get a new watch or install a new watchOS version.
+row if it's new — no manual step needed.
+
+**Apple Watch history comes from a manual Health app export.** Health
+Auto Export's live feed (the one `traning fetch health` runs on) only
+ever sends `sourceName`, no device identifier, so it can't drive this
+the way the Garmin fetch does. A full export from the iPhone Health
+app (profile icon -> Export All Health Data -> `export.zip`, containing
+`apple_health_export/export.xml`) carries a `device` attribute per
+record with the watch's hardware identifier and firmware version.
+Drop the zip at
+`$TRANING_DATA/kristian/apple_health_export/export-<YYYY-MM-DD>.zip`
+(not tracked in git — it can be several GB) and run `traning device
+scan --source healthkit --apply` (or just `--source all`, which skips
+this source silently if no export is present). `--healthkit-export
+PATH` overrides the default newest-file lookup. Absent a fresh export,
+log a change by hand with `traning device add --platform apple_watch
+...` instead.
 
 ## Date range filtering
 

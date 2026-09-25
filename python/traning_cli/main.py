@@ -1167,25 +1167,39 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
 @device.command(name="scan")
 @click.option(
     "--source",
-    type=click.Choice(["fit", "tcx", "all"]),
+    type=click.Choice(["fit", "tcx", "healthkit", "all"]),
     default="all",
-    help="Which historical archive to scan (default: all)",
+    help="Which archive/export to scan (default: all)",
+)
+@click.option(
+    "--healthkit-export",
+    "healthkit_export",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "Apple Health export zip to scan (default: newest export-*.zip in "
+        "kristian/apple_health_export/)"
+    ),
 )
 @click.option(
     "--apply", "apply_changes", is_flag=True, help="Write new candidate rows (default: dry-run)"
 )
-def device_scan(source, apply_changes):
-    """Derive device-change candidates from the historical FIT and/or TCX archives.
+def device_scan(source, healthkit_export, apply_changes):
+    """Derive device-change candidates from the historical FIT/TCX archives and a HealthKit export.
 
     The FIT archive (kristian/filer/fit/) only covers the fr610/fr620
-    era; the TCX archive (kristian/filer/tcx/) covers the full history.
-    --source all (default) scans both and merges: the same real device
-    change picked up by both archives collapses to one row (earliest
-    valid_from wins) instead of two.
+    era; the TCX archive (kristian/filer/tcx/) covers the full Garmin
+    history; a HealthKit export (kristian/apple_health_export/) covers
+    Apple Watch. --source all (default) scans every source and merges:
+    the same real device change picked up by more than one collapses to
+    one row (earliest valid_from wins) instead of several. No HealthKit
+    export found is not an error — that source is just skipped, the
+    others still run.
 
     Dry-run by default: prints the candidates without writing. --apply
     writes the ones not already present in devices.csv (certainty=exact,
-    origin=fit or tcx depending on which archive the row came from).
+    origin=fit/tcx/healthkit depending on which source the row came
+    from).
 
     Rows with an implausible valid_from (before 2000-01-01 or after
     today — corrupt file metadata, not a real device) are skipped and
@@ -1200,7 +1214,12 @@ def device_scan(source, apply_changes):
     except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e)) from e
 
-    candidates, fit_stats, tcx_stats = scan_devices(data_dir, source=source)
+    try:
+        candidates, fit_stats, tcx_stats, healthkit_stats = scan_devices(
+            data_dir, source=source, healthkit_export=healthkit_export
+        )
+    except (OSError, ValueError) as e:
+        raise click.ClickException(f"HealthKit-export: {e}") from e
 
     if fit_stats is not None:
         click.echo(
@@ -1219,6 +1238,23 @@ def device_scan(source, apply_changes):
             f"{tcx_stats.skipped_bad_date} orimligt datum, {tcx_stats.corrupt} korrupta/oläsbara"
         )
         for example in tcx_stats.bad_date_examples:
+            click.echo(f"  hoppad (orimligt datum): {example}")
+
+    if source in ("healthkit", "all") and healthkit_stats is None:
+        click.echo(
+            "HealthKit: ingen export hittad, hoppar över källan "
+            "(--healthkit-export PATH eller kristian/apple_health_export/export-*.zip)"
+        )
+    elif healthkit_stats is not None:
+        click.echo(
+            f"HealthKit ({healthkit_stats.export_path.name}): "
+            f"skannade {healthkit_stats.elements_scanned} element: {healthkit_stats.ok} ok "
+            f"({healthkit_stats.groups} enhets-/firmwarekombinationer), "
+            f"{healthkit_stats.skipped_no_device} utan device, "
+            f"{healthkit_stats.skipped_non_watch} ej Watch, "
+            f"{healthkit_stats.skipped_bad_date} orimligt datum"
+        )
+        for example in healthkit_stats.bad_date_examples:
             click.echo(f"  hoppad (orimligt datum): {example}")
 
     if not candidates:
