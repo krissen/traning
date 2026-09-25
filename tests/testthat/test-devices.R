@@ -83,6 +83,93 @@ test_that("read_device_log resolves the default TRANING_DATA path", {
   })
 })
 
+# --- .collapse_same_day_rows(): at most one row per (platform, day) ---
+#
+# Nagelfar regression: an Apple Watch Ultra (gen 1) arrived on watchOS
+# 9.0.1 and updated itself to 9.1 later the same day. devices.csv only
+# carries a date, so a dirty file with both rows misorders whichever
+# consumer sorts by valid_from alone — Vayu's device-change note once
+# read that as a fictitious downgrade to 9.0.1. read_device_log()
+# collapses this defensively; python/traning_cli/devices/log.py's
+# write_devices() is the primary enforcement point.
+
+test_that("read_device_log collapses the exact kailash same-day case", {
+  path <- .write_devices_csv(c(
+    "2022-10-06,apple_watch,Apple Watch Ultra (gen 1),9.0.1,exact,healthkit,healthkit-scan: export.xml",
+    "2022-10-06,apple_watch,Apple Watch Ultra (gen 1),9.1,exact,healthkit,healthkit-scan: export.xml",
+    "2022-09-14,apple_watch,Apple Watch Series 4,9.1,exact,healthkit,healthkit-scan: export.xml"
+  ))
+  out <- read_device_log(path)
+  expect_equal(nrow(out), 2)
+
+  ultra_row <- out[out$valid_from == as.Date("2022-10-06"), ]
+  expect_equal(ultra_row$os_version, "9.1")
+  expect_equal(ultra_row$model, "Apple Watch Ultra (gen 1)")
+  expect_match(ultra_row$note, "samma dag: 9.0.1")
+  expect_equal(ultra_row$certainty, "exact")
+  expect_equal(ultra_row$origin, "healthkit")
+})
+
+test_that(".collapse_same_day_rows leaves single rows untouched", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2026-01-01,apple_watch,Ultra 2,watchOS 26.6,exact,manual,",
+    "2025-01-01,garmin,Forerunner 965,20.34,exact,manual,"
+  )))
+  expect_equal(nrow(log), 2)
+})
+
+test_that(".collapse_same_day_rows is order-independent (highest version wins)", {
+  a <- "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,"
+  b <- "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,"
+  out1 <- read_device_log(.write_devices_csv(c(a, b)))
+  out2 <- read_device_log(.write_devices_csv(c(b, a)))
+  expect_equal(out1$os_version, "9.1")
+  expect_equal(out2$os_version, "9.1")
+})
+
+test_that(".collapse_same_day_rows names every collapsed loser in the note", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.0.2,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$os_version, "9.1")
+  expect_match(log$note, "samma dag: 9.0.1")
+  expect_match(log$note, "samma dag: 9.0.2")
+})
+
+test_that(".collapse_same_day_rows handles three-part versions correctly", {
+  # 9.10 must outrank 9.9 — plain string comparison ("9.10" < "9.9"
+  # character-by-character) would get this backwards.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.10,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.9,exact,healthkit,"
+  )))
+  expect_equal(log$os_version, "9.10")
+})
+
+test_that(".collapse_same_day_rows keeps platforms separate on the same day", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,",
+    "2022-10-06,garmin,Forerunner 965,20.34,exact,fit,"
+  )))
+  expect_equal(nrow(log), 2)
+  expect_setequal(log$platform, c("apple_watch", "garmin"))
+})
+
+test_that(".collapse_same_day_rows is idempotent", {
+  path <- .write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,",
+    "2020-01-01,apple_watch,Series 3,watchOS 6,exact,manual,"
+  ))
+  once <- read_device_log(path)
+  # Re-collapsing an already-collapsed log must be a no-op.
+  twice <- .collapse_same_day_rows(once)
+  expect_equal(once, twice)
+})
+
 # --- device_changes() ---
 
 test_that("device_changes filters by platform", {

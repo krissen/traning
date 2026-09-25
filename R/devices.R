@@ -53,12 +53,78 @@
   as.Date(x)
 }
 
+# Internal helper: strip an os_version string to its leading numeric run
+# ("9.1" -> "9.1", "watchOS 26.6" -> "26.6") so numeric_version() (which
+# errors on non-numeric components) can rank it. Mirrors Python's
+# log.py:_version_sort_key(). Unparseable/empty input becomes "0",
+# which numeric_version() ranks below any real version — "unparseable
+# never outranks a real one," the same rule as the Python mirror.
+.version_for_compare <- function(os_version) {
+  extracted <- stringr::str_extract(os_version, "[0-9]+(\\.[0-9]+)*")
+  dplyr::coalesce(extracted, "0")
+}
+
+# Internal helper: enforce the devices.csv invariant defensively on
+# read — at most one row per (platform, valid_from). devices.csv only
+# carries a date, never a time; Python's write_devices()
+# (python/traning_cli/devices/log.py) is the primary enforcement point
+# and cleans the file on every write, but a file written by hand, or by
+# a pre-invariant version of that code, can still be dirty when R reads
+# it. Without this, an out-of-order same-day pair — nagelfar: an Apple
+# Watch Ultra (gen 1) arriving on watchOS 9.0.1 and updating itself to
+# 9.1 later the same day, both dated 2022-10-06 — would misorder
+# whichever downstream consumer sorts by valid_from alone (this
+# produced a fictitious "downgrade to 9.0.1" in Vayu's device-change
+# note). Mirrors Python's collapse_same_day_rows(): within a
+# same-(platform, day) group, the row with the highest parsed
+# os_version wins and describes that day's actual end state; every
+# other row in the group is folded into the winner's note as "samma
+# dag: <what it was>". certainty/origin follow the winner unchanged.
+# Idempotent — an already-collapsed log round-trips through this
+# unchanged (every group already has size 1).
+.collapse_same_day_rows <- function(log) {
+  if (nrow(log) == 0) {
+    return(log)
+  }
+
+  groups <- split(log, list(log$platform, log$valid_from), drop = TRUE)
+  collapsed <- lapply(groups, function(rows) {
+    if (nrow(rows) == 1) {
+      return(rows)
+    }
+    versions <- numeric_version(.version_for_compare(rows$os_version))
+    winner_idx <- which.max(versions)
+    winner <- rows[winner_idx, ]
+    losers <- rows[-winner_idx, , drop = FALSE]
+    loser_notes <- vapply(seq_len(nrow(losers)), function(i) {
+      l <- losers[i, ]
+      what <- if (identical(l$model, winner$model)) {
+        l$os_version
+      } else {
+        trimws(paste(l$model, l$os_version))
+      }
+      if (nzchar(what)) paste0("samma dag: ", what) else NA_character_
+    }, character(1))
+    loser_notes <- loser_notes[!is.na(loser_notes)]
+    all_notes <- c(if (nzchar(winner$note)) winner$note else NULL, loser_notes)
+    winner$note <- paste(all_notes, collapse = "; ")
+    winner
+  })
+
+  dplyr::bind_rows(collapsed) |> dplyr::arrange(dplyr::desc(.data$valid_from))
+}
+
 #' Read the device log
 #'
 #' Reads the daterad device-change log written by the Python
 #' \code{traning devices} CLI / FIT scan. A missing file is not an
 #' error — it means no device changes have been recorded yet, so an
-#' empty (but correctly typed) tibble is returned.
+#' empty (but correctly typed) tibble is returned. Defensively enforces
+#' the file's own invariant — at most one row per
+#' \code{(platform, valid_from)} — via \code{.collapse_same_day_rows()},
+#' in case the file on disk predates that invariant or was hand-edited;
+#' the write-time enforcement in \code{python/traning_cli/devices/log.py}
+#' is the primary source of truth.
 #'
 #' @param path Path to \code{devices.csv}. Defaults to
 #'   \code{$TRANING_DATA/kristian/devices.csv}.
@@ -106,6 +172,7 @@ read_device_log <- function(path = .default_device_log_path()) {
       origin     = .data$origin,
       note       = dplyr::coalesce(.data$note, "")
     ) |>
+    .collapse_same_day_rows() |>
     dplyr::arrange(dplyr::desc(.data$valid_from))
 }
 
