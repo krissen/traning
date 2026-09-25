@@ -218,6 +218,164 @@ def test_add_devices_bulk_no_candidates_is_noop(tmp_path):
     assert read_devices(tmp_path) == []
 
 
+# --- absorbed same-day candidates report "already logged", not "added"
+# (Nagelfar issue-001) ------------------------------------------------------
+#
+# Once write_devices() has collapsed a day, the losing candidate's
+# (platform, model, os_version) key no longer exists as its own row.
+# _merge_into()'s exact-key match can't see that the key is already
+# represented — reapplying that candidate used to look like a brand new
+# row every time, and each reapplication appended one more (undeduplicated)
+# "samma dag: X" to the winner's note.
+
+
+def _absorbed_fixture(tmp_path):
+    """A collapsed day (Ultra 9.0/9.0.1/9.1 on 2022-10-06) plus an earlier
+    Series 4 row — the exact fixture from the nagelfar issue-001 report."""
+    add_devices_bulk(
+        tmp_path,
+        [
+            _row(
+                platform="apple_watch",
+                valid_from="2022-09-14",
+                model="Series 4",
+                os_version="9.1",
+                origin="healthkit",
+                note="healthkit-scan: e.xml",
+            ),
+            _row(
+                platform="apple_watch",
+                valid_from="2022-10-06",
+                model="Ultra",
+                os_version="9.0",
+                origin="healthkit",
+                note="healthkit-scan: e.xml",
+            ),
+            _row(
+                platform="apple_watch",
+                valid_from="2022-10-06",
+                model="Ultra",
+                os_version="9.0.1",
+                origin="healthkit",
+                note="healthkit-scan: e.xml",
+            ),
+            _row(
+                platform="apple_watch",
+                valid_from="2022-10-06",
+                model="Ultra",
+                os_version="9.1",
+                origin="healthkit",
+                note="healthkit-scan: e.xml",
+            ),
+        ],
+    )
+
+
+def test_add_devices_bulk_repeated_absorbed_candidate_is_stable(tmp_path):
+    _absorbed_fixture(tmp_path)
+    after_setup = read_devices(tmp_path)
+
+    loser_again = [
+        _row(
+            platform="apple_watch",
+            valid_from="2022-10-06",
+            model="Ultra",
+            os_version="9.0.1",
+            origin="healthkit",
+            note="healthkit-scan: e.xml",
+        )
+    ]
+
+    for _ in range(3):
+        added, updated = add_devices_bulk(tmp_path, loser_again)
+        assert added == []
+        assert updated == []
+        assert read_devices(tmp_path) == after_setup  # byte-for-byte stable
+
+
+def test_add_device_manual_add_of_an_absorbed_version_reports_already_logged(tmp_path):
+    _absorbed_fixture(tmp_path)
+    after_setup = read_devices(tmp_path)
+
+    row = add_device(
+        tmp_path,
+        platform="apple_watch",
+        model="Ultra",
+        os_version="9.0.1",
+        valid_from="2022-10-06",
+        certainty="exact",
+        origin="manual",
+        note="healthkit-scan: e.xml",  # identical to what's already absorbed
+    )
+
+    assert row is None
+    assert read_devices(tmp_path) == after_setup
+
+
+def test_add_device_manual_note_on_an_absorbed_version_is_preserved(tmp_path):
+    # The other half of the fix: a genuinely NEW manual note for an
+    # already-absorbed key must not be silently lost — even though the
+    # (platform, model, os_version) key itself doesn't get its own row.
+    _absorbed_fixture(tmp_path)
+
+    row = add_device(
+        tmp_path,
+        platform="apple_watch",
+        model="Ultra",
+        os_version="9.0.1",
+        valid_from="2022-10-06",
+        certainty="exact",
+        origin="manual",
+        note="viktig anteckning",
+    )
+
+    assert row is not None
+    assert "viktig anteckning" in row["note"]
+    rows = read_devices(tmp_path)
+    assert len(rows) == 2  # still collapsed — no new row for the absorbed key
+    winner = next(r for r in rows if r["valid_from"] == "2022-10-06")
+    assert "viktig anteckning" in winner["note"]
+    assert winner["os_version"] == "9.1"  # the winner itself is unchanged
+
+
+def test_add_devices_bulk_separate_source_scans_do_not_re_add_the_loser(tmp_path):
+    # (fit/tcx scanned separately after an --source all run that already
+    # absorbed a same-day duplicate) reproduces the same key-miss shape
+    # as a manual re-add: each separate --source invocation only ever
+    # sees its own candidate list, never the full collapsed file's notes.
+    _absorbed_fixture(tmp_path)
+    after_setup = read_devices(tmp_path)
+
+    fit_only = [
+        _row(
+            platform="apple_watch",
+            valid_from="2022-10-06",
+            model="Ultra",
+            os_version="9.0",
+            origin="healthkit",
+            note="healthkit-scan: e.xml",
+        )
+    ]
+    tcx_only = [
+        _row(
+            platform="apple_watch",
+            valid_from="2022-10-06",
+            model="Ultra",
+            os_version="9.0.1",
+            origin="healthkit",
+            note="healthkit-scan: e.xml",
+        )
+    ]
+
+    added1, updated1 = add_devices_bulk(tmp_path, fit_only)
+    assert added1 == []
+    assert updated1 == []
+    added2, updated2 = add_devices_bulk(tmp_path, tcx_only)
+    assert added2 == []
+    assert updated2 == []
+    assert read_devices(tmp_path) == after_setup
+
+
 # --- earliest-wins merge (Nagelfar issue-002) -------------------------------
 #
 # The same (platform, model, os_version) is only recorded once, but which
@@ -559,6 +717,18 @@ def test_collapse_same_day_rows_is_idempotent():
     once = collapse_same_day_rows(rows)
     twice = collapse_same_day_rows(once)
     assert once == twice
+
+
+def test_collapse_same_day_rows_does_not_duplicate_an_already_absorbed_note():
+    # Simulates write_devices() re-collapsing a row set where the winner
+    # already carries "samma dag: 9.0.1" from an earlier write, and the
+    # same loser has been (incorrectly, pre-fix) re-added as its own raw
+    # row — the note must not gain a second copy of the same phrase.
+    winner = _row(valid_from="2022-10-06", model="Ultra", os_version="9.1", note="samma dag: 9.0.1")
+    reappeared_loser = _row(valid_from="2022-10-06", model="Ultra", os_version="9.0.1")
+    out = collapse_same_day_rows([winner, reappeared_loser])
+    assert len(out) == 1
+    assert out[0]["note"].count("samma dag: 9.0.1") == 1
 
 
 def test_write_devices_collapses_existing_file_duplicates(tmp_path):

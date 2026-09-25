@@ -122,16 +122,33 @@ def _version_sort_key(os_version: str) -> tuple[int, ...]:
 
 
 def _merge_day_group(winner: DeviceRow, losers: list[DeviceRow]) -> DeviceRow:
-    """Fold `losers` into `winner`'s note as "samma dag: <what it was>"."""
-    note_bits = [winner["note"]] if winner["note"] else []
+    """Fold `losers` into `winner`'s note as "samma dag: <what it was>".
+
+    Deduplicated against the winner's existing note, split on "; " into
+    its individual fragments: re-collapsing a day whose losers were
+    already absorbed in an earlier write must not grow the note every
+    time the same candidate gets re-applied (Nagelfar issue-001) — the
+    same "samma dag: X" phrase is only ever added once, regardless of
+    how many times this runs. A loser's own manual `note`, if it has
+    one, is preserved too — appended in parens after the phrase
+    describing what it was — rather than silently dropped when its
+    (platform, model, os_version) key gets absorbed.
+    """
+    existing = [p for p in winner["note"].split("; ") if p] if winner["note"] else []
+    note_bits = list(existing)
     for loser in losers:
         what = (
             loser["os_version"]
             if loser["model"] == winner["model"]
             else f"{loser['model']} {loser['os_version']}".strip()
         )
-        if what:
-            note_bits.append(f"samma dag: {what}")
+        if not what:
+            continue
+        phrase = f"samma dag: {what}"
+        if loser["note"]:
+            phrase = f"{phrase} ({loser['note']})"
+        if phrase not in note_bits:
+            note_bits.append(phrase)
     return {**winner, "note": "; ".join(note_bits)}
 
 
@@ -348,6 +365,14 @@ def _merge_into(
     return new_rows, "updated", candidate
 
 
+def _collapsed_day_row(rows: list[DeviceRow], key: tuple[str, str]) -> DeviceRow | None:
+    """The collapsed row for (platform, valid_from) ``key`` in ``rows``, if any."""
+    return next(
+        (r for r in collapse_same_day_rows(rows) if (r["platform"], r["valid_from"]) == key),
+        None,
+    )
+
+
 def add_device(
     data_dir: Path,
     *,
@@ -364,7 +389,15 @@ def add_device(
     Returns the row that ended up on file for this (platform, model,
     os_version) if anything changed (new row added, or an existing row's
     date moved earlier — see ``_merge_into``), or None if the candidate
-    lost to an existing row with the same or an earlier date (no write).
+    lost to an existing row with the same or an earlier date, OR (see
+    ``_collapsed_day_row``, Nagelfar issue-001) if the candidate's
+    (platform, model, os_version) key had already been absorbed into an
+    existing day's winner — same-day collapse means that key no longer
+    exists as its own row for ``_merge_into``'s exact match to find, so
+    it would otherwise look like a brand new row every time, growing the
+    winner's note on every re-application of a candidate that changes
+    nothing. Checked by comparing the candidate's own (platform, day)
+    group's collapsed state immediately before and after the merge.
     """
     rows = read_devices(data_dir)
     candidate: DeviceRow = {
@@ -378,11 +411,19 @@ def add_device(
     }
     validate_row(candidate)
 
-    new_rows, outcome, result_row = _merge_into(rows, candidate)
+    key = (candidate["platform"], candidate["valid_from"])
+    before_day = _collapsed_day_row(rows, key)
+
+    new_rows, outcome, _result_row = _merge_into(rows, candidate)
     if outcome == "skipped":
         return None
+
+    after_day = _collapsed_day_row(new_rows, key)
+    if after_day == before_day:
+        return None  # absorbed into an already-identical day row — nothing changed
+
     write_devices(data_dir, new_rows)
-    return result_row
+    return after_day
 
 
 def add_devices_bulk(
@@ -395,15 +436,28 @@ def add_devices_bulk(
     merged against the file (and against earlier candidates in this same
     batch) via the same earliest-wins rule as ``add_device`` — see
     ``_merge_into``.
+
+    A candidate that ``_merge_into`` calls "added" (no exact
+    (platform, model, os_version) match) is only actually reported as
+    added if the candidate's (platform, day) group's collapsed state
+    changed — see ``add_device``'s docstring and Nagelfar issue-001 for
+    why an exact-key miss doesn't mean the candidate is new: its key may
+    already be absorbed into an existing day's winner.
     """
     rows = read_devices(data_dir)
     added: list[DeviceRow] = []
     updated: list[DeviceRow] = []
     for candidate in candidates:
         validate_row(candidate)
+        key = (candidate["platform"], candidate["valid_from"])
+        before_day = _collapsed_day_row(rows, key)
+
         rows, outcome, result_row = _merge_into(rows, candidate)
+
         if outcome == "added" and result_row is not None:
-            added.append(result_row)
+            after_day = _collapsed_day_row(rows, key)
+            if after_day != before_day:
+                added.append(after_day)
         elif outcome == "updated" and result_row is not None:
             updated.append(result_row)
     if added or updated:
