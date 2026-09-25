@@ -82,6 +82,23 @@ separate cleanup step needed after upgrading.
 garmin` run reads the freshly downloaded TCX's device info and adds a
 row if it's new — no manual step needed.
 
+**Garmin dates are local days.** A change is dated by the wall-clock
+day where the activity happened: Garmin's `startTimeLocal` first, then
+the FIT activity's `local_timestamp` when present, otherwise the
+activity start converted to Europe/Stockholm time. (The Apple Watch
+scan already dates by local day, via the export's `creationDate`.) A
+change first seen just after local midnight no longer lands on the
+previous day.
+
+**Concurrent writes take turns.** The timer fetch, a manual fetch or
+`device add`, and `device scan --apply` can all write at once; they
+serialize on an exclusive lock (`devices.csv.lock` next to
+`devices.csv`, never committed) instead of silently dropping each
+other's rows. A scan `--apply` also rewrites a log that predates the
+one-row-per-day rule above and reports it (`Städade N dag(ar) med
+dubbletter`); the post-fetch hook never fails a fetch over the lock —
+it logs a warning instead.
+
 **Apple Watch history comes from a manual Health app export.** Health
 Auto Export's live feed (the one `traning fetch health` runs on) only
 ever sends `sourceName`, no device identifier, so it can't drive this
