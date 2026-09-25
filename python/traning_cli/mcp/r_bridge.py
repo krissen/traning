@@ -18,8 +18,6 @@ from typing import Any
 
 from fastmcp.utilities.types import Image
 
-from ..devices.log import collapse_same_day_rows
-
 logger = logging.getLogger(__name__)
 
 TRANING_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -666,22 +664,18 @@ def _format_device_changes_note(changes: list[dict]) -> str:
     rather than trailing the last clause, so it unambiguously scopes the
     whole list — not just whichever change happened to be mentioned last.
 
-    Defensively collapses same-(platform, valid_from) duplicates first
-    (collapse_same_day_rows(), python/traning_cli/devices/log.py) —
-    R's device_changes() already enforces this in production, but a
-    handcrafted `changes` list (a test, or an older R deploy) could
-    still carry two rows for the same day; rendering both as separate
-    clauses is the exact shape of the bug this exists to avoid (a
-    fictitious device swap reported alongside the real one).
-    collapse_same_day_rows() itself returns oldest-first (its other
-    callers want that); re-sorted here to match `changes`'s own
-    newest-first contract (R's device_changes() sort order).
+    Assumes `changes` already satisfies the one-row-per-(platform, day)
+    invariant — R's device_changes() (called on read_device_log()'s
+    output, itself already collapsed) is the only real source for this
+    list, so it always does. A second collapse here used to exist as a
+    defensive guard, but re-collapsing an already-windowed subset with
+    no `previous_model` context is not a faithful backup of R's
+    full-history decision (nagelfar issue-002) — it could pick a
+    different winner than R just did. Removed rather than kept
+    inconsistent; test-devices.R's dirty-log tests are the guarantee
+    that a same-day duplicate never reaches this function in the first
+    place.
     """
-    changes = sorted(
-        collapse_same_day_rows(changes),  # type: ignore[arg-type]
-        key=lambda c: c["valid_from"],
-        reverse=True,
-    )
     swap_flags = _resolve_swap_flags(changes)
 
     if len(changes) <= _DEVICE_NOTE_SUMMARY_THRESHOLD:
