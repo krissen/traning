@@ -196,6 +196,35 @@ def test_device_scan_empty_archive_canonical_file_outcome_unchanged(traning_data
     assert devices_csv_path(traning_data_dir).stat().st_mtime_ns == mtime_before
 
 
+# --- corrupt devices.csv is a clean error (Nagelfar R2-2) --------------------
+
+
+def _write_corrupt_devices_csv(data_dir):
+    path = devices_csv_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "valid_from,platform,model,os_version,certainty,origin,note\n"
+        "2020-01-01,not_a_platform,x,y,exact,fit,\n",
+        encoding="utf-8",
+    )
+
+
+def test_device_scan_corrupt_log_is_clean_error_dry_run_and_apply(traning_data_dir):
+    """A corrupt devices.csv names the file in both dry-run and --apply."""
+    _write_corrupt_devices_csv(traning_data_dir)
+
+    for args in (
+        ["device", "scan", "--source", "fit"],
+        ["device", "scan", "--source", "fit", "--apply"],
+    ):
+        result = CliRunner().invoke(cli, args)
+
+        assert result.exit_code == 1, result.output
+        assert "Trasig enhetslogg" in result.output
+        assert "devices.csv" in result.output
+        assert "Traceback" not in result.output
+
+
 # --- dry-run never writes (Nagelfar F2) -------------------------------------
 
 

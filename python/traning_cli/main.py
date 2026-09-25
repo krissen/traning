@@ -1223,7 +1223,12 @@ def device_scan(source, healthkit_export, apply_changes):
     today — corrupt file metadata, not a real device) are skipped and
     counted, never silently dropped: the summary names the file.
     """
-    from .devices.log import add_devices_bulk, count_pending_tidy, tidy_devices_log
+    from .devices.log import (
+        add_devices_bulk,
+        count_pending_tidy,
+        devices_csv_path,
+        tidy_devices_log,
+    )
     from .devices.scan import scan as scan_devices
     from .garmin.utils import get_data_dir
 
@@ -1231,6 +1236,9 @@ def device_scan(source, healthkit_export, apply_changes):
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e)) from e
+
+    def _corrupt_log_error(e: ValueError) -> click.ClickException:
+        return click.ClickException(f"Trasig enhetslogg {devices_csv_path(data_dir)}: {e}")
 
     try:
         candidates, fit_stats, tcx_stats, healthkit_stats = scan_devices(
@@ -1313,10 +1321,15 @@ def device_scan(source, healthkit_export, apply_changes):
                 tidied = tidy_devices_log(data_dir)
             except OSError as e:
                 raise click.ClickException(f"Kunde inte städa enhetsloggen: {e}") from e
+            except ValueError as e:
+                raise _corrupt_log_error(e) from e
             if tidied:
                 click.echo(_tidy_message(tidied))
         else:
-            pending = count_pending_tidy(data_dir)
+            try:
+                pending = count_pending_tidy(data_dir)
+            except ValueError as e:
+                raise _corrupt_log_error(e) from e
             if pending:
                 click.echo(_would_tidy_message(pending))
         click.echo("Inga enhetsbyten hittade.")
@@ -1329,7 +1342,10 @@ def device_scan(source, healthkit_export, apply_changes):
             click.echo(
                 f"  {row['valid_from']}  {row['model']}  {row['os_version']}  ({row['origin']})"
             )
-        pending = count_pending_tidy(data_dir)
+        try:
+            pending = count_pending_tidy(data_dir)
+        except ValueError as e:
+            raise _corrupt_log_error(e) from e
         if pending:
             click.echo(_would_tidy_message(pending))
         _echo_summary_recap()
@@ -1339,6 +1355,8 @@ def device_scan(source, healthkit_export, apply_changes):
         added, updated, tidied = add_devices_bulk(data_dir, candidates)
     except OSError as e:
         raise click.ClickException(f"Kunde inte skriva enhetsloggen: {e}") from e
+    except ValueError as e:
+        raise _corrupt_log_error(e) from e
     unchanged = len(candidates) - len(added) - len(updated)
     click.echo(
         f"Skrev {len(added)} nya rader, {len(updated)} uppdaterade (tidigare datum), "
