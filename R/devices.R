@@ -109,13 +109,17 @@
 # stripped (.extract_absorbed_versions()). Absorbed versions = the
 # union of what the winner's note already listed, each loser's own
 # (model-qualified when the model differs) version, and anything
-# already listed in a loser's OWN note — sorted, deduplicated, semantic
-# version order, so the result never depends on processing order or how
-# many times this runs. A loser's own note is preserved ONLY when its
-# origin is "manual" (a scanner's provenance note is never copied — it
-# describes a row that no longer exists on its own), as a "(manuell:
-# ...)" fragment with "; " replaced by ", " so it can't be mistaken for
-# a fragment boundary later, deduplicated against the base note.
+# already listed in a loser's OWN note — minus the winner's own
+# version, in plain and model-qualified form (it can arrive via a
+# loser's leftover note, from an earlier collapse where today's winner
+# itself lost; listing the row's own version as superseded the same
+# day is noise) — sorted, deduplicated, semantic version order, so the
+# result never depends on processing order or how many times this runs.
+# A loser's own note is preserved ONLY when its origin is "manual" (a
+# scanner's provenance note is never copied — it describes a row that
+# no longer exists on its own), as a "(manuell: ...)" fragment with
+# "; " replaced by ", " so it can't be mistaken for a fragment
+# boundary later, deduplicated against the base note.
 .merge_day_group <- function(winner, losers) {
   if (nrow(losers) == 0) {
     return(winner)
@@ -146,6 +150,13 @@
         base_segments <- c(base_segments, manual_fragment)
       }
     }
+  }
+
+  if (!is.na(winner$os_version) && nzchar(winner$os_version)) {
+    self_versions <- unique(c(
+      winner$os_version, trimws(paste(winner$model, winner$os_version))
+    ))
+    absorbed <- setdiff(absorbed, self_versions)
   }
 
   segments <- base_segments

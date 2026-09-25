@@ -274,7 +274,11 @@ def _merge_day_group(winner: DeviceRow, losers: list[DeviceRow]) -> DeviceRow:
     what the winner's note already listed, each loser's own
     (model-qualified when the loser's model differs from the winner's)
     version, and anything already listed in each loser's OWN note (a
-    loser can itself be carrying a leftover "samma dag: ..." fragment).
+    loser can itself be carrying a leftover "samma dag: ..." fragment)
+    — minus the winner's own version, in plain and model-qualified
+    form: it can arrive via a loser's leftover note (a fragment from an
+    earlier collapse where today's winner itself lost), and listing the
+    row's own version as superseded earlier the same day is noise.
     Sorted, deduplicated, in semantic version order — never grows or
     reorders on a repeat run with the same inputs.
 
@@ -303,6 +307,13 @@ def _merge_day_group(winner: DeviceRow, losers: list[DeviceRow]) -> DeviceRow:
             manual_fragment = f"(manuell: {loser['note'].replace('; ', ', ')})"
             if manual_fragment not in base_segments:
                 base_segments.append(manual_fragment)
+
+    if winner["os_version"]:
+        self_versions = {
+            winner["os_version"],
+            f"{winner['model']} {winner['os_version']}".strip(),
+        }
+        absorbed -= self_versions
 
     segments = list(base_segments)
     if absorbed:

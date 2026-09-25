@@ -578,6 +578,36 @@ def test_real_devices_csv_2022_10_06_collapses_exactly(tmp_path):
     assert row["note"] == "healthkit-scan: export.xml; samma dag: 9.0.1"
 
 
+def test_merge_day_group_leaves_winners_own_version_out(tmp_path):
+    """A loser's note already lists the winner's version (leftover from
+    an earlier collapse where today's winner itself lost): the
+    canonical list must not repeat the row's own version."""
+    write_devices(
+        tmp_path,
+        [
+            _row(
+                platform="apple_watch",
+                valid_from="2022-10-06",
+                model="Ultra",
+                os_version="9.1",
+                origin="healthkit",
+                note="healthkit-scan: export.xml; samma dag: 9.0, 9.0.1, 9.1",
+            ),
+            _row(
+                platform="apple_watch",
+                valid_from="2022-10-06",
+                model="Ultra",
+                os_version="9.0",
+                origin="healthkit",
+                note="healthkit-scan: export.xml",
+            ),
+        ],
+    )
+    row = next(r for r in read_devices(tmp_path) if r["valid_from"] == "2022-10-06")
+    assert row["os_version"] == "9.1"
+    assert row["note"] == "healthkit-scan: export.xml; samma dag: 9.0, 9.0.1"
+
+
 # --- earliest-wins merge (Nagelfar issue-002) -------------------------------
 #
 # The same (platform, model, os_version) is only recorded once, but which
