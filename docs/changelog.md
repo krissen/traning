@@ -32,6 +32,12 @@ går att slå upp i stället för att gissas på.
   Series 4, Ultra (gen 1), och watchOS-versionen för varje byte.
   Exporten ligger uppackad på kailash, en ny datumkatalog per export;
   `traning device scan --source healthkit` skannar den.
+- **Bytena syns nu där nivåskiften tolkas.** Hälsoplottarna (vilopuls,
+  HRV, sömn, VO2max) visar Apple Watch-byten, EF och decoupling visar
+  Garmin-byten. Vid täta byten får bara klockbyten etikett; firmwarebyten
+  blir tunna linjer. Vayus svar nämner byten inom den period svaret
+  gäller, och räknar firmwareuppdateringar när de är många. Ingen logg:
+  inget ändras.
 
 ## 2026-09-06 — Kvällarna kommer fram hela
 
