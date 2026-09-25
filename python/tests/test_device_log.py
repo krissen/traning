@@ -293,7 +293,7 @@ def test_add_devices_bulk_repeated_absorbed_candidate_is_stable(tmp_path):
         assert read_devices(tmp_path) == after_setup  # byte-for-byte stable
 
 
-def test_add_device_manual_add_of_an_absorbed_version_reports_already_logged(tmp_path):
+def test_add_device_reapply_of_an_absorbed_version_reports_already_logged(tmp_path):
     _absorbed_fixture(tmp_path)
     after_setup = read_devices(tmp_path)
 
@@ -304,12 +304,40 @@ def test_add_device_manual_add_of_an_absorbed_version_reports_already_logged(tmp
         os_version="9.0.1",
         valid_from="2022-10-06",
         certainty="exact",
-        origin="manual",
+        origin="healthkit",  # non-manual: nothing new to preserve verbatim
         note="healthkit-scan: e.xml",  # identical to what's already absorbed
     )
 
     assert row is None
     assert read_devices(tmp_path) == after_setup
+
+
+def test_add_device_repeated_manual_add_of_an_absorbed_version_is_stable(tmp_path):
+    # A manual candidate's own note IS preserved (see the test below), so
+    # the first application legitimately changes the file — but applying
+    # the exact same candidate again must not grow the note further.
+    _absorbed_fixture(tmp_path)
+
+    def apply_once():
+        return add_device(
+            tmp_path,
+            platform="apple_watch",
+            model="Ultra",
+            os_version="9.0.1",
+            valid_from="2022-10-06",
+            certainty="exact",
+            origin="manual",
+            note="jag minns att uppdateringen kom på förmiddagen",
+        )
+
+    first = apply_once()
+    assert first is not None
+    after_first = read_devices(tmp_path)
+
+    for _ in range(2):
+        again = apply_once()
+        assert again is None
+        assert read_devices(tmp_path) == after_first
 
 
 def test_add_device_manual_note_on_an_absorbed_version_is_preserved(tmp_path):
@@ -374,6 +402,92 @@ def test_add_devices_bulk_separate_source_scans_do_not_re_add_the_loser(tmp_path
     assert added2 == []
     assert updated2 == []
     assert read_devices(tmp_path) == after_setup
+
+
+# --- Nagelfar issue-001, round 2: canonical note rebuild --------------------
+#
+# Round 1's fix deduplicated by exact phrase text, which still grew
+# without bound whenever a loser's own note contained "; " — splitting
+# a phrase like "samma dag: 9.0.1 (healthkit-scan: export.xml; samma
+# dag: 9.1)" on "; " never matches itself again verbatim. The note is
+# now always rebuilt from scratch on every merge (see
+# _merge_day_group()), which has no such failure mode: there's nothing
+# to accumulate.
+
+
+@pytest.mark.parametrize(
+    "loser_note",
+    [
+        "",
+        "healthkit-scan: export.xml",
+        "healthkit-scan: export.xml; samma dag: 9.0",
+        "jag minns; det var på förmiddagen",
+        "jag minns; samma dag: 9.0",
+    ],
+    ids=[
+        "empty",
+        "provenance",
+        "provenance_plus_samma_dag",
+        "manual_semicolon",
+        "manual_plus_samma_dag",
+    ],
+)
+@pytest.mark.parametrize("loser_origin", ["manual", "healthkit"])
+def test_repeated_absorption_matrix_is_stable_from_round_2(tmp_path, loser_note, loser_origin):
+    _absorbed_fixture(tmp_path)
+
+    candidate = _row(
+        platform="apple_watch",
+        valid_from="2022-10-06",
+        model="Ultra",
+        os_version="9.0.1",
+        origin=loser_origin,
+        note=loser_note,
+    )
+
+    outcomes = []
+    for _ in range(3):
+        added, updated = add_devices_bulk(tmp_path, [dict(candidate)])
+        outcomes.append((len(added), len(updated), read_devices(tmp_path)))
+
+    # Round 1 may legitimately change the file (a manual note being
+    # preserved for the first time, say) — rounds 2 and 3 must both
+    # report "already logged" and leave the file exactly as round 1 did.
+    assert outcomes[1][:2] == (0, 0)
+    assert outcomes[2][:2] == (0, 0)
+    assert outcomes[1][2] == outcomes[0][2]
+    assert outcomes[2][2] == outcomes[0][2]
+
+
+def test_real_devices_csv_2022_10_06_collapses_exactly(tmp_path):
+    # The actual production row shape (both candidates share the
+    # scanner's own provenance note): must collapse to exactly
+    # "healthkit-scan: export.xml; samma dag: 9.0.1" — no provenance
+    # text duplicated in parens (it's from a healthkit-origin loser,
+    # never preserved verbatim).
+    write_devices(
+        tmp_path,
+        [
+            _row(
+                platform="apple_watch",
+                valid_from="2022-10-06",
+                model="Apple Watch Ultra (gen 1)",
+                os_version="9.0.1",
+                origin="healthkit",
+                note="healthkit-scan: export.xml",
+            ),
+            _row(
+                platform="apple_watch",
+                valid_from="2022-10-06",
+                model="Apple Watch Ultra (gen 1)",
+                os_version="9.1",
+                origin="healthkit",
+                note="healthkit-scan: export.xml",
+            ),
+        ],
+    )
+    row = next(r for r in read_devices(tmp_path) if r["valid_from"] == "2022-10-06")
+    assert row["note"] == "healthkit-scan: export.xml; samma dag: 9.0.1"
 
 
 # --- earliest-wins merge (Nagelfar issue-002) -------------------------------
@@ -611,8 +725,9 @@ def test_collapse_same_day_rows_three_way_collision_names_both_losers():
     out = collapse_same_day_rows(rows)
     assert len(out) == 1
     assert out[0]["os_version"] == "9.1"
-    assert "samma dag: 9.0.1" in out[0]["note"]
-    assert "samma dag: 9.0.2" in out[0]["note"]
+    # Canonical form: one combined, sorted "samma dag: ..." list, not one
+    # phrase per loser.
+    assert out[0]["note"] == "samma dag: 9.0.1, 9.0.2"
 
 
 def test_collapse_same_day_rows_different_models_same_day_falls_back_to_version():

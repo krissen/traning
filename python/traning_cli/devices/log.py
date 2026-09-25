@@ -121,35 +121,97 @@ def _version_sort_key(os_version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in match.group().split("."))
 
 
-def _merge_day_group(winner: DeviceRow, losers: list[DeviceRow]) -> DeviceRow:
-    """Fold `losers` into `winner`'s note as "samma dag: <what it was>".
+_SAMMA_DAG_PREFIX = "samma dag: "
 
-    Deduplicated against the winner's existing note, split on "; " into
-    its individual fragments: re-collapsing a day whose losers were
-    already absorbed in an earlier write must not grow the note every
-    time the same candidate gets re-applied (Nagelfar issue-001) — the
-    same "samma dag: X" phrase is only ever added once, regardless of
-    how many times this runs. A loser's own manual `note`, if it has
-    one, is preserved too — appended in parens after the phrase
-    describing what it was — rather than silently dropped when its
-    (platform, model, os_version) key gets absorbed.
+
+def _split_note_segments(note: str) -> list[str]:
+    """`note` split on "; " into its individual fragments, empties dropped."""
+    return [s for s in note.split("; ") if s] if note else []
+
+
+def _extract_absorbed_versions(note: str) -> tuple[list[str], set[str]]:
+    """Split `note` into (non-"samma dag" fragments, already-absorbed set).
+
+    Any fragment starting with "samma dag: " is parsed for its
+    comma-separated version list (also handles a *pre*-canonical note
+    with more than one such fragment — e.g. leftover from before this
+    function existed, or a scan-time note that already carries its own
+    "samma dag: X" text) rather than assuming there's ever only one.
+    Every other fragment (the scanner's provenance note, a previously
+    preserved "(manuell: ...)" fragment, ...) passes through unchanged
+    and untouched, in order.
     """
-    existing = [p for p in winner["note"].split("; ") if p] if winner["note"] else []
-    note_bits = list(existing)
+    rest: list[str] = []
+    absorbed: set[str] = set()
+    for seg in _split_note_segments(note):
+        if seg.startswith(_SAMMA_DAG_PREFIX):
+            absorbed.update(v for v in seg[len(_SAMMA_DAG_PREFIX) :].split(", ") if v)
+        else:
+            rest.append(seg)
+    return rest, absorbed
+
+
+def _merge_day_group(winner: DeviceRow, losers: list[DeviceRow]) -> DeviceRow:
+    """Rebuild `winner`'s note canonically from `winner` + `losers`.
+
+    Nagelfar issue-001 round 2: appending one "samma dag: X (note)"
+    phrase per loser, deduplicated by exact phrase text, still grew
+    without bound whenever a loser's own `note` contained "; " (a
+    provenance note from the chronological scan-time collapse already
+    looks like this: "healthkit-scan: export.xml; samma dag: 9.1") —
+    splitting THAT on "; " produces a fragment that never matches
+    itself verbatim on the next run, so it kept getting re-appended.
+    Rebuilding the note from scratch on every merge — instead of ever
+    appending to what's already there — removes the failure mode at
+    the root: there is no accumulated text to grow.
+
+    The note is always exactly:
+        <base note> + "; samma dag: " + "<v1>, <v2>, ..."
+    (the "; samma dag: ..." part omitted entirely when nothing was
+    absorbed). Base note = winner's own note with any "samma dag: ..."
+    fragment(s) stripped out (see _extract_absorbed_versions) — that's
+    everything OTHER than the absorbed-version list: the scanner's
+    provenance note, and any "(manuell: ...)" fragment already
+    preserved from an earlier round. Absorbed versions = the union of
+    what the winner's note already listed, each loser's own
+    (model-qualified when the loser's model differs from the winner's)
+    version, and anything already listed in each loser's OWN note (a
+    loser can itself be carrying a leftover "samma dag: ..." fragment).
+    Sorted, deduplicated, in semantic version order — never grows or
+    reorders on a repeat run with the same inputs.
+
+    A loser's own `note` is preserved ONLY when its `origin` is
+    "manual" — a scanner's provenance note ("healthkit-scan:
+    export.xml") is never copied, it's noise once the row it described
+    no longer exists on its own. Preserved as a `"(manuell: ...)"`
+    fragment, with any "; " in the original text replaced by ", " so
+    it can never be mistaken for a fragment boundary on a later split;
+    deduplicated against fragments already in the base note.
+    """
+    base_segments, absorbed = _extract_absorbed_versions(winner["note"])
+
     for loser in losers:
         what = (
             loser["os_version"]
             if loser["model"] == winner["model"]
             else f"{loser['model']} {loser['os_version']}".strip()
         )
-        if not what:
-            continue
-        phrase = f"samma dag: {what}"
-        if loser["note"]:
-            phrase = f"{phrase} ({loser['note']})"
-        if phrase not in note_bits:
-            note_bits.append(phrase)
-    return {**winner, "note": "; ".join(note_bits)}
+        if what:
+            absorbed.add(what)
+        _, loser_absorbed = _extract_absorbed_versions(loser["note"])
+        absorbed |= loser_absorbed
+
+        if loser["origin"] == "manual" and loser["note"]:
+            manual_fragment = f"(manuell: {loser['note'].replace('; ', ', ')})"
+            if manual_fragment not in base_segments:
+                base_segments.append(manual_fragment)
+
+    segments = list(base_segments)
+    if absorbed:
+        ordered = sorted(absorbed, key=lambda v: (_version_sort_key(v), v))
+        segments.append(_SAMMA_DAG_PREFIX + ", ".join(ordered))
+
+    return {**winner, "note": "; ".join(segments)}
 
 
 def _resolve_day_group_winner(candidates: list[DeviceRow], previous_model: str | None) -> DeviceRow:
