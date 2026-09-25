@@ -207,3 +207,70 @@ def test_r_report_error_response_never_carries_a_note(monkeypatch):
     out = r_bridge.r_report("report_readiness")
     assert out["summary"]["status"] == "error"
     assert "device_changes_note" not in out
+
+
+# --- n-only call shape (nagelfar issue-001 regression) ----------------------
+#
+# tools.py's default calls (get_hrv(), get_resting_hr(), get_sleep(),
+# get_vo2max() with no after/before; get_efficiency(metric="ef")/
+# get_decoupling() likewise) send only {"n": ...} to R — no from/to keys
+# at all (see _build_args(): it only sets "from"/"to" when after/before
+# were explicitly given). The R-side fix (inst/mcp_bridge_shared.R:
+# .effective_device_change_bounds()) now scopes device_changes to the
+# actual result's date range on that path; these tests pin the Python
+# side of that contract — an n-only call must reach R with no from/to,
+# and a device_changes list that (as R now guarantees) only contains
+# in-window rows must never surface an out-of-window change in the note.
+
+
+def test_get_hrv_default_call_sends_only_n_no_from_or_to(monkeypatch):
+    from traning_cli.mcp import tools
+
+    recorded = {}
+
+    def fake_r_report(func, args=None, **kwargs):
+        recorded["func"] = func
+        recorded["args"] = args
+        return {"schema_version": "1.0", "summary": {"status": "ok"}, "details": []}
+
+    monkeypatch.setattr(tools, "r_report", fake_r_report)
+    tools.get_hrv()
+    assert recorded["func"] == "report_readiness"
+    assert "from" not in recorded["args"]
+    assert "to" not in recorded["args"]
+    assert recorded["args"]["n"] == 30
+
+
+def test_n_only_response_never_mentions_a_change_outside_the_result_window(monkeypatch):
+    # Simulates the FIXED R behaviour: an n-only call (device_changes
+    # already scoped by R to the reported window) returns only the
+    # in-window change — the long-ago Series 3 swap issue-001 flagged
+    # as wrongly included is simply absent from what R sends back.
+    in_window_change = [
+        {
+            "platform": "apple_watch",
+            "model": "Ultra 2",
+            "os_version": "watchOS 26.6",
+            "note": "",
+            "valid_from": "2025-11-15",
+        }
+    ]
+    monkeypatch.setattr(
+        r_bridge,
+        "_run_r",
+        lambda *a, **k: _raw(rows=[{"Datum": "2025-11-15"}], device_changes=in_window_change),
+    )
+    out = r_bridge.r_report("report_readiness", {"n": 14})
+    assert "device_changes_note" in out
+    assert "2025-11-15" in out["device_changes_note"]
+    assert "2020-01-01" not in out["device_changes_note"]  # the out-of-window change
+
+
+def test_n_only_response_omits_note_when_r_sends_no_device_changes(monkeypatch):
+    # The other half of the fix: when R finds nothing in the result's
+    # own window (or has no date to derive a window from at all), it
+    # omits `device_changes` entirely — r_report() must not fabricate
+    # a note from an absent field.
+    monkeypatch.setattr(r_bridge, "_run_r", lambda *a, **k: _raw(rows=[{"Datum": "2025-11-15"}]))
+    out = r_bridge.r_report("report_readiness", {"n": 14})
+    assert "device_changes_note" not in out
