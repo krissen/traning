@@ -53,12 +53,209 @@
   as.Date(x)
 }
 
+# Internal helper: strip an os_version string to its leading numeric run
+# ("9.1" -> "9.1", "watchOS 26.6" -> "26.6") so numeric_version() (which
+# errors on non-numeric components) can rank it. Mirrors Python's
+# log.py:_version_sort_key(). Unparseable/empty input becomes "0",
+# which numeric_version() ranks below any real version — "unparseable
+# never outranks a real one," the same rule as the Python mirror.
+.version_for_compare <- function(os_version) {
+  extracted <- stringr::str_extract(os_version, "[0-9]+(\\.[0-9]+)*")
+  dplyr::coalesce(extracted, "0")
+}
+
+# Internal helper: prefix marking a "samma dag: ..." fragment in a note.
+.SAMMA_DAG_PREFIX <- "samma dag: "
+
+# Internal helper: `note` split on "; " into its individual fragments,
+# empties dropped. Mirrors Python's log.py:_split_note_segments().
+.split_note_segments <- function(note) {
+  if (!nzchar(note)) {
+    return(character(0))
+  }
+  segs <- strsplit(note, "; ", fixed = TRUE)[[1]]
+  segs[nzchar(segs)]
+}
+
+# Internal helper: split `note` into (non-"samma dag" fragments,
+# already-absorbed version set). Mirrors Python's
+# log.py:_extract_absorbed_versions() — see that function's docstring;
+# handles one or more "samma dag: ..." fragments, not just one, in case
+# `note` is pre-canonical dirty input.
+.extract_absorbed_versions <- function(note) {
+  segs <- .split_note_segments(note)
+  is_samma_dag <- startsWith(segs, .SAMMA_DAG_PREFIX)
+  rest <- segs[!is_samma_dag]
+  absorbed <- character(0)
+  if (any(is_samma_dag)) {
+    lists <- substring(segs[is_samma_dag], nchar(.SAMMA_DAG_PREFIX) + 1)
+    absorbed <- unlist(strsplit(lists, ", ", fixed = TRUE))
+    absorbed <- absorbed[nzchar(absorbed)]
+  }
+  list(rest = rest, absorbed = unique(absorbed))
+}
+
+# Internal helper: rebuild `winner`'s note canonically from `winner` +
+# `losers`. Mirrors Python's log.py:_merge_day_group() — see that
+# function's docstring for the full rationale (Nagelfar issue-001,
+# round 2: appending deduplicated-by-exact-phrase-text still grew the
+# note without bound whenever a loser's own note contained "; ", since
+# a phrase built from it could never match itself verbatim again on a
+# later split).
+#
+# The note is always exactly `<base note> + "; samma dag: " + "<v1>,
+# <v2>, ..."` (the "samma dag" part omitted when nothing was absorbed).
+# Base note = winner's own note with any "samma dag: ..." fragment(s)
+# stripped (.extract_absorbed_versions()). Absorbed versions = the
+# union of what the winner's note already listed, each loser's own
+# (model-qualified when the model differs) version, and anything
+# already listed in a loser's OWN note — sorted, deduplicated, semantic
+# version order, so the result never depends on processing order or how
+# many times this runs. A loser's own note is preserved ONLY when its
+# origin is "manual" (a scanner's provenance note is never copied — it
+# describes a row that no longer exists on its own), as a "(manuell:
+# ...)" fragment with "; " replaced by ", " so it can't be mistaken for
+# a fragment boundary later, deduplicated against the base note.
+.merge_day_group <- function(winner, losers) {
+  if (nrow(losers) == 0) {
+    return(winner)
+  }
+
+  parsed <- .extract_absorbed_versions(winner$note)
+  base_segments <- parsed$rest
+  absorbed <- parsed$absorbed
+
+  for (i in seq_len(nrow(losers))) {
+    l <- losers[i, ]
+    what <- if (identical(l$model, winner$model)) {
+      l$os_version
+    } else {
+      trimws(paste(l$model, l$os_version))
+    }
+    if (nzchar(what)) {
+      absorbed <- union(absorbed, what)
+    }
+    loser_parsed <- .extract_absorbed_versions(l$note)
+    absorbed <- union(absorbed, loser_parsed$absorbed)
+
+    if (identical(l$origin, "manual") && nzchar(l$note)) {
+      manual_fragment <- paste0(
+        "(manuell: ", gsub("; ", ", ", l$note, fixed = TRUE), ")"
+      )
+      if (!(manual_fragment %in% base_segments)) {
+        base_segments <- c(base_segments, manual_fragment)
+      }
+    }
+  }
+
+  segments <- base_segments
+  if (length(absorbed) > 0) {
+    ordered <- absorbed[order(numeric_version(.version_for_compare(absorbed)), absorbed)]
+    segments <- c(segments, paste0(.SAMMA_DAG_PREFIX, paste(ordered, collapse = ", ")))
+  }
+
+  winner$note <- paste(segments, collapse = "; ")
+  winner
+}
+
+# Internal helper: pick the winning row (by index into `group`) within a
+# same-(platform, day) group that has no time information to order by —
+# see .collapse_same_day_rows(). Mirrors Python's
+# log.py:_resolve_day_group_winner().
+#
+# Rule 2: if the group spans more than one distinct model, the winner
+# is whichever model differs from `previous_model` (the platform's
+# resolved model on the immediately preceding day) — a device swap IS
+# that day's real change, even when the new device happens to report a
+# lower os_version than the one it replaced (Nagelfar rond 2: a Series
+# 4 on 9.1 swapped for an Ultra (gen 1) on 9.0.1 the same day must
+# resolve to the Ultra, not "the higher version"). Falls through to
+# rule 3 when there's no previous_model to compare against, or when
+# more than one model in the group is "new" (ambiguous — no single
+# swap target to prefer).
+#
+# Rule 3: highest parsed os_version wins, over whichever candidate pool
+# rule 2 left in play — the full group when rule 2 didn't narrow it, or
+# just the "new" models when it did.
+.resolve_day_group_winner_idx <- function(group, previous_model) {
+  models <- unique(group$model)
+  pool_idx <- seq_len(nrow(group))
+  if (length(models) > 1 && !is.null(previous_model)) {
+    new_idx <- which(group$model != previous_model)
+    new_models <- unique(group$model[new_idx])
+    if (length(new_models) == 1) {
+      pool_idx <- new_idx
+    }
+  }
+  versions <- numeric_version(.version_for_compare(group$os_version[pool_idx]))
+  pool_idx[which.max(versions)]
+}
+
+# Internal helper: enforce the devices.csv invariant defensively on
+# read — at most one row per (platform, valid_from). devices.csv only
+# carries a date, never a time; Python's write_devices()
+# (python/traning_cli/devices/log.py) is the primary enforcement point
+# and cleans the file on every write, but a file written by hand, or by
+# a pre-invariant version of that code, can still be dirty when R reads
+# it. Without this, an out-of-order same-day pair — nagelfar: an Apple
+# Watch Ultra (gen 1) arriving on watchOS 9.0.1 and updating itself to
+# 9.1 later the same day, both dated 2022-10-06 — would misorder
+# whichever downstream consumer sorts by valid_from alone (this
+# produced a fictitious "downgrade to 9.0.1" in Vayu's device-change
+# note).
+#
+# Groups are resolved per platform, in ASCENDING date order, threading
+# each platform's resolved model on day N forward as `previous_model`
+# for day N+1's decision (see .resolve_day_group_winner_idx()) — a
+# group of one passes through unchanged; every other row in a larger
+# group is folded into the winner's note (.merge_day_group()) instead
+# of surviving as its own row. certainty/origin follow the winner
+# unchanged. R never has real intra-day chronology to fall back on
+# (unlike Python's scan-time collapse for HealthKit, which does) — by
+# the time a row reaches this file it has already lost any time
+# component the source might have carried.
+#
+# Idempotent — an already-collapsed log round-trips through this
+# unchanged (every group already has size 1).
+.collapse_same_day_rows <- function(log) {
+  if (nrow(log) == 0) {
+    return(log)
+  }
+
+  platforms <- unique(log$platform)
+  per_platform <- lapply(platforms, function(p) {
+    platform_rows <- log[log$platform == p, , drop = FALSE]
+    days <- sort(unique(platform_rows$valid_from)) # ascending: oldest day first
+    previous_model <- NULL
+    day_results <- vector("list", length(days))
+    for (i in seq_along(days)) {
+      group <- platform_rows[platform_rows$valid_from == days[i], , drop = FALSE]
+      if (nrow(group) == 1) {
+        winner <- group
+      } else {
+        winner_idx <- .resolve_day_group_winner_idx(group, previous_model)
+        winner <- .merge_day_group(group[winner_idx, ], group[-winner_idx, , drop = FALSE])
+      }
+      day_results[[i]] <- winner
+      previous_model <- winner$model
+    }
+    dplyr::bind_rows(day_results)
+  })
+
+  dplyr::bind_rows(per_platform) |> dplyr::arrange(dplyr::desc(.data$valid_from))
+}
+
 #' Read the device log
 #'
 #' Reads the daterad device-change log written by the Python
 #' \code{traning devices} CLI / FIT scan. A missing file is not an
 #' error — it means no device changes have been recorded yet, so an
-#' empty (but correctly typed) tibble is returned.
+#' empty (but correctly typed) tibble is returned. Defensively enforces
+#' the file's own invariant — at most one row per
+#' \code{(platform, valid_from)} — via \code{.collapse_same_day_rows()},
+#' in case the file on disk predates that invariant or was hand-edited;
+#' the write-time enforcement in \code{python/traning_cli/devices/log.py}
+#' is the primary source of truth.
 #'
 #' @param path Path to \code{devices.csv}. Defaults to
 #'   \code{$TRANING_DATA/kristian/devices.csv}.
@@ -106,6 +303,7 @@ read_device_log <- function(path = .default_device_log_path()) {
       origin     = .data$origin,
       note       = dplyr::coalesce(.data$note, "")
     ) |>
+    .collapse_same_day_rows() |>
     dplyr::arrange(dplyr::desc(.data$valid_from))
 }
 

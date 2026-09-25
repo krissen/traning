@@ -93,13 +93,33 @@ def test_merge_candidates_keeps_earliest_valid_from_across_sources():
 
 
 def test_merge_candidates_keeps_distinct_models_separate():
-    fit_rows = [_row(model="fr610", os_version="2.7")]
-    tcx_rows = [_row(model="Garmin Forerunner 610", os_version="2.60")]
+    # Different valid_from dates: two rows on the SAME day now collapse
+    # by design (collapse_same_day_rows(), the one-row-per-day
+    # invariant) regardless of model — that's covered separately in
+    # test_merge_candidates_collapses_same_day_across_sources below.
+    # This test is about the (model, os_version) dedup key itself.
+    fit_rows = [_row(valid_from="2020-01-01", model="fr610", os_version="2.7")]
+    tcx_rows = [_row(valid_from="2021-01-01", model="Garmin Forerunner 610", os_version="2.60")]
 
     merged = merge_candidates(fit_rows, tcx_rows)
 
     # Different literal model strings -> not deduped (exact-match dedup key).
     assert len(merged) == 2
+
+
+def test_merge_candidates_collapses_same_day_across_sources():
+    # Two sources independently derive a change dated the same day, for
+    # different (model, os_version) keys -- merge_candidates()'s own
+    # dedup (keyed on platform/model/os_version) wouldn't catch this;
+    # the final collapse_same_day_rows() pass must.
+    fit_rows = [_row(valid_from="2022-10-06", model="fr945", os_version="9.0.1")]
+    tcx_rows = [_row(valid_from="2022-10-06", model="fr945", os_version="9.1")]
+
+    merged = merge_candidates(fit_rows, tcx_rows)
+
+    assert len(merged) == 1
+    assert merged[0]["os_version"] == "9.1"
+    assert "samma dag: 9.0.1" in merged[0]["note"]
 
 
 def test_merge_candidates_empty_lists():

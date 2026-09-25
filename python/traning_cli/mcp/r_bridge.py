@@ -663,6 +663,18 @@ def _format_device_changes_note(changes: list[dict]) -> str:
     The "inom perioden" ("within the period") caveat leads the sentence
     rather than trailing the last clause, so it unambiguously scopes the
     whole list — not just whichever change happened to be mentioned last.
+
+    Assumes `changes` already satisfies the one-row-per-(platform, day)
+    invariant — R's device_changes() (called on read_device_log()'s
+    output, itself already collapsed) is the only real source for this
+    list, so it always does. A second collapse here used to exist as a
+    defensive guard, but re-collapsing an already-windowed subset with
+    no `previous_model` context is not a faithful backup of R's
+    full-history decision (nagelfar issue-002) — it could pick a
+    different winner than R just did. Removed rather than kept
+    inconsistent; test-devices.R's dirty-log tests are the guarantee
+    that a same-day duplicate never reaches this function in the first
+    place.
     """
     swap_flags = _resolve_swap_flags(changes)
 

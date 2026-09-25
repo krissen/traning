@@ -386,9 +386,20 @@ def collapse_changes(records: list[HealthKitDeviceRecord]) -> list[DeviceRow]:
     this mostly just re-sorts by date and formats the row — the "collapse
     consecutive duplicates" part of the shared helper is a no-op unless
     normalization made two raw hardware/software pairs equal.
+
+    ``chronological=True``: ``records`` arrives sorted by the full
+    ``creationDate``/``startDate`` timestamp before ``scan_export()``
+    ever truncates it to a date (see that function) — the only one of
+    the three scanners that can make this promise — so a same-day
+    collision resolves to whichever record was genuinely last, not a
+    model/version guess.
     """
     return collapse_device_changes(
-        records, platform="apple_watch", origin="healthkit", note_prefix="healthkit-scan"
+        records,
+        platform="apple_watch",
+        origin="healthkit",
+        note_prefix="healthkit-scan",
+        chronological=True,
     )
 
 

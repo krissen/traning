@@ -238,10 +238,19 @@ def test_scan_export_falls_back_to_start_date_when_creation_date_missing(tmp_pat
 # --- same-day ordering by full datetime (Nagelfar issue-002, point 2) ----------
 
 
-def test_scan_and_collapse_orders_same_day_versions_by_full_datetime(tmp_path):
-    # Both rows land on the Ultra's first day (2022-10-06): setup on
-    # 9.0.1, then an update to 9.1 later the same day. The date-only key
-    # must not scramble that — the earlier time must come out first.
+def test_scan_and_collapse_collapses_same_day_versions_to_the_latest(tmp_path):
+    # Both records land on the Ultra's first day (2022-10-06): setup on
+    # 9.0.1, then an update to 9.1 later the same day. devices.csv only
+    # carries a date, not a time — two rows sharing a valid_from would
+    # leave a reader unable to tell which one was actually last (this is
+    # the exact shape of a real bug: get_resting_hr's device-change note
+    # once read this as a "downgrade" to 9.0.1). The one-row-per-day
+    # invariant (collapse_same_day_rows(), log.py) means scan_and_collapse
+    # must fold these to a single row for 2022-10-06, naming 9.1 (the
+    # later version) as the row and 9.0.1 in its note — regardless of
+    # which order the two records were scanned in, since the full
+    # datetime that would otherwise disambiguate them never survives
+    # past HealthKitDeviceRecord.activity_date.
     export = _write_export(
         tmp_path / "export.zip",
         [
@@ -252,8 +261,36 @@ def test_scan_and_collapse_orders_same_day_versions_by_full_datetime(tmp_path):
 
     candidates, _stats = healthkit_scan.scan_and_collapse(export_path=export)
 
-    assert [c["os_version"] for c in candidates] == ["9.0.1", "9.1"]
-    assert all(c["valid_from"] == "2022-10-06" for c in candidates)
+    assert len(candidates) == 1
+    assert candidates[0]["valid_from"] == "2022-10-06"
+    assert candidates[0]["os_version"] == "9.1"
+    assert "samma dag: 9.0.1" in candidates[0]["note"]
+
+
+def test_scan_and_collapse_chronology_beats_version_on_a_same_day_swap(tmp_path):
+    # (d) Nagelfar rond 2: chronology, when it exists, must win outright
+    # — not just as a tiebreak among rows of the same model. A Series 4
+    # logs a bump to 9.1 at 08:00, then a genuine swap to an Ultra
+    # (gen 1) on a LOWER version (9.0.1) happens at 18:00 the same day.
+    # The Ultra is what was really on the wrist by end of day; a
+    # version-magnitude rule alone (collapse_same_day_rows()'s fallback
+    # for sources with no time) would wrongly pick the Series 4 row
+    # instead. HealthKit's real timestamps mean this never needs that
+    # fallback in the first place.
+    export = _write_export(
+        tmp_path / "export.zip",
+        [
+            _record("2022-10-06 08:00:00 +0000", "Watch4,1", "9.1"),
+            _record("2022-10-06 18:00:00 +0000", "Watch6,18", "9.0.1"),
+        ],
+    )
+
+    candidates, _stats = healthkit_scan.scan_and_collapse(export_path=export)
+
+    assert len(candidates) == 1
+    assert candidates[0]["model"] == "Apple Watch Ultra (gen 1)"
+    assert candidates[0]["os_version"] == "9.0.1"
+    assert "samma dag: Apple Watch Series 4 9.1" in candidates[0]["note"]
 
 
 # --- earliest-date-wins collapse per (hardware, software) ---------------------

@@ -60,6 +60,18 @@ change took effect), `platform` (`apple_watch` | `garmin`), `model`,
 `known_since` — a manual, possibly-approximate date), `origin`
 (`manual` | `fit` | `tcx` | `healthkit`), `note`. Newest change first.
 
+**Invariant: at most one row per `(platform, valid_from)`.** The file
+only carries a date, never a time, so two real changes on the same
+calendar day (e.g. a watch arriving with one firmware version and
+updating itself to another hours later) can't be told apart as two
+rows — that row describes the day's actual end-of-day state (the
+latest model/version reached that day); an earlier version reached the
+same day is named in `note` instead (`"samma dag: <version>"`).
+`certainty`/`origin` describe the surviving row. Every write path
+(`device add`, `device scan --apply`) enforces this automatically, and
+collapses any pre-existing same-day duplicates in the file too — no
+separate cleanup step needed after upgrading.
+
 | Command | Description |
 |---------|-------------|
 | `traning device list` | Print devices.csv, newest first |

@@ -83,6 +83,261 @@ test_that("read_device_log resolves the default TRANING_DATA path", {
   })
 })
 
+# --- .collapse_same_day_rows(): at most one row per (platform, day) ---
+#
+# Nagelfar regression: an Apple Watch Ultra (gen 1) arrived on watchOS
+# 9.0.1 and updated itself to 9.1 later the same day. devices.csv only
+# carries a date, so a dirty file with both rows misorders whichever
+# consumer sorts by valid_from alone — Vayu's device-change note once
+# read that as a fictitious downgrade to 9.0.1. read_device_log()
+# collapses this defensively; python/traning_cli/devices/log.py's
+# write_devices() is the primary enforcement point.
+
+test_that("read_device_log collapses the exact kailash same-day case", {
+  path <- .write_devices_csv(c(
+    "2022-10-06,apple_watch,Apple Watch Ultra (gen 1),9.0.1,exact,healthkit,healthkit-scan: export.xml",
+    "2022-10-06,apple_watch,Apple Watch Ultra (gen 1),9.1,exact,healthkit,healthkit-scan: export.xml",
+    "2022-09-14,apple_watch,Apple Watch Series 4,9.1,exact,healthkit,healthkit-scan: export.xml"
+  ))
+  out <- read_device_log(path)
+  expect_equal(nrow(out), 2)
+
+  ultra_row <- out[out$valid_from == as.Date("2022-10-06"), ]
+  expect_equal(ultra_row$os_version, "9.1")
+  expect_equal(ultra_row$model, "Apple Watch Ultra (gen 1)")
+  expect_match(ultra_row$note, "samma dag: 9.0.1")
+  expect_equal(ultra_row$certainty, "exact")
+  expect_equal(ultra_row$origin, "healthkit")
+})
+
+test_that(".collapse_same_day_rows leaves single rows untouched", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2026-01-01,apple_watch,Ultra 2,watchOS 26.6,exact,manual,",
+    "2025-01-01,garmin,Forerunner 965,20.34,exact,manual,"
+  )))
+  expect_equal(nrow(log), 2)
+})
+
+test_that(".collapse_same_day_rows is order-independent (highest version wins)", {
+  a <- "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,"
+  b <- "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,"
+  out1 <- read_device_log(.write_devices_csv(c(a, b)))
+  out2 <- read_device_log(.write_devices_csv(c(b, a)))
+  expect_equal(out1$os_version, "9.1")
+  expect_equal(out2$os_version, "9.1")
+})
+
+test_that(".collapse_same_day_rows names every collapsed loser in the note", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.0.2,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$os_version, "9.1")
+  # Canonical form: one combined, sorted "samma dag: ..." list, not one
+  # fragment per loser.
+  expect_equal(log$note, "samma dag: 9.0.1, 9.0.2")
+})
+
+test_that(".collapse_same_day_rows handles three-part versions correctly", {
+  # 9.10 must outrank 9.9 — plain string comparison ("9.10" < "9.9"
+  # character-by-character) would get this backwards.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.10,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.9,exact,healthkit,"
+  )))
+  expect_equal(log$os_version, "9.10")
+})
+
+test_that(".collapse_same_day_rows keeps platforms separate on the same day", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,",
+    "2022-10-06,garmin,Forerunner 965,20.34,exact,fit,"
+  )))
+  expect_equal(nrow(log), 2)
+  expect_setequal(log$platform, c("apple_watch", "garmin"))
+})
+
+test_that(".collapse_same_day_rows is idempotent", {
+  path <- .write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,",
+    "2020-01-01,apple_watch,Series 3,watchOS 6,exact,manual,"
+  ))
+  once <- read_device_log(path)
+  # Re-collapsing an already-collapsed log must be a no-op.
+  twice <- .collapse_same_day_rows(once)
+  expect_equal(once, twice)
+})
+
+# --- Nagelfar rond 2: device swap must beat version, not the other way
+# round, once a previous day establishes which model was already current.
+
+test_that("(a) device swap beats a higher version on the old model", {
+  # The exact regression: Series 4 (9.1) was already current as of the
+  # previous day; an Ultra arrives on a LOWER os_version (9.0.1) the same
+  # day Series 4 also logs a bump to 9.1 again. The swap into the new
+  # device is the day's real change, even though its version number is
+  # lower — must NOT resolve to "highest version" here.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-09-14,apple_watch,Series 4,9.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Series 4,9.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 2)
+  same_day <- log[log$valid_from == as.Date("2022-10-06"), ]
+  expect_equal(same_day$model, "Ultra")
+  expect_equal(same_day$os_version, "9.0.1")
+  expect_match(same_day$note, "samma dag: Series 4 9.1")
+})
+
+test_that("(b) same device swap case, framed as 'no time on file'", {
+  # .collapse_same_day_rows() never has time info regardless of where
+  # the rows came from, so this is really the same code path as (a);
+  # kept as its own test since it's the literal regression framing
+  # ("rader på fil utan tid").
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-09-14,apple_watch,Series 4,9.1,exact,manual,",
+    "2022-10-06,apple_watch,Series 4,9.1,exact,manual,",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,manual,"
+  )))
+  same_day <- log[log$valid_from == as.Date("2022-10-06"), ]
+  expect_equal(same_day$model, "Ultra")
+  expect_equal(same_day$os_version, "9.0.1")
+})
+
+test_that("(c) unchanged: a single-model same-day pair still uses version", {
+  # The pre-nagelfar-rond-2 case must resolve exactly as before: a
+  # single model with two same-day os_version candidates still picks
+  # the higher version (there's no swap to detect — rule 2 doesn't
+  # apply when the whole group shares one model).
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$os_version, "9.1")
+  expect_match(log$note, "samma dag: 9.0.1")
+})
+
+# --- Nagelfar issue-001: note dedup and manual-note preservation -----------
+
+test_that(".merge_day_group does not duplicate an already-absorbed note phrase", {
+  # Simulates a dirty file where the winner already carries "samma dag:
+  # 9.0.1" (from an earlier collapse) and the same loser is somehow
+  # still present as its own row — the note must not gain a second
+  # copy of the same phrase on re-collapse.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,samma dag: 9.0.1",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(lengths(regmatches(log$note, gregexpr("samma dag: 9.0.1", log$note))), 1)
+})
+
+test_that(".merge_day_group preserves a loser's own manual note", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,manual,viktig anteckning"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_match(log$note, "viktig anteckning", fixed = TRUE)
+})
+
+test_that("R canonical note rebuild is stable across repeated re-collapse (matrix)", {
+  # Nagelfar issue-001 round 2: appending deduplicated-by-exact-phrase
+  # still grew the note without bound whenever a loser's own note
+  # contained "; ". Mirrors python/tests/test_device_log.py's
+  # test_repeated_absorption_matrix_is_stable_from_round_2 (same note
+  # forms, same origins) — applying .merge_day_group() repeatedly, each
+  # round feeding the previous round's output back in as `winner` (what
+  # write_devices() re-running against the same reappearing loser
+  # candidate looks like), must stabilize after the first round.
+  note_forms <- list(
+    empty = "",
+    provenance = "healthkit-scan: export.xml",
+    provenance_plus_samma_dag = "healthkit-scan: export.xml; samma dag: 9.0",
+    manual_semicolon = "jag minns; det var på förmiddagen",
+    manual_plus_samma_dag = "jag minns; samma dag: 9.0"
+  )
+
+  for (origin in c("manual", "healthkit")) {
+    for (note_name in names(note_forms)) {
+      winner <- tibble::tibble(
+        valid_from = as.Date("2022-10-06"), platform = "apple_watch",
+        model = "Ultra", os_version = "9.1", certainty = "exact",
+        origin = "healthkit", note = ""
+      )
+      loser <- tibble::tibble(
+        valid_from = as.Date("2022-10-06"), platform = "apple_watch",
+        model = "Ultra", os_version = "9.0.1", certainty = "exact",
+        origin = origin, note = note_forms[[note_name]]
+      )
+      round1 <- .merge_day_group(winner, loser)
+      round2 <- .merge_day_group(round1, loser)
+      round3 <- .merge_day_group(round2, loser)
+      label <- paste(origin, note_name)
+      expect_equal(round2, round1, info = label)
+      expect_equal(round3, round1, info = label)
+    }
+  }
+})
+
+test_that("real devices.csv 2022-10-06 collapses exactly, no provenance in parens", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Apple Watch Ultra (gen 1),9.0.1,exact,healthkit,healthkit-scan: export.xml",
+    "2022-10-06,apple_watch,Apple Watch Ultra (gen 1),9.1,exact,healthkit,healthkit-scan: export.xml"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$note, "healthkit-scan: export.xml; samma dag: 9.0.1")
+})
+
+test_that("mixed-model same day with no previous day falls back to version", {
+  # No previous day on record for this platform at all -> rule 2 has
+  # nothing to compare against, falls through to rule 3.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Series 4,9.0,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$model, "Ultra")
+  expect_match(log$note, "samma dag: Series 4 9.0")
+})
+
+# --- (e) R/Python parity: same fixture, same collapse result ----------------
+#
+# Content equivalence, not row-order equivalence — R's .collapse_same_day_
+# rows() returns newest-first (matching read_device_log()'s established
+# convention), Python's collapse_same_day_rows() returns oldest-first
+# (matching its other callers, see log.py); each language's own tests
+# already pin its own order. What must match across languages is WHICH
+# row wins each day and what ends up in its note.
+
+test_that("(e) R matches Python's collapse_same_day_rows on the swap fixture", {
+  # Python (python/tests/test_device_log.py, same fixture):
+  #   test_collapse_same_day_rows_device_swap_beats_higher_version_on_old_model
+  # gives: 2022-09-14 Series 4 9.1 (unchanged); 2022-10-06 Ultra 9.0.1,
+  # note "samma dag: Series 4 9.1". Pinned here so a change to either
+  # implementation that breaks parity fails a test in both suites.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-09-14,apple_watch,Series 4,9.1,exact,manual,",
+    "2022-10-06,apple_watch,Series 4,9.1,exact,manual,",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,manual,"
+  )))
+  by_date <- setNames(seq_len(nrow(log)), as.character(log$valid_from))
+
+  early <- log[by_date[["2022-09-14"]], ]
+  expect_equal(early$model, "Series 4")
+  expect_equal(early$os_version, "9.1")
+  expect_equal(early$note, "")
+
+  swap_day <- log[by_date[["2022-10-06"]], ]
+  expect_equal(swap_day$model, "Ultra")
+  expect_equal(swap_day$os_version, "9.0.1")
+  expect_equal(swap_day$note, "samma dag: Series 4 9.1")
+})
+
 # --- device_changes() ---
 
 test_that("device_changes filters by platform", {

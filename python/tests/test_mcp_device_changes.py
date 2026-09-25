@@ -159,6 +159,68 @@ def test_format_note_above_threshold_garmin_uses_firmware_label():
     assert "watchOS" not in note
 
 
+# --- R-shaped input: _format_device_changes_note() trusts the
+# one-row-per-(platform, day) invariant rather than re-enforcing it
+# (nagelfar issue-002) --------------------------------------------------
+#
+# devices.csv only carries a date, never a time. R's device_changes()
+# (called on read_device_log()'s output, itself already collapsed) is
+# the only real source of `changes` in production, and it always
+# satisfies "at most one row per (platform, valid_from)" — a second
+# collapse here used to exist as a defensive guard, but re-collapsing
+# an already-windowed subset with no cross-day context is not a
+# faithful backup of R's full-history decision; it could disagree with
+# what R already decided. These tests feed exactly the shape R actually
+# sends — a single, already-collapsed row per day, its note already
+# carrying any same-day loser — to pin the wording contract. The
+# collapse itself (including the exact kailash same-day regression and
+# the device-swap-beats-version case) is tested where it happens:
+# tests/testthat/test-devices.R.
+
+
+def test_format_note_wording_for_an_already_collapsed_r_row():
+    # What R actually sends for 2022-10-06 after collapsing Ultra
+    # 9.0.1 + 9.1 to a single row (see test-devices.R's
+    # "read_device_log collapses the exact kailash same-day case").
+    changes = [
+        _change(
+            "apple_watch",
+            "2022-10-06",
+            "Apple Watch Ultra (gen 1)",
+            "9.1",
+            False,
+            note="healthkit-scan: export.xml; samma dag: 9.0.1",
+        ),
+    ]
+    note = r_bridge._format_device_changes_note(changes)
+    assert note.count("2022-10-06") == 1
+    assert "9.0.1" not in note  # the note's own "samma dag" text isn't surfaced in the clause
+    assert "watchOS-uppdatering till 9.1 den 2022-10-06" in note
+
+
+def test_format_note_wording_for_r_resolved_device_swap():
+    # What R actually sends for the device-swap-beats-version case (see
+    # test-devices.R "(a) device swap beats a higher version on the old
+    # model"): a single Ultra row for 2022-10-06, is_model_change=True,
+    # note already carrying the absorbed Series 4 bump.
+    changes = [
+        _change(
+            "apple_watch",
+            "2022-10-06",
+            "Ultra",
+            "9.0.1",
+            True,
+            note="samma dag: Series 4 9.1",
+        ),
+        _change("apple_watch", "2022-09-14", "Series 4", "9.1", True),
+    ]
+    note = r_bridge._format_device_changes_note(changes)
+    assert note.count("2022-10-06") == 1
+    assert "klockbyte till Ultra den 2022-10-06" in note
+    assert "klockbyte till Series 4 den 2022-09-14" in note
+    assert "9.1 den 2022-10-06" not in note
+
+
 # --- _resolve_swap_flags / _is_device_model_change fallback -----------------
 
 
