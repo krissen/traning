@@ -220,6 +220,30 @@ test_that("(c) unchanged: a single-model same-day pair still uses version", {
   expect_match(log$note, "samma dag: 9.0.1")
 })
 
+# --- Nagelfar issue-001: note dedup and manual-note preservation -----------
+
+test_that(".merge_day_group does not duplicate an already-absorbed note phrase", {
+  # Simulates a dirty file where the winner already carries "samma dag:
+  # 9.0.1" (from an earlier collapse) and the same loser is somehow
+  # still present as its own row — the note must not gain a second
+  # copy of the same phrase on re-collapse.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,samma dag: 9.0.1",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(lengths(regmatches(log$note, gregexpr("samma dag: 9.0.1", log$note))), 1)
+})
+
+test_that(".merge_day_group preserves a loser's own manual note", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,manual,viktig anteckning"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_match(log$note, "viktig anteckning", fixed = TRUE)
+})
+
 test_that("mixed-model same day with no previous day falls back to version", {
   # No previous day on record for this platform at all -> rule 2 has
   # nothing to compare against, falls through to rule 3.

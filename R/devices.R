@@ -67,22 +67,42 @@
 # Internal helper: fold `losers` into `winner`'s note as "samma dag:
 # <what it was>" — shared by both branches of .resolve_day_group_winner()
 # callers below. Mirrors Python's log.py:_merge_day_group().
+#
+# Deduplicated against the winner's existing note, split on "; " into
+# its individual fragments: re-collapsing a day whose losers were
+# already absorbed (a dirty file re-read, or a note that already
+# reflects an earlier collapse) must not grow the note further —
+# nagelfar issue-001, fixed at the write side in
+# python/traning_cli/devices/log.py, but R defensively applies the same
+# rule since it collapses independently on every read. A loser's own
+# manual note, if it has one, is preserved too — appended in parens
+# after the phrase describing what it was — rather than silently
+# dropped when its key gets absorbed.
 .merge_day_group <- function(winner, losers) {
   if (nrow(losers) == 0) {
     return(winner)
   }
-  loser_notes <- vapply(seq_len(nrow(losers)), function(i) {
+  existing <- if (nzchar(winner$note)) strsplit(winner$note, "; ", fixed = TRUE)[[1]] else character(0)
+  note_bits <- existing
+  for (i in seq_len(nrow(losers))) {
     l <- losers[i, ]
     what <- if (identical(l$model, winner$model)) {
       l$os_version
     } else {
       trimws(paste(l$model, l$os_version))
     }
-    if (nzchar(what)) paste0("samma dag: ", what) else NA_character_
-  }, character(1))
-  loser_notes <- loser_notes[!is.na(loser_notes)]
-  all_notes <- c(if (nzchar(winner$note)) winner$note else NULL, loser_notes)
-  winner$note <- paste(all_notes, collapse = "; ")
+    if (!nzchar(what)) {
+      next
+    }
+    phrase <- paste0("samma dag: ", what)
+    if (nzchar(l$note)) {
+      phrase <- paste0(phrase, " (", l$note, ")")
+    }
+    if (!(phrase %in% note_bits)) {
+      note_bits <- c(note_bits, phrase)
+    }
+  }
+  winner$note <- paste(note_bits, collapse = "; ")
   winner
 }
 
