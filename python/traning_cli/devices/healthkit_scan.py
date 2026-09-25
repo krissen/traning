@@ -321,10 +321,17 @@ def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthK
 
     ``export_path`` is either a zip (containing
     ``apple_health_export/export.xml``) or a plain ``export.xml`` file,
-    told apart by file extension. Raises if it can't be opened/parsed —
-    unlike fit_scan/tcx_scan's per-file scans, there's exactly one export
-    file here, so a corrupt one is a real problem for the caller to
-    surface, not something to silently count and skip.
+    told apart by file extension. Raises ``ValueError`` — naming
+    ``export_path`` — if it can't be opened/parsed: unlike
+    fit_scan/tcx_scan's per-file scans, there's exactly one export file
+    here, so a corrupt one is a real problem for the caller to surface,
+    not something to silently count and skip. A truncated/corrupt zip
+    (``zipfile.BadZipFile``) or a truncated/non-XML export.xml
+    (``xml.etree.ElementTree.ParseError``) — both realistic for a
+    partial phone-to-kailash transfer — are translated to ``ValueError``
+    here rather than left for the caller to know to catch two
+    XML/zip-specific exception types on top of the usual
+    OSError/ValueError (Nagelfar issue-003).
     """
     stats = HealthKitScanStats(export_path=export_path)
     # (hardware, software) -> earliest local datetime seen for that pair
@@ -333,18 +340,23 @@ def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthK
     # export, not the number of samples.
     earliest: dict[tuple[str, str], datetime] = {}
 
-    if _is_zip_path(export_path):
-        with zipfile.ZipFile(export_path) as zf:
-            member = _find_export_xml_member(zf)
-            if member is None:
-                raise ValueError(
-                    f"{export_path}: no {EXPORT_XML_MEMBER_SUFFIX} member in export zip"
-                )
-            with zf.open(member) as fh:
+    try:
+        if _is_zip_path(export_path):
+            with zipfile.ZipFile(export_path) as zf:
+                member = _find_export_xml_member(zf)
+                if member is None:
+                    raise ValueError(
+                        f"{export_path}: no {EXPORT_XML_MEMBER_SUFFIX} member in export zip"
+                    )
+                with zf.open(member) as fh:
+                    _scan_xml_stream(fh, export_path, stats, earliest)
+        else:
+            with export_path.open("rb") as fh:
                 _scan_xml_stream(fh, export_path, stats, earliest)
-    else:
-        with export_path.open("rb") as fh:
-            _scan_xml_stream(fh, export_path, stats, earliest)
+    except zipfile.BadZipFile as e:
+        raise ValueError(f"{export_path}: not a valid zip file — {e}") from e
+    except ET.ParseError as e:
+        raise ValueError(f"{export_path}: malformed export.xml — {e}") from e
 
     stats.groups = len(earliest)
     # Sorted by the full datetime before ``HealthKitDeviceRecord`` drops

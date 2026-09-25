@@ -1220,7 +1220,13 @@ def device_scan(source, healthkit_export, apply_changes):
             data_dir, source=source, healthkit_export=healthkit_export
         )
     except (OSError, ValueError) as e:
-        raise click.ClickException(f"HealthKit-export: {e}") from e
+        # No source-specific prefix here: FIT/TCX never raise (bad files
+        # are counted, not raised), so in practice this is always
+        # healthkit_scan.scan_export()'s ValueError — which already
+        # names the export path and the problem (Nagelfar issue-003). A
+        # blanket "HealthKit-export:" prefix would mislabel a FIT/TCX
+        # error if one were ever added later.
+        raise click.ClickException(str(e)) from e
 
     # One summary line per source, collected as they're printed so the
     # same lines can be echoed again at the very end — a long candidate

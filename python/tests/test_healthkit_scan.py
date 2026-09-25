@@ -575,12 +575,29 @@ def test_scan_export_raises_if_export_xml_member_missing(tmp_path):
         healthkit_scan.scan_export(zip_path)
 
 
-def test_scan_export_raises_on_malformed_xml(tmp_path):
-    import xml.etree.ElementTree as ET
-
+def test_scan_export_raises_valueerror_on_malformed_xml_in_zip(tmp_path):
+    # Not ET.ParseError directly — translated to ValueError so the CLI
+    # (and any other caller) only needs to catch one exception type for
+    # every "bad export" case (Nagelfar issue-003).
     zip_path = tmp_path / "export.zip"
     with zipfile.ZipFile(zip_path, "w") as zf:
         zf.writestr("apple_health_export/export.xml", "<HealthData><Record")
 
-    with pytest.raises(ET.ParseError):
+    with pytest.raises(ValueError, match=r"malformed export\.xml"):
+        healthkit_scan.scan_export(zip_path)
+
+
+def test_scan_export_raises_valueerror_on_malformed_plain_xml(tmp_path):
+    xml_path = tmp_path / "export.xml"
+    xml_path.write_text("<HealthData><Record")
+
+    with pytest.raises(ValueError, match=r"malformed export\.xml"):
+        healthkit_scan.scan_export(xml_path)
+
+
+def test_scan_export_raises_valueerror_on_bad_zip(tmp_path):
+    zip_path = tmp_path / "export.zip"
+    zip_path.write_bytes(b"not actually a zip file")
+
+    with pytest.raises(ValueError, match=r"not a valid zip file"):
         healthkit_scan.scan_export(zip_path)
