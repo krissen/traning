@@ -19,12 +19,29 @@ One row = one change (a new model and/or a new OS version for a platform).
 On disk the file is sorted newest first (``valid_from`` descending, ties
 broken by ``platform`` ascending) so a human skimming the file sees the
 current device state at the top.
+
+Invariant: at most one row per ``(platform, valid_from)``. The file only
+carries a date, not a time, so two real changes on the same calendar day
+(e.g. a watch arriving with 9.0.1 and updating itself to 9.1 hours later)
+can never be told apart as two rows — a naive "one row per transition"
+write would otherwise put them in whatever order they happened to be
+read/written in, and a reader sorting by ``valid_from`` alone has no way
+to recover which one was really last (Nagelfar: this produced a fictitious
+"downgrade" to 9.0.1 in ``get_resting_hr``'s device-change note). The row
+that survives describes the day's actual end-of-day state (the latest
+model/version reached that day); any version(s) superseded earlier the
+same day are named in ``note`` instead of getting a row of their own.
+``certainty``/``origin`` describe the surviving row, not the ones it
+absorbed. See ``collapse_same_day_rows()``, enforced by every write
+(``write_devices()``) and by the FIT/TCX/HealthKit collapse paths in
+``common.py`` before candidates ever reach a write.
 """
 
 from __future__ import annotations
 
 import csv
 import os
+import re
 from datetime import date
 from pathlib import Path
 from typing import TypedDict
@@ -80,6 +97,84 @@ def _sort_rows(rows: list[DeviceRow]) -> list[DeviceRow]:
     return sorted(by_platform, key=lambda r: r["valid_from"], reverse=True)
 
 
+# First contiguous run of digits/dots in an os_version string — bare
+# scanner output ("9.1", "20.34") parses directly; a hand-entered value
+# with a prefix ("watchOS 26.6") still parses via the first match.
+_VERSION_RUN_RE = re.compile(r"\d+(?:\.\d+)*")
+
+
+def _version_sort_key(os_version: str) -> tuple[int, ...]:
+    """Parse an os_version into a tuple that compares by magnitude.
+
+    "9.1" -> (9, 1), "9.0.1" -> (9, 0, 1); tuple comparison then ranks
+    9.1 above 9.0.1 the way a human reads those version numbers (first
+    differing component wins), which plain string/float comparison
+    can't do for a three-part version like "9.0.1". Unparseable or
+    empty input sorts lowest (()), so a row with no os_version never
+    outranks one that has it.
+    """
+    if not os_version:
+        return ()
+    match = _VERSION_RUN_RE.search(os_version)
+    if not match:
+        return ()
+    return tuple(int(part) for part in match.group().split("."))
+
+
+def collapse_same_day_rows(rows: list[DeviceRow]) -> list[DeviceRow]:
+    """Enforce the devices.csv invariant: at most one row per (platform, valid_from).
+
+    See this module's docstring for why. Rows are grouped by
+    ``(platform, valid_from)`` in first-seen order; a group of one
+    passes through unchanged. Within a larger group, the row with the
+    highest ``os_version`` (see ``_version_sort_key()``) wins — it
+    describes that day's actual end-of-day state — and keeps its own
+    ``certainty``/``origin``; every other row in the group is folded
+    into its ``note`` as ``"samma dag: <what it was>"`` instead of
+    surviving as its own row. A tie (equal parsed version — shouldn't
+    happen in practice) keeps the last row encountered.
+
+    Idempotent: a devices.csv that's already collapsed round-trips
+    through this unchanged (every group already has size 1).
+    """
+    groups: dict[tuple[str, str], list[DeviceRow]] = {}
+    order: list[tuple[str, str]] = []
+    for row in rows:
+        key = (row["platform"], row["valid_from"])
+        if key not in groups:
+            groups[key] = []
+            order.append(key)
+        groups[key].append(row)
+
+    result: list[DeviceRow] = []
+    for key in order:
+        group = groups[key]
+        if len(group) == 1:
+            result.append(group[0])
+            continue
+
+        winner_idx = max(
+            range(len(group)), key=lambda i: (_version_sort_key(group[i]["os_version"]), i)
+        )
+        winner = group[winner_idx]
+        note_bits = [winner["note"]] if winner["note"] else []
+        for i, loser in enumerate(group):
+            if i == winner_idx:
+                continue
+            what = (
+                loser["os_version"]
+                if loser["model"] == winner["model"]
+                else f"{loser['model']} {loser['os_version']}".strip()
+            )
+            if what:
+                note_bits.append(f"samma dag: {what}")
+
+        merged: DeviceRow = {**winner, "note": "; ".join(note_bits)}
+        result.append(merged)
+
+    return result
+
+
 def read_devices(data_dir: Path) -> list[DeviceRow]:
     """Read and validate devices.csv. Returns [] if the file doesn't exist yet."""
     path = devices_csv_path(data_dir)
@@ -94,7 +189,17 @@ def read_devices(data_dir: Path) -> list[DeviceRow]:
 
 
 def write_devices(data_dir: Path, rows: list[DeviceRow]) -> None:
-    """Validate and atomically write devices.csv (tmp file + os.replace)."""
+    """Validate and atomically write devices.csv (tmp file + os.replace).
+
+    Always collapses to the one-row-per-(platform, valid_from) invariant
+    first (see collapse_same_day_rows()) — every writer goes through
+    here (add_device, add_devices_bulk, and any future caller), and the
+    input rows may include whatever was already on file, so this is also
+    what cleans up a devices.csv left dirty by a version of this code
+    that predates the invariant: the next write (e.g. the next
+    ``device scan --apply``) collapses it, no separate migration needed.
+    """
+    rows = collapse_same_day_rows(rows)
     for row in rows:
         validate_row(row)
 

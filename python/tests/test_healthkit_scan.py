@@ -238,10 +238,19 @@ def test_scan_export_falls_back_to_start_date_when_creation_date_missing(tmp_pat
 # --- same-day ordering by full datetime (Nagelfar issue-002, point 2) ----------
 
 
-def test_scan_and_collapse_orders_same_day_versions_by_full_datetime(tmp_path):
-    # Both rows land on the Ultra's first day (2022-10-06): setup on
-    # 9.0.1, then an update to 9.1 later the same day. The date-only key
-    # must not scramble that — the earlier time must come out first.
+def test_scan_and_collapse_collapses_same_day_versions_to_the_latest(tmp_path):
+    # Both records land on the Ultra's first day (2022-10-06): setup on
+    # 9.0.1, then an update to 9.1 later the same day. devices.csv only
+    # carries a date, not a time — two rows sharing a valid_from would
+    # leave a reader unable to tell which one was actually last (this is
+    # the exact shape of a real bug: get_resting_hr's device-change note
+    # once read this as a "downgrade" to 9.0.1). The one-row-per-day
+    # invariant (collapse_same_day_rows(), log.py) means scan_and_collapse
+    # must fold these to a single row for 2022-10-06, naming 9.1 (the
+    # later version) as the row and 9.0.1 in its note — regardless of
+    # which order the two records were scanned in, since the full
+    # datetime that would otherwise disambiguate them never survives
+    # past HealthKitDeviceRecord.activity_date.
     export = _write_export(
         tmp_path / "export.zip",
         [
@@ -252,8 +261,10 @@ def test_scan_and_collapse_orders_same_day_versions_by_full_datetime(tmp_path):
 
     candidates, _stats = healthkit_scan.scan_and_collapse(export_path=export)
 
-    assert [c["os_version"] for c in candidates] == ["9.0.1", "9.1"]
-    assert all(c["valid_from"] == "2022-10-06" for c in candidates)
+    assert len(candidates) == 1
+    assert candidates[0]["valid_from"] == "2022-10-06"
+    assert candidates[0]["os_version"] == "9.1"
+    assert "samma dag: 9.0.1" in candidates[0]["note"]
 
 
 # --- earliest-date-wins collapse per (hardware, software) ---------------------

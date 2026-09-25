@@ -5,6 +5,7 @@ from traning_cli.devices.log import (
     FIELDS,
     add_device,
     add_devices_bulk,
+    collapse_same_day_rows,
     devices_csv_path,
     read_devices,
     validate_row,
@@ -154,11 +155,33 @@ def test_add_device_skips_exact_duplicate(tmp_path):
 
 
 def test_add_device_does_not_dedup_different_os_version(tmp_path):
-    add_device(tmp_path, platform="garmin", model="fr945", os_version="13.0")
-    second = add_device(tmp_path, platform="garmin", model="fr945", os_version="14.0")
+    # Different valid_from dates: two rows on the SAME day now collapse
+    # by design (collapse_same_day_rows(), the one-row-per-day
+    # invariant) — see test_add_device_collapses_same_day_rows below.
+    # This test is about the (model, os_version) dedup key itself.
+    add_device(
+        tmp_path, platform="garmin", model="fr945", os_version="13.0", valid_from="2025-01-01"
+    )
+    second = add_device(
+        tmp_path, platform="garmin", model="fr945", os_version="14.0", valid_from="2025-06-01"
+    )
 
     assert second is not None
     assert len(read_devices(tmp_path)) == 2
+
+
+def test_add_device_collapses_same_day_rows(tmp_path):
+    add_device(
+        tmp_path, platform="garmin", model="fr945", os_version="13.0", valid_from="2025-01-01"
+    )
+    add_device(
+        tmp_path, platform="garmin", model="fr945", os_version="13.1", valid_from="2025-01-01"
+    )
+
+    rows = read_devices(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["os_version"] == "13.1"
+    assert "samma dag: 13.0" in rows[0]["note"]
 
 
 def test_add_device_rejects_invalid_platform(tmp_path):
@@ -353,3 +376,145 @@ def test_add_devices_bulk_earlier_candidate_in_batch_updates_existing_row(tmp_pa
     rows = read_devices(tmp_path)
     assert len(rows) == 1
     assert rows[0]["valid_from"] == "2024-10-01"
+
+
+# --- collapse_same_day_rows: one row per (platform, valid_from) ------------
+#
+# Nagelfar regression: two Apple Watch Ultra (gen 1) rows both dated
+# 2022-10-06 (setup on 9.0.1, updated to 9.1 later the same day) — with
+# no time component in the file, the naive "one row per transition"
+# behaviour left these as two same-day rows in whatever order they were
+# written, which get_resting_hr's device-change note then read as a
+# fictitious downgrade to 9.0.1.
+
+
+def test_collapse_same_day_rows_keeps_single_rows_untouched():
+    rows = [_row(valid_from="2020-01-01"), _row(valid_from="2021-01-01", model="fr945")]
+    assert collapse_same_day_rows(rows) == rows
+
+
+def test_collapse_same_day_rows_exact_kailash_case():
+    rows = [
+        _row(
+            platform="apple_watch",
+            valid_from="2022-10-06",
+            model="Apple Watch Ultra (gen 1)",
+            os_version="9.0.1",
+            origin="healthkit",
+            note="healthkit-scan: export.xml",
+        ),
+        _row(
+            platform="apple_watch",
+            valid_from="2022-10-06",
+            model="Apple Watch Ultra (gen 1)",
+            os_version="9.1",
+            origin="healthkit",
+            note="healthkit-scan: export.xml",
+        ),
+        _row(
+            platform="apple_watch",
+            valid_from="2022-09-14",
+            model="Apple Watch Series 4",
+            os_version="9.1",
+            origin="healthkit",
+            note="healthkit-scan: export.xml",
+        ),
+    ]
+
+    out = collapse_same_day_rows(rows)
+
+    assert len(out) == 2
+    ultra_row = next(r for r in out if r["valid_from"] == "2022-10-06")
+    assert ultra_row["os_version"] == "9.1"
+    assert ultra_row["model"] == "Apple Watch Ultra (gen 1)"
+    assert "samma dag: 9.0.1" in ultra_row["note"]
+    # certainty/origin follow the surviving (winning) row, unchanged here
+    # since both same-day candidates shared the same values.
+    assert ultra_row["certainty"] == "exact"
+    assert ultra_row["origin"] == "healthkit"
+
+
+def test_collapse_same_day_rows_is_order_independent():
+    # The winner is decided by version magnitude, not input order — the
+    # regression case must resolve the same way regardless of which
+    # same-day candidate happened to be scanned/written first.
+    a = _row(valid_from="2022-10-06", os_version="9.0.1")
+    b = _row(valid_from="2022-10-06", os_version="9.1")
+    assert collapse_same_day_rows([a, b])[0]["os_version"] == "9.1"
+    assert collapse_same_day_rows([b, a])[0]["os_version"] == "9.1"
+
+
+def test_collapse_same_day_rows_three_way_collision_names_both_losers():
+    rows = [
+        _row(valid_from="2022-10-06", os_version="9.0.1"),
+        _row(valid_from="2022-10-06", os_version="9.0.2"),
+        _row(valid_from="2022-10-06", os_version="9.1"),
+    ]
+    out = collapse_same_day_rows(rows)
+    assert len(out) == 1
+    assert out[0]["os_version"] == "9.1"
+    assert "samma dag: 9.0.1" in out[0]["note"]
+    assert "samma dag: 9.0.2" in out[0]["note"]
+
+
+def test_collapse_same_day_rows_different_models_same_day_names_model_too():
+    # Rare/degenerate (a device swap and a firmware bump landing on the
+    # same calendar day), but must still resolve to one row without
+    # losing which model the collapsed candidate was.
+    rows = [
+        _row(valid_from="2022-10-06", model="Series 4", os_version="9.0"),
+        _row(valid_from="2022-10-06", model="Ultra (gen 1)", os_version="9.1"),
+    ]
+    out = collapse_same_day_rows(rows)
+    assert len(out) == 1
+    assert out[0]["model"] == "Ultra (gen 1)"  # higher parsed version wins regardless of model
+    assert "samma dag: Series 4 9.0" in out[0]["note"]
+
+
+def test_collapse_same_day_rows_handles_three_part_versions_correctly():
+    # 9.1 must outrank 9.0.1 — plain string/float comparison can't do
+    # this ("9.0.1" isn't a float at all; "9.1" > "9.0.1" as strings only
+    # by accident of character-by-character comparison, not by version
+    # magnitude, and breaks for e.g. "9.10" vs "9.9").
+    rows = [
+        _row(valid_from="2022-10-06", os_version="9.10"),
+        _row(valid_from="2022-10-06", os_version="9.9"),
+    ]
+    assert collapse_same_day_rows(rows)[0]["os_version"] == "9.10"
+
+
+def test_collapse_same_day_rows_preserves_platform_isolation():
+    # Same day, different platforms: each keeps its own row.
+    rows = [
+        _row(valid_from="2022-10-06", platform="apple_watch"),
+        _row(valid_from="2022-10-06", platform="garmin"),
+    ]
+    out = collapse_same_day_rows(rows)
+    assert len(out) == 2
+    assert {r["platform"] for r in out} == {"apple_watch", "garmin"}
+
+
+def test_collapse_same_day_rows_is_idempotent():
+    rows = [
+        _row(valid_from="2022-10-06", os_version="9.0.1"),
+        _row(valid_from="2022-10-06", os_version="9.1"),
+        _row(valid_from="2020-01-01"),
+    ]
+    once = collapse_same_day_rows(rows)
+    twice = collapse_same_day_rows(once)
+    assert once == twice
+
+
+def test_write_devices_collapses_existing_file_duplicates(tmp_path):
+    # Simulates a devices.csv left dirty by a version of this code that
+    # predates the invariant: write_devices() must clean it up on the
+    # very next write, not just avoid adding to the problem.
+    dirty_rows = [
+        _row(valid_from="2022-10-06", os_version="9.0.1", note="pre-existing"),
+        _row(valid_from="2022-10-06", os_version="9.1", note="pre-existing"),
+    ]
+    write_devices(tmp_path, dirty_rows)
+    rows = read_devices(tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["os_version"] == "9.1"
+    assert "samma dag: 9.0.1" in rows[0]["note"]

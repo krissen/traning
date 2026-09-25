@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 from typing import Protocol
 
-from .log import DeviceRow
+from .log import DeviceRow, collapse_same_day_rows
 
 # Garmin's own devices go back to ~2003; nothing in this data repo predates
 # 2000. Below that (or after today) the recorded activity_date is corrupt
@@ -208,7 +208,14 @@ def collapse_device_changes(
     Records are sorted by activity date first. One candidate row is
     emitted per point where (model, os_version) differs from the
     previous activity in the sequence — including the very first record,
-    which establishes the earliest known device.
+    which establishes the earliest known device. The result then passes
+    through ``collapse_same_day_rows()`` (log.py): two transitions dated
+    the same calendar day (a device arriving with one firmware and
+    updating itself later the same day) collapse to a single row rather
+    than surfacing as candidates in whatever order the archive happened
+    to yield them — see that function's docstring for why a naive
+    per-transition row here can't be trusted to already be in the right
+    order (activity_date has no time component).
     """
     ordered = sorted(records, key=lambda r: r.activity_date)
 
@@ -230,7 +237,7 @@ def collapse_device_changes(
                 "note": f"{note_prefix}: {record.path.name}",
             }
         )
-    return candidates
+    return collapse_same_day_rows(candidates)
 
 
 def merge_candidates(*candidate_lists: list[DeviceRow]) -> list[DeviceRow]:
@@ -242,6 +249,14 @@ def merge_candidates(*candidate_lists: list[DeviceRow]) -> list[DeviceRow]:
     (identical valid_from from both sources) keep whichever candidate
     was encountered first once inputs are sorted by (valid_from, origin)
     — deterministic regardless of the lists' original order.
+
+    Finally passes through ``collapse_same_day_rows()`` (log.py): each
+    input list is already collapsed per-day on its own (each scanner's
+    ``collapse_device_changes()`` call does that), but merging several
+    sources back together can still reintroduce a same-day collision —
+    e.g. a FIT-derived row and a manually-entered row landing on the same
+    calendar day for different (model, os_version) keys, which this
+    function's own (platform, model, os_version) dedup wouldn't catch.
     """
     combined = [row for rows in candidate_lists for row in rows]
     combined.sort(key=lambda r: (r["valid_from"], r["origin"]))
@@ -252,4 +267,4 @@ def merge_candidates(*candidate_lists: list[DeviceRow]) -> list[DeviceRow]:
         current = best.get(key)
         if current is None or row["valid_from"] < current["valid_from"]:
             best[key] = row
-    return list(best.values())
+    return collapse_same_day_rows(list(best.values()))
