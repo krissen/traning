@@ -262,19 +262,21 @@ def test_add_device_later_candidate_does_not_move_date_forward(tmp_path):
     assert rows[0]["valid_from"] == "2023-10-15"
 
 
-def test_add_device_manual_earlier_guess_moves_date_but_keeps_exact_certainty(tmp_path):
-    """A manual, merely-approximate candidate can still correct the date
-    earlier, but must not downgrade a data-derived row's certainty/origin
-    — a guess isn't better evidence than what's already on file."""
+def test_add_device_manual_earlier_candidate_takes_the_whole_row(tmp_path):
+    """Nagelfar issue-005: a winning candidate replaces the row entirely,
+    including certainty/origin/note, whatever its own certainty is — a
+    label must always describe where the date it's attached to came
+    from. A scan's exact/tcx row must not survive with a date that
+    actually came from a manual guess."""
     add_device(
         tmp_path,
         platform="garmin",
         model="Forerunner 945",
         os_version="13.7",
-        valid_from="2024-01-01",
+        valid_from="2024-12-24",
         certainty="exact",
         origin="tcx",
-        note="tcx-scan: x.tcx",
+        note="tcx-scan: 20241224-....tcx",
     )
 
     row = add_device(
@@ -282,17 +284,25 @@ def test_add_device_manual_earlier_guess_moves_date_but_keeps_exact_certainty(tm
         platform="garmin",
         model="Forerunner 945",
         os_version="13.7",
-        valid_from="2023-06-01",
+        valid_from="2024-12-01",
         certainty="known_since",
         origin="manual",
         note="jag minns att det var tidigare",
     )
 
     assert row is not None
-    assert row["valid_from"] == "2023-06-01"
-    assert row["certainty"] == "exact"  # kept — the manual guess isn't stronger evidence
-    assert row["origin"] == "tcx"
-    assert row["note"] == "tcx-scan: x.tcx"
+    assert row == {
+        "valid_from": "2024-12-01",
+        "platform": "garmin",
+        "model": "Forerunner 945",
+        "os_version": "13.7",
+        "certainty": "known_since",
+        "origin": "manual",
+        "note": "jag minns att det var tidigare",
+    }
+    rows = read_devices(tmp_path)
+    assert len(rows) == 1
+    assert rows[0] == row
 
 
 def test_add_devices_bulk_earlier_candidate_in_batch_updates_existing_row(tmp_path):

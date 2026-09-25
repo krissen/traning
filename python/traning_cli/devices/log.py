@@ -132,14 +132,14 @@ def _merge_into(
       the candidate was appended. ``result_row`` is the candidate.
     - ``"updated"`` — a row existed with a *later* ``valid_from`` than the
       candidate's; the candidate is earlier evidence for the same real
-      device change, so it replaces the date (and, when the candidate is
-      itself data-derived — ``certainty == "exact"`` — the whole row,
-      since a data-derived row is more trustworthy than whatever produced
-      the one on file). A candidate that's merely a manual guess only
-      moves the date earlier and leaves the existing row's
-      certainty/origin/note alone, so a weaker guess can't downgrade a
-      row that was actually derived from data. ``result_row`` is the
-      row as it now stands.
+      device change, so it replaces the row on file *entirely*
+      (``valid_from``, ``certainty``, ``origin``, ``note`` all follow
+      the winning candidate) — exactly ``merge_candidates()``'s rule.
+      A label always describes where the date it's attached to came
+      from; keeping the old row's ``certainty``/``origin`` while moving
+      its date would make the label describe evidence that isn't the
+      reason for that date anymore (Nagelfar issue-005). ``result_row``
+      is the row as it now stands.
     - ``"skipped"`` — a row existed with the same or an earlier
       ``valid_from`` already; nothing changes. This is the historical
       dedup behaviour for the common case (the same combination
@@ -160,14 +160,8 @@ def _merge_into(
     if candidate["valid_from"] >= match["valid_from"]:
         return rows, "skipped", None
 
-    updated: DeviceRow = dict(match)  # type: ignore[assignment]
-    updated["valid_from"] = candidate["valid_from"]
-    if candidate["certainty"] == "exact":
-        updated["certainty"] = candidate["certainty"]
-        updated["origin"] = candidate["origin"]
-        updated["note"] = candidate["note"]
-    new_rows = [updated if r is match else r for r in rows]
-    return new_rows, "updated", updated
+    new_rows = [candidate if r is match else r for r in rows]
+    return new_rows, "updated", candidate
 
 
 def add_device(
