@@ -574,11 +574,6 @@ def _run_r(
         }
 
 
-_DEVICE_PLATFORM_LABEL = {
-    "apple_watch": "klockbyte",
-    "garmin": "firmwarebyte",
-}
-
 _DEVICE_UPDATE_LABEL = {
     "apple_watch": "watchOS-uppdatering",
     "garmin": "firmwareuppdatering",
@@ -593,16 +588,24 @@ _DEVICE_UPDATE_LABEL = {
 _DEVICE_NOTE_SUMMARY_THRESHOLD = 3
 
 
-def _device_change_clause(c: dict) -> str:
-    """One change -> one clause, e.g. 'klockbyte till Ultra 2 watchOS 26.6 den ...'."""
-    label = _DEVICE_PLATFORM_LABEL.get(c.get("platform"), "enhetsbyte")
-    desc = " ".join(p for p in (c.get("model"), c.get("os_version")) if p)
-    if desc:
-        desc_part = f" till {desc}"
-    elif c.get("note"):
-        desc_part = f" ({c['note']})"
-    else:
-        desc_part = ""
+def _device_change_clause(c: dict, is_swap: bool) -> str:
+    """One change -> one clause.
+
+    A genuine device swap always reads "klockbyte till <model>" —
+    "klockbyte" (watch swap) applies regardless of platform since both
+    Apple Watch and Garmin's Forerunner line are wrist watches. A
+    same-device firmware/OS bump gets a platform-specific verb instead
+    ("watchOS-uppdatering" / "firmwareuppdatering") naming the new
+    version, not the (unchanged) device — see nagelfar: a run of
+    watchOS updates on one watch must never read as three "klockbyte."
+    """
+    if is_swap:
+        desc = c.get("model") or c.get("note") or "okänd enhet"
+        return f"klockbyte till {desc} den {c.get('valid_from', '?')}"
+
+    label = _DEVICE_UPDATE_LABEL.get(c.get("platform"), "uppdatering")
+    desc = c.get("os_version") or c.get("note") or ""
+    desc_part = f" till {desc}" if desc else ""
     return f"{label}{desc_part} den {c.get('valid_from', '?')}"
 
 
@@ -613,6 +616,13 @@ def _is_device_model_change(changes: list[dict]) -> list[bool]:
     chronologically-older neighbour is row i+1. A row counts as a model
     swap when its model is non-empty and differs from that neighbour's
     (or there is no older neighbour in view).
+
+    Fallback only (see _resolve_swap_flags): applied to whatever subset
+    of the log `changes` happens to be, this misclassifies a window's
+    oldest row whenever the real previous device lies just outside that
+    window — R's device_changes() avoids exactly that by classifying
+    against each platform's full history before windowing, and sends
+    the result as each row's `is_model_change` field.
     """
     n = len(changes)
     flags = []
@@ -623,23 +633,48 @@ def _is_device_model_change(changes: list[dict]) -> list[bool]:
     return flags
 
 
+def _resolve_swap_flags(changes: list[dict]) -> list[bool]:
+    """Per-row swap/bump flags for `changes`.
+
+    Prefers R's `is_model_change` (device_changes(), R/devices.R) —
+    computed against each platform's full recorded history, so a
+    window's oldest row is correctly classified even when the device it
+    continues (or swaps from) lies outside the window. Falls back to a
+    local, window-limited recomputation only when R didn't send the
+    field at all (e.g. a handcrafted fixture in a test); that fallback
+    is best-effort, not a substitute for the R-side fix.
+    """
+    if changes and all("is_model_change" in c for c in changes):
+        return [bool(c["is_model_change"]) for c in changes]
+    return _is_device_model_change(changes)
+
+
 def _format_device_changes_note(changes: list[dict]) -> str:
     """Render device_changes() rows as a short Swedish caveat sentence.
 
     At _DEVICE_NOTE_SUMMARY_THRESHOLD rows or fewer: one clause per
-    change (newest first, R's sort order). Above it — Garmin/Apple
-    Watch firmware history can pack 20+ rows into a single year — device
-    swaps are still named individually, but same-device firmware/OS
-    bumps collapse into a single count per platform ("3
-    watchOS-uppdateringar") rather than one clause each.
-    """
-    if len(changes) <= _DEVICE_NOTE_SUMMARY_THRESHOLD:
-        clauses = [_device_change_clause(c) for c in changes]
-        return "Obs: " + "; ".join(clauses) + " inom perioden; nivåskifte kan vara mätteknik."
+    change (newest first, R's sort order), each correctly worded as a
+    device swap or a same-device update (see _device_change_clause).
+    Above it — Garmin/Apple Watch firmware history can pack 20+ rows
+    into a single year — device swaps are still named individually, but
+    same-device firmware/OS bumps collapse into a single count per
+    platform ("3 watchOS-uppdateringar") rather than one clause each.
 
-    is_swap = _is_device_model_change(changes)
-    swaps = [c for c, swap in zip(changes, is_swap, strict=True) if swap]
-    bumps = [c for c, swap in zip(changes, is_swap, strict=True) if not swap]
+    The "inom perioden" ("within the period") caveat leads the sentence
+    rather than trailing the last clause, so it unambiguously scopes the
+    whole list — not just whichever change happened to be mentioned last.
+    """
+    swap_flags = _resolve_swap_flags(changes)
+
+    if len(changes) <= _DEVICE_NOTE_SUMMARY_THRESHOLD:
+        clauses = [
+            _device_change_clause(c, swap) for c, swap in zip(changes, swap_flags, strict=True)
+        ]
+        body = "; ".join(clauses)
+        return f"Obs, inom perioden: {body}; nivåskifte kan vara mätteknik."
+
+    swaps = [c for c, swap in zip(changes, swap_flags, strict=True) if swap]
+    bumps = [c for c, swap in zip(changes, swap_flags, strict=True) if not swap]
 
     parts = []
     if swaps:
@@ -660,7 +695,8 @@ def _format_device_changes_note(changes: list[dict]) -> str:
     if bump_parts:
         parts.append(" och ".join(bump_parts))
 
-    return "Obs: " + " samt ".join(parts) + " inom perioden; nivåskifte kan vara mätteknik."
+    body = " samt ".join(parts)
+    return f"Obs, inom perioden: {body}; nivåskifte kan vara mätteknik."
 
 
 def r_report(

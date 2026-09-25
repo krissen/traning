@@ -120,6 +120,78 @@ test_that("device_changes with no matches in range returns empty tibble", {
   expect_equal(nrow(out), 0)
 })
 
+# --- is_model_change: classified against full history, not the window ---
+#
+# Regression coverage for the skarp-drift bug reported against kailash's
+# get_resting_hr(after="-6m"): a real device swap (into "Ultra (gen 1)")
+# happened before the requested window; three watchOS bumps on that same
+# watch then land inside it. The oldest of those three has no older
+# neighbour WITHIN the window, but device_changes() must still see the
+# pre-window swap row (present in the full log passed in) and correctly
+# classify all three as firmware bumps, not "the row before the window
+# doesn't exist so I must be a swap."
+
+test_that("device_changes classifies a window's oldest row using history before the window", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2026-07-29,apple_watch,Apple Watch Ultra (gen 1),26.6,exact,healthkit,",
+    "2026-05-17,apple_watch,Apple Watch Ultra (gen 1),26.5,exact,healthkit,",
+    "2026-03-30,apple_watch,Apple Watch Ultra (gen 1),26.4,exact,healthkit,",
+    "2025-01-10,apple_watch,Apple Watch Ultra (gen 1),25.0,exact,healthkit,",
+    "2022-09-23,apple_watch,Apple Watch Series 4,20.0,exact,healthkit,"
+  )))
+  # Mirrors get_resting_hr(after="-6m"): a window that only contains the
+  # three watchOS bumps, not the swap into Ultra (gen 1) that precedes it.
+  ch <- device_changes(log, platform = "apple_watch", after = as.Date("2026-01-01"))
+  expect_equal(nrow(ch), 3)
+  expect_equal(ch$is_model_change, c(FALSE, FALSE, FALSE))
+})
+
+test_that("device_changes still flags a genuine swap at the very start of the log", {
+  log <- read_device_log(.write_devices_csv(
+    "2022-09-23,apple_watch,Apple Watch Ultra (gen 1),19.0,exact,healthkit,"
+  ))
+  ch <- device_changes(log, platform = "apple_watch")
+  expect_true(ch$is_model_change)
+})
+
+test_that("device_changes classifies per platform independently", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2026-01-01,apple_watch,Ultra 2,watchOS 26.6,exact,manual,",
+    "2025-06-01,garmin,Forerunner 965,20.34,exact,manual,",
+    "2024-01-01,garmin,Forerunner 235,9.0,exact,manual,"
+  )))
+  ch <- device_changes(log) # no platform filter: both platforms present
+  expect_true(all(ch$is_model_change)) # each platform's oldest-in-view row is a real swap
+})
+
+test_that(".device_change_layers doesn't label a boundary firmware row as a swap", {
+  # Same shape as the device_changes() regression above, but exercised
+  # through the plot layer: with >many_threshold rows in view, the
+  # boundary row must stay unlabelled (dotted line), not get a text
+  # label as if it were the device's introduction.
+  log <- read_device_log(.write_devices_csv(c(
+    "2026-08-01,apple_watch,Apple Watch Ultra (gen 1),26.7,exact,healthkit,",
+    "2026-07-01,apple_watch,Apple Watch Ultra (gen 1),26.6,exact,healthkit,",
+    "2026-06-01,apple_watch,Apple Watch Ultra (gen 1),26.5,exact,healthkit,",
+    "2026-05-01,apple_watch,Apple Watch Ultra (gen 1),26.4,exact,healthkit,",
+    "2026-04-01,apple_watch,Apple Watch Ultra (gen 1),26.3,exact,healthkit,",
+    "2026-03-01,apple_watch,Apple Watch Ultra (gen 1),26.2,exact,healthkit,",
+    "2026-02-01,apple_watch,Apple Watch Ultra (gen 1),26.1,exact,healthkit,",
+    # Buffer row: same watch, just before the window queried below — this
+    # is what makes 2026-02-01 (the window's oldest row) a bump, not a
+    # swap. Without it, 2026-02-01 would be the genuine transition point.
+    "2026-01-01,apple_watch,Apple Watch Ultra (gen 1),26.0,exact,healthkit,",
+    # The real swap: further outside the window still.
+    "2020-01-01,apple_watch,Apple Watch Series 4,20.0,exact,healthkit,"
+  )))
+  ch <- device_changes(log, platform = "apple_watch", after = as.Date("2026-01-15"))
+  expect_equal(nrow(ch), 7) # > many_threshold (6)
+  expect_false(any(ch$is_model_change)) # every row in view is a bump on the same watch
+  layers <- .device_change_layers(ch)
+  text_layer <- Filter(function(l) inherits(l$geom, "GeomText"), layers)
+  expect_equal(nrow(text_layer[[1]]$data), 0) # no swaps in view -> nothing labelled
+})
+
 # --- Plot integration: built with and without a device log ---
 
 .make_rhr_bundle <- function() {
