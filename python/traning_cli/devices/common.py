@@ -8,7 +8,7 @@ from datetime import date
 from pathlib import Path
 from typing import Protocol
 
-from .log import DeviceRow, collapse_same_day_rows
+from .log import DeviceRow, collapse_same_day_by_order, collapse_same_day_rows
 
 # Garmin's own devices go back to ~2003; nothing in this data repo predates
 # 2000. Below that (or after today) the recorded activity_date is corrupt
@@ -202,20 +202,29 @@ def collapse_device_changes(
     platform: str,
     origin: str,
     note_prefix: str,
+    chronological: bool = False,
 ) -> list[DeviceRow]:
     """Collapse a chronological record list into device-change candidates.
 
-    Records are sorted by activity date first. One candidate row is
-    emitted per point where (model, os_version) differs from the
-    previous activity in the sequence — including the very first record,
-    which establishes the earliest known device. The result then passes
-    through ``collapse_same_day_rows()`` (log.py): two transitions dated
-    the same calendar day (a device arriving with one firmware and
-    updating itself later the same day) collapse to a single row rather
-    than surfacing as candidates in whatever order the archive happened
-    to yield them — see that function's docstring for why a naive
-    per-transition row here can't be trusted to already be in the right
-    order (activity_date has no time component).
+    Records are sorted by activity date first (a stable sort, so it
+    preserves ``records``' own relative order for same-day ties). One
+    candidate row is emitted per point where (model, os_version) differs
+    from the previous activity in the sequence — including the very
+    first record, which establishes the earliest known device. The
+    result then passes through a same-day collapse (see
+    ``collapse_same_day_rows()`` in log.py for why one's needed at all:
+    devices.csv only carries a date, so two transitions dated the same
+    calendar day can't just both survive as candidates).
+
+    ``chronological``: True when ``records``' input order for same-day
+    entries reflects real chronology — today only HealthKit's scan can
+    promise this (it sorts by full datetime before truncating to a
+    date; see healthkit_scan.py). Then ``collapse_same_day_by_order()``
+    picks the day's actual LAST record as the winner — real time beats
+    any inference from the data. False (the default; FIT/TCX have no
+    finer-than-a-day resolution at all, so there's no real order to
+    trust) falls through to ``collapse_same_day_rows()``'s
+    model-continuity/version rules.
     """
     ordered = sorted(records, key=lambda r: r.activity_date)
 
@@ -237,6 +246,8 @@ def collapse_device_changes(
                 "note": f"{note_prefix}: {record.path.name}",
             }
         )
+    if chronological:
+        return collapse_same_day_by_order(candidates)
     return collapse_same_day_rows(candidates)
 
 

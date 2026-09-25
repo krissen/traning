@@ -673,8 +673,15 @@ def _format_device_changes_note(changes: list[dict]) -> str:
     still carry two rows for the same day; rendering both as separate
     clauses is the exact shape of the bug this exists to avoid (a
     fictitious device swap reported alongside the real one).
+    collapse_same_day_rows() itself returns oldest-first (its other
+    callers want that); re-sorted here to match `changes`'s own
+    newest-first contract (R's device_changes() sort order).
     """
-    changes = collapse_same_day_rows(changes)  # type: ignore[arg-type]
+    changes = sorted(
+        collapse_same_day_rows(changes),  # type: ignore[arg-type]
+        key=lambda c: c["valid_from"],
+        reverse=True,
+    )
     swap_flags = _resolve_swap_flags(changes)
 
     if len(changes) <= _DEVICE_NOTE_SUMMARY_THRESHOLD:

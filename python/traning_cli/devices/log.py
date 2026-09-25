@@ -121,25 +121,120 @@ def _version_sort_key(os_version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in match.group().split("."))
 
 
+def _merge_day_group(winner: DeviceRow, losers: list[DeviceRow]) -> DeviceRow:
+    """Fold `losers` into `winner`'s note as "samma dag: <what it was>"."""
+    note_bits = [winner["note"]] if winner["note"] else []
+    for loser in losers:
+        what = (
+            loser["os_version"]
+            if loser["model"] == winner["model"]
+            else f"{loser['model']} {loser['os_version']}".strip()
+        )
+        if what:
+            note_bits.append(f"samma dag: {what}")
+    return {**winner, "note": "; ".join(note_bits)}
+
+
+def _resolve_day_group_winner(candidates: list[DeviceRow], previous_model: str | None) -> DeviceRow:
+    """Pick the winning row within a same-(platform, day) group that has no
+    time information to order by (see collapse_same_day_rows()).
+
+    Rule 2: if the group spans more than one distinct model, the winner
+    is whichever model differs from `previous_model` (the platform's
+    resolved model on the immediately preceding day) — a device swap
+    IS that day's real change, even when the new device happens to
+    report a lower os_version than the one it replaced (Nagelfar: a
+    Series 4 on 9.1 swapped for an Ultra (gen 1) on 9.0.1 the same day
+    must resolve to the Ultra, not "the higher version"). Falls through
+    to rule 3 when there's no previous_model to compare against, or
+    when more than one model in the group is "new" (ambiguous — no
+    single swap target to prefer).
+
+    Rule 3: highest parsed os_version wins (see _version_sort_key()),
+    over whichever candidate pool rule 2 left in play — the full group
+    when rule 2 didn't narrow it, or just the "new" models when it did.
+    """
+    models = {c["model"] for c in candidates}
+    pool = candidates
+    if len(models) > 1 and previous_model is not None:
+        new_model_rows = [c for c in candidates if c["model"] != previous_model]
+        if len({c["model"] for c in new_model_rows}) == 1:
+            pool = new_model_rows
+    return max(pool, key=lambda c: _version_sort_key(c["os_version"]))
+
+
 def collapse_same_day_rows(rows: list[DeviceRow]) -> list[DeviceRow]:
     """Enforce the devices.csv invariant: at most one row per (platform, valid_from).
 
-    See this module's docstring for why. Rows are grouped by
-    ``(platform, valid_from)`` in first-seen order; a group of one
-    passes through unchanged. Within a larger group, the row with the
-    highest ``os_version`` (see ``_version_sort_key()``) wins — it
-    describes that day's actual end-of-day state — and keeps its own
-    ``certainty``/``origin``; every other row in the group is folded
-    into its ``note`` as ``"samma dag: <what it was>"`` instead of
-    surviving as its own row. A tie (equal parsed version — shouldn't
-    happen in practice) keeps the last row encountered.
+    See this module's docstring for why. Rows carry no time
+    information (the file only ever stores a date) — that's the case
+    this function is for; the scan-time collapse in common.py's
+    collapse_device_changes() handles the chronological case instead,
+    when a source (HealthKit) actually has one. Groups are resolved
+    per platform, in ascending date order, threading each platform's
+    resolved model on day N forward as `previous_model` for day N+1's
+    decision (see _resolve_day_group_winner()) — a group of one passes
+    through unchanged; every other row in a larger group is folded into
+    the winner's note as "samma dag: <what it was>" (see
+    _merge_day_group()) instead of surviving as its own row.
 
     Idempotent: a devices.csv that's already collapsed round-trips
     through this unchanged (every group already has size 1).
     """
+    if not rows:
+        return rows
+
+    by_platform: dict[str, list[DeviceRow]] = {}
+    for row in rows:
+        by_platform.setdefault(row["platform"], []).append(row)
+
+    result: list[DeviceRow] = []
+    for platform_rows in by_platform.values():
+        groups: dict[str, list[DeviceRow]] = {}
+        for row in platform_rows:
+            groups.setdefault(row["valid_from"], []).append(row)
+
+        previous_model: str | None = None
+        for valid_from in sorted(groups):  # ascending: oldest day first
+            group = groups[valid_from]
+            if len(group) == 1:
+                winner = group[0]
+            else:
+                winner_row = _resolve_day_group_winner(group, previous_model)
+                losers = [r for r in group if r is not winner_row]
+                winner = _merge_day_group(winner_row, losers)
+            result.append(winner)
+            previous_model = winner["model"]
+
+    # Ascending (oldest first) — same convention collapse_device_changes()'s
+    # scan-time candidates already use; callers that need newest-first
+    # (e.g. r_bridge.py, matching R's device_changes() sort order) sort
+    # the result themselves rather than this function imposing an order
+    # its other callers (write_devices(), the scan/merge path) don't want.
+    return result
+
+
+def collapse_same_day_by_order(candidates: list[DeviceRow]) -> list[DeviceRow]:
+    """Collapse same-(platform, day) groups by trusting `candidates`'s own order.
+
+    For the scan-time path (common.py's collapse_device_changes(),
+    ``chronological=True``) where a source really does preserve true
+    chronological order for same-day entries — currently only
+    HealthKit, whose scan sorts by full datetime before truncating to a
+    date (see healthkit_scan.py) — the winner for a day is simply the
+    LAST candidate encountered for it, no version/model heuristics
+    needed: real time beats any inference from the data itself. Every
+    earlier same-day candidate still folds into the winner's note (see
+    _merge_day_group()), same as collapse_same_day_rows().
+
+    Only valid when the input truly is chronologically ordered — this
+    performs no check and will silently produce a wrong answer on
+    out-of-order input, which is why it isn't the default (see
+    collapse_same_day_rows() for the file/no-time case).
+    """
     groups: dict[tuple[str, str], list[DeviceRow]] = {}
     order: list[tuple[str, str]] = []
-    for row in rows:
+    for row in candidates:
         key = (row["platform"], row["valid_from"])
         if key not in groups:
             groups[key] = []
@@ -152,26 +247,9 @@ def collapse_same_day_rows(rows: list[DeviceRow]) -> list[DeviceRow]:
         if len(group) == 1:
             result.append(group[0])
             continue
-
-        winner_idx = max(
-            range(len(group)), key=lambda i: (_version_sort_key(group[i]["os_version"]), i)
-        )
-        winner = group[winner_idx]
-        note_bits = [winner["note"]] if winner["note"] else []
-        for i, loser in enumerate(group):
-            if i == winner_idx:
-                continue
-            what = (
-                loser["os_version"]
-                if loser["model"] == winner["model"]
-                else f"{loser['model']} {loser['os_version']}".strip()
-            )
-            if what:
-                note_bits.append(f"samma dag: {what}")
-
-        merged: DeviceRow = {**winner, "note": "; ".join(note_bits)}
-        result.append(merged)
-
+        winner_row = group[-1]
+        losers = group[:-1]
+        result.append(_merge_day_group(winner_row, losers))
     return result
 
 

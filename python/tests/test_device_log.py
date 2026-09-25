@@ -457,10 +457,11 @@ def test_collapse_same_day_rows_three_way_collision_names_both_losers():
     assert "samma dag: 9.0.2" in out[0]["note"]
 
 
-def test_collapse_same_day_rows_different_models_same_day_names_model_too():
-    # Rare/degenerate (a device swap and a firmware bump landing on the
-    # same calendar day), but must still resolve to one row without
-    # losing which model the collapsed candidate was.
+def test_collapse_same_day_rows_different_models_same_day_falls_back_to_version():
+    # No previous day on record for this platform at all -> rule 2 (swap
+    # detection) has nothing to compare against, falls through to rule 3
+    # (highest version) — must still resolve to one row without losing
+    # which model the collapsed candidate was.
     rows = [
         _row(valid_from="2022-10-06", model="Series 4", os_version="9.0"),
         _row(valid_from="2022-10-06", model="Ultra (gen 1)", os_version="9.1"),
@@ -469,6 +470,61 @@ def test_collapse_same_day_rows_different_models_same_day_names_model_too():
     assert len(out) == 1
     assert out[0]["model"] == "Ultra (gen 1)"  # higher parsed version wins regardless of model
     assert "samma dag: Series 4 9.0" in out[0]["note"]
+
+
+# --- Nagelfar rond 2: device swap must beat version, not the other way
+# round, once a previous day establishes which model was already current.
+
+
+def test_collapse_same_day_rows_device_swap_beats_higher_version_on_old_model():
+    # (a) The exact regression: Series 4 (9.1) was already current as of
+    # the previous day; an Ultra (gen 1) arrives on a LOWER os_version
+    # (9.0.1) the same day Series 4 also logs a bump to 9.1 again. The
+    # swap into the new device is the day's real change, even though its
+    # version number is lower — must NOT resolve to "highest version" here.
+    rows = [
+        _row(valid_from="2022-09-14", model="Series 4", os_version="9.1"),
+        _row(valid_from="2022-10-06", model="Series 4", os_version="9.1"),
+        _row(valid_from="2022-10-06", model="Ultra", os_version="9.0.1"),
+    ]
+    out = collapse_same_day_rows(rows)
+    assert len(out) == 2
+    same_day = next(r for r in out if r["valid_from"] == "2022-10-06")
+    assert same_day["model"] == "Ultra"
+    assert same_day["os_version"] == "9.0.1"
+    assert "samma dag: Series 4 9.1" in same_day["note"]
+
+
+def test_collapse_same_day_rows_device_swap_without_time_on_file():
+    # (b) Same case, phrased as "already on file, no time info" rather
+    # than freshly scanned — collapse_same_day_rows() never has time
+    # info regardless of where the rows came from, so this is really
+    # the same code path as (a); kept as its own test since it's the
+    # literal regression report's framing ("rader på fil utan tid").
+    rows = [
+        _row(valid_from="2022-09-14", model="Series 4", os_version="9.1", origin="manual"),
+        _row(valid_from="2022-10-06", model="Series 4", os_version="9.1", origin="manual"),
+        _row(valid_from="2022-10-06", model="Ultra", os_version="9.0.1", origin="manual"),
+    ]
+    out = collapse_same_day_rows(rows)
+    same_day = next(r for r in out if r["valid_from"] == "2022-10-06")
+    assert same_day["model"] == "Ultra"
+    assert same_day["os_version"] == "9.0.1"
+
+
+def test_collapse_same_day_rows_unchanged_case_c_single_model_still_uses_version():
+    # (c) The pre-nagelfar-rond-2 case must resolve exactly as before:
+    # a single model with two same-day os_version candidates still picks
+    # the higher version (there's no swap to detect — rule 1/2 don't
+    # apply when the whole group shares one model).
+    rows = [
+        _row(valid_from="2022-10-06", model="Ultra", os_version="9.0.1"),
+        _row(valid_from="2022-10-06", model="Ultra", os_version="9.1"),
+    ]
+    out = collapse_same_day_rows(rows)
+    assert len(out) == 1
+    assert out[0]["os_version"] == "9.1"
+    assert "samma dag: 9.0.1" in out[0]["note"]
 
 
 def test_collapse_same_day_rows_handles_three_part_versions_correctly():

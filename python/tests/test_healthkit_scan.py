@@ -267,6 +267,32 @@ def test_scan_and_collapse_collapses_same_day_versions_to_the_latest(tmp_path):
     assert "samma dag: 9.0.1" in candidates[0]["note"]
 
 
+def test_scan_and_collapse_chronology_beats_version_on_a_same_day_swap(tmp_path):
+    # (d) Nagelfar rond 2: chronology, when it exists, must win outright
+    # — not just as a tiebreak among rows of the same model. A Series 4
+    # logs a bump to 9.1 at 08:00, then a genuine swap to an Ultra
+    # (gen 1) on a LOWER version (9.0.1) happens at 18:00 the same day.
+    # The Ultra is what was really on the wrist by end of day; a
+    # version-magnitude rule alone (collapse_same_day_rows()'s fallback
+    # for sources with no time) would wrongly pick the Series 4 row
+    # instead. HealthKit's real timestamps mean this never needs that
+    # fallback in the first place.
+    export = _write_export(
+        tmp_path / "export.zip",
+        [
+            _record("2022-10-06 08:00:00 +0000", "Watch4,1", "9.1"),
+            _record("2022-10-06 18:00:00 +0000", "Watch6,18", "9.0.1"),
+        ],
+    )
+
+    candidates, _stats = healthkit_scan.scan_and_collapse(export_path=export)
+
+    assert len(candidates) == 1
+    assert candidates[0]["model"] == "Apple Watch Ultra (gen 1)"
+    assert candidates[0]["os_version"] == "9.0.1"
+    assert "samma dag: Apple Watch Series 4 9.1" in candidates[0]["note"]
+
+
 # --- earliest-date-wins collapse per (hardware, software) ---------------------
 
 

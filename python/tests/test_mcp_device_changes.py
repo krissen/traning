@@ -213,6 +213,28 @@ def test_format_note_exact_kailash_case_with_a_dirty_same_day_pair():
     assert "klockbyte till Apple Watch Series 4 den 2022-09-14" in note
 
 
+def test_format_note_device_swap_beats_higher_version_on_old_model():
+    # Nagelfar rond 2, case (a) at the note-wording layer: Series 4 was
+    # already current the previous day; the same-day group is Series 4
+    # bumping to 9.1 again AND a swap into Ultra on a lower 9.0.1. The
+    # collapse must pick the swap, not "highest version" — the wording
+    # layer must then correctly call that a "klockbyte", not a bump.
+    changes = [
+        _change("apple_watch", "2022-09-14", "Series 4", "9.1", True),
+        _change("apple_watch", "2022-10-06", "Series 4", "9.1", False),
+        _change("apple_watch", "2022-10-06", "Ultra", "9.0.1", True),
+    ]
+    note = r_bridge._format_device_changes_note(changes)
+    assert note.count("2022-10-06") == 1
+    assert "klockbyte till Ultra den 2022-10-06" in note
+    assert "9.1 den 2022-10-06" not in note
+    # The collapsed Series 4 bump is folded into the winner row's `note`
+    # field ("samma dag: Series 4 9.1"), but _device_change_clause() only
+    # falls back to `note` when model/os_version are both empty — here
+    # the winner has a model, so the clause never surfaces that text.
+    assert "samma dag" not in note
+
+
 # --- _resolve_swap_flags / _is_device_model_change fallback -----------------
 
 
