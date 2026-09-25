@@ -116,16 +116,34 @@ read_device_log <- function(path = .default_device_log_path()) {
 #' \code{valid_from} inclusively on both ends; \code{NULL} means
 #' unbounded on that side.
 #'
-#' @param log Tibble from \code{read_device_log()}.
+#' Also attaches an \code{is_model_change} column: \code{TRUE} when a
+#' row is an actual device swap, \code{FALSE} when it's a firmware/OS
+#' bump on the same device as the next older row (see
+#' \code{.is_device_model_change()}). Classification is computed
+#' against each platform's FULL recorded history in \code{log} —
+#' before \code{after}/\code{before} narrow the result — specifically
+#' so the oldest row inside a requested window is compared against the
+#' real previous device, not misclassified as a swap just because nothing
+#' older happens to be in the returned window (nagelfar: the row before
+#' the window still has to be visible to this comparison).
+#'
+#' @param log Tibble from \code{read_device_log()} (or another call to
+#'   \code{device_changes()}) — must carry the platform's full history
+#'   for \code{is_model_change} to be correct; passing an
+#'   already-windowed subset here would reintroduce the boundary bug
+#'   this function exists to avoid.
 #' @param platform Optional platform filter (\code{"apple_watch"} or
-#'   \code{"garmin"}). \code{NULL} = no filter.
+#'   \code{"garmin"}). \code{NULL} = no filter (classification is still
+#'   done per platform, never across platforms).
 #' @param after Optional lower date bound (character or Date).
 #' @param before Optional upper date bound (character or Date).
-#' @return Tibble, same shape as \code{log}, newest first.
+#' @return Tibble, \code{log}'s columns plus \code{is_model_change},
+#'   newest first.
 #' @export
 device_changes <- function(log, platform = NULL, after = NULL, before = NULL) {
+  empty <- dplyr::mutate(.empty_device_log(), is_model_change = logical())
   if (is.null(log) || nrow(log) == 0) {
-    return(.empty_device_log())
+    return(empty)
   }
 
   out <- log
@@ -133,6 +151,18 @@ device_changes <- function(log, platform = NULL, after = NULL, before = NULL) {
   if (!is.null(platform)) {
     out <- out |> dplyr::filter(.data$platform == !!platform)
   }
+  if (nrow(out) == 0) {
+    return(empty)
+  }
+
+  # Classify against each platform's full history (everything in `out`
+  # so far — platform-filtered but NOT yet date-filtered) before the
+  # date window below narrows what's returned.
+  out <- out |> dplyr::arrange(dplyr::desc(.data$valid_from))
+  out <- dplyr::bind_rows(lapply(split(out, out$platform), function(rows) {
+    rows$is_model_change <- .is_device_model_change(rows)
+    rows
+  }))
 
   after_date <- .as_date_or_null(after)
   before_date <- .as_date_or_null(before)
@@ -209,9 +239,15 @@ device_changes <- function(log, platform = NULL, after = NULL, before = NULL) {
 #   x aesthetic.
 # @param many_threshold When more than this many changes fall in the
 #   window (Garmin firmware history can run to 20+ over the full
-#   2004-2026 history), only model swaps (see .is_device_model_change())
-#   get a text label; every change still gets a line, just fainter and
-#   unlabelled when it's "the same watch, new firmware".
+#   2004-2026 history), only model swaps get a text label; every change
+#   still gets a line, just fainter and unlabelled when it's "the same
+#   watch, new firmware". Swap classification is read from `changes`'s
+#   own `is_model_change` column when present — device_changes()
+#   computes it against each platform's FULL history, which is required
+#   for a correct answer at the window's oldest row (see that
+#   function's docs); a hand-built `changes` without the column falls
+#   back to classifying within just what's here, which is only correct
+#   when `changes` already represents the complete history in view.
 .device_change_layers <- function(changes, many_threshold = 6) {
   if (is.null(changes) || nrow(changes) == 0) {
     return(list())
@@ -221,7 +257,13 @@ device_changes <- function(log, platform = NULL, after = NULL, before = NULL) {
   changes$.label <- .device_change_label(changes)
 
   many <- nrow(changes) > many_threshold
-  is_model_change <- if (many) .is_device_model_change(changes) else rep(TRUE, nrow(changes))
+  is_model_change <- if (!many) {
+    rep(TRUE, nrow(changes))
+  } else if ("is_model_change" %in% names(changes)) {
+    changes$is_model_change
+  } else {
+    .is_device_model_change(changes)
+  }
 
   labelled <- changes[is_model_change, , drop = FALSE]
   unlabelled <- changes[!is_model_change, , drop = FALSE]
