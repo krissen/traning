@@ -14,11 +14,10 @@ går att slå upp i stället för att gissas på.
   OS-/firmwareversion, hur säkert datumet är (härlett ur data eller en
   manuell uppskattning), varifrån raden kommer, och en fri anteckning.
 - **`traning device list` / `device add` / `device scan`.** `list`
-  visar loggen, nyast först. `add` loggar en enhet för hand — det enda
-  sättet för Apple Watch, eftersom hälsoexporten (Health Auto Export)
-  inte bär med sig modell eller OS-version. `scan [--source
-  fit|tcx|all] [--apply]` härleder byten ur de historiska Garmin-
-  arkiven; dry-run som standard.
+  visar loggen, nyast först. `add` loggar en enhet för hand, som
+  komplement när ingen av källorna nedan täcker ett byte. `scan
+  [--source fit|tcx|healthkit|all] [--apply]` härleder byten ur de
+  historiska arkiven; dry-run som standard.
 - **Garmins enhetshistorik 2006–2024 är kartlagd.** Härledd ur både det
   gamla FIT-arkivet (som bara täcker fr610/fr620-eran) och hela
   TCX-arkivet, sammanslagna så att samma byte inte räknas två gånger.
@@ -26,6 +25,13 @@ går att slå upp i stället för att gissas på.
   läser den nedladdade aktivitetens enhetsinformation och lägger till en
   rad om den skiljer sig från vad som redan står i loggen — inget
   manuellt steg krävs för Garmin.
+- **Apple Watch-historiken 2016–2026 är kartlagd.** Health Auto
+  Export — den löpande hälsoexporten `traning fetch health` bygger
+  på — bär inte med sig modell eller OS-version, men Apples
+  fullständiga hälsoexport gör det. Härledd därifrån: Series 2,
+  Series 4, Ultra (gen 1), och watchOS-versionen för varje byte.
+  Exporten ligger uppackad på kailash, en ny datumkatalog per export;
+  `traning device scan --source healthkit` skannar den.
 
 ## 2026-09-06 — Kvällarna kommer fram hela
 

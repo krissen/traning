@@ -11,7 +11,8 @@ Schema (fixed, shared with the R side building against the same file):
   the change happened at or before an otherwise-unknown date).
 - ``origin``: ``manual`` | ``fit`` (derived from the historical FIT
   archive) | ``tcx`` (derived from a TCX ``<Creator>`` element — the
-  live Garmin fetch and the TCX archive scan).
+  live Garmin fetch and the TCX archive scan) | ``healthkit`` (derived
+  from an Apple Health app export's per-record ``device`` attribute).
 - ``note``: free text.
 
 One row = one change (a new model and/or a new OS version for a platform).
@@ -32,7 +33,7 @@ FIELDS = ["valid_from", "platform", "model", "os_version", "certainty", "origin"
 
 PLATFORMS = {"apple_watch", "garmin"}
 CERTAINTIES = {"exact", "known_since"}
-ORIGINS = {"manual", "fit", "tcx"}
+ORIGINS = {"manual", "fit", "tcx", "healthkit"}
 
 
 class DeviceRow(TypedDict):

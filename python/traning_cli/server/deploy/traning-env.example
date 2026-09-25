@@ -16,6 +16,12 @@ HA_TOKEN=
 # Optional
 TRANING_OPEN=false
 
+# Apple Health export tree for `traning device scan --source healthkit`.
+# Dated subdirectories (<YYYY-MM-DD>/apple_health_export/export.xml),
+# unpacked — not part of $TRANING_DATA, and not backed up by the data
+# repo's git history; restic covers it separately.
+#TRANING_HEALTHKIT_EXPORTS=/home/krisse/data/apple_health_export
+
 # Bind policy on kailash. The web UI stays on loopback behind Caddy, while
 # machine-to-machine services listen only on Tailscale by default.
 TRANING_RECEIVER_HOST=100.93.126.68

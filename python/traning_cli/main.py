@@ -1167,25 +1167,40 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
 @device.command(name="scan")
 @click.option(
     "--source",
-    type=click.Choice(["fit", "tcx", "all"]),
+    type=click.Choice(["fit", "tcx", "healthkit", "all"]),
     default="all",
-    help="Which historical archive to scan (default: all)",
+    help="Which archive/export to scan (default: all)",
+)
+@click.option(
+    "--healthkit-export",
+    "healthkit_export",
+    type=click.Path(exists=True, path_type=Path),
+    default=None,
+    help=(
+        "Apple Health export to scan: a zip, an export.xml, or a directory "
+        "containing either (default: newest dated subdirectory of "
+        "$TRANING_HEALTHKIT_EXPORTS)"
+    ),
 )
 @click.option(
     "--apply", "apply_changes", is_flag=True, help="Write new candidate rows (default: dry-run)"
 )
-def device_scan(source, apply_changes):
-    """Derive device-change candidates from the historical FIT and/or TCX archives.
+def device_scan(source, healthkit_export, apply_changes):
+    """Derive device-change candidates from the historical FIT/TCX archives and a HealthKit export.
 
     The FIT archive (kristian/filer/fit/) only covers the fr610/fr620
-    era; the TCX archive (kristian/filer/tcx/) covers the full history.
-    --source all (default) scans both and merges: the same real device
-    change picked up by both archives collapses to one row (earliest
-    valid_from wins) instead of two.
+    era; the TCX archive (kristian/filer/tcx/) covers the full Garmin
+    history; a HealthKit export ($TRANING_HEALTHKIT_EXPORTS/<YYYY-MM-DD>/)
+    covers Apple Watch. --source all (default) scans every source and merges:
+    the same real device change picked up by more than one collapses to
+    one row (earliest valid_from wins) instead of several. No HealthKit
+    export found is not an error — that source is just skipped, the
+    others still run.
 
     Dry-run by default: prints the candidates without writing. --apply
     writes the ones not already present in devices.csv (certainty=exact,
-    origin=fit or tcx depending on which archive the row came from).
+    origin=fit/tcx/healthkit depending on which source the row came
+    from).
 
     Rows with an implausible valid_from (before 2000-01-01 or after
     today — corrupt file metadata, not a real device) are skipped and
@@ -1200,29 +1215,81 @@ def device_scan(source, apply_changes):
     except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e)) from e
 
-    candidates, fit_stats, tcx_stats = scan_devices(data_dir, source=source)
+    try:
+        candidates, fit_stats, tcx_stats, healthkit_stats = scan_devices(
+            data_dir, source=source, healthkit_export=healthkit_export
+        )
+    except (OSError, ValueError) as e:
+        # No source-specific prefix here: FIT/TCX never raise (bad files
+        # are counted, not raised), so in practice this is always
+        # healthkit_scan.scan_export()'s ValueError — which already
+        # names the export path and the problem (Nagelfar issue-003). A
+        # blanket "HealthKit-export:" prefix would mislabel a FIT/TCX
+        # error if one were ever added later.
+        raise click.ClickException(str(e)) from e
+
+    # One summary line per source, collected as they're printed so the
+    # same lines can be echoed again at the very end — a long candidate
+    # list (or long bad_date_examples dumps above) would otherwise push
+    # the summary out of a `| tail` window.
+    summary_lines: list[str] = []
 
     if fit_stats is not None:
-        click.echo(
+        line = (
             f"FIT: skannade {fit_stats.scanned} filer: {fit_stats.ok} ok, "
             f"{fit_stats.skipped_not_activity} ej aktivitet, "
             f"{fit_stats.skipped_bad_date} orimligt datum, {fit_stats.corrupt} korrupta/oläsbara"
         )
+        summary_lines.append(line)
+        click.echo(line)
         for example in fit_stats.bad_date_examples:
             click.echo(f"  hoppad (orimligt datum): {example}")
 
     if tcx_stats is not None:
-        click.echo(
+        line = (
             f"TCX: skannade {tcx_stats.scanned} filer: {tcx_stats.ok} ok, "
             f"{tcx_stats.skipped_no_creator} utan Creator, "
             f"{tcx_stats.skipped_generic_device} med generisk enhet, "
             f"{tcx_stats.skipped_bad_date} orimligt datum, {tcx_stats.corrupt} korrupta/oläsbara"
         )
+        summary_lines.append(line)
+        click.echo(line)
         for example in tcx_stats.bad_date_examples:
             click.echo(f"  hoppad (orimligt datum): {example}")
 
+    if source in ("healthkit", "all") and healthkit_stats is None:
+        line = (
+            "HealthKit: ingen export hittad, hoppar över källan "
+            "(--healthkit-export PATH eller nyaste <YYYY-MM-DD>/ under "
+            "$TRANING_HEALTHKIT_EXPORTS)"
+        )
+        summary_lines.append(line)
+        click.echo(line)
+    elif healthkit_stats is not None:
+        line = (
+            f"HealthKit ({healthkit_stats.export_path}): "
+            f"skannade {healthkit_stats.elements_scanned} element: {healthkit_stats.ok} ok "
+            f"({healthkit_stats.groups} enhets-/firmwarekombinationer), "
+            f"{healthkit_stats.skipped_no_device} utan device, "
+            f"{healthkit_stats.skipped_non_watch} ej Watch, "
+            f"{healthkit_stats.skipped_bad_date} orimligt datum"
+        )
+        summary_lines.append(line)
+        click.echo(line)
+        for example in healthkit_stats.bad_date_examples:
+            click.echo(f"  hoppad (orimligt datum): {example}")
+
+    def _echo_summary_recap() -> None:
+        if not summary_lines:
+            return
+        click.echo("")
+        click.echo("Sammanfattning (skanning):")
+        for line in summary_lines:
+            click.echo(f"  {line}")
+
     if not candidates:
         click.echo("Inga enhetsbyten hittade.")
+        _echo_summary_recap()
         return
 
     if not apply_changes:
@@ -1231,6 +1298,7 @@ def device_scan(source, apply_changes):
             click.echo(
                 f"  {row['valid_from']}  {row['model']}  {row['os_version']}  ({row['origin']})"
             )
+        _echo_summary_recap()
         return
 
     added, updated = add_devices_bulk(data_dir, candidates)
@@ -1239,3 +1307,4 @@ def device_scan(source, apply_changes):
         f"Skrev {len(added)} nya rader, {len(updated)} uppdaterade (tidigare datum), "
         f"{unchanged} redan loggade"
     )
+    _echo_summary_recap()
