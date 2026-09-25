@@ -1,5 +1,32 @@
 # tRäning — Changelog
 
+## 2026-09-25 — Vilken klocka satt på handleden
+
+Firmware- och klockbyten kan ändra hur ett mått som puls eller kadens
+räknas fram, utan att något i själva träningsdatan säger det. En
+dryg puls-drift kan lika gärna bero på en ny watchOS-version som på
+formen. Nu finns en daterad logg över vilken enhet och vilken
+OS-/firmwareversion som satt på handleden när, så en sådan förändring
+går att slå upp i stället för att gissas på.
+
+- **`kristian/devices.csv` — en daterad enhetslogg.** En rad per
+  förändring: datum, plattform (`apple_watch`/`garmin`), modell,
+  OS-/firmwareversion, hur säkert datumet är (härlett ur data eller en
+  manuell uppskattning), varifrån raden kommer, och en fri anteckning.
+- **`traning device list` / `device add` / `device scan`.** `list`
+  visar loggen, nyast först. `add` loggar en enhet för hand — det enda
+  sättet för Apple Watch, eftersom hälsoexporten (Health Auto Export)
+  inte bär med sig modell eller OS-version. `scan [--source
+  fit|tcx|all] [--apply]` härleder byten ur de historiska Garmin-
+  arkiven; dry-run som standard.
+- **Garmins enhetshistorik 2006–2024 är kartlagd.** Härledd ur både det
+  gamla FIT-arkivet (som bara täcker fr610/fr620-eran) och hela
+  TCX-arkivet, sammanslagna så att samma byte inte räknas två gånger.
+- **Nya Garmin-byten loggas automatiskt.** Varje `traning fetch garmin`
+  läser den nedladdade aktivitetens enhetsinformation och lägger till en
+  rad om den skiljer sig från vad som redan står i loggen — inget
+  manuellt steg krävs för Garmin.
+
 ## 2026-09-06 — Kvällarna kommer fram hela
 
 Alkoholsiffrorna från den första veckan var för låga, och några dygn var

@@ -321,11 +321,18 @@ def fetch_workouts(since, until, no_metadata, aggregation, dry_run, verbose):
 
 
 def _commit_data(data_dir, n: int) -> None:
-    """Git add + commit new files in the data repo."""
+    """Git add + commit new files in the data repo.
+
+    Includes devices.csv: the post-fetch device-log hook
+    (garmin/download.py's _log_device_from_tcx) can write a new row on
+    any fetch, and it wasn't staged here — the row stayed an
+    uncommitted working-tree change forever on a host that never runs
+    `device add`/`device scan --apply` (e.g. kailash's fetch timer).
+    """
     message = f"(import) Fetch {n} new activities from Garmin Connect"
     committed = git_commit_paths(
         data_dir,
-        ["kristian/filer/gconnect/", "kristian/filer/tcx/"],
+        ["kristian/filer/gconnect/", "kristian/filer/tcx/", "kristian/devices.csv"],
         message,
     )
     if committed:
@@ -1072,3 +1079,163 @@ def mcp():
     from .mcp.server import main as mcp_main
 
     mcp_main()
+
+
+# -- device -------------------------------------------------------------
+
+
+@cli.group()
+def device():
+    """Dated device/OS log (devices.csv) — firmware and watch changes."""
+
+
+@device.command(name="list")
+def device_list():
+    """Print devices.csv (newest first)."""
+    from .devices.log import read_devices
+    from .garmin.utils import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+    except (OSError, FileNotFoundError) as e:
+        raise click.ClickException(str(e)) from e
+
+    rows = read_devices(data_dir)
+    if not rows:
+        click.echo("Inga enheter loggade.")
+        return
+    for row in rows:
+        note = f" — {row['note']}" if row["note"] else ""
+        click.echo(
+            f"{row['valid_from']}  {row['platform']:<12} {row['model']:<20} "
+            f"{row['os_version']:<10} {row['certainty']:<12} {row['origin']}{note}"
+        )
+
+
+@device.command(name="add")
+@click.option(
+    "--platform", required=True, type=click.Choice(["apple_watch", "garmin"]), help="Platform"
+)
+@click.option("--model", default="", help="Device model")
+@click.option("--os-version", "os_version", default="", help="OS/firmware version")
+@click.option(
+    "--from",
+    "valid_from",
+    default=None,
+    help="Date the change took effect (YYYY-MM-DD, default: today)",
+)
+@click.option(
+    "--certainty",
+    type=click.Choice(["exact", "known_since"]),
+    default="known_since",
+    help="exact: derived from data. known_since: manual, may predate --from",
+)
+@click.option("--note", default="", help="Free text note")
+def device_add(platform, model, os_version, valid_from, certainty, note):
+    """Add one manual device-change row."""
+    from .devices.log import add_device
+    from .garmin.utils import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+    except (OSError, FileNotFoundError) as e:
+        raise click.ClickException(str(e)) from e
+
+    try:
+        row = add_device(
+            data_dir,
+            platform=platform,
+            model=model,
+            os_version=os_version,
+            valid_from=valid_from,
+            certainty=certainty,
+            origin="manual",
+            note=note,
+        )
+    except ValueError as e:
+        raise click.ClickException(str(e)) from e
+
+    if row is None:
+        click.echo(f"Redan loggad — hoppar över ({platform}, {model!r}, {os_version!r})")
+        return
+    # row may be a brand new entry, or an existing one whose valid_from
+    # just moved earlier (see log.add_device's earliest-wins merge) — the
+    # wording covers both without claiming which one happened.
+    click.echo(f"Loggad: {row['valid_from']} {row['platform']} {row['model']} {row['os_version']}")
+
+
+@device.command(name="scan")
+@click.option(
+    "--source",
+    type=click.Choice(["fit", "tcx", "all"]),
+    default="all",
+    help="Which historical archive to scan (default: all)",
+)
+@click.option(
+    "--apply", "apply_changes", is_flag=True, help="Write new candidate rows (default: dry-run)"
+)
+def device_scan(source, apply_changes):
+    """Derive device-change candidates from the historical FIT and/or TCX archives.
+
+    The FIT archive (kristian/filer/fit/) only covers the fr610/fr620
+    era; the TCX archive (kristian/filer/tcx/) covers the full history.
+    --source all (default) scans both and merges: the same real device
+    change picked up by both archives collapses to one row (earliest
+    valid_from wins) instead of two.
+
+    Dry-run by default: prints the candidates without writing. --apply
+    writes the ones not already present in devices.csv (certainty=exact,
+    origin=fit or tcx depending on which archive the row came from).
+
+    Rows with an implausible valid_from (before 2000-01-01 or after
+    today — corrupt file metadata, not a real device) are skipped and
+    counted, never silently dropped: the summary names the file.
+    """
+    from .devices.log import add_devices_bulk
+    from .devices.scan import scan as scan_devices
+    from .garmin.utils import get_data_dir
+
+    try:
+        data_dir = get_data_dir()
+    except (OSError, FileNotFoundError) as e:
+        raise click.ClickException(str(e)) from e
+
+    candidates, fit_stats, tcx_stats = scan_devices(data_dir, source=source)
+
+    if fit_stats is not None:
+        click.echo(
+            f"FIT: skannade {fit_stats.scanned} filer: {fit_stats.ok} ok, "
+            f"{fit_stats.skipped_not_activity} ej aktivitet, "
+            f"{fit_stats.skipped_bad_date} orimligt datum, {fit_stats.corrupt} korrupta/oläsbara"
+        )
+        for example in fit_stats.bad_date_examples:
+            click.echo(f"  hoppad (orimligt datum): {example}")
+
+    if tcx_stats is not None:
+        click.echo(
+            f"TCX: skannade {tcx_stats.scanned} filer: {tcx_stats.ok} ok, "
+            f"{tcx_stats.skipped_no_creator} utan Creator, "
+            f"{tcx_stats.skipped_generic_device} med generisk enhet, "
+            f"{tcx_stats.skipped_bad_date} orimligt datum, {tcx_stats.corrupt} korrupta/oläsbara"
+        )
+        for example in tcx_stats.bad_date_examples:
+            click.echo(f"  hoppad (orimligt datum): {example}")
+
+    if not candidates:
+        click.echo("Inga enhetsbyten hittade.")
+        return
+
+    if not apply_changes:
+        click.echo(f"{len(candidates)} föreslagna rader (dry-run, ingen skrivning):")
+        for row in candidates:
+            click.echo(
+                f"  {row['valid_from']}  {row['model']}  {row['os_version']}  ({row['origin']})"
+            )
+        return
+
+    added, updated = add_devices_bulk(data_dir, candidates)
+    unchanged = len(candidates) - len(added) - len(updated)
+    click.echo(
+        f"Skrev {len(added)} nya rader, {len(updated)} uppdaterade (tidigare datum), "
+        f"{unchanged} redan loggade"
+    )

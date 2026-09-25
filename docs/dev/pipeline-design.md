@@ -100,6 +100,15 @@ returns 403), so the webhook path was removed and the timer — previously a
 `/v1/trigger/garmin` endpoint (which also runs fetch + import) remains for
 manual/future use.
 
+**Device-log hook:** after each TCX is saved, `garmin/download.py` reads
+its `<Creator>` element (product name + firmware version) and appends a
+row to `$TRANING_DATA/kristian/devices.csv` if it's new (see
+`devices/log.py`, `devices/tcx_scan.py`). Best-effort and non-fatal — a
+missing `<Creator>`, malformed XML, or a devices.csv write failure is
+logged and swallowed, never fails the fetch. The historical archives
+(`filer/fit/`, `filer/tcx/`) can be backfilled separately with `traning
+device scan --apply`; see `docs/user/cli-reference.md`.
+
 ### Notification chain
 
 **Health data** — debounced, delta-based, silent on no-op:

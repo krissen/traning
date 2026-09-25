@@ -43,14 +43,6 @@ def gc_tc_dirs(tmp_path):
     return gc_dir, tc_dir
 
 
-@pytest.fixture
-def data_dir(tmp_path):
-    """A TRANING_DATA-style root with the gconnect/tcx subtree fetch_new_activities expects."""
-    (tmp_path / "kristian" / "filer" / "gconnect").mkdir(parents=True)
-    (tmp_path / "kristian" / "filer" / "tcx").mkdir(parents=True)
-    return tmp_path
-
-
 # --- _download_activity: completeness contract ------------------------------
 
 
