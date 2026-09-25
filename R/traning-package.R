@@ -13,7 +13,7 @@
 ## Generated once from the pre-.lintr baseline (2026-09-09); add new names
 ## here as they show up as findings rather than suppressing the linter.
 utils::globalVariables(c(
-  ".data", ".env", ".src_rank", ".value",
+  ".data", ".env", ".label", ".src_rank", ".value", ".x",
   "acute_load", "acwr", "ACWR", "acwr_uncoupled",
   "apple_sleeping_wrist_temperature", "atl", "ATL", "avg_hr", "avg_pace",
   "avgCadenceRunning", "avgCadenceRunningMoving", "avgHeartRate",

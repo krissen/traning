@@ -87,6 +87,10 @@ def get_sleep(
 ) -> Image | dict | list:
     """Sleep data from Apple Watch (total hours, deep/REM/core stages).
 
+    In data mode, the response may include a `device_changes_note`
+    flagging an Apple Watch change within the period — a level shift
+    can be measurement technique, not physiology.
+
     Args:
         after: Start date filter.
         before: End date filter.
@@ -108,6 +112,10 @@ def get_hrv(
     """Heart rate variability (HRV) from Apple Watch as Ln(RMSSD).
 
     Includes 7-day rolling baseline and standard deviation bands.
+
+    In data mode, the response may include a `device_changes_note`
+    flagging an Apple Watch change within the period — a level shift
+    can be measurement technique, not physiology.
 
     Args:
         after: Start date filter.
@@ -200,6 +208,11 @@ def get_efficiency(
 
     EF = speed:HR ratio. HRE = avgHR x avgPace (beats/km).
     Both generalise to cycling/walking when speed and HR are present.
+
+    For metric='ef' in data mode, the response may include a
+    `device_changes_note` flagging a Garmin device/firmware change
+    within the period — a level shift can be measurement technique,
+    not fitness.
 
     Args:
         metric: 'ef' (Efficiency Factor) or 'hre' (Heart Rate Efficiency).
@@ -643,6 +656,10 @@ def get_decoupling(
 
     <3% well-coupled, 3-5% acceptable, 5-8% moderate drift, >8% significant.
 
+    In data mode, the response may include a `device_changes_note`
+    flagging a Garmin device/firmware change within the period — a
+    level shift can be measurement technique, not fitness.
+
     Args:
         n: Number of recent qualifying sessions (default 28).
         after: Start date filter.
@@ -686,6 +703,10 @@ def get_resting_hr(
 ) -> Image | dict | list:
     """Resting heart rate trend from Apple Watch.
 
+    In data mode, the response may include a `device_changes_note`
+    flagging an Apple Watch change within the period — a level shift
+    can be measurement technique, not physiology.
+
     Args:
         after: Start date filter.
         before: End date filter.
@@ -706,6 +727,10 @@ def get_vo2max(
     """VO2max estimate trend (Apple Watch daily + Garmin per-activity).
 
     When plotting, overlays both sources for comparison.
+
+    In data mode, the response may include a `device_changes_note`
+    flagging an Apple Watch change within the period — a level shift
+    can be measurement technique, not physiology.
 
     Args:
         after: Start date filter.

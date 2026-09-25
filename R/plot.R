@@ -154,10 +154,12 @@ fetch.plot.sum.dist <- function(summaries, sport = "running") {
 #'
 #' @param data A \code{traning_data} bundle or, via the legacy shim, a
 #'   bare summaries data.frame.
+#' @param show_devices Logical; overlay Garmin device changes (from the
+#'   device log) as dashed reference lines. Default TRUE.
 #' @return ggplot2 object
 #' @export
 fetch.plot.ef <- function(data, from = NULL, to = NULL,
-                          sport = "running") {
+                          sport = "running", show_devices = TRUE) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   ef_data <- compute_efficiency_factor(summaries, sport = sport)
@@ -243,7 +245,21 @@ fetch.plot.ef <- function(data, from = NULL, to = NULL,
       data = dplyr::filter(combined, metrik == "weekly_km"),
       ggplot2::aes(y = value),
       fill = traning_palette$accent, alpha = 0.7, width = 86400
-    ) +
+    )
+
+  if (isTRUE(show_devices)) {
+    # ef_data$sessionStart is Date (compute_efficiency_factor()
+    # normalises it), matching combined$sessionStart above — even
+    # though the panel is drawn on scale_x_datetime(). No datetime
+    # conversion needed here.
+    bounds <- .plot_date_bounds(from, to, ef_data$sessionStart)
+    changes <- device_changes(read_device_log(),
+      platform = "garmin", after = bounds$after, before = bounds$before
+    )
+    p <- p + .device_change_layers(changes)
+  }
+
+  p <- p +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
       scales = "free_y",
@@ -832,11 +848,13 @@ fetch.plot.recovery_hr <- function(data, from = NULL, to = NULL,
 #'   cache is sport-keyed (see \code{\link{traning_data}}).
 #' @param from Date or character.  Optional left x-axis limit.
 #' @param to Date or character.  Optional right x-axis limit.
+#' @param show_devices Logical; overlay Garmin device changes (from the
+#'   device log) as dashed reference lines. Default TRUE.
 #' @return ggplot2 object
 #' @export
 fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
                                   cap_pct = 25,
-                                  sport = "running") {
+                                  sport = "running", show_devices = TRUE) {
   td <- .as_traning_data(data)
   summaries <- td@summaries
   myruns <- td@myruns
@@ -990,7 +1008,19 @@ fetch.plot.decoupling <- function(data, from = NULL, to = NULL,
       data = dplyr::filter(combined, metrik == "weekly_km"),
       ggplot2::aes(y = value),
       fill = traning_palette$accent, alpha = 0.7, width = 86400
-    ) +
+    )
+
+  if (isTRUE(show_devices)) {
+    # decoupling_data$sessionStart is Date (compute_decoupling()
+    # normalises it) — same rationale as fetch.plot.ef above.
+    bounds <- .plot_date_bounds(from, to, decoupling_data$sessionStart)
+    changes <- device_changes(read_device_log(),
+      platform = "garmin", after = bounds$after, before = bounds$before
+    )
+    p <- p + .device_change_layers(changes)
+  }
+
+  p <- p +
     ggplot2::facet_grid(
       rows = ggplot2::vars(panel),
       scales = "free_y",

@@ -574,6 +574,95 @@ def _run_r(
         }
 
 
+_DEVICE_PLATFORM_LABEL = {
+    "apple_watch": "klockbyte",
+    "garmin": "firmwarebyte",
+}
+
+_DEVICE_UPDATE_LABEL = {
+    "apple_watch": "watchOS-uppdatering",
+    "garmin": "firmwareuppdatering",
+}
+
+# Above this many rows, per-row clauses (see _format_device_changes_note)
+# would turn into an unreadable list — a year of monthly watchOS bumps
+# alone clears it. Mirrors R's .is_device_model_change() threshold
+# rationale (R/devices.R) but for prose density, not plot label density;
+# the two aren't tied to the same number by anything other than both
+# being "several, not many".
+_DEVICE_NOTE_SUMMARY_THRESHOLD = 3
+
+
+def _device_change_clause(c: dict) -> str:
+    """One change -> one clause, e.g. 'klockbyte till Ultra 2 watchOS 26.6 den ...'."""
+    label = _DEVICE_PLATFORM_LABEL.get(c.get("platform"), "enhetsbyte")
+    desc = " ".join(p for p in (c.get("model"), c.get("os_version")) if p)
+    if desc:
+        desc_part = f" till {desc}"
+    elif c.get("note"):
+        desc_part = f" ({c['note']})"
+    else:
+        desc_part = ""
+    return f"{label}{desc_part} den {c.get('valid_from', '?')}"
+
+
+def _is_device_model_change(changes: list[dict]) -> list[bool]:
+    """Python mirror of R/devices.R's .is_device_model_change().
+
+    `changes` is newest-first (R's device_changes() sort order): row i's
+    chronologically-older neighbour is row i+1. A row counts as a model
+    swap when its model is non-empty and differs from that neighbour's
+    (or there is no older neighbour in view).
+    """
+    n = len(changes)
+    flags = []
+    for i, c in enumerate(changes):
+        model = c.get("model") or ""
+        older_model = changes[i + 1].get("model") if i + 1 < n else None
+        flags.append(bool(model) and (older_model is None or model != older_model))
+    return flags
+
+
+def _format_device_changes_note(changes: list[dict]) -> str:
+    """Render device_changes() rows as a short Swedish caveat sentence.
+
+    At _DEVICE_NOTE_SUMMARY_THRESHOLD rows or fewer: one clause per
+    change (newest first, R's sort order). Above it — Garmin/Apple
+    Watch firmware history can pack 20+ rows into a single year — device
+    swaps are still named individually, but same-device firmware/OS
+    bumps collapse into a single count per platform ("3
+    watchOS-uppdateringar") rather than one clause each.
+    """
+    if len(changes) <= _DEVICE_NOTE_SUMMARY_THRESHOLD:
+        clauses = [_device_change_clause(c) for c in changes]
+        return "Obs: " + "; ".join(clauses) + " inom perioden; nivåskifte kan vara mätteknik."
+
+    is_swap = _is_device_model_change(changes)
+    swaps = [c for c, swap in zip(changes, is_swap, strict=True) if swap]
+    bumps = [c for c, swap in zip(changes, is_swap, strict=True) if not swap]
+
+    parts = []
+    if swaps:
+        noun = "enhetsbyte" if len(swaps) == 1 else "enhetsbyten"
+        swap_strs = [
+            f"{c.get('model') or 'okänd enhet'} den {c.get('valid_from', '?')}" for c in swaps
+        ]
+        parts.append(f"{len(swaps)} {noun} ({', '.join(swap_strs)})")
+
+    bump_counts: dict[str, int] = {}
+    for c in bumps:
+        platform = c.get("platform")
+        bump_counts[platform] = bump_counts.get(platform, 0) + 1
+    bump_parts = [
+        f"{count} {_DEVICE_UPDATE_LABEL.get(platform, 'uppdatering')}{'ar' if count != 1 else ''}"
+        for platform, count in bump_counts.items()
+    ]
+    if bump_parts:
+        parts.append(" och ".join(bump_parts))
+
+    return "Obs: " + " samt ".join(parts) + " inom perioden; nivåskifte kan vara mätteknik."
+
+
 def r_report(
     func: str,
     args: dict[str, Any] | None = None,
@@ -610,7 +699,7 @@ def r_report(
                     date_range = {"from": min(dates), "to": max(dates)}
                 break
 
-    return {
+    envelope = {
         "schema_version": "1.0",
         "summary": {
             "status": "ok",
@@ -623,6 +712,17 @@ def r_report(
             "query_date": datetime.now().isoformat(),
         },
     }
+
+    # R only populates this for the handful of functions registered in
+    # .DEVICE_CHANGE_FUNCS (inst/mcp_bridge_shared.R) — absent means
+    # either the function isn't one of them, or there's nothing to
+    # report for the period. Either way: no key, no line of prose, no
+    # "?" placeholder (see the Insight = only imported data convention).
+    device_changes = raw.get("device_changes")
+    if device_changes:
+        envelope["device_changes_note"] = _format_device_changes_note(device_changes)
+
+    return envelope
 
 
 def r_plot(

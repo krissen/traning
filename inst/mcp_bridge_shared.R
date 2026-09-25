@@ -335,6 +335,95 @@ build_call_args <- function(func_name, func_args, bundle) {
   c(list(data = bundle), a)
 }
 
+# --- Device-change annotation ---
+# Functions whose "data" response should carry device_changes() for the
+# requested period, and which platform + result date column they're
+# keyed to. Kept small and explicit rather than derived from
+# func_registry: only functions whose response text plausibly needs a
+# "measurement may have shifted" caveat get one. report_readiness
+# backs get_resting_hr / get_hrv / get_sleep / get_vo2max in data mode
+# (they all fold into the readiness report — see tools.py), so one
+# entry covers all four. date_col is the report's own date column
+# (report_ef/report_decoupling/report_readiness all use "Datum" today,
+# but this is kept per-entry rather than hardcoded so a future
+# registrant with a differently-named date column doesn't silently
+# fall back to the unbounded behaviour this list exists to prevent).
+.DEVICE_CHANGE_FUNCS <- list(
+  report_readiness = list(platform = "apple_watch", date_col = "Datum"),
+  report_ef = list(platform = "garmin", date_col = "Datum"),
+  report_decoupling = list(platform = "garmin", date_col = "Datum")
+)
+
+# Effective from/to bounds for scoping device_changes() to what a
+# report call actually shows. report_ef/report_decoupling/
+# report_readiness default to an n-based tail window
+# (.filter_or_tail(), R/report.R) when the caller passes no explicit
+# from/to — the common MCP call shape (Python's tools.py only sets
+# from/to when after/before were explicitly given, see
+# python/traning_cli/mcp/tools.py:_build_args()). call_args$from/to
+# alone are therefore NULL on that path even though the report itself
+# IS bounded — using them directly (as this used to) attached every
+# matching device_changes row ever logged, not just the ones within
+# the window actually reported (see nagelfar issue-001).
+#
+# Mirrors R/devices.R's .plot_date_bounds(): when a side is missing
+# from call_args, derive it from the actual result's own date column
+# instead of leaving it unbounded — same pattern the plot-side
+# annotation already used correctly. Each side is resolved
+# independently, so a partially-explicit call (from given, to absent)
+# still gets its open side bounded by the result.
+.effective_device_change_bounds <- function(call_args, result, date_col) {
+  after <- call_args$from
+  before <- call_args$to
+  if (is.null(after) || is.null(before)) {
+    dates <- if (is.data.frame(result) && date_col %in% names(result)) {
+      result[[date_col]]
+    } else {
+      NULL
+    }
+    dates <- dates[!is.na(dates)]
+    if (length(dates) > 0) {
+      if (is.null(after)) after <- min(dates)
+      if (is.null(before)) before <- max(dates)
+    }
+  }
+  list(after = after, before = before)
+}
+
+# Attaches a `device_changes` field (a data.frame, possibly zero-row)
+# to a "data" envelope when func_name is registered above and the
+# device log has matching rows within the effective from/to window
+# (see .effective_device_change_bounds()). No-op (returns envelope
+# unchanged) for every other function, when there's no derivable
+# window at all (neither explicit from/to nor a dated result — an
+# unbounded note would be a false "inom perioden" claim, so it's
+# omitted rather than attached), or when there's nothing to report —
+# callers never see an empty/absent field turn into a spurious "no
+# changes" statement downstream.
+.attach_device_changes <- function(envelope, func_name, call_args, result) {
+  if (!func_name %in% names(.DEVICE_CHANGE_FUNCS)) {
+    return(envelope)
+  }
+  spec <- .DEVICE_CHANGE_FUNCS[[func_name]]
+  log <- tryCatch(read_device_log(), error = function(e) NULL)
+  if (is.null(log) || nrow(log) == 0) {
+    return(envelope)
+  }
+  bounds <- .effective_device_change_bounds(call_args, result, spec$date_col)
+  if (is.null(bounds$after) && is.null(bounds$before)) {
+    return(envelope)
+  }
+  changes <- device_changes(log,
+    platform = spec$platform,
+    after = bounds$after, before = bounds$before
+  )
+  if (nrow(changes) == 0) {
+    return(envelope)
+  }
+  envelope$device_changes <- changes
+  envelope
+}
+
 # --- Execute + shape the response envelope ---
 # Runs func_name(call_args...) and returns a response envelope list
 # (never emits JSON, never quits) — same three shapes mcp_bridge.R has
@@ -367,9 +456,11 @@ run_dispatch <- function(func_name, call_args, do_plot, plot_path) {
         )
         list(type = "plot", path = out_path)
       } else if (is.data.frame(result)) {
-        list(type = "data", rows = nrow(result), data = result)
+        envelope <- list(type = "data", rows = nrow(result), data = result)
+        .attach_device_changes(envelope, func_name, call_args, result)
       } else {
-        list(type = "data", data = result)
+        envelope <- list(type = "data", data = result)
+        .attach_device_changes(envelope, func_name, call_args, result)
       }
     },
     error = function(e) {
