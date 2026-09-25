@@ -3,6 +3,14 @@
 > **Omfattning:** Framtida arbete (pipeline/produkt samt AUR-paketering).
 > Levererade ändringar dokumenteras i `docs/changelog.md`.
 
+## Enhetsloggen: uppföljning
+
+Enhetsloggen (`devices.csv`) är levererad (se `docs/changelog.md`).
+
+- **Datum i enhetsloggen sätts i UTC.** Ett byte som faktiskt skedde
+  00–02 lokal tid hamnar på föregående dag i loggen. Märks först om ett
+  metrikskifte ska tidsmatchas mot ett bytdatum runt midnatt.
+
 ## Alkohol: uppföljning
 
 Alkoholstödet är levererat (se `docs/changelog.md`). Det som medvetet
