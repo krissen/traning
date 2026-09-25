@@ -159,6 +159,60 @@ def test_format_note_above_threshold_garmin_uses_firmware_label():
     assert "watchOS" not in note
 
 
+# --- Same-day defensive collapse (nagelfar regression) ----------------------
+#
+# devices.csv only carries a date, never a time. R's device_changes()
+# already enforces "at most one row per (platform, valid_from)" in
+# production, but _format_device_changes_note() collapses defensively
+# too — a handcrafted `changes` list (a test, or an older R deploy)
+# could still carry a same-day duplicate, and rendering both as
+# separate clauses is the exact shape of the original bug: an Apple
+# Watch Ultra (gen 1) arriving on 9.0.1 and updating to 9.1 later the
+# same day (2022-10-06), read as a fictitious "klockbyte" to 9.0.1.
+
+
+def test_format_note_collapses_same_day_duplicate_before_wording():
+    changes = [
+        {
+            "platform": "apple_watch",
+            "valid_from": "2022-10-06",
+            "model": "Apple Watch Ultra (gen 1)",
+            "os_version": "9.0.1",
+            "certainty": "exact",
+            "origin": "healthkit",
+            "note": "healthkit-scan: export.xml",
+        },
+        {
+            "platform": "apple_watch",
+            "valid_from": "2022-10-06",
+            "model": "Apple Watch Ultra (gen 1)",
+            "os_version": "9.1",
+            "certainty": "exact",
+            "origin": "healthkit",
+            "note": "healthkit-scan: export.xml",
+        },
+    ]
+    note = r_bridge._format_device_changes_note(changes)
+    assert note.count("2022-10-06") == 1  # one clause, not two
+    assert "9.0.1" not in note  # the collapsed loser doesn't get its own clause
+
+
+def test_format_note_exact_kailash_case_with_a_dirty_same_day_pair():
+    # The full skarp-drift shape: a same-day duplicate for the Ultra
+    # PLUS a genuinely earlier swap into Series 4 — the collapse must
+    # only fold the same-day pair, leaving the real swap alone.
+    changes = [
+        _change("apple_watch", "2022-10-06", "Apple Watch Ultra (gen 1)", "9.0.1", True),
+        _change("apple_watch", "2022-10-06", "Apple Watch Ultra (gen 1)", "9.1", True),
+        _change("apple_watch", "2022-09-14", "Apple Watch Series 4", "9.1", True),
+    ]
+    note = r_bridge._format_device_changes_note(changes)
+    assert note.count("2022-10-06") == 1
+    assert "9.0.1" not in note
+    assert "klockbyte till Apple Watch Ultra (gen 1) den 2022-10-06" in note
+    assert "klockbyte till Apple Watch Series 4 den 2022-09-14" in note
+
+
 # --- _resolve_swap_flags / _is_device_model_change fallback -----------------
 
 

@@ -18,6 +18,8 @@ from typing import Any
 
 from fastmcp.utilities.types import Image
 
+from ..devices.log import collapse_same_day_rows
+
 logger = logging.getLogger(__name__)
 
 TRANING_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -663,7 +665,16 @@ def _format_device_changes_note(changes: list[dict]) -> str:
     The "inom perioden" ("within the period") caveat leads the sentence
     rather than trailing the last clause, so it unambiguously scopes the
     whole list — not just whichever change happened to be mentioned last.
+
+    Defensively collapses same-(platform, valid_from) duplicates first
+    (collapse_same_day_rows(), python/traning_cli/devices/log.py) —
+    R's device_changes() already enforces this in production, but a
+    handcrafted `changes` list (a test, or an older R deploy) could
+    still carry two rows for the same day; rendering both as separate
+    clauses is the exact shape of the bug this exists to avoid (a
+    fictitious device swap reported alongside the real one).
     """
+    changes = collapse_same_day_rows(changes)  # type: ignore[arg-type]
     swap_flags = _resolve_swap_flags(changes)
 
     if len(changes) <= _DEVICE_NOTE_SUMMARY_THRESHOLD:
