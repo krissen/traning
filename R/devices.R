@@ -64,26 +64,67 @@
   dplyr::coalesce(extracted, "0")
 }
 
-# Internal helper: fold `losers` into `winner`'s note as "samma dag:
-# <what it was>" — shared by both branches of .resolve_day_group_winner()
-# callers below. Mirrors Python's log.py:_merge_day_group().
+# Internal helper: prefix marking a "samma dag: ..." fragment in a note.
+.SAMMA_DAG_PREFIX <- "samma dag: "
+
+# Internal helper: `note` split on "; " into its individual fragments,
+# empties dropped. Mirrors Python's log.py:_split_note_segments().
+.split_note_segments <- function(note) {
+  if (!nzchar(note)) {
+    return(character(0))
+  }
+  segs <- strsplit(note, "; ", fixed = TRUE)[[1]]
+  segs[nzchar(segs)]
+}
+
+# Internal helper: split `note` into (non-"samma dag" fragments,
+# already-absorbed version set). Mirrors Python's
+# log.py:_extract_absorbed_versions() — see that function's docstring;
+# handles one or more "samma dag: ..." fragments, not just one, in case
+# `note` is pre-canonical dirty input.
+.extract_absorbed_versions <- function(note) {
+  segs <- .split_note_segments(note)
+  is_samma_dag <- startsWith(segs, .SAMMA_DAG_PREFIX)
+  rest <- segs[!is_samma_dag]
+  absorbed <- character(0)
+  if (any(is_samma_dag)) {
+    lists <- substring(segs[is_samma_dag], nchar(.SAMMA_DAG_PREFIX) + 1)
+    absorbed <- unlist(strsplit(lists, ", ", fixed = TRUE))
+    absorbed <- absorbed[nzchar(absorbed)]
+  }
+  list(rest = rest, absorbed = unique(absorbed))
+}
+
+# Internal helper: rebuild `winner`'s note canonically from `winner` +
+# `losers`. Mirrors Python's log.py:_merge_day_group() — see that
+# function's docstring for the full rationale (Nagelfar issue-001,
+# round 2: appending deduplicated-by-exact-phrase-text still grew the
+# note without bound whenever a loser's own note contained "; ", since
+# a phrase built from it could never match itself verbatim again on a
+# later split).
 #
-# Deduplicated against the winner's existing note, split on "; " into
-# its individual fragments: re-collapsing a day whose losers were
-# already absorbed (a dirty file re-read, or a note that already
-# reflects an earlier collapse) must not grow the note further —
-# nagelfar issue-001, fixed at the write side in
-# python/traning_cli/devices/log.py, but R defensively applies the same
-# rule since it collapses independently on every read. A loser's own
-# manual note, if it has one, is preserved too — appended in parens
-# after the phrase describing what it was — rather than silently
-# dropped when its key gets absorbed.
+# The note is always exactly `<base note> + "; samma dag: " + "<v1>,
+# <v2>, ..."` (the "samma dag" part omitted when nothing was absorbed).
+# Base note = winner's own note with any "samma dag: ..." fragment(s)
+# stripped (.extract_absorbed_versions()). Absorbed versions = the
+# union of what the winner's note already listed, each loser's own
+# (model-qualified when the model differs) version, and anything
+# already listed in a loser's OWN note — sorted, deduplicated, semantic
+# version order, so the result never depends on processing order or how
+# many times this runs. A loser's own note is preserved ONLY when its
+# origin is "manual" (a scanner's provenance note is never copied — it
+# describes a row that no longer exists on its own), as a "(manuell:
+# ...)" fragment with "; " replaced by ", " so it can't be mistaken for
+# a fragment boundary later, deduplicated against the base note.
 .merge_day_group <- function(winner, losers) {
   if (nrow(losers) == 0) {
     return(winner)
   }
-  existing <- if (nzchar(winner$note)) strsplit(winner$note, "; ", fixed = TRUE)[[1]] else character(0)
-  note_bits <- existing
+
+  parsed <- .extract_absorbed_versions(winner$note)
+  base_segments <- parsed$rest
+  absorbed <- parsed$absorbed
+
   for (i in seq_len(nrow(losers))) {
     l <- losers[i, ]
     what <- if (identical(l$model, winner$model)) {
@@ -91,18 +132,29 @@
     } else {
       trimws(paste(l$model, l$os_version))
     }
-    if (!nzchar(what)) {
-      next
+    if (nzchar(what)) {
+      absorbed <- union(absorbed, what)
     }
-    phrase <- paste0("samma dag: ", what)
-    if (nzchar(l$note)) {
-      phrase <- paste0(phrase, " (", l$note, ")")
-    }
-    if (!(phrase %in% note_bits)) {
-      note_bits <- c(note_bits, phrase)
+    loser_parsed <- .extract_absorbed_versions(l$note)
+    absorbed <- union(absorbed, loser_parsed$absorbed)
+
+    if (identical(l$origin, "manual") && nzchar(l$note)) {
+      manual_fragment <- paste0(
+        "(manuell: ", gsub("; ", ", ", l$note, fixed = TRUE), ")"
+      )
+      if (!(manual_fragment %in% base_segments)) {
+        base_segments <- c(base_segments, manual_fragment)
+      }
     }
   }
-  winner$note <- paste(note_bits, collapse = "; ")
+
+  segments <- base_segments
+  if (length(absorbed) > 0) {
+    ordered <- absorbed[order(numeric_version(.version_for_compare(absorbed)), absorbed)]
+    segments <- c(segments, paste0(.SAMMA_DAG_PREFIX, paste(ordered, collapse = ", ")))
+  }
+
+  winner$note <- paste(segments, collapse = "; ")
   winner
 }
 

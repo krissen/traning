@@ -135,8 +135,9 @@ test_that(".collapse_same_day_rows names every collapsed loser in the note", {
   )))
   expect_equal(nrow(log), 1)
   expect_equal(log$os_version, "9.1")
-  expect_match(log$note, "samma dag: 9.0.1")
-  expect_match(log$note, "samma dag: 9.0.2")
+  # Canonical form: one combined, sorted "samma dag: ..." list, not one
+  # fragment per loser.
+  expect_equal(log$note, "samma dag: 9.0.1, 9.0.2")
 })
 
 test_that(".collapse_same_day_rows handles three-part versions correctly", {
@@ -242,6 +243,54 @@ test_that(".merge_day_group preserves a loser's own manual note", {
   )))
   expect_equal(nrow(log), 1)
   expect_match(log$note, "viktig anteckning", fixed = TRUE)
+})
+
+test_that("R canonical note rebuild is stable across repeated re-collapse (matrix)", {
+  # Nagelfar issue-001 round 2: appending deduplicated-by-exact-phrase
+  # still grew the note without bound whenever a loser's own note
+  # contained "; ". Mirrors python/tests/test_device_log.py's
+  # test_repeated_absorption_matrix_is_stable_from_round_2 (same note
+  # forms, same origins) — applying .merge_day_group() repeatedly, each
+  # round feeding the previous round's output back in as `winner` (what
+  # write_devices() re-running against the same reappearing loser
+  # candidate looks like), must stabilize after the first round.
+  note_forms <- list(
+    empty = "",
+    provenance = "healthkit-scan: export.xml",
+    provenance_plus_samma_dag = "healthkit-scan: export.xml; samma dag: 9.0",
+    manual_semicolon = "jag minns; det var på förmiddagen",
+    manual_plus_samma_dag = "jag minns; samma dag: 9.0"
+  )
+
+  for (origin in c("manual", "healthkit")) {
+    for (note_name in names(note_forms)) {
+      winner <- tibble::tibble(
+        valid_from = as.Date("2022-10-06"), platform = "apple_watch",
+        model = "Ultra", os_version = "9.1", certainty = "exact",
+        origin = "healthkit", note = ""
+      )
+      loser <- tibble::tibble(
+        valid_from = as.Date("2022-10-06"), platform = "apple_watch",
+        model = "Ultra", os_version = "9.0.1", certainty = "exact",
+        origin = origin, note = note_forms[[note_name]]
+      )
+      round1 <- .merge_day_group(winner, loser)
+      round2 <- .merge_day_group(round1, loser)
+      round3 <- .merge_day_group(round2, loser)
+      label <- paste(origin, note_name)
+      expect_equal(round2, round1, info = label)
+      expect_equal(round3, round1, info = label)
+    }
+  }
+})
+
+test_that("real devices.csv 2022-10-06 collapses exactly, no provenance in parens", {
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Apple Watch Ultra (gen 1),9.0.1,exact,healthkit,healthkit-scan: export.xml",
+    "2022-10-06,apple_watch,Apple Watch Ultra (gen 1),9.1,exact,healthkit,healthkit-scan: export.xml"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$note, "healthkit-scan: export.xml; samma dag: 9.0.1")
 })
 
 test_that("mixed-model same day with no previous day falls back to version", {
