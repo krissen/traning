@@ -31,6 +31,23 @@ TCX_WITH_CREATOR = b"""<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+def _tcx_with_creator(activity_iso: str) -> bytes:
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <Activities>
+    <Activity Sport="Running">
+      <Id>{activity_iso}</Id>
+      <Creator xsi:type="Device_t">
+        <Name>Forerunner 945</Name>
+        <Version><VersionMajor>13</VersionMajor><VersionMinor>0</VersionMinor></Version>
+      </Creator>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>
+""".encode()
+
+
 class FakeGarminClient:
     def __init__(self, tcx=TCX_WITH_CREATOR):
         self._tcx = tcx
@@ -96,6 +113,28 @@ def test_malformed_tcx_does_not_fail_download(data_dir):
 
     assert ok is True
     assert read_devices(data_dir) == []
+
+
+def test_newest_first_backlog_ends_on_the_oldest_date(data_dir):
+    """Nagelfar issue-002, scenario 2: fetch_new_activities walks the
+    Garmin activity list newest first. If a run downloads several
+    activities on the same firmware, the hook must not let the first
+    (newest) one it sees fix valid_from — an older activity processed
+    afterwards has to move the date back."""
+    gc_dir = dl.gconnect_dir(data_dir)
+    tc_dir = dl.tcx_dir(data_dir)
+
+    newest = dict(ACTIVITY, activityId=556, startTimeGMT="2024-12-24 09:00:00")
+    client_newest = FakeGarminClient(tcx=_tcx_with_creator("2024-12-24T09:00:00.000Z"))
+    dl._download_activity(client_newest, newest, gc_dir, tc_dir)
+
+    older = dict(ACTIVITY, activityId=557, startTimeGMT="2023-10-15 07:00:00")
+    client_older = FakeGarminClient(tcx=_tcx_with_creator("2023-10-15T07:00:00.000Z"))
+    dl._download_activity(client_older, older, gc_dir, tc_dir)
+
+    rows = read_devices(data_dir)
+    assert len(rows) == 1
+    assert rows[0]["valid_from"] == "2023-10-15"
 
 
 def test_device_log_write_failure_does_not_fail_download(data_dir, monkeypatch):

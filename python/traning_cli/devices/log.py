@@ -108,17 +108,66 @@ def write_devices(data_dir: Path, rows: list[DeviceRow]) -> None:
     os.replace(tmp, path)
 
 
-def _is_duplicate(rows: list[DeviceRow], platform: str, model: str, os_version: str) -> bool:
-    """True if a row for this exact (platform, model, os_version) already exists.
-
-    Dedup ignores ``valid_from`` — the same device/OS combination is only
-    recorded once regardless of when it's re-encountered (e.g. a later FIT
-    scan re-deriving a change that was already logged manually).
-    """
-    return any(
-        r["platform"] == platform and r["model"] == model and r["os_version"] == os_version
-        for r in rows
+def _find_match(
+    rows: list[DeviceRow], platform: str, model: str, os_version: str
+) -> DeviceRow | None:
+    """Return the row for this exact (platform, model, os_version), if any."""
+    return next(
+        (
+            r
+            for r in rows
+            if r["platform"] == platform and r["model"] == model and r["os_version"] == os_version
+        ),
+        None,
     )
+
+
+def _merge_into(
+    rows: list[DeviceRow], candidate: DeviceRow
+) -> tuple[list[DeviceRow], str, DeviceRow | None]:
+    """Merge one candidate into rows. Returns (new_rows, outcome, result_row).
+
+    ``outcome`` is one of:
+    - ``"added"`` — no row for this (platform, model, os_version) existed;
+      the candidate was appended. ``result_row`` is the candidate.
+    - ``"updated"`` — a row existed with a *later* ``valid_from`` than the
+      candidate's; the candidate is earlier evidence for the same real
+      device change, so it replaces the date (and, when the candidate is
+      itself data-derived — ``certainty == "exact"`` — the whole row,
+      since a data-derived row is more trustworthy than whatever produced
+      the one on file). A candidate that's merely a manual guess only
+      moves the date earlier and leaves the existing row's
+      certainty/origin/note alone, so a weaker guess can't downgrade a
+      row that was actually derived from data. ``result_row`` is the
+      row as it now stands.
+    - ``"skipped"`` — a row existed with the same or an earlier
+      ``valid_from`` already; nothing changes. This is the historical
+      dedup behaviour for the common case (the same combination
+      re-derived by a later scan, or logged twice by hand).
+      ``result_row`` is None.
+
+    This is the earliest-valid_from-wins rule ``merge_candidates()``
+    already applies within a single scan (FIT vs TCX), extended to apply
+    against the rows already on file — see Nagelfar issue-002: without
+    it, whichever row was written *first* fixed the date forever, so a
+    hook run before a historical backfill (or a newest-first fetch batch
+    spanning a firmware update) could leave a change dated weeks or
+    months late and marked ``exact``.
+    """
+    match = _find_match(rows, candidate["platform"], candidate["model"], candidate["os_version"])
+    if match is None:
+        return [*rows, candidate], "added", candidate
+    if candidate["valid_from"] >= match["valid_from"]:
+        return rows, "skipped", None
+
+    updated: DeviceRow = dict(match)  # type: ignore[assignment]
+    updated["valid_from"] = candidate["valid_from"]
+    if candidate["certainty"] == "exact":
+        updated["certainty"] = candidate["certainty"]
+        updated["origin"] = candidate["origin"]
+        updated["note"] = candidate["note"]
+    new_rows = [updated if r is match else r for r in rows]
+    return new_rows, "updated", updated
 
 
 def add_device(
@@ -132,16 +181,15 @@ def add_device(
     origin: str = "manual",
     note: str = "",
 ) -> DeviceRow | None:
-    """Append one device-change row to devices.csv.
+    """Add or update one device-change row in devices.csv.
 
-    Returns the new row, or None if an identical (platform, model,
-    os_version) row already exists (dedup — no row is written).
+    Returns the row that ended up on file for this (platform, model,
+    os_version) if anything changed (new row added, or an existing row's
+    date moved earlier — see ``_merge_into``), or None if the candidate
+    lost to an existing row with the same or an earlier date (no write).
     """
     rows = read_devices(data_dir)
-    if _is_duplicate(rows, platform, model, os_version):
-        return None
-
-    row: DeviceRow = {
+    candidate: DeviceRow = {
         "valid_from": valid_from or date.today().isoformat(),
         "platform": platform,
         "model": model,
@@ -150,28 +198,36 @@ def add_device(
         "origin": origin,
         "note": note,
     }
-    validate_row(row)
-    rows.append(row)
-    write_devices(data_dir, rows)
-    return row
+    validate_row(candidate)
+
+    new_rows, outcome, result_row = _merge_into(rows, candidate)
+    if outcome == "skipped":
+        return None
+    write_devices(data_dir, new_rows)
+    return result_row
 
 
-def add_devices_bulk(data_dir: Path, candidates: list[DeviceRow]) -> list[DeviceRow]:
-    """Append multiple candidate rows in one write, skipping duplicates.
+def add_devices_bulk(
+    data_dir: Path, candidates: list[DeviceRow]
+) -> tuple[list[DeviceRow], list[DeviceRow]]:
+    """Merge multiple candidate rows in one write. Returns (added, updated).
 
-    Used by ``device scan-fit --apply``, where writing one row at a time
-    would re-read/re-write the file once per candidate. Duplicates are
-    checked both against the file on disk and against earlier candidates
-    in this same batch.
+    Used by ``device scan --apply``, where writing one row at a time
+    would re-read/re-write the file once per candidate. Each candidate is
+    merged against the file (and against earlier candidates in this same
+    batch) via the same earliest-wins rule as ``add_device`` — see
+    ``_merge_into``.
     """
     rows = read_devices(data_dir)
     added: list[DeviceRow] = []
+    updated: list[DeviceRow] = []
     for candidate in candidates:
-        if _is_duplicate(rows, candidate["platform"], candidate["model"], candidate["os_version"]):
-            continue
         validate_row(candidate)
-        rows.append(candidate)
-        added.append(candidate)
-    if added:
+        rows, outcome, result_row = _merge_into(rows, candidate)
+        if outcome == "added" and result_row is not None:
+            added.append(result_row)
+        elif outcome == "updated" and result_row is not None:
+            updated.append(result_row)
+    if added or updated:
         write_devices(data_dir, rows)
-    return added
+    return added, updated

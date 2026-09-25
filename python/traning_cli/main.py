@@ -1158,7 +1158,10 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
     if row is None:
         click.echo(f"Redan loggad — hoppar över ({platform}, {model!r}, {os_version!r})")
         return
-    click.echo(f"Tillagd: {row['valid_from']} {row['platform']} {row['model']} {row['os_version']}")
+    # row may be a brand new entry, or an existing one whose valid_from
+    # just moved earlier (see log.add_device's earliest-wins merge) — the
+    # wording covers both without claiming which one happened.
+    click.echo(f"Loggad: {row['valid_from']} {row['platform']} {row['model']} {row['os_version']}")
 
 
 @device.command(name="scan")
@@ -1230,5 +1233,9 @@ def device_scan(source, apply_changes):
             )
         return
 
-    added = add_devices_bulk(data_dir, candidates)
-    click.echo(f"Skrev {len(added)} nya rader ({len(candidates) - len(added)} redan loggade)")
+    added, updated = add_devices_bulk(data_dir, candidates)
+    unchanged = len(candidates) - len(added) - len(updated)
+    click.echo(
+        f"Skrev {len(added)} nya rader, {len(updated)} uppdaterade (tidigare datum), "
+        f"{unchanged} redan loggade"
+    )
