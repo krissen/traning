@@ -43,19 +43,23 @@ test_that("read_device_log parses a valid file, newest first", {
   expect_equal(out$model[out$valid_from == "2025-01-15"], "Ultra")
 })
 
-test_that("read_device_log treats origin='tcx' identically to 'manual'/'fit'", {
+test_that("read_device_log treats every origin value identically", {
   path <- .write_devices_csv(c(
+    "2026-01-01,apple_watch,Ultra 2,watchOS 26.6,exact,healthkit,Från HealthKit-export",
     "2025-06-01,garmin,Forerunner 965,20.34,known_since,tcx,Härlett från TCX <Creator>",
     "2024-01-01,garmin,Forerunner 235,9.0,exact,manual,",
     "2020-01-01,apple_watch,Ultra,watchOS 6,exact,fit,"
   ))
   out <- read_device_log(path)
-  expect_equal(out$origin, c("tcx", "manual", "fit"))
+  expect_equal(out$origin, c("healthkit", "tcx", "manual", "fit"))
   # No R/Vayu logic branches on origin — device_changes() filtering by
-  # platform/date must not discriminate against a tcx-origin row.
+  # platform/date must not discriminate against any origin value.
   gc <- device_changes(out, platform = "garmin")
   expect_equal(nrow(gc), 2)
   expect_true("tcx" %in% gc$origin)
+  aw <- device_changes(out, platform = "apple_watch")
+  expect_equal(nrow(aw), 2)
+  expect_true("healthkit" %in% aw$origin)
 })
 
 test_that("read_device_log falls back to empty tibble on unexpected schema", {

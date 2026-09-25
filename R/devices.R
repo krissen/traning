@@ -9,10 +9,11 @@
 #   - platform:   apple_watch | garmin
 #   - model / os_version: may be empty
 #   - certainty:  exact | known_since
-#   - origin:     manual | fit | tcx (tcx = derived from a TCX
-#     <Creator> tag's device/version fields — treated identically to
-#     fit everywhere in R/Vayu; origin only matters as provenance for
-#     the row, never as a filter condition here)
+#   - origin:     manual | fit | tcx | healthkit — fit/tcx are derived
+#     from the historical Garmin FIT/TCX archive, healthkit from an
+#     Apple HealthKit export. All four are treated identically
+#     everywhere in R/Vayu; origin only matters as provenance for the
+#     row, never as a filter condition here.
 #   - note:       free text
 #
 # The file may not exist yet (or ever, for a user who never records
