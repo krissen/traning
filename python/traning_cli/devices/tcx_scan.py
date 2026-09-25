@@ -91,7 +91,8 @@ def _parse_creator_element(root: ET.Element) -> tuple[TcxDeviceRecord | None, bo
         return None, False
 
     name = ""
-    version_parts: list[str] = []
+    version_major = ""
+    version_minor = ""
     for child in creator.iter():
         tag = _local(child.tag)
         if tag == "Name" and child.text:
@@ -99,12 +100,30 @@ def _parse_creator_element(root: ET.Element) -> tuple[TcxDeviceRecord | None, bo
         elif tag == "Version":
             for vchild in child:
                 vtag = _local(vchild.tag)
-                if vtag in ("VersionMajor", "VersionMinor") and vchild.text is not None:
-                    version_parts.append(vchild.text.strip())
+                if vtag == "VersionMajor" and vchild.text is not None:
+                    version_major = vchild.text.strip()
+                elif vtag == "VersionMinor" and vchild.text is not None:
+                    version_minor = vchild.text.strip()
+                # BuildMajor/BuildMinor are the internal build counter,
+                # not a version number a human would log — skipped.
 
-    # VersionMajor + VersionMinor -> "13.0" (BuildMajor/Minor are the
-    # internal build counter, not a version number a human would log).
-    os_version = ".".join(version_parts[:2]) if version_parts else ""
+    # Garmin's minor version is hundredths, always 0 or a two-digit
+    # multiple of ten in this archive (2/70, 3/30, 5/0 .. 13/70) and
+    # agreeing with FIT's software_version (2.7, 3.3, ...). A raw join
+    # loses that: minor=5 would give "13.5" (thirteen-point-five) instead
+    # of "13.05" — silently merging with a real x.50 and failing to merge
+    # with FIT's equivalent "x.05". Zero-pad minor to two digits first,
+    # then let normalize_os_version() reduce "13.00" -> "13", "2.70" ->
+    # "2.7" as it already does for a well-formed value.
+    if version_major and version_minor:
+        try:
+            os_version = f"{int(version_major)}.{int(version_minor):02d}"
+        except ValueError:
+            # Non-numeric Version{Major,Minor} text — not seen in this
+            # archive, but fall back to the raw join rather than raise.
+            os_version = f"{version_major}.{version_minor}"
+    else:
+        os_version = version_major
     record = TcxDeviceRecord(
         model=normalize_model(name),
         os_version=normalize_os_version(os_version),

@@ -101,6 +101,45 @@ def test_parse_tcx_scan_record_extracts_date_model_version(tmp_path):
     assert record.activity_date.isoformat() == "2020-07-03"
 
 
+# --- VersionMinor zero-padding (Nagelfar issue-004) -------------------------
+#
+# Garmin's minor version is hundredths: a raw <VersionMinor> of "5" means
+# x.05, not x.5. Joining without zero-padding would merge x.05 and x.50
+# into the same os_version, and would fail to merge a TCX-derived x.05
+# with FIT's equivalent 2-decimal float form.
+
+
+def test_parse_tcx_scan_record_single_digit_minor_is_hundredths(tmp_path):
+    path = tmp_path / "a.tcx"
+    path.write_text(_tcx("2020-01-01T00:00:00.000Z", "Forerunner 945", "13", "5"))
+
+    record = tcx_scan.parse_tcx_scan_record(path)
+
+    assert record.os_version == "13.05"
+
+
+def test_parse_tcx_scan_record_two_digit_minor_zero_padded_matches_fit_form(tmp_path):
+    path = tmp_path / "a.tcx"
+    path.write_text(_tcx("2020-01-01T00:00:00.000Z", "Forerunner 945", "13", "50"))
+
+    record = tcx_scan.parse_tcx_scan_record(path)
+
+    # normalize_os_version("13.50") -> "13.5", matching FIT's software_version 13.5.
+    assert record.os_version == "13.5"
+
+
+def test_parse_tcx_scan_record_minor_05_and_50_do_not_collide(tmp_path):
+    (tmp_path / "a.tcx").write_text(_tcx("2020-01-01T00:00:00.000Z", "Forerunner 945", "13", "5"))
+    (tmp_path / "b.tcx").write_text(_tcx("2020-02-01T00:00:00.000Z", "Forerunner 945", "13", "50"))
+
+    record_a = tcx_scan.parse_tcx_scan_record(tmp_path / "a.tcx")
+    record_b = tcx_scan.parse_tcx_scan_record(tmp_path / "b.tcx")
+
+    assert record_a.os_version == "13.05"
+    assert record_b.os_version == "13.5"
+    assert record_a.os_version != record_b.os_version
+
+
 def test_parse_tcx_scan_record_none_without_creator(tmp_path):
     path = tmp_path / "a.tcx"
     path.write_text(TCX_WITHOUT_CREATOR)
@@ -163,7 +202,9 @@ def test_generic_filter_keys_on_name_not_product_id(tmp_path):
         _tcx("2011-11-09T16:54:16.000Z", "Allmän ANT-enhet", "0", "0", product_id="1345")
     )
     (tmp_path / "b.tcx").write_text(
-        _tcx("2012-07-16T00:00:00.000Z", "Garmin Forerunner 610", "2", "7", product_id="1345")
+        # minor="70" (not "7"): Garmin's minor is hundredths, so this is
+        # the archive's real FR610 firmware "2.70", not "2.7".
+        _tcx("2012-07-16T00:00:00.000Z", "Garmin Forerunner 610", "2", "70", product_id="1345")
     )
 
     records, stats = tcx_scan.scan_tcx_directory(tmp_path)

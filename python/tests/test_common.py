@@ -201,3 +201,10 @@ def test_is_generic_device_not_fooled_by_shared_product_id():
     files, the real "Garmin Forerunner 610" — the filter must key on the
     name, so a ProductID alone can't be used to infer genericness."""
     assert is_generic_device("Garmin Forerunner 610") is False
+
+
+def test_normalize_os_version_tcx_zero_padded_minor_matches_fit_float():
+    """A TCX minor of "05" (already zero-padded by tcx_scan, Nagelfar
+    issue-004) and FIT's equivalent software_version float must land on
+    the same normalized string."""
+    assert normalize_os_version("13.05") == normalize_os_version(str(13.05))
