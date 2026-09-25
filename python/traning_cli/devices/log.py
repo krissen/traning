@@ -39,9 +39,12 @@ absorbed. See ``collapse_same_day_rows()``, enforced by every write
 
 from __future__ import annotations
 
+import contextlib
 import csv
+import fcntl
 import os
 import re
+import time
 from datetime import date
 from pathlib import Path
 from typing import TypedDict
@@ -65,6 +68,62 @@ class DeviceRow(TypedDict):
 
 def devices_csv_path(data_dir: Path) -> Path:
     return Path(data_dir) / "kristian" / "devices.csv"
+
+
+# -- cross-process write lock ------------------------------------------------
+#
+# write_devices() is atomic on its own (tmp file + os.replace), but the
+# read-modify-write in add_device()/add_devices_bulk() is not: two
+# concurrent writers (the traning-garmin.timer fetch and a manual
+# `device add`, say) could both read the same state, and the second
+# write would then silently drop the first one's row. The lock file
+# sits next to devices.csv; acquisition blocks up to
+# LOCK_TIMEOUT_SECONDS, then raises DeviceLogLockTimeout — except in
+# the post-fetch hook (garmin/download.py), which catches everything
+# and logs a warning instead of ever failing a fetch. Same
+# fcntl.flock pattern as git_utils.git_lock().
+LOCK_TIMEOUT_SECONDS = 30.0
+
+
+class DeviceLogLockTimeout(TimeoutError):
+    """devices.csv's lock stayed held past the timeout."""
+
+
+def _lock_path(data_dir: Path) -> Path:
+    csv_path = devices_csv_path(data_dir)
+    return csv_path.with_name(csv_path.name + ".lock")
+
+
+@contextlib.contextmanager
+def _locked_devices(data_dir: Path, *, timeout: float | None = None):
+    """Hold an exclusive flock on devices.csv.lock around a read-modify-write.
+
+    ``timeout`` overrides LOCK_TIMEOUT_SECONDS (tests use a short one);
+    None reads the module constant at call time so monkeypatching it
+    affects the default. Raises DeviceLogLockTimeout with the file and
+    the wait named, so the message is actionable in a timer log.
+    """
+    wait = LOCK_TIMEOUT_SECONDS if timeout is None else timeout
+    lock_path = _lock_path(data_dir)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("w") as handle:
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise DeviceLogLockTimeout(
+                        f"could not lock {devices_csv_path(data_dir).name} "
+                        f"within {wait:g} s — another writer is holding "
+                        f"{lock_path.name}"
+                    ) from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def validate_row(row: DeviceRow | dict) -> None:
@@ -445,6 +504,7 @@ def add_device(
     certainty: str = "known_since",
     origin: str = "manual",
     note: str = "",
+    lock_timeout: float | None = None,
 ) -> DeviceRow | None:
     """Add or update one device-change row in devices.csv.
 
@@ -460,8 +520,11 @@ def add_device(
     winner's note on every re-application of a candidate that changes
     nothing. Checked by comparing the candidate's own (platform, day)
     group's collapsed state immediately before and after the merge.
+
+    The whole read-modify-write holds the exclusive devices.csv lock
+    (see ``_locked_devices``); ``lock_timeout`` overrides its wait.
+    Raises DeviceLogLockTimeout when the lock stays held past it.
     """
-    rows = read_devices(data_dir)
     candidate: DeviceRow = {
         "valid_from": valid_from or date.today().isoformat(),
         "platform": platform,
@@ -473,23 +536,25 @@ def add_device(
     }
     validate_row(candidate)
 
-    key = (candidate["platform"], candidate["valid_from"])
-    before_day = _collapsed_day_row(rows, key)
+    with _locked_devices(data_dir, timeout=lock_timeout):
+        rows = read_devices(data_dir)
+        key = (candidate["platform"], candidate["valid_from"])
+        before_day = _collapsed_day_row(rows, key)
 
-    new_rows, outcome, _result_row = _merge_into(rows, candidate)
-    if outcome == "skipped":
-        return None
+        new_rows, outcome, _result_row = _merge_into(rows, candidate)
+        if outcome == "skipped":
+            return None
 
-    after_day = _collapsed_day_row(new_rows, key)
-    if after_day == before_day:
-        return None  # absorbed into an already-identical day row — nothing changed
+        after_day = _collapsed_day_row(new_rows, key)
+        if after_day == before_day:
+            return None  # absorbed into an already-identical day row — nothing changed
 
-    write_devices(data_dir, new_rows)
-    return after_day
+        write_devices(data_dir, new_rows)
+        return after_day
 
 
 def add_devices_bulk(
-    data_dir: Path, candidates: list[DeviceRow]
+    data_dir: Path, candidates: list[DeviceRow], *, lock_timeout: float | None = None
 ) -> tuple[list[DeviceRow], list[DeviceRow]]:
     """Merge multiple candidate rows in one write. Returns (added, updated).
 
@@ -505,23 +570,29 @@ def add_devices_bulk(
     changed — see ``add_device``'s docstring and Nagelfar issue-001 for
     why an exact-key miss doesn't mean the candidate is new: its key may
     already be absorbed into an existing day's winner.
+
+    The whole read-modify-write holds the exclusive devices.csv lock
+    (see ``_locked_devices``); ``lock_timeout`` overrides its wait.
+    Raises DeviceLogLockTimeout when the lock stays held past it.
     """
-    rows = read_devices(data_dir)
-    added: list[DeviceRow] = []
-    updated: list[DeviceRow] = []
     for candidate in candidates:
         validate_row(candidate)
-        key = (candidate["platform"], candidate["valid_from"])
-        before_day = _collapsed_day_row(rows, key)
+    with _locked_devices(data_dir, timeout=lock_timeout):
+        rows = read_devices(data_dir)
+        added: list[DeviceRow] = []
+        updated: list[DeviceRow] = []
+        for candidate in candidates:
+            key = (candidate["platform"], candidate["valid_from"])
+            before_day = _collapsed_day_row(rows, key)
 
-        rows, outcome, result_row = _merge_into(rows, candidate)
+            rows, outcome, result_row = _merge_into(rows, candidate)
 
-        if outcome == "added" and result_row is not None:
-            after_day = _collapsed_day_row(rows, key)
-            if after_day != before_day:
-                added.append(after_day)
-        elif outcome == "updated" and result_row is not None:
-            updated.append(result_row)
-    if added or updated:
-        write_devices(data_dir, rows)
-    return added, updated
+            if outcome == "added" and result_row is not None:
+                after_day = _collapsed_day_row(rows, key)
+                if after_day != before_day:
+                    added.append(after_day)
+            elif outcome == "updated" and result_row is not None:
+                updated.append(result_row)
+        if added or updated:
+            write_devices(data_dir, rows)
+        return added, updated
