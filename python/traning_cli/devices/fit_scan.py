@@ -28,7 +28,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import fitparse
@@ -39,10 +39,17 @@ from .common import (
     normalize_model,
     normalize_os_version,
     plausible_date,
+    utc_to_stockholm_date,
 )
 from .log import DeviceRow
 
 log = logging.getLogger(__name__)
+
+# A local_timestamp farther than this from time_created is a broken
+# watch clock, not a timezone: valid UTC offsets span -12 to +14 h.
+# (Seen in the archive: time_created in 2061 with a local_timestamp in
+# 2017 — trusting it invented a "connect" device row in 2017.)
+MAX_LOCAL_UTC_SKEW = timedelta(hours=14)
 
 
 @dataclass
@@ -61,6 +68,28 @@ class FitDeviceRecord:
     activity_date: date
     model: str
     os_version: str
+    # Raw UTC creation moment, kept so the scan can plausibility-check
+    # the source (not just the resolved date) — see scan_fit_directory.
+    time_created: datetime | None = None
+
+
+def _trusted_local_timestamp(
+    local: datetime | date | None, time_created: datetime
+) -> datetime | date | None:
+    """Return `local` iff it can plausibly be `time_created`'s wall-clock.
+
+    A bare date carries no time to check against, and an aware/naive
+    mix can't be subtracted — both are untrusted. Anything farther
+    than MAX_LOCAL_UTC_SKEW from time_created is a broken clock (see
+    above), and the caller falls back to UTC-converted-to-Stockholm.
+    """
+    if not isinstance(local, datetime):
+        return None
+    try:
+        skew = abs(local - time_created)
+    except TypeError:
+        return None
+    return local if skew <= MAX_LOCAL_UTC_SKEW else None
 
 
 def _iter_fit_files(fit_dir: Path):
@@ -118,11 +147,15 @@ def parse_fit_device(path: Path) -> FitDeviceRecord | None:
 
     # FIT's activity.local_timestamp is wall-clock time where the
     # activity happened; file_id may carry one too. Either beats the
-    # UTC time_created (converted to Europe/Stockholm as fallback).
+    # UTC time_created (converted to Europe/Stockholm as fallback) —
+    # but only when it agrees with time_created (see
+    # _trusted_local_timestamp): a broken watch clock is worse than no
+    # local time at all.
     file_id_local = file_id.get("local_timestamp")
-    local_timestamp = activity_local_timestamp
-    if local_timestamp is None and isinstance(file_id_local, (datetime, date)):
-        local_timestamp = file_id_local
+    raw_local = activity_local_timestamp
+    if raw_local is None and isinstance(file_id_local, (datetime, date)):
+        raw_local = file_id_local
+    local_timestamp = _trusted_local_timestamp(raw_local, time_created)
     activity_date = garmin_activity_local_date(
         local_timestamp=local_timestamp, utc_moment=time_created
     )
@@ -142,6 +175,7 @@ def parse_fit_device(path: Path) -> FitDeviceRecord | None:
         activity_date=activity_date,
         model=normalize_model(model_str),
         os_version=normalize_os_version(_format_os_version(os_version)),
+        time_created=time_created,
     )
 
 
@@ -164,7 +198,14 @@ def scan_fit_directory(fit_dir: Path) -> tuple[list[FitDeviceRecord], FitScanSta
         if record is None:
             stats.skipped_not_activity += 1
             continue
-        if not plausible_date(record.activity_date):
+        # Plausibility is checked on the resolved date AND on the raw
+        # time_created: a corrupt time_created (bogus year) must be
+        # rejected even when a local_timestamp gave a sane-looking
+        # final date for it.
+        created_ok = record.time_created is None or plausible_date(
+            utc_to_stockholm_date(record.time_created)
+        )
+        if not plausible_date(record.activity_date) or not created_ok:
             stats.skipped_bad_date += 1
             stats.bad_date_examples.append(f"{record.activity_date.isoformat()}  {path.name}")
             log.warning("Skipping implausible activity date %s in %s", record.activity_date, path)

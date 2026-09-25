@@ -325,3 +325,50 @@ def test_parse_fit_device_falls_back_to_file_id_local_timestamp():
     record = fit_scan.parse_fit_device(Path("dummy.fit"))
 
     assert record.activity_date == date(2023, 12, 29)
+
+
+# --- local_timestamp sanity (Nagelfar F1) -----------------------------------
+#
+# A local_timestamp farther than any valid UTC offset (-12..+14 h) from
+# time_created is a broken watch clock, not a timezone — seen in the
+# archive as time_created in 2061 with a local_timestamp in 2017,
+# which briefly invented a "connect" device row dated 2017-09-15.
+
+
+def test_parse_fit_device_distrusts_far_off_local_timestamp():
+    """Days apart with both dates plausible: fall back to Stockholm time."""
+    msgs = _activity_messages(when=datetime(2023, 6, 15, 23, 30))
+    msgs.append(FakeMessage("activity", {"local_timestamp": datetime(2023, 6, 10, 12, 0)}))
+    _set_messages(msgs)
+
+    record = fit_scan.parse_fit_device(Path("dummy.fit"))
+
+    assert record.activity_date == date(2023, 6, 16)
+
+
+def test_parse_fit_device_trusts_local_timestamp_at_the_boundary():
+    """Exactly 14 h off is still a valid offset — trusted."""
+    msgs = _activity_messages(when=datetime(2023, 6, 15, 23, 30))
+    msgs.append(FakeMessage("activity", {"local_timestamp": datetime(2023, 6, 16, 13, 30)}))
+    _set_messages(msgs)
+
+    record = fit_scan.parse_fit_device(Path("dummy.fit"))
+
+    assert record.activity_date == date(2023, 6, 16)
+
+
+def test_scan_fit_directory_rejects_corrupt_time_created_despite_sane_local(tmp_path):
+    """time_created in 2061 with a sane-looking 2017 local_timestamp:
+    rejected as a bad date, like before local_timestamp existed."""
+    (tmp_path / "a.FIT").write_bytes(b"")
+    msgs = _activity_messages(
+        product="connect", software_version=None, when=datetime(2061, 3, 3, 21, 46, 40)
+    )
+    msgs.append(FakeMessage("activity", {"local_timestamp": datetime(2017, 9, 15, 16, 35)}))
+    _set_messages(msgs)
+
+    records, stats = fit_scan.scan_fit_directory(tmp_path)
+
+    assert records == []
+    assert stats.ok == 0
+    assert stats.skipped_bad_date == 1
