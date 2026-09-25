@@ -261,3 +261,73 @@ def test_tcx_collapse_changes_marks_origin_tcx(tmp_path):
     assert [c["valid_from"] for c in candidates] == ["2020-01-01", "2021-01-01"]
     assert all(c["origin"] == "tcx" for c in candidates)
     assert stats.ok == 2
+
+
+# --- activity-local date ----------------------------------------------------
+#
+# TCX carries no local time of its own: the paired gconnect summary's
+# startTimeLocal wins when the files can be matched, otherwise the UTC
+# <Id> converts to Europe/Stockholm (see devices/common.py).
+
+
+def test_parse_tcx_scan_record_converts_utc_to_stockholm_without_summary(tmp_path):
+    """23:30 UTC on a summer evening is already the next day locally."""
+    path = tmp_path / "a.tcx"
+    path.write_text(_tcx("2023-06-15T23:30:00.000Z", "Forerunner 945", "13", "0"))
+
+    record = tcx_scan.parse_tcx_scan_record(path)
+
+    assert record.activity_date.isoformat() == "2023-06-16"
+
+
+def _write_gconnect_pair(gconnect_dir, prefix, activity_id, start_time_local):
+    """A TCX file next to its *_summary.json, as the fetch pipeline stores them."""
+    import json
+
+    tcx_path = gconnect_dir / f"{prefix}.tcx"
+    tcx_path.write_text(_tcx("2023-12-30T01:00:00.000Z", "Forerunner 945", "13", "0"))
+    (gconnect_dir / f"{prefix}_summary.json").write_text(
+        json.dumps({"activityId": activity_id, "startTimeLocal": start_time_local})
+    )
+    return tcx_path
+
+
+def test_parse_tcx_scan_record_prefers_paired_summary_start_time_local(tmp_path):
+    """UTC says the 30th (even in Stockholm), but the paired summary's
+    startTimeLocal says the activity happened on the 29th."""
+    gc_dir = tmp_path / "gconnect"
+    gc_dir.mkdir()
+    tcx_path = _write_gconnect_pair(
+        gc_dir, "2023-12-30T01:00:00+00:00_555", 555, "2023-12-29 20:00:00"
+    )
+
+    record = tcx_scan.parse_tcx_scan_record(tcx_path)
+
+    assert record.activity_date.isoformat() == "2023-12-29"
+
+
+def test_parse_tcx_scan_record_follows_symlink_to_paired_summary(tmp_path):
+    """tcx/ holds symlinks into gconnect/: resolving them finds the pair."""
+    gc_dir = tmp_path / "gconnect"
+    gc_dir.mkdir()
+    tcx_path = _write_gconnect_pair(
+        gc_dir, "2023-12-30T01:00:00+00:00_555", 555, "2023-12-29 20:00:00"
+    )
+    tcx_dir = tmp_path / "tcx"
+    tcx_dir.mkdir()
+    link = tcx_dir / "20231230-010000.tcx"
+    link.symlink_to(tcx_path)
+
+    record = tcx_scan.parse_tcx_scan_record(link)
+
+    assert record.activity_date.isoformat() == "2023-12-29"
+
+
+def test_parse_tcx_scan_record_falls_back_without_summary(tmp_path):
+    """A tcx/ symlink-style name with no pairable summary converts UTC."""
+    path = tmp_path / "20231230-010000.tcx"
+    path.write_text(_tcx("2023-06-15T23:30:00.000Z", "Forerunner 945", "13", "0"))
+
+    record = tcx_scan.parse_tcx_scan_record(path)
+
+    assert record.activity_date.isoformat() == "2023-06-16"

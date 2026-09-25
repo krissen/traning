@@ -4,10 +4,12 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 from garminconnect import Garmin
 
+from ..devices.common import garmin_activity_local_date
 from .utils import (
     activity_filename_prefix,
     extract_activity_id,
@@ -57,7 +59,9 @@ def _save_retry_state(path: Path, state: dict[str, int]) -> None:
         log.warning("Could not write retry state %s", path)
 
 
-def _log_device_from_tcx(tcx_path: Path, activity_date: str) -> None:
+def _log_device_from_tcx(
+    tcx_path: Path, activity_date: str, *, start_time_local: str | None = None
+) -> None:
     """Best-effort: record a device-log row if the TCX's Creator differs.
 
     Never raises — a failure here (missing Creator, malformed XML, a
@@ -65,6 +69,10 @@ def _log_device_from_tcx(tcx_path: Path, activity_date: str) -> None:
     to. Historical FIT-derived rows live in a separate scanner
     (``devices/fit_scan.py``); this hook covers the live fetch path,
     which downloads TCX, not FIT.
+
+    ``activity_date`` is the caller's UTC→Europe/Stockholm fallback;
+    ``start_time_local`` (Garmin's ``startTimeLocal`` wall-clock time
+    where the activity happened) overrides it when it parses.
     """
     try:
         from ..devices.log import add_device
@@ -73,6 +81,10 @@ def _log_device_from_tcx(tcx_path: Path, activity_date: str) -> None:
         record = extract_device_from_tcx(tcx_path)
         if record is None:
             return
+        if start_time_local:
+            resolved = garmin_activity_local_date(start_time_local=start_time_local)
+            if resolved is not None:
+                activity_date = resolved.isoformat()
         # tcx_path = <data_dir>/kristian/filer/gconnect/<file>.tcx
         # parents[0]=gconnect [1]=filer [2]=kristian [3]=data_dir
         data_dir = tcx_path.parents[3]
@@ -281,6 +293,18 @@ def _download_activity(
     iso_timestamp = start_gmt.replace(" ", "T") + "+00:00" if start_gmt else str(activity_id)
     prefix = activity_filename_prefix(iso_timestamp, activity_id)
 
+    # Device-log date: the activity's local day, not UTC's. startTimeLocal
+    # (wall-clock where the activity happened) wins; otherwise the UTC
+    # start in Europe/Stockholm. The filename prefix above stays GMT-based.
+    try:
+        gmt_moment = datetime.fromisoformat(iso_timestamp) if start_gmt else None
+    except ValueError:
+        gmt_moment = None
+    fallback_date = (
+        garmin_activity_local_date(utc_moment=gmt_moment) if gmt_moment is not None else None
+    )
+    device_date = fallback_date.isoformat() if fallback_date is not None else iso_timestamp[:10]
+
     # 1. Save summary JSON (the activity list entry itself)
     summary_path = gc_dir / f"{prefix}_summary.json"
     summary_path.write_text(json.dumps(activity, indent=2, ensure_ascii=False))
@@ -317,7 +341,11 @@ def _download_activity(
             symlink_path.symlink_to(target)
             log.debug("Symlink %s -> %s", symlink_name, target)
 
-        _log_device_from_tcx(tcx_path, activity_date=iso_timestamp[:10])
+        _log_device_from_tcx(
+            tcx_path,
+            activity_date=device_date,
+            start_time_local=activity.get("startTimeLocal"),
+        )
     except Exception:
         log.warning("Could not download TCX for %s", activity_id)
         complete = False

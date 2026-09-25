@@ -236,6 +236,19 @@ test_that(".merge_day_group does not duplicate an already-absorbed note phrase",
   expect_equal(lengths(regmatches(log$note, gregexpr("samma dag: 9.0.1", log$note))), 1)
 })
 
+test_that(".merge_day_group leaves the winner's own version out of the list", {
+  # A loser's note already lists the winner's version (leftover from an
+  # earlier collapse where today's winner itself lost): the canonical
+  # list must not repeat the row's own version.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,\"samma dag: 9.0, 9.0.1, 9.1\"",
+    "2022-10-06,apple_watch,Ultra,9.0,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$os_version, "9.1")
+  expect_equal(log$note, "samma dag: 9.0, 9.0.1")
+})
+
 test_that(".merge_day_group preserves a loser's own manual note", {
   log <- read_device_log(.write_devices_csv(c(
     "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,",

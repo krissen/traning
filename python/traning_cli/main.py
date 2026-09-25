@@ -1154,6 +1154,11 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
         )
     except ValueError as e:
         raise click.ClickException(str(e)) from e
+    except OSError as e:
+        # DeviceLogLockTimeout is an OSError (via TimeoutError), as is a
+        # flock failure on a filesystem without lock support — either
+        # way the user gets one clean line, not a traceback.
+        raise click.ClickException(f"Kunde inte uppdatera enhetsloggen: {e}") from e
 
     if row is None:
         click.echo(f"Redan loggad — hoppar över ({platform}, {model!r}, {os_version!r})")
@@ -1162,6 +1167,18 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
     # just moved earlier (see log.add_device's earliest-wins merge) — the
     # wording covers both without claiming which one happened.
     click.echo(f"Loggad: {row['valid_from']} {row['platform']} {row['model']} {row['os_version']}")
+
+
+def _tidy_message(tidied: int) -> str:
+    """Swedish one-liner reporting a canonical-rewrite of devices.csv."""
+    day_word = "dag" if tidied == 1 else "dagar"
+    return f"Städade {tidied} {day_word} med dubbletter (en rad per dag gäller)"
+
+
+def _would_tidy_message(pending: int) -> str:
+    """Swedish one-liner for dry-run: what --apply would clean up."""
+    day_word = "dag" if pending == 1 else "dagar"
+    return f"Skulle städa {pending} {day_word} med dubbletter (--apply städar)"
 
 
 @device.command(name="scan")
@@ -1206,7 +1223,12 @@ def device_scan(source, healthkit_export, apply_changes):
     today — corrupt file metadata, not a real device) are skipped and
     counted, never silently dropped: the summary names the file.
     """
-    from .devices.log import add_devices_bulk
+    from .devices.log import (
+        add_devices_bulk,
+        count_pending_tidy,
+        devices_csv_path,
+        tidy_devices_log,
+    )
     from .devices.scan import scan as scan_devices
     from .garmin.utils import get_data_dir
 
@@ -1214,6 +1236,9 @@ def device_scan(source, healthkit_export, apply_changes):
         data_dir = get_data_dir()
     except (OSError, FileNotFoundError) as e:
         raise click.ClickException(str(e)) from e
+
+    def _corrupt_log_error(e: ValueError) -> click.ClickException:
+        return click.ClickException(f"Trasig enhetslogg {devices_csv_path(data_dir)}: {e}")
 
     try:
         candidates, fit_stats, tcx_stats, healthkit_stats = scan_devices(
@@ -1287,7 +1312,26 @@ def device_scan(source, healthkit_export, apply_changes):
         for line in summary_lines:
             click.echo(f"  {line}")
 
+    # Dry-run never writes: no tidy, no lock file — a pending cleanup
+    # is only reported. Tidy runs only under --apply, in both branches
+    # below.
     if not candidates:
+        if apply_changes:
+            try:
+                tidied = tidy_devices_log(data_dir)
+            except OSError as e:
+                raise click.ClickException(f"Kunde inte städa enhetsloggen: {e}") from e
+            except ValueError as e:
+                raise _corrupt_log_error(e) from e
+            if tidied:
+                click.echo(_tidy_message(tidied))
+        else:
+            try:
+                pending = count_pending_tidy(data_dir)
+            except ValueError as e:
+                raise _corrupt_log_error(e) from e
+            if pending:
+                click.echo(_would_tidy_message(pending))
         click.echo("Inga enhetsbyten hittade.")
         _echo_summary_recap()
         return
@@ -1298,13 +1342,26 @@ def device_scan(source, healthkit_export, apply_changes):
             click.echo(
                 f"  {row['valid_from']}  {row['model']}  {row['os_version']}  ({row['origin']})"
             )
+        try:
+            pending = count_pending_tidy(data_dir)
+        except ValueError as e:
+            raise _corrupt_log_error(e) from e
+        if pending:
+            click.echo(_would_tidy_message(pending))
         _echo_summary_recap()
         return
 
-    added, updated = add_devices_bulk(data_dir, candidates)
+    try:
+        added, updated, tidied = add_devices_bulk(data_dir, candidates)
+    except OSError as e:
+        raise click.ClickException(f"Kunde inte skriva enhetsloggen: {e}") from e
+    except ValueError as e:
+        raise _corrupt_log_error(e) from e
     unchanged = len(candidates) - len(added) - len(updated)
     click.echo(
         f"Skrev {len(added)} nya rader, {len(updated)} uppdaterade (tidigare datum), "
         f"{unchanged} redan loggade"
     )
+    if tidied:
+        click.echo(_tidy_message(tidied))
     _echo_summary_recap()

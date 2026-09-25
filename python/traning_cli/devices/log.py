@@ -39,9 +39,12 @@ absorbed. See ``collapse_same_day_rows()``, enforced by every write
 
 from __future__ import annotations
 
+import contextlib
 import csv
+import fcntl
 import os
 import re
+import time
 from datetime import date
 from pathlib import Path
 from typing import TypedDict
@@ -65,6 +68,120 @@ class DeviceRow(TypedDict):
 
 def devices_csv_path(data_dir: Path) -> Path:
     return Path(data_dir) / "kristian" / "devices.csv"
+
+
+# -- cross-process write lock ------------------------------------------------
+#
+# write_devices() is atomic on its own (tmp file + os.replace), but the
+# read-modify-write in add_device()/add_devices_bulk() is not: two
+# concurrent writers (the traning-garmin.timer fetch and a manual
+# `device add`, say) could both read the same state, and the second
+# write would then silently drop the first one's row. The lock file
+# sits next to devices.csv; acquisition blocks up to
+# LOCK_TIMEOUT_SECONDS, then raises DeviceLogLockTimeout — except in
+# the post-fetch hook (garmin/download.py), which catches everything
+# and logs a warning instead of ever failing a fetch. Same
+# fcntl.flock pattern as git_utils.git_lock().
+LOCK_TIMEOUT_SECONDS = 30.0
+
+
+class DeviceLogLockTimeout(TimeoutError):
+    """devices.csv's lock stayed held past the timeout."""
+
+
+def _lock_path(data_dir: Path) -> Path:
+    csv_path = devices_csv_path(data_dir)
+    return csv_path.with_name(csv_path.name + ".lock")
+
+
+def _multi_row_day_groups(rows: list[DeviceRow]) -> int:
+    """Number of (platform, valid_from) groups holding more than one row."""
+    counts: dict[tuple[str, str], int] = {}
+    for row in rows:
+        key = (row["platform"], row["valid_from"])
+        counts[key] = counts.get(key, 0) + 1
+    return sum(1 for n in counts.values() if n > 1)
+
+
+def _is_canonical(rows: list[DeviceRow]) -> bool:
+    """True when `rows` already equal what `write_devices()` would store."""
+    return _sort_rows(collapse_same_day_rows(rows)) == rows
+
+
+def _pending_tidy_count(rows: list[DeviceRow]) -> int:
+    """Multi-row day groups in `rows` — the tidy count, or 0 when canonical."""
+    if _is_canonical(rows):
+        return 0
+    return _multi_row_day_groups(rows)
+
+
+def _rewrite_if_non_canonical(data_dir: Path, rows: list[DeviceRow]) -> int:
+    """Rewrite devices.csv when it isn't in canonical form. Returns tidied groups.
+
+    Call with the rows just read from disk, while holding the lock (see
+    ``_locked_devices`` — this takes none itself). An already-canonical
+    file is left untouched, mtime and all. The count is the number of
+    same-day groups that were folded together.
+    """
+    if _is_canonical(rows):
+        return 0
+    tidied = _multi_row_day_groups(rows)
+    write_devices(data_dir, rows)
+    return tidied
+
+
+def count_pending_tidy(data_dir: Path) -> int:
+    """How many same-day groups `tidy_devices_log` would fold — read-only.
+
+    For dry-run reporting: computed without the lock and without
+    writing, so a dry run never creates the lock file either.
+    """
+    return _pending_tidy_count(read_devices(data_dir))
+
+
+def tidy_devices_log(data_dir: Path, *, lock_timeout: float | None = None) -> int:
+    """Rewrite devices.csv when it predates the one-row-per-day invariant.
+
+    A file written before the invariant (or by a version that predates
+    it) can hold several rows for one (platform, day); normal writes
+    only fire when a candidate is new, so nothing ever cleaned those
+    up. Returns the number of same-day groups folded together (0 when
+    the file was already canonical — the file is then not touched).
+    """
+    with _locked_devices(data_dir, timeout=lock_timeout):
+        return _rewrite_if_non_canonical(data_dir, read_devices(data_dir))
+
+
+@contextlib.contextmanager
+def _locked_devices(data_dir: Path, *, timeout: float | None = None):
+    """Hold an exclusive flock on devices.csv.lock around a read-modify-write.
+
+    ``timeout`` overrides LOCK_TIMEOUT_SECONDS (tests use a short one);
+    None reads the module constant at call time so monkeypatching it
+    affects the default. Raises DeviceLogLockTimeout with the file and
+    the wait named, so the message is actionable in a timer log.
+    """
+    wait = LOCK_TIMEOUT_SECONDS if timeout is None else timeout
+    lock_path = _lock_path(data_dir)
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    with lock_path.open("w") as handle:
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise DeviceLogLockTimeout(
+                        f"could not lock {devices_csv_path(data_dir).name} "
+                        f"within {wait:g} s — another writer is holding "
+                        f"{lock_path.name}"
+                    ) from None
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def validate_row(row: DeviceRow | dict) -> None:
@@ -176,7 +293,11 @@ def _merge_day_group(winner: DeviceRow, losers: list[DeviceRow]) -> DeviceRow:
     what the winner's note already listed, each loser's own
     (model-qualified when the loser's model differs from the winner's)
     version, and anything already listed in each loser's OWN note (a
-    loser can itself be carrying a leftover "samma dag: ..." fragment).
+    loser can itself be carrying a leftover "samma dag: ..." fragment)
+    — minus the winner's own version, in plain and model-qualified
+    form: it can arrive via a loser's leftover note (a fragment from an
+    earlier collapse where today's winner itself lost), and listing the
+    row's own version as superseded earlier the same day is noise.
     Sorted, deduplicated, in semantic version order — never grows or
     reorders on a repeat run with the same inputs.
 
@@ -205,6 +326,13 @@ def _merge_day_group(winner: DeviceRow, losers: list[DeviceRow]) -> DeviceRow:
             manual_fragment = f"(manuell: {loser['note'].replace('; ', ', ')})"
             if manual_fragment not in base_segments:
                 base_segments.append(manual_fragment)
+
+    if winner["os_version"]:
+        self_versions = {
+            winner["os_version"],
+            f"{winner['model']} {winner['os_version']}".strip(),
+        }
+        absorbed -= self_versions
 
     segments = list(base_segments)
     if absorbed:
@@ -445,6 +573,7 @@ def add_device(
     certainty: str = "known_since",
     origin: str = "manual",
     note: str = "",
+    lock_timeout: float | None = None,
 ) -> DeviceRow | None:
     """Add or update one device-change row in devices.csv.
 
@@ -460,8 +589,11 @@ def add_device(
     winner's note on every re-application of a candidate that changes
     nothing. Checked by comparing the candidate's own (platform, day)
     group's collapsed state immediately before and after the merge.
+
+    The whole read-modify-write holds the exclusive devices.csv lock
+    (see ``_locked_devices``); ``lock_timeout`` overrides its wait.
+    Raises DeviceLogLockTimeout when the lock stays held past it.
     """
-    rows = read_devices(data_dir)
     candidate: DeviceRow = {
         "valid_from": valid_from or date.today().isoformat(),
         "platform": platform,
@@ -473,25 +605,32 @@ def add_device(
     }
     validate_row(candidate)
 
-    key = (candidate["platform"], candidate["valid_from"])
-    before_day = _collapsed_day_row(rows, key)
+    with _locked_devices(data_dir, timeout=lock_timeout):
+        rows = read_devices(data_dir)
+        key = (candidate["platform"], candidate["valid_from"])
+        before_day = _collapsed_day_row(rows, key)
 
-    new_rows, outcome, _result_row = _merge_into(rows, candidate)
-    if outcome == "skipped":
-        return None
+        new_rows, outcome, _result_row = _merge_into(rows, candidate)
+        if outcome == "skipped":
+            _rewrite_if_non_canonical(data_dir, rows)
+            return None
 
-    after_day = _collapsed_day_row(new_rows, key)
-    if after_day == before_day:
-        return None  # absorbed into an already-identical day row — nothing changed
+        after_day = _collapsed_day_row(new_rows, key)
+        if after_day == before_day:
+            # Absorbed into an already-identical day row — nothing changed
+            # for this candidate, but the file itself may still predate
+            # the invariant (see tidy_devices_log).
+            _rewrite_if_non_canonical(data_dir, rows)
+            return None
 
-    write_devices(data_dir, new_rows)
-    return after_day
+        write_devices(data_dir, new_rows)
+        return after_day
 
 
 def add_devices_bulk(
-    data_dir: Path, candidates: list[DeviceRow]
-) -> tuple[list[DeviceRow], list[DeviceRow]]:
-    """Merge multiple candidate rows in one write. Returns (added, updated).
+    data_dir: Path, candidates: list[DeviceRow], *, lock_timeout: float | None = None
+) -> tuple[list[DeviceRow], list[DeviceRow], int]:
+    """Merge multiple candidate rows in one write. Returns (added, updated, tidied).
 
     Used by ``device scan --apply``, where writing one row at a time
     would re-read/re-write the file once per candidate. Each candidate is
@@ -505,23 +644,39 @@ def add_devices_bulk(
     changed — see ``add_device``'s docstring and Nagelfar issue-001 for
     why an exact-key miss doesn't mean the candidate is new: its key may
     already be absorbed into an existing day's winner.
+
+    The whole read-modify-write holds the exclusive devices.csv lock
+    (see ``_locked_devices``); ``lock_timeout`` overrides its wait.
+    Raises DeviceLogLockTimeout when the lock stays held past it.
+
+    ``tidied`` is the number of pre-invariant same-day groups folded
+    together (see ``tidy_devices_log``) — counted on the file as found,
+    before the merge, so a write that adds a row reports the old
+    duplicates it collapsed along the way too. When no candidate is
+    new, the file is still rewritten if its collapsed form differs
+    from what's on disk — otherwise old duplicates would never be
+    cleaned.
     """
-    rows = read_devices(data_dir)
-    added: list[DeviceRow] = []
-    updated: list[DeviceRow] = []
     for candidate in candidates:
         validate_row(candidate)
-        key = (candidate["platform"], candidate["valid_from"])
-        before_day = _collapsed_day_row(rows, key)
+    with _locked_devices(data_dir, timeout=lock_timeout):
+        rows = read_devices(data_dir)
+        pending_tidy = _pending_tidy_count(rows)
+        added: list[DeviceRow] = []
+        updated: list[DeviceRow] = []
+        for candidate in candidates:
+            key = (candidate["platform"], candidate["valid_from"])
+            before_day = _collapsed_day_row(rows, key)
 
-        rows, outcome, result_row = _merge_into(rows, candidate)
+            rows, outcome, result_row = _merge_into(rows, candidate)
 
-        if outcome == "added" and result_row is not None:
-            after_day = _collapsed_day_row(rows, key)
-            if after_day != before_day:
-                added.append(after_day)
-        elif outcome == "updated" and result_row is not None:
-            updated.append(result_row)
-    if added or updated:
-        write_devices(data_dir, rows)
-    return added, updated
+            if outcome == "added" and result_row is not None:
+                after_day = _collapsed_day_row(rows, key)
+                if after_day != before_day:
+                    added.append(after_day)
+            elif outcome == "updated" and result_row is not None:
+                updated.append(result_row)
+        if added or updated:
+            write_devices(data_dir, rows)
+            return added, updated, pending_tidy
+        return added, updated, _rewrite_if_non_canonical(data_dir, rows)

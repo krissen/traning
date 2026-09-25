@@ -20,15 +20,17 @@ scan's rows use the same canonical strings and skip the same noise.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 from .common import (
     collapse_device_changes,
+    garmin_activity_local_date,
     is_generic_device,
     normalize_model,
     normalize_os_version,
@@ -139,16 +141,69 @@ def _parse_creator(root: ET.Element) -> TcxDeviceRecord | None:
     return record
 
 
-def _parse_activity_date(root: ET.Element) -> date | None:
-    """First <Id> under an Activity: its start time, e.g. '2023-12-29T05:48:33.000Z'."""
+def _parse_activity_datetime(root: ET.Element) -> datetime | None:
+    """First <Id> under an Activity as a UTC moment, e.g. '2023-12-29T05:48:33.000Z'.
+
+    Naive results (an <Id> without offset — not seen in this archive,
+    but cheap to guard) are assumed to be UTC.
+    """
     for elem in root.iter():
         if _local(elem.tag) == "Id" and elem.text:
             text = elem.text.strip().replace("Z", "+00:00")
             try:
-                return datetime.fromisoformat(text).date()
+                moment = datetime.fromisoformat(text)
             except ValueError:
                 return None
+            if moment.tzinfo is None:
+                moment = moment.replace(tzinfo=UTC)
+            return moment
     return None
+
+
+def _parse_activity_date(root: ET.Element) -> date | None:
+    """First <Id> under an Activity: its start time, e.g. '2023-12-29T05:48:33.000Z'.
+
+    Dated in Europe/Stockholm (see common.garmin_activity_local_date):
+    TCX carries no local time of its own, so without a paired gconnect
+    summary this is the fallback, not the UTC calendar date.
+    """
+    moment = _parse_activity_datetime(root)
+    if moment is None:
+        return None
+    resolved = garmin_activity_local_date(utc_moment=moment)
+    assert resolved is not None  # utc_moment given, always resolves
+    return resolved
+
+
+def _lookup_summary_start_time_local(tcx_path: Path) -> str | None:
+    """Garmin ``startTimeLocal`` for the activity a TCX file belongs to, if pairable.
+
+    The fetch pipeline stores TCX and summary side by side in
+    ``kristian/filer/gconnect/`` (``<prefix>.tcx`` next to
+    ``<prefix>_summary.json``) and links the former from ``tcx/`` —
+    resolving the symlink therefore finds the pair deterministically.
+    Anything else (a tcx/ symlink name like ``20231118-194849.tcx``
+    that maps to no summary, an unreadable file, a summary without
+    the field) returns None so the caller falls back to
+    Europe/Stockholm conversion. Never raises, never guesses.
+    """
+    try:
+        candidates = [tcx_path.resolve(), tcx_path]
+        for candidate in candidates:
+            if candidate.suffix.lower() != ".tcx":
+                continue
+            summary = candidate.with_name(candidate.stem + "_summary.json")
+            if not summary.is_file():
+                continue
+            try:
+                data = json.loads(summary.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return None
+            value = data.get("startTimeLocal") if isinstance(data, dict) else None
+            return value if value else None
+        return None
+    except OSError:
+        return None
 
 
 def extract_device_from_tcx(path: Path) -> TcxDeviceRecord | None:
@@ -188,9 +243,17 @@ def _scan_one_tcx_file(path: Path) -> tuple[TcxScanRecord | None, str | None]:
     if is_generic:
         return None, "generic_device"
 
-    activity_date = _parse_activity_date(root)
-    if activity_date is None:
+    utc_moment = _parse_activity_datetime(root)
+    if utc_moment is None:
         return None, "no_date"
+    # TCX carries no local time: prefer the paired gconnect summary's
+    # startTimeLocal when the files can be matched deterministically,
+    # else the UTC moment in Europe/Stockholm.
+    activity_date = garmin_activity_local_date(
+        start_time_local=_lookup_summary_start_time_local(path),
+        utc_moment=utc_moment,
+    )
+    assert activity_date is not None  # utc_moment given, always resolves
 
     record = TcxScanRecord(
         path=path, activity_date=activity_date, model=device.model, os_version=device.os_version
