@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from datetime import date
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Protocol
+from zoneinfo import ZoneInfo
 
 from .log import DeviceRow, collapse_same_day_by_order, collapse_same_day_rows
 
@@ -20,6 +21,83 @@ MIN_PLAUSIBLE_DATE = date(2000, 1, 1)
 def plausible_date(d: date) -> bool:
     """True if ``d`` is a believable activity date (not corrupt metadata)."""
     return MIN_PLAUSIBLE_DATE <= d <= date.today()
+
+
+# -- activity-local date -----------------------------------------------------
+#
+# A device change is dated by the wall-clock day where the activity
+# happened, not by UTC's day boundary: a change first seen at 00–02
+# Swedish time would otherwise land on the previous day. Source order:
+# 1. Garmin's ``startTimeLocal`` in the activity JSON (wall-clock time
+#    where the activity happened — already local, no conversion).
+# 2. FIT's ``activity.local_timestamp`` when present (likewise wall-clock).
+# 3. Otherwise the UTC moment converted to Europe/Stockholm.
+STOCKHOLM_TZ = ZoneInfo("Europe/Stockholm")
+
+
+def parse_garmin_start_time_local(value: str | None) -> date | None:
+    """Parse a Garmin ``startTimeLocal`` wall-clock string to a date.
+
+    The API sends ``"YYYY-MM-DD HH:MM:SS"`` (no timezone — it already
+    IS local time where the activity happened); ISO variants with a
+    ``T`` separator, fractional seconds, or an explicit offset parse
+    too. Returns None for missing/unparseable input so callers can
+    fall through to the next date source.
+    """
+    if not value or not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text).date()
+    except ValueError:
+        pass
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).date()
+    except ValueError:
+        return None
+
+
+def utc_to_stockholm_date(moment: datetime) -> date:
+    """Convert a UTC moment to its Europe/Stockholm calendar date.
+
+    Naive input is assumed to be UTC (that's what FIT's
+    ``file_id.time_created`` and Garmin's ``startTimeGMT`` are).
+    """
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(STOCKHOLM_TZ).date()
+
+
+def garmin_activity_local_date(
+    *,
+    start_time_local: str | None = None,
+    local_timestamp: datetime | date | None = None,
+    utc_moment: datetime | None = None,
+) -> date | None:
+    """Resolve an activity's local calendar date, best source first.
+
+    1. ``start_time_local`` (Garmin's ``startTimeLocal`` wall-clock
+       string) wins when it parses.
+    2. ``local_timestamp`` (FIT's ``activity.local_timestamp`` —
+       already wall-clock) wins next: a datetime contributes its own
+       date, a bare date passes through.
+    3. ``utc_moment`` falls back to Europe/Stockholm conversion.
+    Returns None when no source yields a date.
+    """
+    if start_time_local:
+        parsed = parse_garmin_start_time_local(start_time_local)
+        if parsed is not None:
+            return parsed
+    if local_timestamp is not None:
+        if isinstance(local_timestamp, datetime):
+            return local_timestamp.date()
+        if isinstance(local_timestamp, date):
+            return local_timestamp
+    if utc_moment is not None:
+        return utc_to_stockholm_date(utc_moment)
+    return None
 
 
 # -- model name normalization ------------------------------------------------

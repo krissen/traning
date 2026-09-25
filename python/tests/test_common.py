@@ -1,17 +1,20 @@
 """Tests for devices/common.py: date sanity, normalization, and cross-source merge."""
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from traning_cli.devices.common import (
     MIN_PLAUSIBLE_DATE,
     collapse_device_changes,
+    garmin_activity_local_date,
     is_generic_device,
     merge_candidates,
     normalize_model,
     normalize_os_version,
+    parse_garmin_start_time_local,
     plausible_date,
+    utc_to_stockholm_date,
 )
 
 
@@ -228,3 +231,74 @@ def test_normalize_os_version_tcx_zero_padded_minor_matches_fit_float():
     issue-004) and FIT's equivalent software_version float must land on
     the same normalized string."""
     assert normalize_os_version("13.05") == normalize_os_version(str(13.05))
+
+
+# --- garmin_activity_local_date -------------------------------------------
+#
+# The device log dates a change by the wall-clock day where the activity
+# happened, not by UTC's day boundary.
+
+
+def test_utc_late_evening_summer_resolves_to_next_day():
+    """(a) 23:30 UTC in summer (CEST, +2) is already the next day locally."""
+    assert garmin_activity_local_date(utc_moment=datetime(2023, 6, 15, 23, 30)) == date(2023, 6, 16)
+
+
+def test_utc_winter_evening_resolves_to_next_day():
+    """Same as above for winter (CET, +1): 23:30 UTC is past local midnight."""
+    assert garmin_activity_local_date(utc_moment=datetime(2023, 1, 15, 23, 30)) == date(2023, 1, 16)
+
+
+def test_utc_midday_stays_on_the_same_day():
+    assert garmin_activity_local_date(utc_moment=datetime(2023, 1, 15, 12, 0)) == date(2023, 1, 15)
+
+
+def test_aware_utc_moment_converts_the_same():
+    assert garmin_activity_local_date(
+        utc_moment=datetime(2023, 6, 15, 23, 30, tzinfo=UTC)
+    ) == utc_to_stockholm_date(datetime(2023, 6, 15, 23, 30))
+
+
+def test_start_time_local_wins_over_utc():
+    """(b) A session in another timezone: UTC says the 30th (even in
+    Stockholm), but startTimeLocal says the activity happened on the 29th."""
+    assert garmin_activity_local_date(
+        start_time_local="2023-12-29 20:00:00",
+        utc_moment=datetime(2023, 12, 30, 1, 0),
+    ) == date(2023, 12, 29)
+
+
+def test_unparseable_start_time_local_falls_through_to_utc():
+    assert garmin_activity_local_date(
+        start_time_local="not-a-date",
+        utc_moment=datetime(2023, 1, 15, 12, 0),
+    ) == date(2023, 1, 15)
+
+
+def test_fit_local_timestamp_wins_over_utc():
+    """(c) FIT local_timestamp (wall-clock where the run happened) beats
+    both the UTC calendar date and the Stockholm conversion."""
+    assert garmin_activity_local_date(
+        local_timestamp=datetime(2023, 12, 29, 19, 30),
+        utc_moment=datetime(2023, 12, 30, 0, 30),
+    ) == date(2023, 12, 29)
+
+
+def test_start_time_local_wins_over_fit_local_timestamp():
+    assert garmin_activity_local_date(
+        start_time_local="2023-12-29 20:00:00",
+        local_timestamp=datetime(2023, 12, 28, 19, 30),
+        utc_moment=datetime(2023, 12, 30, 1, 0),
+    ) == date(2023, 12, 29)
+
+
+def test_no_source_returns_none():
+    assert garmin_activity_local_date() is None
+
+
+def test_parse_garmin_start_time_local_formats():
+    assert parse_garmin_start_time_local("2023-12-29 06:48:33") == date(2023, 12, 29)
+    assert parse_garmin_start_time_local("2023-12-29T06:48:33") == date(2023, 12, 29)
+    assert parse_garmin_start_time_local(None) is None
+    assert parse_garmin_start_time_local("") is None
+    assert parse_garmin_start_time_local("not-a-date") is None

@@ -33,7 +33,13 @@ from pathlib import Path
 
 import fitparse
 
-from .common import collapse_device_changes, normalize_model, normalize_os_version, plausible_date
+from .common import (
+    collapse_device_changes,
+    garmin_activity_local_date,
+    normalize_model,
+    normalize_os_version,
+    plausible_date,
+)
 from .log import DeviceRow
 
 log = logging.getLogger(__name__)
@@ -83,10 +89,16 @@ def parse_fit_device(path: Path) -> FitDeviceRecord | None:
 
     file_id: dict | None = None
     creator_software_version = None
+    activity_local_timestamp = None
 
     for msg in fit.messages:
         if msg.name == "file_id" and file_id is None:
             file_id = {d.name: d.value for d in msg}
+        elif msg.name == "activity" and activity_local_timestamp is None:
+            fields = {d.name: d.value for d in msg}
+            candidate = fields.get("local_timestamp")
+            if isinstance(candidate, (datetime, date)):
+                activity_local_timestamp = candidate
         elif msg.name == "device_info":
             fields = {d.name: d.value for d in msg}
             if fields.get("device_index") == "creator":
@@ -104,6 +116,18 @@ def parse_fit_device(path: Path) -> FitDeviceRecord | None:
     if not isinstance(time_created, datetime):
         raise ValueError(f"{path}: file_id.time_created missing or not a datetime")
 
+    # FIT's activity.local_timestamp is wall-clock time where the
+    # activity happened; file_id may carry one too. Either beats the
+    # UTC time_created (converted to Europe/Stockholm as fallback).
+    file_id_local = file_id.get("local_timestamp")
+    local_timestamp = activity_local_timestamp
+    if local_timestamp is None and isinstance(file_id_local, (datetime, date)):
+        local_timestamp = file_id_local
+    activity_date = garmin_activity_local_date(
+        local_timestamp=local_timestamp, utc_moment=time_created
+    )
+    assert activity_date is not None  # utc_moment given, always resolves
+
     model = file_id.get("garmin_product")
     if model is None:
         model = file_id.get("product")
@@ -115,7 +139,7 @@ def parse_fit_device(path: Path) -> FitDeviceRecord | None:
 
     return FitDeviceRecord(
         path=path,
-        activity_date=time_created.date(),
+        activity_date=activity_date,
         model=normalize_model(model_str),
         os_version=normalize_os_version(_format_os_version(os_version)),
     )

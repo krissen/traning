@@ -137,6 +137,42 @@ def test_newest_first_backlog_ends_on_the_oldest_date(data_dir):
     assert rows[0]["valid_from"] == "2023-10-15"
 
 
+def test_hook_dates_row_in_activity_local_time(data_dir):
+    """(e) startTimeLocal (wall-clock where the run happened) wins over
+    the UTC start: UTC says the 30th, the run happened on the 29th."""
+    gc_dir = dl.gconnect_dir(data_dir)
+    tc_dir = dl.tcx_dir(data_dir)
+    client = FakeGarminClient(tcx=_tcx_with_creator("2023-12-30T01:00:00.000Z"))
+    activity = dict(
+        ACTIVITY,
+        startTimeGMT="2023-12-30 01:00:00",
+        startTimeLocal="2023-12-29 20:00:00",
+    )
+
+    ok = dl._download_activity(client, activity, gc_dir, tc_dir)
+
+    assert ok is True
+    rows = read_devices(data_dir)
+    assert len(rows) == 1
+    assert rows[0]["valid_from"] == "2023-12-29"
+
+
+def test_hook_converts_utc_to_stockholm_without_start_time_local(data_dir):
+    """Without startTimeLocal the UTC start converts to Europe/Stockholm:
+    23:30 UTC on a summer evening is already the next day locally."""
+    gc_dir = dl.gconnect_dir(data_dir)
+    tc_dir = dl.tcx_dir(data_dir)
+    client = FakeGarminClient(tcx=_tcx_with_creator("2023-06-15T23:30:00.000Z"))
+    activity = dict(ACTIVITY, startTimeGMT="2023-06-15 23:30:00")
+
+    ok = dl._download_activity(client, activity, gc_dir, tc_dir)
+
+    assert ok is True
+    rows = read_devices(data_dir)
+    assert len(rows) == 1
+    assert rows[0]["valid_from"] == "2023-06-16"
+
+
 def test_device_log_write_failure_does_not_fail_download(data_dir, monkeypatch):
     """Even a broken devices.csv on disk must not fail the TCX download."""
     from traning_cli.devices import log as devices_log

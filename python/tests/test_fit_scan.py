@@ -276,3 +276,52 @@ def test_scan_fit_directory_skips_implausible_pre_2000_date(tmp_path):
 
     assert records == []
     assert stats.skipped_bad_date == 1
+
+
+# --- activity-local date ----------------------------------------------------
+#
+# A device change is dated by the wall-clock day where the activity
+# happened (see devices/common.py), not by UTC's day boundary.
+
+
+def test_parse_fit_device_converts_utc_to_stockholm_without_local_time():
+    """23:30 UTC on a summer evening is already the next day locally."""
+    _set_messages(_activity_messages(when=datetime(2023, 6, 15, 23, 30)))
+
+    record = fit_scan.parse_fit_device(Path("dummy.fit"))
+
+    assert record.activity_date == date(2023, 6, 16)
+
+
+def test_parse_fit_device_prefers_activity_local_timestamp():
+    """FIT activity.local_timestamp (wall-clock where the run happened)
+    wins over both the UTC calendar date and the Stockholm conversion:
+    00:30 UTC is the 30th in both, but the run happened on the 29th."""
+    msgs = _activity_messages(when=datetime(2023, 12, 30, 0, 30))
+    msgs.append(FakeMessage("activity", {"local_timestamp": datetime(2023, 12, 29, 19, 30)}))
+    _set_messages(msgs)
+
+    record = fit_scan.parse_fit_device(Path("dummy.fit"))
+
+    assert record.activity_date == date(2023, 12, 29)
+
+
+def test_parse_fit_device_falls_back_to_file_id_local_timestamp():
+    """A local_timestamp on file_id itself (no activity message) also wins."""
+    msgs = [
+        FakeMessage(
+            "file_id",
+            {
+                "manufacturer": "garmin",
+                "garmin_product": "fr620",
+                "time_created": datetime(2023, 12, 30, 0, 30),
+                "local_timestamp": datetime(2023, 12, 29, 19, 30),
+                "type": "activity",
+            },
+        )
+    ]
+    _set_messages(msgs)
+
+    record = fit_scan.parse_fit_device(Path("dummy.fit"))
+
+    assert record.activity_date == date(2023, 12, 29)
