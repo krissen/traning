@@ -244,7 +244,7 @@ device_changes <- function(log, platform = NULL, after = NULL, before = NULL) {
       ggplot2::geom_vline(
         data = unlabelled, ggplot2::aes(xintercept = .x),
         colour = traning_palette$secondary, linetype = "dotted",
-        linewidth = 0.3, alpha = 0.25
+        linewidth = 0.4, alpha = 0.4
       )
     ))
   }
