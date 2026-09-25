@@ -58,3 +58,16 @@ def test_git_commit_paths_second_call_with_no_new_changes_is_noop(tmp_path):
     assert first is True
     assert second is False
     assert _log_messages(tmp_path)[0] == "(test) Add data"
+
+
+def test_git_commit_paths_ignores_missing_path_alongside_a_real_change(tmp_path):
+    """A path that doesn't exist yet (e.g. devices.csv before its first
+    write) must not sink the whole `git add` — the paths that do have
+    new content still get committed."""
+    _init_repo(tmp_path)
+    (tmp_path / "data.txt").write_text("hello")
+
+    committed = git_commit_paths(tmp_path, ["data.txt", "kristian/devices.csv"], "(test) Add data")
+
+    assert committed is True
+    assert _log_messages(tmp_path)[0] == "(test) Add data"

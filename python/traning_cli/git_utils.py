@@ -49,10 +49,23 @@ def git_commit_paths(data_dir: Path, paths: Iterable[str], message: str) -> bool
 
     Returns True if a commit was created, False if there was nothing to
     commit or the git invocation failed (failures are logged here).
+
+    A path that doesn't exist yet on disk is dropped before `git add`
+    runs, rather than passed through: `git add <missing-path>` exits
+    128 ("pathspec did not match any files"), which would fail the
+    *whole* add — including the paths that do have new content — not
+    just skip the missing one. This matters for callers like
+    `_commit_data()` that always list `kristian/devices.csv`: that file
+    doesn't exist until the first device-log row is ever written, so
+    every fetch before then would otherwise silently fail to commit
+    the Garmin activities it did fetch.
     """
-    path_list = list(paths)
+    path_list = [p for p in paths if (data_dir / p).exists()]
     try:
         with git_lock(data_dir):
+            if not path_list:
+                log.debug("Nothing to commit in %s (no paths exist yet)", data_dir)
+                return False
             subprocess.run(
                 ["git", "add", *path_list],
                 cwd=data_dir,

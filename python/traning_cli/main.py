@@ -321,11 +321,18 @@ def fetch_workouts(since, until, no_metadata, aggregation, dry_run, verbose):
 
 
 def _commit_data(data_dir, n: int) -> None:
-    """Git add + commit new files in the data repo."""
+    """Git add + commit new files in the data repo.
+
+    Includes devices.csv: the post-fetch device-log hook
+    (garmin/download.py's _log_device_from_tcx) can write a new row on
+    any fetch, and it wasn't staged here — the row stayed an
+    uncommitted working-tree change forever on a host that never runs
+    `device add`/`device scan --apply` (e.g. kailash's fetch timer).
+    """
     message = f"(import) Fetch {n} new activities from Garmin Connect"
     committed = git_commit_paths(
         data_dir,
-        ["kristian/filer/gconnect/", "kristian/filer/tcx/"],
+        ["kristian/filer/gconnect/", "kristian/filer/tcx/", "kristian/devices.csv"],
         message,
     )
     if committed:
