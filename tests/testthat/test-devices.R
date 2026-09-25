@@ -170,6 +170,101 @@ test_that(".collapse_same_day_rows is idempotent", {
   expect_equal(once, twice)
 })
 
+# --- Nagelfar rond 2: device swap must beat version, not the other way
+# round, once a previous day establishes which model was already current.
+
+test_that("(a) device swap beats a higher version on the old model", {
+  # The exact regression: Series 4 (9.1) was already current as of the
+  # previous day; an Ultra arrives on a LOWER os_version (9.0.1) the same
+  # day Series 4 also logs a bump to 9.1 again. The swap into the new
+  # device is the day's real change, even though its version number is
+  # lower — must NOT resolve to "highest version" here.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-09-14,apple_watch,Series 4,9.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Series 4,9.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 2)
+  same_day <- log[log$valid_from == as.Date("2022-10-06"), ]
+  expect_equal(same_day$model, "Ultra")
+  expect_equal(same_day$os_version, "9.0.1")
+  expect_match(same_day$note, "samma dag: Series 4 9.1")
+})
+
+test_that("(b) same device swap case, framed as 'no time on file'", {
+  # .collapse_same_day_rows() never has time info regardless of where
+  # the rows came from, so this is really the same code path as (a);
+  # kept as its own test since it's the literal regression framing
+  # ("rader på fil utan tid").
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-09-14,apple_watch,Series 4,9.1,exact,manual,",
+    "2022-10-06,apple_watch,Series 4,9.1,exact,manual,",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,manual,"
+  )))
+  same_day <- log[log$valid_from == as.Date("2022-10-06"), ]
+  expect_equal(same_day$model, "Ultra")
+  expect_equal(same_day$os_version, "9.0.1")
+})
+
+test_that("(c) unchanged: a single-model same-day pair still uses version", {
+  # The pre-nagelfar-rond-2 case must resolve exactly as before: a
+  # single model with two same-day os_version candidates still picks
+  # the higher version (there's no swap to detect — rule 2 doesn't
+  # apply when the whole group shares one model).
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$os_version, "9.1")
+  expect_match(log$note, "samma dag: 9.0.1")
+})
+
+test_that("mixed-model same day with no previous day falls back to version", {
+  # No previous day on record for this platform at all -> rule 2 has
+  # nothing to compare against, falls through to rule 3.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-10-06,apple_watch,Series 4,9.0,exact,healthkit,",
+    "2022-10-06,apple_watch,Ultra,9.1,exact,healthkit,"
+  )))
+  expect_equal(nrow(log), 1)
+  expect_equal(log$model, "Ultra")
+  expect_match(log$note, "samma dag: Series 4 9.0")
+})
+
+# --- (e) R/Python parity: same fixture, same collapse result ----------------
+#
+# Content equivalence, not row-order equivalence — R's .collapse_same_day_
+# rows() returns newest-first (matching read_device_log()'s established
+# convention), Python's collapse_same_day_rows() returns oldest-first
+# (matching its other callers, see log.py); each language's own tests
+# already pin its own order. What must match across languages is WHICH
+# row wins each day and what ends up in its note.
+
+test_that("(e) R matches Python's collapse_same_day_rows on the swap fixture", {
+  # Python (python/tests/test_device_log.py, same fixture):
+  #   test_collapse_same_day_rows_device_swap_beats_higher_version_on_old_model
+  # gives: 2022-09-14 Series 4 9.1 (unchanged); 2022-10-06 Ultra 9.0.1,
+  # note "samma dag: Series 4 9.1". Pinned here so a change to either
+  # implementation that breaks parity fails a test in both suites.
+  log <- read_device_log(.write_devices_csv(c(
+    "2022-09-14,apple_watch,Series 4,9.1,exact,manual,",
+    "2022-10-06,apple_watch,Series 4,9.1,exact,manual,",
+    "2022-10-06,apple_watch,Ultra,9.0.1,exact,manual,"
+  )))
+  by_date <- setNames(seq_len(nrow(log)), as.character(log$valid_from))
+
+  early <- log[by_date[["2022-09-14"]], ]
+  expect_equal(early$model, "Series 4")
+  expect_equal(early$os_version, "9.1")
+  expect_equal(early$note, "")
+
+  swap_day <- log[by_date[["2022-10-06"]], ]
+  expect_equal(swap_day$model, "Ultra")
+  expect_equal(swap_day$os_version, "9.0.1")
+  expect_equal(swap_day$note, "samma dag: Series 4 9.1")
+})
+
 # --- device_changes() ---
 
 test_that("device_changes filters by platform", {

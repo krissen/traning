@@ -64,6 +64,61 @@
   dplyr::coalesce(extracted, "0")
 }
 
+# Internal helper: fold `losers` into `winner`'s note as "samma dag:
+# <what it was>" — shared by both branches of .resolve_day_group_winner()
+# callers below. Mirrors Python's log.py:_merge_day_group().
+.merge_day_group <- function(winner, losers) {
+  if (nrow(losers) == 0) {
+    return(winner)
+  }
+  loser_notes <- vapply(seq_len(nrow(losers)), function(i) {
+    l <- losers[i, ]
+    what <- if (identical(l$model, winner$model)) {
+      l$os_version
+    } else {
+      trimws(paste(l$model, l$os_version))
+    }
+    if (nzchar(what)) paste0("samma dag: ", what) else NA_character_
+  }, character(1))
+  loser_notes <- loser_notes[!is.na(loser_notes)]
+  all_notes <- c(if (nzchar(winner$note)) winner$note else NULL, loser_notes)
+  winner$note <- paste(all_notes, collapse = "; ")
+  winner
+}
+
+# Internal helper: pick the winning row (by index into `group`) within a
+# same-(platform, day) group that has no time information to order by —
+# see .collapse_same_day_rows(). Mirrors Python's
+# log.py:_resolve_day_group_winner().
+#
+# Rule 2: if the group spans more than one distinct model, the winner
+# is whichever model differs from `previous_model` (the platform's
+# resolved model on the immediately preceding day) — a device swap IS
+# that day's real change, even when the new device happens to report a
+# lower os_version than the one it replaced (Nagelfar rond 2: a Series
+# 4 on 9.1 swapped for an Ultra (gen 1) on 9.0.1 the same day must
+# resolve to the Ultra, not "the higher version"). Falls through to
+# rule 3 when there's no previous_model to compare against, or when
+# more than one model in the group is "new" (ambiguous — no single
+# swap target to prefer).
+#
+# Rule 3: highest parsed os_version wins, over whichever candidate pool
+# rule 2 left in play — the full group when rule 2 didn't narrow it, or
+# just the "new" models when it did.
+.resolve_day_group_winner_idx <- function(group, previous_model) {
+  models <- unique(group$model)
+  pool_idx <- seq_len(nrow(group))
+  if (length(models) > 1 && !is.null(previous_model)) {
+    new_idx <- which(group$model != previous_model)
+    new_models <- unique(group$model[new_idx])
+    if (length(new_models) == 1) {
+      pool_idx <- new_idx
+    }
+  }
+  versions <- numeric_version(.version_for_compare(group$os_version[pool_idx]))
+  pool_idx[which.max(versions)]
+}
+
 # Internal helper: enforce the devices.csv invariant defensively on
 # read — at most one row per (platform, valid_from). devices.csv only
 # carries a date, never a time; Python's write_devices()
@@ -75,11 +130,19 @@
 # 9.1 later the same day, both dated 2022-10-06 — would misorder
 # whichever downstream consumer sorts by valid_from alone (this
 # produced a fictitious "downgrade to 9.0.1" in Vayu's device-change
-# note). Mirrors Python's collapse_same_day_rows(): within a
-# same-(platform, day) group, the row with the highest parsed
-# os_version wins and describes that day's actual end state; every
-# other row in the group is folded into the winner's note as "samma
-# dag: <what it was>". certainty/origin follow the winner unchanged.
+# note).
+#
+# Groups are resolved per platform, in ASCENDING date order, threading
+# each platform's resolved model on day N forward as `previous_model`
+# for day N+1's decision (see .resolve_day_group_winner_idx()) — a
+# group of one passes through unchanged; every other row in a larger
+# group is folded into the winner's note (.merge_day_group()) instead
+# of surviving as its own row. certainty/origin follow the winner
+# unchanged. R never has real intra-day chronology to fall back on
+# (unlike Python's scan-time collapse for HealthKit, which does) — by
+# the time a row reaches this file it has already lost any time
+# component the source might have carried.
+#
 # Idempotent — an already-collapsed log round-trips through this
 # unchanged (every group already has size 1).
 .collapse_same_day_rows <- function(log) {
@@ -87,31 +150,27 @@
     return(log)
   }
 
-  groups <- split(log, list(log$platform, log$valid_from), drop = TRUE)
-  collapsed <- lapply(groups, function(rows) {
-    if (nrow(rows) == 1) {
-      return(rows)
-    }
-    versions <- numeric_version(.version_for_compare(rows$os_version))
-    winner_idx <- which.max(versions)
-    winner <- rows[winner_idx, ]
-    losers <- rows[-winner_idx, , drop = FALSE]
-    loser_notes <- vapply(seq_len(nrow(losers)), function(i) {
-      l <- losers[i, ]
-      what <- if (identical(l$model, winner$model)) {
-        l$os_version
+  platforms <- unique(log$platform)
+  per_platform <- lapply(platforms, function(p) {
+    platform_rows <- log[log$platform == p, , drop = FALSE]
+    days <- sort(unique(platform_rows$valid_from)) # ascending: oldest day first
+    previous_model <- NULL
+    day_results <- vector("list", length(days))
+    for (i in seq_along(days)) {
+      group <- platform_rows[platform_rows$valid_from == days[i], , drop = FALSE]
+      if (nrow(group) == 1) {
+        winner <- group
       } else {
-        trimws(paste(l$model, l$os_version))
+        winner_idx <- .resolve_day_group_winner_idx(group, previous_model)
+        winner <- .merge_day_group(group[winner_idx, ], group[-winner_idx, , drop = FALSE])
       }
-      if (nzchar(what)) paste0("samma dag: ", what) else NA_character_
-    }, character(1))
-    loser_notes <- loser_notes[!is.na(loser_notes)]
-    all_notes <- c(if (nzchar(winner$note)) winner$note else NULL, loser_notes)
-    winner$note <- paste(all_notes, collapse = "; ")
-    winner
+      day_results[[i]] <- winner
+      previous_model <- winner$model
+    }
+    dplyr::bind_rows(day_results)
   })
 
-  dplyr::bind_rows(collapsed) |> dplyr::arrange(dplyr::desc(.data$valid_from))
+  dplyr::bind_rows(per_platform) |> dplyr::arrange(dplyr::desc(.data$valid_from))
 }
 
 #' Read the device log
