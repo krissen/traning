@@ -1222,33 +1222,45 @@ def device_scan(source, healthkit_export, apply_changes):
     except (OSError, ValueError) as e:
         raise click.ClickException(f"HealthKit-export: {e}") from e
 
+    # One summary line per source, collected as they're printed so the
+    # same lines can be echoed again at the very end — a long candidate
+    # list (or long bad_date_examples dumps above) would otherwise push
+    # the summary out of a `| tail` window.
+    summary_lines: list[str] = []
+
     if fit_stats is not None:
-        click.echo(
+        line = (
             f"FIT: skannade {fit_stats.scanned} filer: {fit_stats.ok} ok, "
             f"{fit_stats.skipped_not_activity} ej aktivitet, "
             f"{fit_stats.skipped_bad_date} orimligt datum, {fit_stats.corrupt} korrupta/oläsbara"
         )
+        summary_lines.append(line)
+        click.echo(line)
         for example in fit_stats.bad_date_examples:
             click.echo(f"  hoppad (orimligt datum): {example}")
 
     if tcx_stats is not None:
-        click.echo(
+        line = (
             f"TCX: skannade {tcx_stats.scanned} filer: {tcx_stats.ok} ok, "
             f"{tcx_stats.skipped_no_creator} utan Creator, "
             f"{tcx_stats.skipped_generic_device} med generisk enhet, "
             f"{tcx_stats.skipped_bad_date} orimligt datum, {tcx_stats.corrupt} korrupta/oläsbara"
         )
+        summary_lines.append(line)
+        click.echo(line)
         for example in tcx_stats.bad_date_examples:
             click.echo(f"  hoppad (orimligt datum): {example}")
 
     if source in ("healthkit", "all") and healthkit_stats is None:
-        click.echo(
+        line = (
             "HealthKit: ingen export hittad, hoppar över källan "
             "(--healthkit-export PATH eller nyaste <YYYY-MM-DD>/ under "
             "$TRANING_HEALTHKIT_EXPORTS)"
         )
+        summary_lines.append(line)
+        click.echo(line)
     elif healthkit_stats is not None:
-        click.echo(
+        line = (
             f"HealthKit ({healthkit_stats.export_path}): "
             f"skannade {healthkit_stats.elements_scanned} element: {healthkit_stats.ok} ok "
             f"({healthkit_stats.groups} enhets-/firmwarekombinationer), "
@@ -1256,11 +1268,22 @@ def device_scan(source, healthkit_export, apply_changes):
             f"{healthkit_stats.skipped_non_watch} ej Watch, "
             f"{healthkit_stats.skipped_bad_date} orimligt datum"
         )
+        summary_lines.append(line)
+        click.echo(line)
         for example in healthkit_stats.bad_date_examples:
             click.echo(f"  hoppad (orimligt datum): {example}")
 
+    def _echo_summary_recap() -> None:
+        if not summary_lines:
+            return
+        click.echo("")
+        click.echo("Sammanfattning (skanning):")
+        for line in summary_lines:
+            click.echo(f"  {line}")
+
     if not candidates:
         click.echo("Inga enhetsbyten hittade.")
+        _echo_summary_recap()
         return
 
     if not apply_changes:
@@ -1269,6 +1292,7 @@ def device_scan(source, healthkit_export, apply_changes):
             click.echo(
                 f"  {row['valid_from']}  {row['model']}  {row['os_version']}  ({row['origin']})"
             )
+        _echo_summary_recap()
         return
 
     added, updated = add_devices_bulk(data_dir, candidates)
@@ -1277,3 +1301,4 @@ def device_scan(source, healthkit_export, apply_changes):
         f"Skrev {len(added)} nya rader, {len(updated)} uppdaterade (tidigare datum), "
         f"{unchanged} redan loggade"
     )
+    _echo_summary_recap()
