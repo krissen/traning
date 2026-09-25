@@ -1174,11 +1174,12 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
 @click.option(
     "--healthkit-export",
     "healthkit_export",
-    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    type=click.Path(exists=True, path_type=Path),
     default=None,
     help=(
-        "Apple Health export zip to scan (default: newest export-*.zip in "
-        "kristian/apple_health_export/)"
+        "Apple Health export to scan: a zip, an export.xml, or a directory "
+        "containing either (default: newest dated subdirectory of "
+        "$TRANING_HEALTHKIT_EXPORTS)"
     ),
 )
 @click.option(
@@ -1189,8 +1190,8 @@ def device_scan(source, healthkit_export, apply_changes):
 
     The FIT archive (kristian/filer/fit/) only covers the fr610/fr620
     era; the TCX archive (kristian/filer/tcx/) covers the full Garmin
-    history; a HealthKit export (kristian/apple_health_export/) covers
-    Apple Watch. --source all (default) scans every source and merges:
+    history; a HealthKit export ($TRANING_HEALTHKIT_EXPORTS/<YYYY-MM-DD>/)
+    covers Apple Watch. --source all (default) scans every source and merges:
     the same real device change picked up by more than one collapses to
     one row (earliest valid_from wins) instead of several. No HealthKit
     export found is not an error — that source is just skipped, the
@@ -1243,11 +1244,12 @@ def device_scan(source, healthkit_export, apply_changes):
     if source in ("healthkit", "all") and healthkit_stats is None:
         click.echo(
             "HealthKit: ingen export hittad, hoppar över källan "
-            "(--healthkit-export PATH eller kristian/apple_health_export/export-*.zip)"
+            "(--healthkit-export PATH eller nyaste <YYYY-MM-DD>/ under "
+            "$TRANING_HEALTHKIT_EXPORTS)"
         )
     elif healthkit_stats is not None:
         click.echo(
-            f"HealthKit ({healthkit_stats.export_path.name}): "
+            f"HealthKit ({healthkit_stats.export_path}): "
             f"skannade {healthkit_stats.elements_scanned} element: {healthkit_stats.ok} ok "
             f"({healthkit_stats.groups} enhets-/firmwarekombinationer), "
             f"{healthkit_stats.skipped_no_device} utan device, "

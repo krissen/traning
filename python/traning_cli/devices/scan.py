@@ -61,7 +61,7 @@ def scan(
     healthkit_stats: HealthKitScanStats | None = None
     if source in ("healthkit", "all"):
         healthkit_candidates, healthkit_stats = healthkit_scan.scan_and_collapse(
-            data_dir, export_path=healthkit_export
+            export_path=healthkit_export
         )
 
     merged = merge_candidates(fit_candidates, tcx_candidates, healthkit_candidates)

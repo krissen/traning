@@ -74,17 +74,27 @@ row if it's new — no manual step needed.
 Auto Export's live feed (the one `traning fetch health` runs on) only
 ever sends `sourceName`, no device identifier, so it can't drive this
 the way the Garmin fetch does. A full export from the iPhone Health
-app (profile icon -> Export All Health Data -> `export.zip`, containing
+app (profile icon -> Export All Health Data -> a zip containing
 `apple_health_export/export.xml`) carries a `device` attribute per
 record with the watch's hardware identifier and firmware version.
-Drop the zip at
-`$TRANING_DATA/kristian/apple_health_export/export-<YYYY-MM-DD>.zip`
-(not tracked in git — it can be several GB) and run `traning device
-scan --source healthkit --apply` (or just `--source all`, which skips
-this source silently if no export is present). `--healthkit-export
-PATH` overrides the default newest-file lookup. Absent a fresh export,
-log a change by hand with `traning device add --platform apple_watch
-...` instead.
+
+The export lives **outside the data repo entirely**, unpacked, on
+kailash: `$TRANING_HEALTHKIT_EXPORTS/<YYYY-MM-DD>/apple_health_export/export.xml`
+(one dated directory per export; restic backs up that tree and dedups
+well against the mostly-unchanged bulk of an unpacked export between
+runs — a zip wouldn't dedup at all). `$TRANING_HEALTHKIT_EXPORTS` is
+set in kailash's server env
+(`python/traning_cli/server/deploy/traning-env.example`); it isn't
+part of `$TRANING_DATA` and has no dev-machine default. Drop a new
+export in its own `<YYYY-MM-DD>/` directory (unpacked, or as the zip
+straight off the phone — either is fine) and run `traning device scan
+--source healthkit --apply` (or just `--source all`, which skips this
+source silently if nothing is found). `--healthkit-export PATH`
+overrides the default newest-dated-directory lookup, and accepts a
+zip, a bare `export.xml`, or a directory containing either — useful
+for scanning a fresh export before it's been filed into the dated
+tree. Absent any export, log a change by hand with `traning device add
+--platform apple_watch ...` instead.
 
 ## Date range filtering
 

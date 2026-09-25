@@ -5,33 +5,40 @@ Health Auto Export's live feed (the one the ``traning fetch health`` /
 device identifier — so Apple Watch history can't be derived the way
 ``fit_scan``/``tcx_scan`` derive Garmin's (see ``docs/user/cli-reference.md``,
 "Device log"). A full export from the iPhone Health app's own "Share All
-Health Data" (``export.zip`` containing
-``apple_health_export/export.xml``) does carry one: every ``<Record>``/
+Health Data" (a zip containing ``apple_health_export/export.xml``, or
+the same ``export.xml`` unpacked) does carry one: every ``<Record>``/
 ``<Workout>`` element has a ``device="<<HKDevice: ...>>"`` attribute with
 ``hardware:`` (e.g. ``Watch6,18``) and ``software:`` (e.g. ``10.1``)
 fields for whichever device produced that sample.
 
 The export is a manual, occasional one-off, not part of the automated
-pipeline — expected to live at
-``$TRANING_DATA/kristian/apple_health_export/export-<YYYY-MM-DD>.zip``,
-gitignored (it's several GB uncompressed). ``traning device scan`` skips
-this source with a message when no export is found there; every other
-source still runs.
+data-repo pipeline. It's stored *unpacked* (restic dedups the unpacked
+tree between exports far better than it would a zip) at
+``$TRANING_HEALTHKIT_EXPORTS/<YYYY-MM-DD>/apple_health_export/export.xml``
+— see ``docs/user/cli-reference.md``, "Device log", for where that
+lives operationally. ``--healthkit-export`` also accepts a zip or a bare
+``export.xml`` for ad hoc scans (a fresh export downloaded straight from
+the phone, before it's been placed in the dated tree). ``traning device
+scan`` skips this source with a message when nothing is found; every
+other source still runs.
 
 export.xml itself can be tens of millions of Record elements over a
 multi-GB file — reading it whole, or even building one in-memory record
 per element the way fit_scan/tcx_scan do per *file*, isn't an option.
-Instead this reads it streaming, straight out of the zip
-(``zipfile.ZipFile.open()`` handed to ``ET.iterparse``, clearing each
-element right after use), and collapses on the fly: only the earliest
-date seen for each (hardware, software) pair is kept, so memory is
-bounded by the number of distinct device/firmware combinations in the
-whole export (a handful), not the number of samples (tens of millions).
+Instead this reads it streaming (``ET.iterparse``, clearing each element
+right after use — straight off disk for a plain export.xml, or via
+``zipfile.ZipFile.open()`` for a zip), and collapses on the fly: only
+the earliest date seen for each (hardware, software) pair is kept, so
+memory is bounded by the number of distinct device/firmware
+combinations in the whole export (a handful), not the number of samples
+(tens of millions).
 """
 
 from __future__ import annotations
 
 import logging
+import os
+import re
 import xml.etree.ElementTree as ET
 import zipfile
 from dataclasses import dataclass, field
@@ -50,6 +57,9 @@ log = logging.getLogger(__name__)
 
 EXPORT_XML_MEMBER_SUFFIX = "apple_health_export/export.xml"
 WATCH_RECORD_TAGS = ("Record", "Workout")
+HEALTHKIT_EXPORTS_ENV = "TRANING_HEALTHKIT_EXPORTS"
+
+_DATE_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 # HealthKit's startDate/endDate/creationDate attributes are formatted
 # "YYYY-MM-DD HH:MM:SS +HHMM" — local time plus an explicit offset, not
@@ -81,20 +91,70 @@ class HealthKitScanStats:
     groups: int = 0
 
 
-def default_export_dir(data_dir: Path) -> Path:
-    return Path(data_dir) / "kristian" / "apple_health_export"
+# -- locating the export -------------------------------------------------
 
 
-def find_latest_export(export_dir: Path) -> Path | None:
-    """Return the newest export-*.zip in export_dir, or None.
+def default_export_root() -> Path | None:
+    """The root of the dated export tree, from $TRANING_HEALTHKIT_EXPORTS.
 
-    Filenames sort correctly by name (``export-<YYYY-MM-DD>.zip``), so a
-    plain lexical sort picks the newest without needing to stat mtimes.
+    None if the env var isn't set — there's no data-repo-relative
+    fallback (unlike fit_dir/tcx_dir): the export lives outside the data
+    repo entirely (see module docstring), so there's no ``data_dir`` to
+    derive a default from.
     """
-    if not export_dir.is_dir():
+    value = os.environ.get(HEALTHKIT_EXPORTS_ENV)
+    return Path(value) if value else None
+
+
+def resolve_export_input(path: Path) -> Path | None:
+    """Resolve a zip, an export.xml, or a directory to a concrete export file.
+
+    - An existing file (zip or export.xml) is returned as is.
+    - A directory is searched, in order: ``apple_health_export/export.xml``
+      under it (the shape a zip unpacks to), then ``export.xml`` directly
+      under it, then the newest ``*.zip`` directly under it.
+
+    Returns None if none of that is found. ``scan_export`` decides zip
+    vs. plain XML by file extension, not by anything resolved here.
+    """
+    if path.is_file():
+        return path
+    if not path.is_dir():
         return None
-    candidates = sorted(export_dir.glob("export-*.zip"))
-    return candidates[-1] if candidates else None
+
+    nested = path / EXPORT_XML_MEMBER_SUFFIX
+    if nested.is_file():
+        return nested
+
+    direct = path / "export.xml"
+    if direct.is_file():
+        return direct
+
+    zips = sorted(path.glob("*.zip"))
+    return zips[-1] if zips else None
+
+
+def find_latest_export(root: Path) -> Path | None:
+    """Find the export in the newest ``<YYYY-MM-DD>`` subdirectory of root.
+
+    Date-named subdirectories sort correctly by name (ISO format), so a
+    plain lexical sort picks the newest without needing to stat mtimes.
+    Only the single newest date directory is tried — an export missing
+    from it isn't assumed to exist in an older one.
+    """
+    if not root.is_dir():
+        return None
+    date_dirs = sorted(p for p in root.iterdir() if p.is_dir() and _DATE_DIR_RE.match(p.name))
+    if not date_dirs:
+        return None
+    return resolve_export_input(date_dirs[-1])
+
+
+# -- parsing ---------------------------------------------------------------
+
+
+def _is_zip_path(path: Path) -> bool:
+    return path.suffix.lower() == ".zip"
 
 
 def _find_export_xml_member(zf: zipfile.ZipFile) -> str | None:
@@ -135,10 +195,65 @@ def _parse_local_date(value: str) -> date | None:
         return None
 
 
+def _scan_xml_stream(
+    fh,
+    export_path: Path,
+    stats: HealthKitScanStats,
+    earliest: dict[tuple[str, str], date],
+) -> None:
+    """Iterparse one export.xml stream, updating stats and earliest in place.
+
+    Shared by the zip and plain-file branches of ``scan_export`` so the
+    parsing logic exists exactly once regardless of how the bytes got
+    here.
+    """
+    for _event, elem in ET.iterparse(fh, events=("end",)):
+        if elem.tag not in WATCH_RECORD_TAGS:
+            continue
+        stats.elements_scanned += 1
+
+        device = elem.get("device")
+        start = elem.get("startDate")
+        hardware = software = None
+        if device:
+            hardware, software = _parse_device_fields(device)
+
+        if not hardware:
+            stats.skipped_no_device += 1
+            elem.clear()
+            continue
+        if not hardware.startswith("Watch"):
+            stats.skipped_non_watch += 1
+            elem.clear()
+            continue
+
+        record_date = _parse_local_date(start) if start else None
+        if record_date is None or not plausible_date(record_date):
+            stats.skipped_bad_date += 1
+            example = f"{start!r}  ({elem.tag}, {hardware})"
+            stats.bad_date_examples.append(example)
+            log.warning(
+                "Skipping unparseable/implausible startDate %r for %s in %s",
+                start,
+                hardware,
+                export_path,
+            )
+            elem.clear()
+            continue
+
+        key = (hardware, software)
+        if key not in earliest or record_date < earliest[key]:
+            earliest[key] = record_date
+        stats.ok += 1
+        elem.clear()
+
+
 def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthKitScanStats]:
     """Stream export.xml out of export_path and collapse to per-device-change records.
 
-    Raises if the zip or its export.xml member can't be opened/parsed —
+    ``export_path`` is either a zip (containing
+    ``apple_health_export/export.xml``) or a plain ``export.xml`` file,
+    told apart by file extension. Raises if it can't be opened/parsed —
     unlike fit_scan/tcx_scan's per-file scans, there's exactly one export
     file here, so a corrupt one is a real problem for the caller to
     surface, not something to silently count and skip.
@@ -149,51 +264,18 @@ def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthK
     # the whole export, not the number of samples.
     earliest: dict[tuple[str, str], date] = {}
 
-    with zipfile.ZipFile(export_path) as zf:
-        member = _find_export_xml_member(zf)
-        if member is None:
-            raise ValueError(f"{export_path}: no {EXPORT_XML_MEMBER_SUFFIX} member in export zip")
-
-        with zf.open(member) as fh:
-            for _event, elem in ET.iterparse(fh, events=("end",)):
-                if elem.tag not in WATCH_RECORD_TAGS:
-                    continue
-                stats.elements_scanned += 1
-
-                device = elem.get("device")
-                start = elem.get("startDate")
-                hardware = software = None
-                if device:
-                    hardware, software = _parse_device_fields(device)
-
-                if not hardware:
-                    stats.skipped_no_device += 1
-                    elem.clear()
-                    continue
-                if not hardware.startswith("Watch"):
-                    stats.skipped_non_watch += 1
-                    elem.clear()
-                    continue
-
-                record_date = _parse_local_date(start) if start else None
-                if record_date is None or not plausible_date(record_date):
-                    stats.skipped_bad_date += 1
-                    example = f"{start!r}  ({elem.tag}, {hardware})"
-                    stats.bad_date_examples.append(example)
-                    log.warning(
-                        "Skipping unparseable/implausible startDate %r for %s in %s",
-                        start,
-                        hardware,
-                        export_path,
-                    )
-                    elem.clear()
-                    continue
-
-                key = (hardware, software)
-                if key not in earliest or record_date < earliest[key]:
-                    earliest[key] = record_date
-                stats.ok += 1
-                elem.clear()
+    if _is_zip_path(export_path):
+        with zipfile.ZipFile(export_path) as zf:
+            member = _find_export_xml_member(zf)
+            if member is None:
+                raise ValueError(
+                    f"{export_path}: no {EXPORT_XML_MEMBER_SUFFIX} member in export zip"
+                )
+            with zf.open(member) as fh:
+                _scan_xml_stream(fh, export_path, stats, earliest)
+    else:
+        with export_path.open("rb") as fh:
+            _scan_xml_stream(fh, export_path, stats, earliest)
 
     stats.groups = len(earliest)
     records = [
@@ -223,18 +305,24 @@ def collapse_changes(records: list[HealthKitDeviceRecord]) -> list[DeviceRow]:
 
 
 def scan_and_collapse(
-    data_dir: Path, export_path: Path | None = None
+    export_path: Path | None = None,
 ) -> tuple[list[DeviceRow], HealthKitScanStats | None]:
-    """Scan the HealthKit export and return (candidate rows, scan stats).
+    """Scan a HealthKit export and return (candidate rows, scan stats).
 
-    ``export_path`` overrides the default lookup (newest
-    ``export-*.zip`` under ``default_export_dir(data_dir)``). Returns
-    ``([], None)`` — not an empty-but-present stats object — when no
-    export is found anywhere, so a caller can tell "no export available,
-    source skipped" apart from "export scanned, found nothing".
+    ``export_path`` may be a zip, an export.xml, or a directory (see
+    ``resolve_export_input``); it overrides the default lookup (newest
+    dated subdirectory of ``$TRANING_HEALTHKIT_EXPORTS``, see
+    ``find_latest_export``). Returns ``([], None)`` — not an
+    empty-but-present stats object — when no export is found anywhere,
+    so a caller can tell "no export available, source skipped" apart
+    from "export scanned, found nothing".
     """
     if export_path is None:
-        export_path = find_latest_export(default_export_dir(data_dir))
+        root = default_export_root()
+        export_path = find_latest_export(root) if root is not None else None
+    else:
+        export_path = resolve_export_input(export_path)
+
     if export_path is None or not export_path.is_file():
         return [], None
 

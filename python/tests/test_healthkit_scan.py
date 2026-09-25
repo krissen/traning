@@ -219,7 +219,7 @@ def test_scan_and_collapse_marks_platform_apple_watch_and_origin_healthkit(tmp_p
         [_record("2023-06-15 08:00:00 +0000", "Watch6,18", "10.1")],
     )
 
-    candidates, stats = healthkit_scan.scan_and_collapse(tmp_path, export_path=export)
+    candidates, stats = healthkit_scan.scan_and_collapse(export_path=export)
 
     assert stats.ok == 1
     assert len(candidates) == 1
@@ -237,7 +237,7 @@ def test_scan_and_collapse_multiple_device_changes_sorted_by_date(tmp_path):
         ],
     )
 
-    candidates, _stats = healthkit_scan.scan_and_collapse(tmp_path, export_path=export)
+    candidates, _stats = healthkit_scan.scan_and_collapse(export_path=export)
 
     assert [c["valid_from"] for c in candidates] == ["2022-01-01", "2024-01-01"]
     assert [c["model"] for c in candidates] == [
@@ -246,45 +246,172 @@ def test_scan_and_collapse_multiple_device_changes_sorted_by_date(tmp_path):
     ]
 
 
-# --- missing export: source works without one ---------------------------------
+# --- input formats: zip, bare export.xml, directory ---------------------------
 
 
-def test_scan_and_collapse_returns_none_stats_when_no_export_present(tmp_path):
-    candidates, stats = healthkit_scan.scan_and_collapse(tmp_path)
+def test_scan_export_accepts_plain_export_xml_file(tmp_path):
+    xml_path = tmp_path / "export.xml"
+    xml_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<HealthData locale="en_US">\n'
+        + _record("2023-06-15 08:00:00 +0000", "Watch6,18", "10.1")
+        + "\n</HealthData>\n"
+    )
 
-    assert candidates == []
-    assert stats is None
+    records, stats = healthkit_scan.scan_export(xml_path)
+
+    assert stats.ok == 1
+    assert records[0].model == "Apple Watch Ultra (gen 1)"
+
+
+def test_resolve_export_input_file_returned_as_is(tmp_path):
+    xml_path = tmp_path / "export.xml"
+    xml_path.write_text("<HealthData/>")
+
+    assert healthkit_scan.resolve_export_input(xml_path) == xml_path
+
+
+def test_resolve_export_input_directory_finds_nested_apple_health_export(tmp_path):
+    nested_dir = tmp_path / "apple_health_export"
+    nested_dir.mkdir()
+    xml_path = nested_dir / "export.xml"
+    xml_path.write_text("<HealthData/>")
+
+    assert healthkit_scan.resolve_export_input(tmp_path) == xml_path
+
+
+def test_resolve_export_input_directory_finds_direct_export_xml(tmp_path):
+    xml_path = tmp_path / "export.xml"
+    xml_path.write_text("<HealthData/>")
+
+    assert healthkit_scan.resolve_export_input(tmp_path) == xml_path
+
+
+def test_resolve_export_input_directory_falls_back_to_newest_zip(tmp_path):
+    (tmp_path / "export-2025-01-01.zip").write_bytes(b"")
+    newest = tmp_path / "export-2026-01-01.zip"
+    newest.write_bytes(b"")
+
+    assert healthkit_scan.resolve_export_input(tmp_path) == newest
+
+
+def test_resolve_export_input_prefers_nested_over_zip(tmp_path):
+    nested_dir = tmp_path / "apple_health_export"
+    nested_dir.mkdir()
+    xml_path = nested_dir / "export.xml"
+    xml_path.write_text("<HealthData/>")
+    (tmp_path / "export.zip").write_bytes(b"")
+
+    assert healthkit_scan.resolve_export_input(tmp_path) == xml_path
+
+
+def test_resolve_export_input_empty_directory_returns_none(tmp_path):
+    assert healthkit_scan.resolve_export_input(tmp_path) is None
+
+
+def test_resolve_export_input_nonexistent_path_returns_none(tmp_path):
+    assert healthkit_scan.resolve_export_input(tmp_path / "nope") is None
+
+
+def test_scan_and_collapse_accepts_directory_input(tmp_path):
+    nested_dir = tmp_path / "apple_health_export"
+    nested_dir.mkdir()
+    (nested_dir / "export.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<HealthData locale="en_US">\n'
+        + _record("2023-06-15 08:00:00 +0000", "Watch6,18", "10.1")
+        + "\n</HealthData>\n"
+    )
+
+    candidates, stats = healthkit_scan.scan_and_collapse(export_path=tmp_path)
+
+    assert stats is not None
+    assert stats.ok == 1
+    assert len(candidates) == 1
+
+
+# --- default lookup: $TRANING_HEALTHKIT_EXPORTS, newest dated subdirectory ----
+
+
+def test_default_export_root_none_without_env_var(monkeypatch):
+    monkeypatch.delenv(healthkit_scan.HEALTHKIT_EXPORTS_ENV, raising=False)
+    assert healthkit_scan.default_export_root() is None
+
+
+def test_default_export_root_reads_env_var(monkeypatch, tmp_path):
+    monkeypatch.setenv(healthkit_scan.HEALTHKIT_EXPORTS_ENV, str(tmp_path))
+    assert healthkit_scan.default_export_root() == tmp_path
 
 
 def test_find_latest_export_missing_dir_returns_none(tmp_path):
     assert healthkit_scan.find_latest_export(tmp_path / "nope") is None
 
 
-def test_find_latest_export_picks_newest_by_name(tmp_path):
-    export_dir = tmp_path / "kristian" / "apple_health_export"
-    export_dir.mkdir(parents=True)
-    (export_dir / "export-2025-01-01.zip").write_bytes(b"")
-    (export_dir / "export-2026-03-15.zip").write_bytes(b"")
-    (export_dir / "export-2024-12-31.zip").write_bytes(b"")
+def test_find_latest_export_ignores_non_date_named_subdirectories(tmp_path):
+    (tmp_path / "not-a-date").mkdir()
+    (tmp_path / "not-a-date" / "export.xml").write_text("<HealthData/>")
 
-    latest = healthkit_scan.find_latest_export(export_dir)
-
-    assert latest.name == "export-2026-03-15.zip"
+    assert healthkit_scan.find_latest_export(tmp_path) is None
 
 
-def test_scan_and_collapse_finds_default_export_path(tmp_path):
-    export_dir = tmp_path / "kristian" / "apple_health_export"
-    export_dir.mkdir(parents=True)
-    _write_export(
-        export_dir / "export-2026-01-01.zip",
-        [_record("2023-06-15 08:00:00 +0000", "Watch6,18", "10.1")],
+def test_find_latest_export_picks_newest_dated_subdirectory(tmp_path):
+    for day in ("2025-01-01", "2026-03-15", "2024-12-31"):
+        date_dir = tmp_path / day / "apple_health_export"
+        date_dir.mkdir(parents=True)
+        (date_dir / "export.xml").write_text("<HealthData/>")
+
+    latest = healthkit_scan.find_latest_export(tmp_path)
+
+    assert latest == tmp_path / "2026-03-15" / "apple_health_export" / "export.xml"
+
+
+def test_find_latest_export_dated_subdirectory_with_zip(tmp_path):
+    date_dir = tmp_path / "2026-01-01"
+    date_dir.mkdir(parents=True)
+    (date_dir / "export.zip").write_bytes(b"")
+
+    latest = healthkit_scan.find_latest_export(tmp_path)
+
+    assert latest == date_dir / "export.zip"
+
+
+def test_scan_and_collapse_uses_env_var_default(monkeypatch, tmp_path):
+    export_root = tmp_path / "healthkit-exports"
+    date_dir = export_root / "2026-01-01" / "apple_health_export"
+    date_dir.mkdir(parents=True)
+    (date_dir / "export.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n<HealthData locale="en_US">\n'
+        + _record("2023-06-15 08:00:00 +0000", "Watch6,18", "10.1")
+        + "\n</HealthData>\n"
     )
+    monkeypatch.setenv(healthkit_scan.HEALTHKIT_EXPORTS_ENV, str(export_root))
 
-    candidates, stats = healthkit_scan.scan_and_collapse(tmp_path)
+    candidates, stats = healthkit_scan.scan_and_collapse()
 
     assert stats is not None
-    assert stats.export_path.name == "export-2026-01-01.zip"
+    assert stats.export_path == date_dir / "export.xml"
     assert len(candidates) == 1
+
+
+# --- missing export: source works without one ---------------------------------
+
+
+def test_scan_and_collapse_returns_none_stats_when_no_export_present(monkeypatch, tmp_path):
+    monkeypatch.delenv(healthkit_scan.HEALTHKIT_EXPORTS_ENV, raising=False)
+
+    candidates, stats = healthkit_scan.scan_and_collapse()
+
+    assert candidates == []
+    assert stats is None
+
+
+def test_scan_and_collapse_env_var_set_but_no_dated_subdirs_is_skipped(monkeypatch, tmp_path):
+    export_root = tmp_path / "healthkit-exports"
+    export_root.mkdir()
+    monkeypatch.setenv(healthkit_scan.HEALTHKIT_EXPORTS_ENV, str(export_root))
+
+    candidates, stats = healthkit_scan.scan_and_collapse()
+
+    assert candidates == []
+    assert stats is None
 
 
 # --- malformed export: raises, doesn't silently skip ---------------------------
