@@ -172,3 +172,60 @@ def test_device_scan_empty_archive_canonical_file_outcome_unchanged(traning_data
     assert "Inga enhetsbyten hittade." in result.output
     assert "Städade" not in result.output
     assert devices_csv_path(traning_data_dir).stat().st_mtime_ns == mtime_before
+
+
+# --- dry-run never writes (Nagelfar F2) -------------------------------------
+
+
+def _snapshot_dir(data_dir):
+    """(relative path, md5) of every file under data_dir."""
+    import hashlib
+
+    snapshot = {}
+    for path in sorted(data_dir.rglob("*")):
+        if path.is_file():
+            snapshot[str(path.relative_to(data_dir))] = hashlib.md5(path.read_bytes()).hexdigest()
+    return snapshot
+
+
+def test_device_scan_dry_run_leaves_everything_untouched(traning_data_dir):
+    """Dry-run against a duplicate-day file: reports what --apply would
+    clean, but changes nothing — same md5s, no lock file created."""
+    _write_raw_devices_csv(
+        traning_data_dir,
+        [
+            _row(valid_from="2022-10-06", os_version="13"),
+            _row(valid_from="2022-10-06", os_version="14"),
+        ],
+    )
+    before = _snapshot_dir(traning_data_dir)
+
+    result = CliRunner().invoke(cli, ["device", "scan", "--source", "fit"])
+
+    assert result.exit_code == 0, result.output
+    assert "Inga enhetsbyten hittade." in result.output
+    assert "Skulle städa 1 dag med dubbletter" in result.output
+    assert "Städade" not in result.output
+    assert _snapshot_dir(traning_data_dir) == before
+    assert not (devices_csv_path(traning_data_dir).parent / "devices.csv.lock").exists()
+
+
+def test_device_scan_dry_run_with_candidates_leaves_everything_untouched(traning_data_dir):
+    """Dry-run with candidates listed: still no write, still no lock file."""
+    _tcx_archive(traning_data_dir)
+    _write_raw_devices_csv(
+        traning_data_dir,
+        [
+            _row(valid_from="2022-10-06", os_version="13"),
+            _row(valid_from="2022-10-06", os_version="14"),
+        ],
+    )
+    before = _snapshot_dir(traning_data_dir)
+
+    result = CliRunner().invoke(cli, ["device", "scan", "--source", "tcx"])
+
+    assert result.exit_code == 0, result.output
+    assert "dry-run, ingen skrivning" in result.output
+    assert "Skulle städa 1 dag med dubbletter" in result.output
+    assert _snapshot_dir(traning_data_dir) == before
+    assert not (devices_csv_path(traning_data_dir).parent / "devices.csv.lock").exists()

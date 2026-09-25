@@ -120,6 +120,18 @@ def _rewrite_if_non_canonical(data_dir: Path, rows: list[DeviceRow]) -> int:
     return 0
 
 
+def count_pending_tidy(data_dir: Path) -> int:
+    """How many same-day groups `tidy_devices_log` would fold — read-only.
+
+    For dry-run reporting: computed without the lock and without
+    writing, so a dry run never creates the lock file either.
+    """
+    rows = read_devices(data_dir)
+    if _sort_rows(collapse_same_day_rows(rows)) != rows:
+        return _multi_row_day_groups(rows)
+    return 0
+
+
 def tidy_devices_log(data_dir: Path, *, lock_timeout: float | None = None) -> int:
     """Rewrite devices.csv when it predates the one-row-per-day invariant.
 

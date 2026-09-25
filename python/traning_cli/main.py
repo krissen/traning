@@ -1170,6 +1170,12 @@ def _tidy_message(tidied: int) -> str:
     return f"Städade {tidied} {day_word} med dubbletter (en rad per dag gäller)"
 
 
+def _would_tidy_message(pending: int) -> str:
+    """Swedish one-liner for dry-run: what --apply would clean up."""
+    day_word = "dag" if pending == 1 else "dagar"
+    return f"Skulle städa {pending} {day_word} med dubbletter (--apply städar)"
+
+
 @device.command(name="scan")
 @click.option(
     "--source",
@@ -1212,7 +1218,7 @@ def device_scan(source, healthkit_export, apply_changes):
     today — corrupt file metadata, not a real device) are skipped and
     counted, never silently dropped: the summary names the file.
     """
-    from .devices.log import add_devices_bulk, tidy_devices_log
+    from .devices.log import add_devices_bulk, count_pending_tidy, tidy_devices_log
     from .devices.scan import scan as scan_devices
     from .garmin.utils import get_data_dir
 
@@ -1293,10 +1299,18 @@ def device_scan(source, healthkit_export, apply_changes):
         for line in summary_lines:
             click.echo(f"  {line}")
 
+    # Dry-run never writes: no tidy, no lock file — a pending cleanup
+    # is only reported. Tidy runs only under --apply, in both branches
+    # below.
     if not candidates:
-        tidied = tidy_devices_log(data_dir)
-        if tidied:
-            click.echo(_tidy_message(tidied))
+        if apply_changes:
+            tidied = tidy_devices_log(data_dir)
+            if tidied:
+                click.echo(_tidy_message(tidied))
+        else:
+            pending = count_pending_tidy(data_dir)
+            if pending:
+                click.echo(_would_tidy_message(pending))
         click.echo("Inga enhetsbyten hittade.")
         _echo_summary_recap()
         return
@@ -1307,6 +1321,9 @@ def device_scan(source, healthkit_export, apply_changes):
             click.echo(
                 f"  {row['valid_from']}  {row['model']}  {row['os_version']}  ({row['origin']})"
             )
+        pending = count_pending_tidy(data_dir)
+        if pending:
+            click.echo(_would_tidy_message(pending))
         _echo_summary_recap()
         return
 
