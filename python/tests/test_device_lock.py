@@ -13,8 +13,10 @@ import multiprocessing
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 from traning_cli.devices import log as devices_log
 from traning_cli.devices.log import DeviceLogLockTimeout, add_device, read_devices
+from traning_cli.main import cli
 
 TCX_WITH_CREATOR = b"""<?xml version="1.0" encoding="UTF-8"?>
 <TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
@@ -103,3 +105,34 @@ def test_hook_warns_instead_of_raising_on_lock_timeout(data_dir, monkeypatch, ca
 
     assert "Could not update device log" in caplog.text
     assert read_devices(data_dir) == []
+
+
+# --- lock errors as clean CLI errors (Nagelfar F4) ---------------------------
+
+
+def test_device_add_lock_timeout_is_clean_error(traning_data_dir, monkeypatch):
+    """A held lock: `device add` reports one Swedish line, not a traceback."""
+    monkeypatch.setattr(devices_log, "LOCK_TIMEOUT_SECONDS", 0.2)
+    with devices_log._locked_devices(traning_data_dir, timeout=60):
+        result = CliRunner().invoke(
+            cli, ["device", "add", "--platform", "garmin", "--model", "Forerunner 945"]
+        )
+
+    assert result.exit_code == 1
+    assert "Kunde inte uppdatera enhetsloggen" in result.output
+    assert "Traceback" not in result.output
+
+
+def test_device_scan_apply_lock_timeout_is_clean_error(traning_data_dir, monkeypatch):
+    """A held lock: `device scan --apply` reports one Swedish line, not a traceback."""
+    tcx_dir = traning_data_dir / "kristian" / "filer" / "tcx"
+    tcx_dir.mkdir(parents=True, exist_ok=True)
+    (tcx_dir / "a.tcx").write_bytes(TCX_WITH_CREATOR)
+
+    monkeypatch.setattr(devices_log, "LOCK_TIMEOUT_SECONDS", 0.2)
+    with devices_log._locked_devices(traning_data_dir, timeout=60):
+        result = CliRunner().invoke(cli, ["device", "scan", "--source", "tcx", "--apply"])
+
+    assert result.exit_code == 1
+    assert "Kunde inte skriva enhetsloggen" in result.output
+    assert "Traceback" not in result.output

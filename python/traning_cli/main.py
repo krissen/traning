@@ -1154,6 +1154,11 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
         )
     except ValueError as e:
         raise click.ClickException(str(e)) from e
+    except OSError as e:
+        # DeviceLogLockTimeout is an OSError (via TimeoutError), as is a
+        # flock failure on a filesystem without lock support — either
+        # way the user gets one clean line, not a traceback.
+        raise click.ClickException(f"Kunde inte uppdatera enhetsloggen: {e}") from e
 
     if row is None:
         click.echo(f"Redan loggad — hoppar över ({platform}, {model!r}, {os_version!r})")
@@ -1304,7 +1309,10 @@ def device_scan(source, healthkit_export, apply_changes):
     # below.
     if not candidates:
         if apply_changes:
-            tidied = tidy_devices_log(data_dir)
+            try:
+                tidied = tidy_devices_log(data_dir)
+            except OSError as e:
+                raise click.ClickException(f"Kunde inte städa enhetsloggen: {e}") from e
             if tidied:
                 click.echo(_tidy_message(tidied))
         else:
@@ -1327,7 +1335,10 @@ def device_scan(source, healthkit_export, apply_changes):
         _echo_summary_recap()
         return
 
-    added, updated, tidied = add_devices_bulk(data_dir, candidates)
+    try:
+        added, updated, tidied = add_devices_bulk(data_dir, candidates)
+    except OSError as e:
+        raise click.ClickException(f"Kunde inte skriva enhetsloggen: {e}") from e
     unchanged = len(candidates) - len(added) - len(updated)
     click.echo(
         f"Skrev {len(added)} nya rader, {len(updated)} uppdaterade (tidigare datum), "
