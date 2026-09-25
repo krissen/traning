@@ -80,6 +80,18 @@ _DATE_DIR_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 # happened on for the person wearing it, not by UTC's day boundary).
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S %z"
 
+# creationDate is when the watch actually wrote the sample; startDate is
+# when the *measurement interval* began, which for an interval sample
+# (HKQuantityTypeIdentifierBasalEnergyBurned above all) can be well
+# before that — a watch cannot have run firmware Y before it wrote its
+# first sample under Y, so startDate is the wrong signal for "software
+# active since". On the real export this dated 12 of 97 device-change
+# rows a day early, always from a BasalEnergyBurned sample whose
+# interval crossed a midnight the firmware update also happened near
+# (Nagelfar issue-002). Prefer creationDate; fall back to startDate only
+# when creationDate is missing or unparseable.
+_DATETIME_ATTR_PREFERENCE = ("creationDate", "startDate")
+
 
 @dataclass
 class HealthKitDeviceRecord:
@@ -198,18 +210,39 @@ def _parse_device_fields(device: str) -> tuple[str | None, str]:
     return hardware, software
 
 
-def _parse_local_date(value: str) -> date | None:
+def _parse_local_datetime(value: str) -> datetime | None:
     try:
-        return datetime.strptime(value, _DATE_FORMAT).date()
+        return datetime.strptime(value, _DATE_FORMAT)
     except ValueError:
         return None
+
+
+def _parse_record_datetime(elem: ET.Element) -> tuple[datetime | None, str | None]:
+    """Return (parsed local datetime, raw attribute value used).
+
+    Tries ``creationDate`` first, then ``startDate`` — see
+    ``_DATETIME_ATTR_PREFERENCE``. ``raw`` is the string that was
+    actually parsed (or the last one that failed to parse, if none did),
+    for error reporting; both are None if the element has neither
+    attribute at all.
+    """
+    raw = None
+    for attr in _DATETIME_ATTR_PREFERENCE:
+        value = elem.get(attr)
+        if not value:
+            continue
+        raw = value
+        parsed = _parse_local_datetime(value)
+        if parsed is not None:
+            return parsed, raw
+    return None, raw
 
 
 def _scan_xml_stream(
     fh,
     export_path: Path,
     stats: HealthKitScanStats,
-    earliest: dict[tuple[str, str], date],
+    earliest: dict[tuple[str, str], datetime],
     *,
     _root_len_probe=None,
 ) -> None:
@@ -245,7 +278,6 @@ def _scan_xml_stream(
         stats.elements_scanned += 1
 
         device = elem.get("device")
-        start_date = elem.get("startDate")
         hardware = software = None
         if device:
             hardware, software = _parse_device_fields(device)
@@ -261,14 +293,14 @@ def _scan_xml_stream(
             root.clear()
             continue
 
-        record_date = _parse_local_date(start_date) if start_date else None
-        if record_date is None or not plausible_date(record_date):
+        record_dt, raw_value = _parse_record_datetime(elem)
+        if record_dt is None or not plausible_date(record_dt.date()):
             stats.skipped_bad_date += 1
-            example = f"{start_date!r}  ({elem.tag}, {hardware})"
+            example = f"{raw_value!r}  ({elem.tag}, {hardware})"
             stats.bad_date_examples.append(example)
             log.warning(
-                "Skipping unparseable/implausible startDate %r for %s in %s",
-                start_date,
+                "Skipping unparseable/implausible creationDate/startDate %r for %s in %s",
+                raw_value,
                 hardware,
                 export_path,
             )
@@ -277,8 +309,8 @@ def _scan_xml_stream(
             continue
 
         key = (hardware, software)
-        if key not in earliest or record_date < earliest[key]:
-            earliest[key] = record_date
+        if key not in earliest or record_dt < earliest[key]:
+            earliest[key] = record_dt
         stats.ok += 1
         elem.clear()
         root.clear()
@@ -295,10 +327,11 @@ def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthK
     surface, not something to silently count and skip.
     """
     stats = HealthKitScanStats(export_path=export_path)
-    # (hardware, software) -> earliest activity_date seen for that pair.
-    # Bounded by the number of distinct device/firmware combinations in
-    # the whole export, not the number of samples.
-    earliest: dict[tuple[str, str], date] = {}
+    # (hardware, software) -> earliest local datetime seen for that pair
+    # (full datetime, not just date — see the sort below). Bounded by
+    # the number of distinct device/firmware combinations in the whole
+    # export, not the number of samples.
+    earliest: dict[tuple[str, str], datetime] = {}
 
     if _is_zip_path(export_path):
         with zipfile.ZipFile(export_path) as zf:
@@ -314,14 +347,21 @@ def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthK
             _scan_xml_stream(fh, export_path, stats, earliest)
 
     stats.groups = len(earliest)
+    # Sorted by the full datetime before ``HealthKitDeviceRecord`` drops
+    # it to a date: two pairs first seen on the same calendar day (e.g. a
+    # same-day firmware update, 9.0.1 then 9.1) still need to come out in
+    # the order they actually happened in, since everything downstream
+    # (collapse_device_changes, the final candidate sort) sorts on date
+    # alone and only a stable sort over already-chronological input
+    # preserves that (Nagelfar issue-002, point 2).
     records = [
         HealthKitDeviceRecord(
             path=export_path,
-            activity_date=record_date,
+            activity_date=record_dt.date(),
             model=normalize_watch_model(hardware),
             os_version=normalize_os_version(software),
         )
-        for (hardware, software), record_date in earliest.items()
+        for (hardware, software), record_dt in sorted(earliest.items(), key=lambda kv: kv[1])
     ]
     return records, stats
 

@@ -33,6 +33,36 @@ def _record(start_date: str, hardware: str | None, software: str = "", tag: str 
     )
 
 
+def _record_with_dates(
+    *,
+    start_date: str,
+    creation_date: str | None,
+    hardware: str,
+    software: str = "",
+    tag: str = "Record",
+) -> str:
+    """Like ``_record``, but with independently settable startDate/creationDate.
+
+    ``creation_date=None`` omits the attribute entirely (to exercise the
+    startDate fallback).
+    """
+    device = (
+        f"&lt;&lt;HKDevice: 0x1&gt;, name:Apple Watch, manufacturer:Apple Inc., "
+        f"model:Watch, hardware:{hardware}, software:{software}, "
+        f"creation date:{creation_date or start_date}&gt;"
+    )
+    extra = (
+        'type="HKQuantityTypeIdentifierHeartRate" unit="count/min" value="60" '
+        if tag == "Record"
+        else ""
+    )
+    creation_attr = f'creationDate="{creation_date}" ' if creation_date is not None else ""
+    return (
+        f'<{tag} {extra}sourceName="Apple Watch" sourceVersion="{software}" '
+        f'device="{device}" {creation_attr}startDate="{start_date}" endDate="{start_date}"/>'
+    )
+
+
 def _write_export(
     zip_path, record_elements: list[str], *, xml_member="apple_health_export/export.xml"
 ):
@@ -146,8 +176,8 @@ def test_scan_export_uses_local_date_not_utc():
     # already the next UTC day — if this used UTC the activity_date
     # would be one day later than the local calendar day.
     local = "2023-06-15 23:30:00 +0100"
-    record_date = healthkit_scan._parse_local_date(local)
-    assert record_date.isoformat() == "2023-06-15"
+    record_dt = healthkit_scan._parse_local_datetime(local)
+    assert record_dt.date().isoformat() == "2023-06-15"
 
 
 def test_scan_export_activity_date_matches_local_wall_clock_day(tmp_path):
@@ -159,6 +189,71 @@ def test_scan_export_activity_date_matches_local_wall_clock_day(tmp_path):
     records, _stats = healthkit_scan.scan_export(export)
 
     assert records[0].activity_date.isoformat() == "2023-06-15"
+
+
+# --- creationDate over startDate (Nagelfar issue-002) --------------------------
+
+
+def test_scan_export_uses_creation_date_not_start_date_for_interval_sample(tmp_path):
+    # A BasalEnergyBurned-style interval sample: startDate is still the
+    # previous day (23:50), but the firmware only wrote the sample once
+    # the update had installed, just after midnight — creationDate is
+    # the true "software active since" signal, not startDate.
+    export = _write_export(
+        tmp_path / "export.zip",
+        [
+            _record_with_dates(
+                start_date="2023-06-14 23:50:00 +0000",
+                creation_date="2023-06-15 00:10:00 +0000",
+                hardware="Watch6,18",
+                software="9.2",
+            )
+        ],
+    )
+
+    records, _stats = healthkit_scan.scan_export(export)
+
+    assert records[0].activity_date.isoformat() == "2023-06-15"  # not 2023-06-14
+
+
+def test_scan_export_falls_back_to_start_date_when_creation_date_missing(tmp_path):
+    export = _write_export(
+        tmp_path / "export.zip",
+        [
+            _record_with_dates(
+                start_date="2023-06-15 08:00:00 +0000",
+                creation_date=None,
+                hardware="Watch6,18",
+                software="9.2",
+            )
+        ],
+    )
+
+    records, stats = healthkit_scan.scan_export(export)
+
+    assert stats.ok == 1
+    assert records[0].activity_date.isoformat() == "2023-06-15"
+
+
+# --- same-day ordering by full datetime (Nagelfar issue-002, point 2) ----------
+
+
+def test_scan_and_collapse_orders_same_day_versions_by_full_datetime(tmp_path):
+    # Both rows land on the Ultra's first day (2022-10-06): setup on
+    # 9.0.1, then an update to 9.1 later the same day. The date-only key
+    # must not scramble that — the earlier time must come out first.
+    export = _write_export(
+        tmp_path / "export.zip",
+        [
+            _record("2022-10-06 18:00:00 +0000", "Watch6,18", "9.1"),
+            _record("2022-10-06 08:00:00 +0000", "Watch6,18", "9.0.1"),
+        ],
+    )
+
+    candidates, _stats = healthkit_scan.scan_and_collapse(export_path=export)
+
+    assert [c["os_version"] for c in candidates] == ["9.0.1", "9.1"]
+    assert all(c["valid_from"] == "2022-10-06" for c in candidates)
 
 
 # --- earliest-date-wins collapse per (hardware, software) ---------------------
