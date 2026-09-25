@@ -1164,6 +1164,12 @@ def device_add(platform, model, os_version, valid_from, certainty, note):
     click.echo(f"Loggad: {row['valid_from']} {row['platform']} {row['model']} {row['os_version']}")
 
 
+def _tidy_message(tidied: int) -> str:
+    """Swedish one-liner reporting a canonical-rewrite of devices.csv."""
+    day_word = "dag" if tidied == 1 else "dagar"
+    return f"Städade {tidied} {day_word} med dubbletter (en rad per dag gäller)"
+
+
 @device.command(name="scan")
 @click.option(
     "--source",
@@ -1206,7 +1212,7 @@ def device_scan(source, healthkit_export, apply_changes):
     today — corrupt file metadata, not a real device) are skipped and
     counted, never silently dropped: the summary names the file.
     """
-    from .devices.log import add_devices_bulk
+    from .devices.log import add_devices_bulk, tidy_devices_log
     from .devices.scan import scan as scan_devices
     from .garmin.utils import get_data_dir
 
@@ -1288,6 +1294,9 @@ def device_scan(source, healthkit_export, apply_changes):
             click.echo(f"  {line}")
 
     if not candidates:
+        tidied = tidy_devices_log(data_dir)
+        if tidied:
+            click.echo(_tidy_message(tidied))
         click.echo("Inga enhetsbyten hittade.")
         _echo_summary_recap()
         return
@@ -1301,10 +1310,12 @@ def device_scan(source, healthkit_export, apply_changes):
         _echo_summary_recap()
         return
 
-    added, updated = add_devices_bulk(data_dir, candidates)
+    added, updated, tidied = add_devices_bulk(data_dir, candidates)
     unchanged = len(candidates) - len(added) - len(updated)
     click.echo(
         f"Skrev {len(added)} nya rader, {len(updated)} uppdaterade (tidigare datum), "
         f"{unchanged} redan loggade"
     )
+    if tidied:
+        click.echo(_tidy_message(tidied))
     _echo_summary_recap()

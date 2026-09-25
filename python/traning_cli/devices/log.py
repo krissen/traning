@@ -94,6 +94,45 @@ def _lock_path(data_dir: Path) -> Path:
     return csv_path.with_name(csv_path.name + ".lock")
 
 
+def _multi_row_day_groups(rows: list[DeviceRow]) -> int:
+    """Number of (platform, valid_from) groups holding more than one row."""
+    counts: dict[tuple[str, str], int] = {}
+    for row in rows:
+        key = (row["platform"], row["valid_from"])
+        counts[key] = counts.get(key, 0) + 1
+    return sum(1 for n in counts.values() if n > 1)
+
+
+def _rewrite_if_non_canonical(data_dir: Path, rows: list[DeviceRow]) -> int:
+    """Rewrite devices.csv when it isn't in canonical form. Returns tidied groups.
+
+    Call with the rows just read from disk, while holding the lock (see
+    ``_locked_devices`` — this takes none itself). Compares against what
+    ``write_devices()`` would store (collapsed to one row per
+    (platform, day), newest first); an already-canonical file is left
+    untouched, mtime and all. The count is the number of same-day
+    groups that were folded together.
+    """
+    if _sort_rows(collapse_same_day_rows(rows)) != rows:
+        tidied = _multi_row_day_groups(rows)
+        write_devices(data_dir, rows)
+        return tidied
+    return 0
+
+
+def tidy_devices_log(data_dir: Path, *, lock_timeout: float | None = None) -> int:
+    """Rewrite devices.csv when it predates the one-row-per-day invariant.
+
+    A file written before the invariant (or by a version that predates
+    it) can hold several rows for one (platform, day); normal writes
+    only fire when a candidate is new, so nothing ever cleaned those
+    up. Returns the number of same-day groups folded together (0 when
+    the file was already canonical — the file is then not touched).
+    """
+    with _locked_devices(data_dir, timeout=lock_timeout):
+        return _rewrite_if_non_canonical(data_dir, read_devices(data_dir))
+
+
 @contextlib.contextmanager
 def _locked_devices(data_dir: Path, *, timeout: float | None = None):
     """Hold an exclusive flock on devices.csv.lock around a read-modify-write.
@@ -543,11 +582,16 @@ def add_device(
 
         new_rows, outcome, _result_row = _merge_into(rows, candidate)
         if outcome == "skipped":
+            _rewrite_if_non_canonical(data_dir, rows)
             return None
 
         after_day = _collapsed_day_row(new_rows, key)
         if after_day == before_day:
-            return None  # absorbed into an already-identical day row — nothing changed
+            # Absorbed into an already-identical day row — nothing changed
+            # for this candidate, but the file itself may still predate
+            # the invariant (see tidy_devices_log).
+            _rewrite_if_non_canonical(data_dir, rows)
+            return None
 
         write_devices(data_dir, new_rows)
         return after_day
@@ -555,8 +599,8 @@ def add_device(
 
 def add_devices_bulk(
     data_dir: Path, candidates: list[DeviceRow], *, lock_timeout: float | None = None
-) -> tuple[list[DeviceRow], list[DeviceRow]]:
-    """Merge multiple candidate rows in one write. Returns (added, updated).
+) -> tuple[list[DeviceRow], list[DeviceRow], int]:
+    """Merge multiple candidate rows in one write. Returns (added, updated, tidied).
 
     Used by ``device scan --apply``, where writing one row at a time
     would re-read/re-write the file once per candidate. Each candidate is
@@ -574,6 +618,11 @@ def add_devices_bulk(
     The whole read-modify-write holds the exclusive devices.csv lock
     (see ``_locked_devices``); ``lock_timeout`` overrides its wait.
     Raises DeviceLogLockTimeout when the lock stays held past it.
+
+    ``tidied`` is the number of pre-invariant same-day groups folded
+    together (see ``tidy_devices_log``): when no candidate is new, the
+    file is still rewritten if its collapsed form differs from what's
+    on disk — otherwise old duplicates would never be cleaned.
     """
     for candidate in candidates:
         validate_row(candidate)
@@ -595,4 +644,5 @@ def add_devices_bulk(
                 updated.append(result_row)
         if added or updated:
             write_devices(data_dir, rows)
-        return added, updated
+            return added, updated, 0
+        return added, updated, _rewrite_if_non_canonical(data_dir, rows)

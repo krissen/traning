@@ -8,6 +8,7 @@ from traning_cli.devices.log import (
     collapse_same_day_rows,
     devices_csv_path,
     read_devices,
+    tidy_devices_log,
     validate_row,
     write_devices,
 )
@@ -203,7 +204,7 @@ def test_add_devices_bulk_skips_existing_and_within_batch_duplicates(tmp_path):
         _row(valid_from="2015-06-01", model="fr620", os_version="3.3"),  # dup within batch
     ]
 
-    added, updated = add_devices_bulk(tmp_path, candidates)
+    added, updated, _tidied = add_devices_bulk(tmp_path, candidates)
 
     assert len(added) == 1
     assert added[0]["os_version"] == "3.3"
@@ -212,10 +213,97 @@ def test_add_devices_bulk_skips_existing_and_within_batch_duplicates(tmp_path):
 
 
 def test_add_devices_bulk_no_candidates_is_noop(tmp_path):
-    added, updated = add_devices_bulk(tmp_path, [])
+    added, updated, tidied = add_devices_bulk(tmp_path, [])
     assert added == []
     assert updated == []
+    assert tidied == 0
     assert read_devices(tmp_path) == []
+
+
+def _write_raw_devices_csv(data_dir, rows):
+    """Write rows verbatim, without collapsing — a pre-invariant file with duplicates."""
+    import csv
+
+    path = devices_csv_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDS)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
+
+
+def _pre_invariant_file(tmp_path):
+    """Two garmin rows for 2022-10-06 (from before the one-row-per-day
+    invariant) plus one older row."""
+    _write_raw_devices_csv(
+        tmp_path,
+        [
+            _row(valid_from="2022-10-06", model="Forerunner 945", os_version="13"),
+            _row(valid_from="2022-10-06", model="Forerunner 945", os_version="14"),
+            _row(valid_from="2022-09-01", model="Forerunner 945", os_version="12"),
+        ],
+    )
+
+
+def test_add_devices_bulk_rewrites_non_canonical_file_without_new_candidates(tmp_path):
+    """No candidate is new, but the file predates the invariant: it is
+    rewritten to canonical form and the outcome reports the cleanup."""
+    _pre_invariant_file(tmp_path)
+
+    added, updated, tidied = add_devices_bulk(tmp_path, [])
+
+    assert added == []
+    assert updated == []
+    assert tidied == 1
+    rows = read_devices(tmp_path)
+    assert len(rows) == 2
+    winner = next(r for r in rows if r["valid_from"] == "2022-10-06")
+    assert winner["os_version"] == "14"
+    assert "samma dag: 13" in winner["note"]
+
+
+def test_add_devices_bulk_leaves_canonical_file_untouched(tmp_path):
+    """An already-canonical file is not rewritten (mtime unchanged) and
+    the outcome is exactly what it was before: nothing added, nothing
+    updated, nothing tidied."""
+    write_devices(
+        tmp_path,
+        [
+            _row(valid_from="2022-10-06", model="Forerunner 945", os_version="14"),
+            _row(valid_from="2022-09-01", model="Forerunner 945", os_version="12"),
+        ],
+    )
+    before_stat = devices_csv_path(tmp_path).stat()
+    before_rows = read_devices(tmp_path)
+
+    added, updated, tidied = add_devices_bulk(tmp_path, [])
+
+    assert added == []
+    assert updated == []
+    assert tidied == 0
+    assert read_devices(tmp_path) == before_rows
+    assert devices_csv_path(tmp_path).stat().st_mtime_ns == before_stat.st_mtime_ns
+
+
+def test_tidy_devices_log_rewrites_and_reports(tmp_path):
+    _pre_invariant_file(tmp_path)
+
+    assert tidy_devices_log(tmp_path) == 1
+    assert len(read_devices(tmp_path)) == 2
+
+
+def test_tidy_devices_log_canonical_file_is_noop(tmp_path):
+    write_devices(tmp_path, [_row(valid_from="2022-10-06")])
+    before_stat = devices_csv_path(tmp_path).stat()
+
+    assert tidy_devices_log(tmp_path) == 0
+    assert devices_csv_path(tmp_path).stat().st_mtime_ns == before_stat.st_mtime_ns
+
+
+def test_tidy_devices_log_missing_file_is_noop(tmp_path):
+    assert tidy_devices_log(tmp_path) == 0
+    assert not devices_csv_path(tmp_path).exists()
 
 
 # --- absorbed same-day candidates report "already logged", not "added"
@@ -287,7 +375,7 @@ def test_add_devices_bulk_repeated_absorbed_candidate_is_stable(tmp_path):
     ]
 
     for _ in range(3):
-        added, updated = add_devices_bulk(tmp_path, loser_again)
+        added, updated, _tidied = add_devices_bulk(tmp_path, loser_again)
         assert added == []
         assert updated == []
         assert read_devices(tmp_path) == after_setup  # byte-for-byte stable
@@ -395,10 +483,10 @@ def test_add_devices_bulk_separate_source_scans_do_not_re_add_the_loser(tmp_path
         )
     ]
 
-    added1, updated1 = add_devices_bulk(tmp_path, fit_only)
+    added1, updated1, _tidied1 = add_devices_bulk(tmp_path, fit_only)
     assert added1 == []
     assert updated1 == []
-    added2, updated2 = add_devices_bulk(tmp_path, tcx_only)
+    added2, updated2, _tidied2 = add_devices_bulk(tmp_path, tcx_only)
     assert added2 == []
     assert updated2 == []
     assert read_devices(tmp_path) == after_setup
@@ -447,7 +535,7 @@ def test_repeated_absorption_matrix_is_stable_from_round_2(tmp_path, loser_note,
 
     outcomes = []
     for _ in range(3):
-        added, updated = add_devices_bulk(tmp_path, [dict(candidate)])
+        added, updated, _tidied = add_devices_bulk(tmp_path, [dict(candidate)])
         outcomes.append((len(added), len(updated), read_devices(tmp_path)))
 
     # Round 1 may legitimately change the file (a manual note being
@@ -636,7 +724,7 @@ def test_add_devices_bulk_earlier_candidate_in_batch_updates_existing_row(tmp_pa
         ),
     ]
 
-    added, updated = add_devices_bulk(tmp_path, candidates)
+    added, updated, _tidied = add_devices_bulk(tmp_path, candidates)
 
     # Each candidate in turn is earlier than what's on file at that point,
     # so both register as an update — the row's date ratchets backwards
