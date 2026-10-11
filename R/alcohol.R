@@ -977,7 +977,8 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
 #' @return Tibble, one row per ISO week: \code{iso_week},
 #'   \code{week_start}, \code{units}, \code{standardglas},
 #'   \code{grams}, \code{kcal}, \code{drinking_days}, \code{dry_days},
-#'   \code{week_tdee_kcal}, \code{share}.
+#'   \code{missing_days}, \code{week_tdee_kcal}, \code{share}. The
+#'   totals and the share are NA in a week with a missing evening.
 #' @export
 compute_alcohol_week <- function(alcohol, health_daily = NULL,
                                  summaries = NULL, min_days_in_week = 5,
@@ -986,7 +987,7 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
     iso_week = character(), week_start = as.Date(character()),
     units = numeric(), standardglas = numeric(), grams = numeric(),
     kcal = numeric(), drinking_days = integer(), dry_days = integer(),
-    week_tdee_kcal = numeric(), share = numeric()
+    missing_days = integer(), week_tdee_kcal = numeric(), share = numeric()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) {
     return(empty)
@@ -1067,6 +1068,7 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
         .data$alcohol_night_units > 0),
       dry_days = sum(!is.na(.data$alcohol_night_units) &
         .data$alcohol_night_units == 0),
+      missing_days = sum(is.na(.data$alcohol_night_units)),
       .groups = "drop"
     ) |>
     dplyr::left_join(week_energy[, c("iso_week", "week_tdee_kcal")],
@@ -1075,6 +1077,16 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 
   out$share <- out$kcal / out$week_tdee_kcal
   out$share[!is.finite(out$share)] <- NA_real_
+  # A week with an evening missing from the record has no total: the
+  # sums above skip the gap, and a partial sum shown as the week's would
+  # read as fewer drinks than were had. The evenings that were observed
+  # still count as drinking or dry; only the totals are withheld.
+  gap <- out$missing_days > 0
+  out$units[gap] <- NA_real_
+  out$standardglas[gap] <- NA_real_
+  out$grams[gap] <- NA_real_
+  out$kcal[gap] <- NA_real_
+  out$share[gap] <- NA_real_
   out |> dplyr::arrange(dplyr::desc(.data$week_start))
 }
 
@@ -1683,6 +1695,10 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   if (!is.finite(w$drinking_days) || w$drinking_days == 0) {
     return(NULL)
   }
+  # No total exists for a week with a gap, and the line is a total.
+  if (isTRUE(w$missing_days > 0)) {
+    return(NULL)
+  }
 
   kvall <- if (w$drinking_days == 1) "kv\u00e4ll" else "kv\u00e4llar"
   # "Alkohol förra veckan", not "Förra veckan": on a Monday the training
@@ -1859,7 +1875,7 @@ report_alcohol_weekly <- function(data, after = NULL, before = NULL,
     Vecka = character(), Start = as.Date(character()), Glas = numeric(),
     Standardglas = numeric(), Gram = numeric(), kcal = numeric(),
     "Andel %" = numeric(), "Kv\u00e4llar" = integer(),
-    "Alkoholfria dagar" = integer()
+    "Alkoholfria dagar" = integer(), "Saknade dagar" = integer()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) {
     return(empty)
@@ -1889,7 +1905,8 @@ report_alcohol_weekly <- function(data, after = NULL, before = NULL,
     kcal = round(w$kcal),
     `Andel %` = round(w$share * 100, 1),
     `Kvällar` = as.integer(w$drinking_days),
-    `Alkoholfria dagar` = as.integer(w$dry_days)
+    `Alkoholfria dagar` = as.integer(w$dry_days),
+    `Saknade dagar` = as.integer(w$missing_days)
   ) |>
     dplyr::arrange(dplyr::desc(.data$Start))
 }

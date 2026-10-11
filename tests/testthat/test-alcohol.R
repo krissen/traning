@@ -787,11 +787,21 @@ test_that("a Sunday evening lands in the week it happened in", {
   expect_equal(format(sunday, "%G-W%V"), "2026-W36")
   expect_equal(format(sunday + 1, "%G-W%V"), "2026-W37")
 
-  n <- build_alcohol_nights(sample_row(sunday, 4),
+  # Every other evening is logged dry, as DrinkControl records it, so
+  # neither week has a gap.
+  others <- setdiff(
+    as.character(seq(as.Date("2026-08-30"), as.Date("2026-09-09"), by = "day")),
+    as.character(sunday)
+  )
+  n <- build_alcohol_nights(
+    dplyr::bind_rows(
+      sample_row(sunday, 4),
+      sample_row(as.Date(others), 0)
+    ),
     today = as.Date("2026-09-10")
   )
   w <- compute_alcohol_week(n, NULL, today = as.Date("2026-09-10"))
-  hit <- w[w$units > 0, ]
+  hit <- w[which(w$units > 0), ]
   expect_equal(nrow(hit), 1)
   expect_equal(hit$iso_week, "2026-W36")
   expect_equal(hit$drinking_days, 1L)
@@ -1615,4 +1625,34 @@ test_that("a corrupt canonical file leaves the alcohol rebuild standing", {
     file.path(blocker, "cache", "health_daily.RData"),
     verbose = FALSE
   )))
+})
+
+test_that("a week with a missing evening has no totals", {
+  # Evenings 2026-09-07..13 (ISO week 37): drinks on three, dry on two,
+  # nothing at all on two. Summing what is there would report the week
+  # as lighter than it was.
+  s <- dplyr::bind_rows(
+    sample_row("2026-09-06", 0),
+    sample_row("2026-09-07", 2), sample_row("2026-09-08", 0),
+    sample_row("2026-09-09", 3), sample_row("2026-09-11", 0),
+    sample_row("2026-09-13", 4),
+    sample_row("2026-09-14", 0), sample_row("2026-09-15", 1),
+    sample_row("2026-09-16", 0), sample_row("2026-09-17", 0),
+    sample_row("2026-09-18", 2), sample_row("2026-09-19", 0),
+    sample_row("2026-09-20", 0)
+  )
+  n <- build_alcohol_nights(s, today = as.Date("2026-09-22"))
+  w <- compute_alcohol_week(n, today = as.Date("2026-09-22"))
+
+  gap_week <- w[w$iso_week == "2026-W37", ]
+  expect_equal(gap_week$missing_days, 2L)
+  expect_equal(gap_week$drinking_days, 3L)
+  expect_equal(gap_week$dry_days, 2L)
+  expect_true(is.na(gap_week$units))
+  expect_true(is.na(gap_week$grams))
+  expect_true(is.na(gap_week$kcal))
+
+  full_week <- w[w$iso_week == "2026-W38", ]
+  expect_equal(full_week$missing_days, 0L)
+  expect_equal(full_week$units, 3)
 })
