@@ -516,7 +516,7 @@ real, but its night ran the evening before logging existed and stays
 
 **Future days.** The logging-active window pads ten days past the last
 sample. The table is cut at today so that padding cannot manufacture
-mornings with zero drinks and an active flag, which the weekly report
+mornings with an active flag, which the weekly report
 would otherwise present as alcohol-free days in a week that has not
 happened. The morning after the last logged day is kept even when it is
 tomorrow, because that row carries real drinks.
@@ -883,10 +883,16 @@ containing exactly the nights most likely to have been forgotten, which
 inflates the apparent effect.
 
 Rule: a logging-active period is any stretch where at least one alcohol
-record exists within ±10 days. Inside it, absence means zero. Outside
-it, the night's exposure is `NA` and the night is excluded from every
-analysis, including as a control. The output states how many nights were
-excluded on these grounds.
+record exists within ±10 days. Outside it, the night's exposure is `NA`
+and the night is excluded from every analysis, including as a control.
+The output states how many nights were excluded on these grounds.
+
+Inside it, absence still does not mean zero (changed 2026-10-11).
+DrinkControl writes an explicit zero for every day marked dry, so a day
+without a record is a gap in the data, typically a push that never
+arrived. Before the October backfill, 2026-09-13..19 showed as seven dry
+nights although drinks were logged on each. Only explicit zeros count as
+dry; gaps stay `NA`, and a week containing one has no weekly total.
 
 ### Stop rule
 
