@@ -772,7 +772,9 @@ def get_alcohol(
     baseline yet.
 
     Weekly columns: `Vecka`, `Start`, the same quantities summed, plus
-    `Kvällar` (evenings with alcohol) and `Alkoholfria dagar`.
+    `Kvällar` (evenings with alcohol), `Alkoholfria dagar` and `Saknade
+    dagar` (evenings with no record at all). A week with a missing
+    evening has no totals: the summed columns and `Andel %` are empty.
 
     No risk limits, guidelines, goals or streaks are reported. The only
     reference frame is the reader's own alcohol-free nights.

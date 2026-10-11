@@ -50,10 +50,10 @@
 # The only source whose dietary_energy samples are alcohol energy.
 .alcohol_energy_source <- "DrinkControl"
 
-# Absence of a sample is only informative inside a stretch where logging
-# is demonstrably happening. Outside it, "no drinks" and "forgot to log"
-# are indistinguishable and the night is excluded rather than counted
-# as a zero.
+# Half-width of the stretch around logged days where logging counts as
+# active. Absent days are never counted as zero (DrinkControl writes an
+# explicit zero for a dry day); the flag only bounds which nights the
+# reports consider at all.
 .alcohol_active_window_days <- 10L
 
 #' Grams of ethanol per logged unit (configurable)
@@ -141,7 +141,7 @@
 .read_canonical_samples <- function(dir) {
   empty <- tibble::tibble(
     date = as.Date(character()), qty = numeric(),
-    source = character(), units = character()
+    source = character(), units = character(), minute = character()
   )
   if (is.null(dir) || !dir.exists(dir)) {
     return(empty)
@@ -184,7 +184,8 @@
         date   = d,
         qty    = qty,
         source = as.character(.coalesce_scalar(s$source, NA_character_)),
-        units  = as.character(units)
+        units  = as.character(units),
+        minute = .sample_minute(.coalesce_scalar(s$date, NA_character_))
       )
     })
     dplyr::bind_rows(parts)
@@ -194,6 +195,24 @@
     return(empty)
   }
   out[!is.na(out$date) & !is.na(out$qty), , drop = FALSE]
+}
+
+#' Minute a canonical sample was stamped at
+#'
+#' "2026-10-07 20:00:00 +0200" becomes "2026-10-07 20:00". The offset is
+#' dropped on purpose: both metrics compared through it come from the
+#' same push, so they carry the same offset.
+#'
+#' @param x Sample timestamp string, or NA.
+#' @return Character scalar, NA when the timestamp is absent or malformed.
+#' @keywords internal
+.sample_minute <- function(x) {
+  x <- as.character(x)
+  if (length(x) != 1L || is.na(x) ||
+    !grepl("^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}", x)) {
+    return(NA_character_)
+  }
+  sub("T", " ", substr(x, 1, 16), fixed = TRUE)
 }
 
 #' Read the unit string a canonical metric is written in
@@ -262,6 +281,39 @@
   dplyr::if_else(is_kcal, qty, qty / .kj_per_kcal)
 }
 
+#' Which dietary_energy samples are DrinkControl's alcohol energy
+#'
+#' A sample labelled DrinkControl qualifies. Since Health Auto Export
+#' 10.0.4 (late September 2026) minute-aggregated pushes carry an empty
+#' source for every metric (Lybron/health-auto-export#78), so the label
+#' alone would drop every new night to the count-based fallback. An
+#' unlabelled sample therefore also qualifies when an alcohol_consumption
+#' sample sits in the same minute of the same canonical day: DrinkControl writes the drink and its
+#' energy together, a food logger writes no drink at all. Without minute
+#' information an unlabelled sample is left out, as before.
+#'
+#' @param energy Tibble of dietary_energy samples.
+#' @param samples Tibble of alcohol_consumption samples.
+#' @return Logical vector along \code{energy}.
+#' @keywords internal
+.is_alcohol_energy <- function(energy, samples) {
+  labelled <- !is.na(energy$source) & energy$source == .alcohol_energy_source
+  if (!"minute" %in% names(energy) || !"minute" %in% names(samples)) {
+    return(labelled)
+  }
+  unlabelled <- is.na(energy$source) | !nzchar(energy$source)
+  # Keyed on the canonical date as well as the minute: a back-dated
+  # drink sits in its own day's document but carries the minute it was
+  # entered, and must not vouch for energy filed under another day.
+  key <- function(d) paste(as.character(as.Date(d$date)), d$minute)
+  # An explicit zero is a dry-day marker, not a drink: it has no energy
+  # to vouch for.
+  drinks <- !is.na(samples$minute) & !is.na(samples$qty) & samples$qty > 0
+  drink_keys <- unique(key(samples)[drinks])
+  matched <- unlabelled & !is.na(energy$minute) & key(energy) %in% drink_keys
+  labelled | matched
+}
+
 # --- Night table -------------------------------------------------------------
 
 #' Build the per-night alcohol table
@@ -287,8 +339,8 @@
 #'   (\code{date}, \code{qty}, \code{source}, \code{units}).
 #' @param energy Tibble of dietary_energy samples, same shape. Filtered
 #'   to \code{.alcohol_energy_source} inside this function.
-#' @param active_window_days Half-width, in days, of the window that
-#'   makes an absent sample count as a genuine zero.
+#' @param active_window_days Half-width, in days, of the window in which
+#'   logging counts as active. An absent sample is never read as zero.
 #' @param today Upper bound for the table, defaulting to the current
 #'   date. The active window extends ten days past the last sample, which
 #'   would otherwise manufacture future mornings carrying zero drinks and
@@ -351,7 +403,7 @@ build_alcohol_nights <- function(samples, energy = NULL,
   kcal_by_night <- NULL
   if (!is.null(energy) && nrow(energy) > 0) {
     e <- energy[!is.na(energy$date) & !is.na(energy$qty), , drop = FALSE]
-    e <- e[!is.na(e$source) & e$source == .alcohol_energy_source, , drop = FALSE]
+    e <- e[.is_alcohol_energy(e, samples), , drop = FALSE]
     if (nrow(e) > 0) {
       e$date <- .alcohol_night_date(as.Date(e$date))
       e$kcal <- .energy_to_kcal(e$qty, e$units)
@@ -373,25 +425,19 @@ build_alcohol_nights <- function(samples, energy = NULL,
     out$alcohol_kcal <- NA_real_
   }
 
-  # Inside the logging-active window an absent sample means zero drinks.
-  # Outside it, the value stays NA — see the note on the constant.
+  # The logging-active flag marks the stretch where logging demonstrably
+  # happens. Absence of a sample is NOT read as zero drinks even inside
+  # it: DrinkControl writes an explicit zero for every day marked dry,
+  # so a day without a sample is a gap in the data (a push that never
+  # came, a day not yet entered), and filling it would turn a sync gap
+  # into a claimed alcohol-free evening. That happened for 2026-09-13..19
+  # before those days were backfilled. Explicit zeros count; gaps stay NA.
   sample_days <- as.numeric(sample_dates)
   active <- vapply(as.numeric(out$date), function(d) {
     any(abs(sample_days - d) <= active_window_days)
   }, logical(1))
   out$alcohol_logging_active <- active
 
-  out$alcohol_units <- dplyr::if_else(
-    active & is.na(out$alcohol_units), 0, out$alcohol_units
-  )
-  # The first row's night ran the evening BEFORE logging existed, so it
-  # is unknowable in the same way the pre-history is. Its calendar-day
-  # total above is real and stays.
-  known_night <- out$date > first_date
-  out$alcohol_night_units <- dplyr::if_else(
-    active & known_night & is.na(out$alcohol_night_units), 0,
-    out$alcohol_night_units
-  )
   # A dry night has no energy to report, and 0 kcal is the honest value
   # there; a night with drinks but no app energy stays NA so the gram
   # figure can be flagged as computed rather than measured.
@@ -934,7 +980,8 @@ compute_alcohol_energy <- function(alcohol, health_daily = NULL,
 #' @return Tibble, one row per ISO week: \code{iso_week},
 #'   \code{week_start}, \code{units}, \code{standardglas},
 #'   \code{grams}, \code{kcal}, \code{drinking_days}, \code{dry_days},
-#'   \code{week_tdee_kcal}, \code{share}.
+#'   \code{missing_days}, \code{week_tdee_kcal}, \code{share}. The
+#'   totals and the share are NA in a week with a missing evening.
 #' @export
 compute_alcohol_week <- function(alcohol, health_daily = NULL,
                                  summaries = NULL, min_days_in_week = 5,
@@ -943,7 +990,7 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
     iso_week = character(), week_start = as.Date(character()),
     units = numeric(), standardglas = numeric(), grams = numeric(),
     kcal = numeric(), drinking_days = integer(), dry_days = integer(),
-    week_tdee_kcal = numeric(), share = numeric()
+    missing_days = integer(), week_tdee_kcal = numeric(), share = numeric()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) {
     return(empty)
@@ -1024,6 +1071,7 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
         .data$alcohol_night_units > 0),
       dry_days = sum(!is.na(.data$alcohol_night_units) &
         .data$alcohol_night_units == 0),
+      missing_days = sum(is.na(.data$alcohol_night_units)),
       .groups = "drop"
     ) |>
     dplyr::left_join(week_energy[, c("iso_week", "week_tdee_kcal")],
@@ -1032,6 +1080,16 @@ compute_alcohol_week <- function(alcohol, health_daily = NULL,
 
   out$share <- out$kcal / out$week_tdee_kcal
   out$share[!is.finite(out$share)] <- NA_real_
+  # A week with an evening missing from the record has no total: the
+  # sums above skip the gap, and a partial sum shown as the week's would
+  # read as fewer drinks than were had. The evenings that were observed
+  # still count as drinking or dry; only the totals are withheld.
+  gap <- out$missing_days > 0
+  out$units[gap] <- NA_real_
+  out$standardglas[gap] <- NA_real_
+  out$grams[gap] <- NA_real_
+  out$kcal[gap] <- NA_real_
+  out$share[gap] <- NA_real_
   out |> dplyr::arrange(dplyr::desc(.data$week_start))
 }
 
@@ -1640,6 +1698,10 @@ compute_alcohol_deviation <- function(health_daily, alcohol, on_date = NULL,
   if (!is.finite(w$drinking_days) || w$drinking_days == 0) {
     return(NULL)
   }
+  # No total exists for a week with a gap, and the line is a total.
+  if (isTRUE(w$missing_days > 0)) {
+    return(NULL)
+  }
 
   kvall <- if (w$drinking_days == 1) "kv\u00e4ll" else "kv\u00e4llar"
   # "Alkohol förra veckan", not "Förra veckan": on a Monday the training
@@ -1816,7 +1878,7 @@ report_alcohol_weekly <- function(data, after = NULL, before = NULL,
     Vecka = character(), Start = as.Date(character()), Glas = numeric(),
     Standardglas = numeric(), Gram = numeric(), kcal = numeric(),
     "Andel %" = numeric(), "Kv\u00e4llar" = integer(),
-    "Alkoholfria dagar" = integer()
+    "Alkoholfria dagar" = integer(), "Saknade dagar" = integer()
   )
   if (is.null(alcohol) || nrow(alcohol) == 0) {
     return(empty)
@@ -1846,7 +1908,8 @@ report_alcohol_weekly <- function(data, after = NULL, before = NULL,
     kcal = round(w$kcal),
     `Andel %` = round(w$share * 100, 1),
     `Kvällar` = as.integer(w$drinking_days),
-    `Alkoholfria dagar` = as.integer(w$dry_days)
+    `Alkoholfria dagar` = as.integer(w$dry_days),
+    `Saknade dagar` = as.integer(w$missing_days)
   ) |>
     dplyr::arrange(dplyr::desc(.data$Start))
 }

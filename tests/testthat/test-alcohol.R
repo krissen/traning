@@ -218,6 +218,68 @@ test_that("kcal comes only from DrinkControl's own dietary_energy samples", {
   expect_equal(round(night$alcohol_kcal, 1), 422.6)
 })
 
+test_that("unlabelled energy counts only when a drink shares its minute", {
+  # HAE 10.0.4 pushes every minute aggregate with an empty source
+  # (Lybron/health-auto-export#78). Matching on the minute keeps the
+  # app's own energy figure without letting a food logger in.
+  s <- sample_row("2026-10-07", 3.5)
+  s$minute <- "2026-10-07 20:00"
+  e <- dplyr::bind_rows(
+    sample_row("2026-10-07", 245.848, "", "kcal"),
+    sample_row("2026-10-07", 900, "", "kcal")
+  )
+  e$minute <- c("2026-10-07 20:00", "2026-10-07 12:31")
+  n <- build_alcohol_nights(s, e, today = as.Date("2026-10-08"))
+  night <- n[n$date == as.Date("2026-10-08"), ]
+  expect_equal(round(night$alcohol_kcal, 1), 245.8)
+  expect_false(night$alcohol_grams_estimated)
+  expect_equal(round(night$alcohol_grams, 1), 35.1)
+})
+
+test_that("unlabelled energy matches a drink only on the same day", {
+  # A back-dated drink lives in its own day's document but carries the
+  # minute it was entered. It must not vouch for energy filed under the
+  # next day at that minute.
+  s <- sample_row("2026-10-06", 3.5)
+  s$minute <- "2026-10-07 09:15"
+  e <- sample_row("2026-10-07", 900, "", "kcal")
+  e$minute <- "2026-10-07 09:15"
+  n <- build_alcohol_nights(s, e, today = as.Date("2026-10-08"))
+  night <- n[n$date == as.Date("2026-10-07"), ]
+  expect_true(night$alcohol_grams_estimated)
+  expect_equal(night$alcohol_grams, 35)
+  expect_true(is.na(n$alcohol_kcal[n$date == as.Date("2026-10-08")]))
+})
+
+test_that("a dry-day marker does not vouch for energy in its minute", {
+  s <- sample_row("2026-10-07", 0)
+  s$minute <- "2026-10-07 20:00"
+  e <- sample_row("2026-10-07", 900, "", "kcal")
+  e$minute <- "2026-10-07 20:00"
+  n <- build_alcohol_nights(s, e, today = as.Date("2026-10-08"))
+  night <- n[n$date == as.Date("2026-10-08"), ]
+  expect_equal(night$alcohol_kcal, 0)
+  expect_equal(night$alcohol_grams, 0)
+})
+
+test_that("unlabelled energy without minute information stays out", {
+  s <- sample_row("2026-10-07", 3.5)
+  e <- sample_row("2026-10-07", 245.848, "", "kcal")
+  n <- build_alcohol_nights(s, e, today = as.Date("2026-10-08"))
+  night <- n[n$date == as.Date("2026-10-08"), ]
+  expect_true(night$alcohol_grams_estimated)
+})
+
+test_that("the canonical reader keeps each sample's minute", {
+  tmp <- withr::local_tempdir()
+  writeLines(
+    '{"metric": "dietary_energy", "date": "2026-10-07", "units": "kcal", "samples": [{"source": "", "qty": 245.8, "date": "2026-10-07 20:00:00 +0200"}, {"source": "", "qty": 1}]}',
+    file.path(tmp, "2026-10-07.json")
+  )
+  out <- traning:::.read_canonical_samples(tmp)
+  expect_equal(out$minute, c("2026-10-07 20:00", NA))
+})
+
 test_that("energy already in kcal is not converted a second time", {
   expect_equal(traning:::.energy_to_kcal(100, "kcal"), 100)
   expect_equal(round(traning:::.energy_to_kcal(418.4, "kJ"), 1), 100)
@@ -266,16 +328,28 @@ test_that("an unknown energy unit is read as kilojoules, explicitly", {
   ))))
 })
 
-test_that("absence counts as zero only inside a logging-active stretch", {
-  n <- build_alcohol_nights(sample_row("2026-09-05", 6),
+test_that("an absent day is a gap, never a dry night", {
+  # DrinkControl writes an explicit zero for a day marked dry, so a day
+  # without a sample is missing data. 2026-09-13..19 showed as seven
+  # dry nights before the pushes that carried them were backfilled.
+  n <- build_alcohol_nights(
+    dplyr::bind_rows(
+      sample_row("2026-09-05", 6),
+      sample_row("2026-09-07", 0)
+    ),
     today = as.Date("2026-09-20")
   )
 
-  near <- n[n$date == as.Date("2026-09-10"), ]
-  expect_true(near$alcohol_logging_active)
-  expect_equal(near$alcohol_night_units, 0)
+  dry <- n[n$date == as.Date("2026-09-08"), ]
+  expect_equal(dry$alcohol_night_units, 0)
+  expect_equal(dry$alcohol_grams, 0)
 
-  far <- n[n$date == as.Date("2026-09-16"), ]
+  gap <- n[n$date == as.Date("2026-09-10"), ]
+  expect_true(gap$alcohol_logging_active)
+  expect_true(is.na(gap$alcohol_night_units))
+  expect_true(is.na(gap$alcohol_units))
+
+  far <- n[n$date == as.Date("2026-09-18"), ]
   expect_false(far$alcohol_logging_active)
   expect_true(is.na(far$alcohol_night_units))
 })
@@ -724,11 +798,21 @@ test_that("a Sunday evening lands in the week it happened in", {
   expect_equal(format(sunday, "%G-W%V"), "2026-W36")
   expect_equal(format(sunday + 1, "%G-W%V"), "2026-W37")
 
-  n <- build_alcohol_nights(sample_row(sunday, 4),
+  # Every other evening is logged dry, as DrinkControl records it, so
+  # neither week has a gap.
+  others <- setdiff(
+    as.character(seq(as.Date("2026-08-30"), as.Date("2026-09-09"), by = "day")),
+    as.character(sunday)
+  )
+  n <- build_alcohol_nights(
+    dplyr::bind_rows(
+      sample_row(sunday, 4),
+      sample_row(as.Date(others), 0)
+    ),
     today = as.Date("2026-09-10")
   )
   w <- compute_alcohol_week(n, NULL, today = as.Date("2026-09-10"))
-  hit <- w[w$units > 0, ]
+  hit <- w[which(w$units > 0), ]
   expect_equal(nrow(hit), 1)
   expect_equal(hit$iso_week, "2026-W36")
   expect_equal(hit$drinking_days, 1L)
@@ -1552,4 +1636,48 @@ test_that("a corrupt canonical file leaves the alcohol rebuild standing", {
     file.path(blocker, "cache", "health_daily.RData"),
     verbose = FALSE
   )))
+})
+
+test_that("a week with a missing evening has no totals", {
+  # Evenings 2026-09-07..13 (ISO week 37): drinks on three, dry on two,
+  # nothing at all on two. Summing what is there would report the week
+  # as lighter than it was.
+  s <- dplyr::bind_rows(
+    sample_row("2026-09-06", 0),
+    sample_row("2026-09-07", 2), sample_row("2026-09-08", 0),
+    sample_row("2026-09-09", 3), sample_row("2026-09-11", 0),
+    sample_row("2026-09-13", 4),
+    sample_row("2026-09-14", 0), sample_row("2026-09-15", 1),
+    sample_row("2026-09-16", 0), sample_row("2026-09-17", 0),
+    sample_row("2026-09-18", 2), sample_row("2026-09-19", 0),
+    sample_row("2026-09-20", 0)
+  )
+  n <- build_alcohol_nights(s, today = as.Date("2026-09-22"))
+  w <- compute_alcohol_week(n, today = as.Date("2026-09-22"))
+
+  gap_week <- w[w$iso_week == "2026-W37", ]
+  expect_equal(gap_week$missing_days, 2L)
+  expect_equal(gap_week$drinking_days, 3L)
+  expect_equal(gap_week$dry_days, 2L)
+  expect_true(is.na(gap_week$units))
+  expect_true(is.na(gap_week$grams))
+  expect_true(is.na(gap_week$kcal))
+
+  full_week <- w[w$iso_week == "2026-W38", ]
+  expect_equal(full_week$missing_days, 0L)
+  expect_equal(full_week$units, 3)
+})
+
+test_that("a record that starts on a Monday gives its first week a total", {
+  # The first row's evening is the Sunday before logging began, which
+  # belongs to the previous week. The first real week is complete.
+  days <- seq(as.Date("2026-09-07"), as.Date("2026-09-14"), by = "day")
+  s <- sample_row(days, c(2, 0, 0, 3, 0, 0, 1, 0))
+  n <- build_alcohol_nights(s, today = as.Date("2026-09-14"))
+  w <- compute_alcohol_week(n, today = as.Date("2026-09-14"))
+  first <- w[w$iso_week == "2026-W37", ]
+  expect_equal(first$missing_days, 0L)
+  expect_equal(first$units, 6)
+  # The week before holds only the unknown pre-logging evening.
+  expect_true(is.na(w$units[w$iso_week == "2026-W36"]))
 })

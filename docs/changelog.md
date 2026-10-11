@@ -1,5 +1,24 @@
 # tRäning — Changelog
 
+## 2026-10-11 — Alkoholsiffror som håller trots luckor i synken
+
+En lucka i synken från telefonen visades som nyktra kvällar, och sedan
+Health Auto Export 10.0.4 räknades varje kväll om från antal glas i
+stället för från DrinkControls egen energisiffra.
+
+- **En dag utan registrering är tom, inte noll.** DrinkControl skriver
+  en uttrycklig nolla för varje dag som markerats som alkoholfri, så en
+  dag helt utan prov är en lucka i datan. Den visas som tom och räknas
+  aldrig som nykter kväll i baslinjen.
+- **En vecka med en saknad kväll har ingen veckosumma.** Glas, gram,
+  kcal och andel av energiförbrukningen lämnas tomma för en sådan vecka,
+  och måndagsraden om förra veckan uteblir. Veckotabellen har en ny
+  kolumn, `Saknade dagar`.
+- **Gram räknas åter från appens egen energi.** Energiprov utan
+  källangivelse (HAE 10.0.4) räknas som alkoholenergi när en registrerad
+  dryck finns samma dag och minut, så nätterna flaggas inte längre som
+  beräknade.
+
 ## 2026-09-25 — Vilken klocka satt på handleden
 
 Firmware- och klockbyten kan ändra hur ett mått som puls eller kadens
