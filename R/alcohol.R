@@ -50,10 +50,10 @@
 # The only source whose dietary_energy samples are alcohol energy.
 .alcohol_energy_source <- "DrinkControl"
 
-# Absence of a sample is only informative inside a stretch where logging
-# is demonstrably happening. Outside it, "no drinks" and "forgot to log"
-# are indistinguishable and the night is excluded rather than counted
-# as a zero.
+# Half-width of the stretch around logged days where logging counts as
+# active. Absent days are never counted as zero (DrinkControl writes an
+# explicit zero for a dry day); the flag only bounds which nights the
+# reports consider at all.
 .alcohol_active_window_days <- 10L
 
 #' Grams of ethanol per logged unit (configurable)
@@ -418,25 +418,19 @@ build_alcohol_nights <- function(samples, energy = NULL,
     out$alcohol_kcal <- NA_real_
   }
 
-  # Inside the logging-active window an absent sample means zero drinks.
-  # Outside it, the value stays NA — see the note on the constant.
+  # The logging-active flag marks the stretch where logging demonstrably
+  # happens. Absence of a sample is NOT read as zero drinks even inside
+  # it: DrinkControl writes an explicit zero for every day marked dry,
+  # so a day without a sample is a gap in the data (a push that never
+  # came, a day not yet entered), and filling it would turn a sync gap
+  # into a claimed alcohol-free evening. That happened for 2026-09-13..19
+  # before those days were backfilled. Explicit zeros count; gaps stay NA.
   sample_days <- as.numeric(sample_dates)
   active <- vapply(as.numeric(out$date), function(d) {
     any(abs(sample_days - d) <= active_window_days)
   }, logical(1))
   out$alcohol_logging_active <- active
 
-  out$alcohol_units <- dplyr::if_else(
-    active & is.na(out$alcohol_units), 0, out$alcohol_units
-  )
-  # The first row's night ran the evening BEFORE logging existed, so it
-  # is unknowable in the same way the pre-history is. Its calendar-day
-  # total above is real and stays.
-  known_night <- out$date > first_date
-  out$alcohol_night_units <- dplyr::if_else(
-    active & known_night & is.na(out$alcohol_night_units), 0,
-    out$alcohol_night_units
-  )
   # A dry night has no energy to report, and 0 kcal is the honest value
   # there; a night with drinks but no app energy stays NA so the gram
   # figure can be flagged as computed rather than measured.

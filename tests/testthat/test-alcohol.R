@@ -302,16 +302,28 @@ test_that("an unknown energy unit is read as kilojoules, explicitly", {
   ))))
 })
 
-test_that("absence counts as zero only inside a logging-active stretch", {
-  n <- build_alcohol_nights(sample_row("2026-09-05", 6),
+test_that("an absent day is a gap, never a dry night", {
+  # DrinkControl writes an explicit zero for a day marked dry, so a day
+  # without a sample is missing data. 2026-09-13..19 showed as seven
+  # dry nights before the pushes that carried them were backfilled.
+  n <- build_alcohol_nights(
+    dplyr::bind_rows(
+      sample_row("2026-09-05", 6),
+      sample_row("2026-09-07", 0)
+    ),
     today = as.Date("2026-09-20")
   )
 
-  near <- n[n$date == as.Date("2026-09-10"), ]
-  expect_true(near$alcohol_logging_active)
-  expect_equal(near$alcohol_night_units, 0)
+  dry <- n[n$date == as.Date("2026-09-08"), ]
+  expect_equal(dry$alcohol_night_units, 0)
+  expect_equal(dry$alcohol_grams, 0)
 
-  far <- n[n$date == as.Date("2026-09-16"), ]
+  gap <- n[n$date == as.Date("2026-09-10"), ]
+  expect_true(gap$alcohol_logging_active)
+  expect_true(is.na(gap$alcohol_night_units))
+  expect_true(is.na(gap$alcohol_units))
+
+  far <- n[n$date == as.Date("2026-09-18"), ]
   expect_false(far$alcohol_logging_active)
   expect_true(is.na(far$alcohol_night_units))
 })
