@@ -161,13 +161,14 @@ in parentheses (from the app's own `sv.lproj/Localizable.strings`):
 2. **Exportera workouts:** REST API POST to
    `http://100.93.126.68:8421/v1/workouts`.
 3. **Vätska:** Alcohol Consumption (Alkoholkonsumtion) and Dietary Energy
-   (Dietär Energi) only, period "Previous 7 Days" (Föregående 7 Dagar), same aggregation, every 5 hours. POST to
+   (Dietär Energi) only, period "Previous 7 Days" (Föregående 7 Dagar),
+   same aggregation, every 5 hours. POST to
    `http://100.93.126.68:8421/v1/health?authoritative=day`.
 4. **Backsync:** Resting Heart Rate (Vilo hjärtfrekvens), Heart Rate (Puls),
    Heart Rate Variability (Hjärtfrekvensvariabilitet), Step Count
    (Stegräkning), Active Energy (Aktiv energi) and Basal Energy Burned
-   (Basal Energiförbrukning), period "Yesterday" (Igår), same aggregation, every 12 hours. POST
-   to `http://100.93.126.68:8421/v1/health?authoritative=day`.
+   (Basal Energiförbrukning), period "Yesterday" (Igår), same aggregation,
+   every 12 hours. POST to `http://100.93.126.68:8421/v1/health?authoritative=day`.
 
 All with header `X-API-Key: <key from traning-env.local>`.
 
