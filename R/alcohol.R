@@ -306,7 +306,10 @@
   # drink sits in its own day's document but carries the minute it was
   # entered, and must not vouch for energy filed under another day.
   key <- function(d) paste(as.character(as.Date(d$date)), d$minute)
-  drink_keys <- unique(key(samples)[!is.na(samples$minute)])
+  # An explicit zero is a dry-day marker, not a drink: it has no energy
+  # to vouch for.
+  drinks <- !is.na(samples$minute) & !is.na(samples$qty) & samples$qty > 0
+  drink_keys <- unique(key(samples)[drinks])
   matched <- unlabelled & !is.na(energy$minute) & key(energy) %in% drink_keys
   labelled | matched
 }
@@ -336,8 +339,8 @@
 #'   (\code{date}, \code{qty}, \code{source}, \code{units}).
 #' @param energy Tibble of dietary_energy samples, same shape. Filtered
 #'   to \code{.alcohol_energy_source} inside this function.
-#' @param active_window_days Half-width, in days, of the window that
-#'   makes an absent sample count as a genuine zero.
+#' @param active_window_days Half-width, in days, of the window in which
+#'   logging counts as active. An absent sample is never read as zero.
 #' @param today Upper bound for the table, defaulting to the current
 #'   date. The active window extends ten days past the last sample, which
 #'   would otherwise manufacture future mornings carrying zero drinks and

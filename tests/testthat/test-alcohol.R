@@ -251,6 +251,17 @@ test_that("unlabelled energy matches a drink only on the same day", {
   expect_true(is.na(n$alcohol_kcal[n$date == as.Date("2026-10-08")]))
 })
 
+test_that("a dry-day marker does not vouch for energy in its minute", {
+  s <- sample_row("2026-10-07", 0)
+  s$minute <- "2026-10-07 20:00"
+  e <- sample_row("2026-10-07", 900, "", "kcal")
+  e$minute <- "2026-10-07 20:00"
+  n <- build_alcohol_nights(s, e, today = as.Date("2026-10-08"))
+  night <- n[n$date == as.Date("2026-10-08"), ]
+  expect_equal(night$alcohol_kcal, 0)
+  expect_equal(night$alcohol_grams, 0)
+})
+
 test_that("unlabelled energy without minute information stays out", {
   s <- sample_row("2026-10-07", 3.5)
   e <- sample_row("2026-10-07", 245.848, "", "kcal")
