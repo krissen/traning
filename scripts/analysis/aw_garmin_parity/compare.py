@@ -35,6 +35,18 @@ DENSE_MIN = 6
 # otherwise be compared with the whole run, and its distance with the
 # whole run's distance.
 MIN_COVERAGE = 0.8
+# Seconds with no sample within this distance in either series are left
+# out: interpolating across a pause or a sensor dropout would invent
+# readings. Smart recording spaces Garmin points up to ~10 s, the Watch
+# ~5 s in a workout.
+MAX_GAP_S = 30
+
+
+def _covered(grid: np.ndarray, t: np.ndarray) -> np.ndarray:
+    """True where a sample of t lies within MAX_GAP_S of each grid second."""
+    i = np.clip(np.searchsorted(t, grid), 1, len(t) - 1)
+    nearest = np.minimum(np.abs(grid - t[i - 1]), np.abs(t[i] - grid))
+    return nearest <= MAX_GAP_S
 
 
 def load_json(path: str) -> dict:
@@ -89,7 +101,12 @@ def compare_run(g: dict, tcx: str, w: dict, a0: float, a1: float, hr_body: dict)
         return None
     t0 = max(a0, g0, hr[0, 0], garmin[0, 0])
     t1 = min(a1, g1, hr[-1, 0], garmin[-1, 0])
-    grid = np.arange(math.ceil(t0), math.floor(t1))
+    full = np.arange(math.ceil(t0), math.floor(t1))
+    cov_aw = _covered(full, hr[:, 0])
+    cov_g = _covered(full, garmin[:, 0])
+    grid = full[cov_aw & cov_g]
+    if len(grid) < 60:
+        return None
     ha = np.interp(grid, hr[:, 0], hr[:, 1])
     hg = np.interp(grid, garmin[:, 0], garmin[:, 1])
     diff = ha - hg
@@ -124,6 +141,9 @@ def compare_run(g: dict, tcx: str, w: dict, a0: float, a1: float, hr_body: dict)
         "max_aw": float(in_workout[:, 1].max()),
         "max_aw_minavg": round(float(minute_mean_max)),
         "aw_pts_per_min": round(len(in_workout) / ((a1 - a0) / 60), 1),
+        # Share of the overlap with a sample within MAX_GAP_S, per watch.
+        "cov_aw": round(float(cov_aw.mean()), 3),
+        "cov_g": round(float(cov_g.mean()), 3),
         "elev_g": round(g.get("elevationGain") or 0),
         "elev_aw": round((w.get("elevationUp") or {}).get("qty", 0)),
     }
@@ -150,7 +170,9 @@ def summarise(rows: list) -> None:
                 f"{era} {label} n={len(sel)}: mae {med('mae')}, bias {med('bias')}, "
                 f"share mae>5 {sum(r['mae'] > 5 for r in sel) / len(sel):.2f}, "
                 f"mae first 5 min {med('mae_f5')}, after {med('mae_rest')}, lag {med('lag')} s, "
-                f"km {med('km_pct')} %, HR points/min {med('aw_pts_per_min')}"
+                f"km {med('km_pct')} %, HR points/min {med('aw_pts_per_min')}, "
+                f"Watch coverage {med('cov_aw')}, Garmin coverage {med('cov_g')}, "
+                f"Watch coverage < 95 %: {sum(r['cov_aw'] < 0.95 for r in sel)}"
             )
         sel = [r for r in paired if r["era"] == era]
         print(
@@ -168,6 +190,7 @@ def summarise(rows: list) -> None:
 
 def main(garmin_dir: str, srv_dir: str) -> None:
     rows = []
+    missing = []
     for summary in sorted(glob.glob(os.path.join(garmin_dir, "*_summary.json"))):
         g = load_json(summary)
         if "running" not in g["activityType"]["typeKey"]:
@@ -177,6 +200,7 @@ def main(garmin_dir: str, srv_dir: str) -> None:
         wk = os.path.join(srv_dir, f"wk_{local:%Y%m%d}.json")
         hrf = os.path.join(srv_dir, f"hr_{local:%Y%m%d_%H%M}.json")
         if not (os.path.exists(wk) and os.path.exists(hrf)):
+            missing.append(f"{local:%Y-%m-%d %H:%M}")
             continue
         base = {
             "date": f"{local:%Y-%m-%d %H:%M}",
@@ -194,6 +218,14 @@ def main(garmin_dir: str, srv_dir: str) -> None:
         _, w, a0, a1 = best
         result = compare_run(g, summary.replace("_summary.json", ".tcx"), w, a0, a1, load_json(hrf))
         rows.append({**base, "paired": True, **(result or {})})
+
+    # A fetch that stopped part-way leaves later days without files.
+    # Analysing the rest would give date-biased figures that look whole.
+    if missing:
+        sys.exit(
+            f"{len(missing)} Garmin runs have no fetched Watch data "
+            f"(first {missing[0]}, last {missing[-1]}); re-run fetch_srv.py"
+        )
 
     keys = list(dict.fromkeys(k for r in rows for k in r))
     with open(os.path.join(srv_dir, "pairs.csv"), "w") as fh:
