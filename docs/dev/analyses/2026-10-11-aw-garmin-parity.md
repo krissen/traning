@@ -124,9 +124,10 @@ earlier apparent disagreement was the comparison, not the sensors.
   (`workoutsMetadaInterval: minutes`): 42 points for a 40-minute run on
   2026-10-07, against 483 in HealthKit. Stored workouts up to
   2026-09-05 still carry ~12 points a minute, so the switch happened
-  between those dates. Each minute entry keeps Min, Avg and Max, and the
-  pipeline reads Max, so peak heart rate survives; what is lost is
-  everything below a minute (warm-up, intervals, lag). The metrics
+  between those dates. Each stored minute entry keeps Min, Avg and Max,
+  so the peak survives in the file; what is lost is everything below a
+  minute (warm-up, intervals, lag). The R side does not read workout
+  heart-rate series today. The metrics
   automation also aggregates heart rate per minute.
 - Since HAE 10.0.4 (around 2026-09-26 here) merged series arrive with an
   empty `source` (Lybron/health-auto-export#78), so the pipeline can no
