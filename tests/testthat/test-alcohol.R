@@ -1667,3 +1667,17 @@ test_that("a week with a missing evening has no totals", {
   expect_equal(full_week$missing_days, 0L)
   expect_equal(full_week$units, 3)
 })
+
+test_that("a record that starts on a Monday gives its first week a total", {
+  # The first row's evening is the Sunday before logging began, which
+  # belongs to the previous week. The first real week is complete.
+  days <- seq(as.Date("2026-09-07"), as.Date("2026-09-14"), by = "day")
+  s <- sample_row(days, c(2, 0, 0, 3, 0, 0, 1, 0))
+  n <- build_alcohol_nights(s, today = as.Date("2026-09-14"))
+  w <- compute_alcohol_week(n, today = as.Date("2026-09-14"))
+  first <- w[w$iso_week == "2026-W37", ]
+  expect_equal(first$missing_days, 0L)
+  expect_equal(first$units, 6)
+  # The week before holds only the unknown pre-logging evening.
+  expect_true(is.na(w$units[w$iso_week == "2026-W36"]))
+})
