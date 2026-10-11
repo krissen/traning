@@ -165,7 +165,7 @@ is listed as "Vila energigivande" (key Resting Energy).
 3. **Vätska:** Alcohol Consumption (Alkoholkonsumtion) and Dietary Energy
    (Dietär Energi) only, period "Previous 7 Days" (Föregående 7 Dagar),
    same aggregation, every 5 hours. POST to
-   `http://100.93.126.68:8421/v1/health?authoritative=day`.
+   `http://100.93.126.68:8421/v1/health` (no parameter, see below).
 4. **Backsync:** Resting Heart Rate (Vilo hjärtfrekvens), Heart Rate (Puls),
    Heart Rate Variability (Hjärtfrekvensvariabilitet), Step Count
    (Stegräkning), Active Energy (Aktiv energi) and Basal Energy Burned
@@ -191,6 +191,16 @@ for a manual fetch. The receiver logs `Push markerad som hela dygn` for
 such a push. Put the parameter only on automations whose period is whole
 past days; on a "Today" automation it would replace a full day with a
 partial one. An unknown value is rejected with 422.
+
+Verified for Backsync: its first push (2026-10-11 16:32) touched only
+2026-10-10, and heart rate for that day then ran 00:04–23:59, so
+"Yesterday" is a whole calendar day. Not verified for Vätska: whether
+"Previous 7 Days" starts at midnight cannot be read off alcohol data
+with one sample a day, and a window starting mid-day would make the
+replacement wipe the earlier samples of its oldest day. Vätska therefore
+stays on the append-only merge, which suffices there: an unchanged day
+re-pushed is deduplicated, and only a drink edited after a push would
+leave its old minute beside the new one.
 
 The receiver is intended to be Tailscale-only on kailash. If you later move
 the HAE client off tailnet, change `TRANING_RECEIVER_HOST` in
