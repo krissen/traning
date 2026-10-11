@@ -1,5 +1,23 @@
 # tRäning — Changelog
 
+## 2026-10-11 — Hela gårdagen kommer fram
+
+Hälsoexporten från telefonen gällde bara innevarande dygn, och iOS
+pushar glest. Allt efter dygnets sista push gick förlorat: pulsen den
+9 oktober slutar 02:06. Det gällde även drycker som loggas på kvällen
+eller dagen efter.
+
+- **Två nya automationer i Health Auto Export.** "Backsync" skickar
+  gårdagens puls, HRV, vilopuls, steg, aktiv energi och basalenergi i
+  sin helhet, och "Vätska" skickar alkohol och energi för de senaste sju
+  dygnen. Uppsättningen står i `docs/user/pipeline-setup.md`.
+- **Ett helt dygn ersätter det som redan fanns.** En push till
+  `/v1/health?authoritative=day` ersätter de dygn den täcker i stället
+  för att lägga till. En minut som dagens push fångade halvfärdig
+  räknas då inte två gånger när gårdagens kompletta minut kommer.
+  Används bara av Backsync, vars fönster är verifierat som ett helt
+  kalenderdygn.
+
 ## 2026-10-11 — Alkoholsiffror som håller trots luckor i synken
 
 En lucka i synken från telefonen visades som nyktra kvällar, och sedan
