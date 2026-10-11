@@ -30,6 +30,11 @@ TZ = dt.timezone(dt.timedelta(hours=2))
 U4_FROM = dt.date(2026, 9, 25)
 # Below this many Apple Watch HR points per minute a run counts as sparse.
 DENSE_MIN = 6
+# A Watch workout pairs with a Garmin run only if it covers at least this
+# share of the Garmin run. A fragment (a recording stopped early) would
+# otherwise be compared with the whole run, and its distance with the
+# whole run's distance.
+MIN_COVERAGE = 0.8
 
 
 def load_json(path: str) -> dict:
@@ -53,14 +58,20 @@ def tcx_hr(path: str) -> np.ndarray:
 
 
 def best_watch_workout(workouts: list, g0: float, g1: float):
-    """The Apple Watch workout overlapping [g0, g1] by more than half, most."""
+    """The Apple Watch workout covering [g0, g1] most, if it covers enough.
+
+    The overlap must reach MIN_COVERAGE of the Garmin run and half of the
+    Watch workout, so neither a fragment nor a much longer session that
+    happens to contain the run is taken as its twin.
+    """
     best = None
     for w in workouts:
         if "Watch" not in (w.get("source") or {}).get("name", ""):
             continue
         a0, a1 = hae_ts(w["start"]), hae_ts(w["end"])
         overlap = min(a1, g1) - max(a0, g0)
-        if overlap > 0.5 * min(a1 - a0, g1 - g0) and (best is None or overlap > best[0]):
+        enough = overlap >= MIN_COVERAGE * (g1 - g0) and overlap > 0.5 * (a1 - a0)
+        if enough and (best is None or overlap > best[0]):
             best = (overlap, w, a0, a1)
     return best
 
@@ -90,7 +101,11 @@ def compare_run(g: dict, tcx: str, w: dict, a0: float, a1: float, hr_body: dict)
     first5 = grid < grid[0] + 300
     in_workout = hr[(hr[:, 0] >= a0) & (hr[:, 0] <= a1)]
     minute = ((in_workout[:, 0] - a0) // 60).astype(int)
-    minute_max = max(in_workout[minute == k, 1].mean() for k in np.unique(minute))
+    # HAE's minute aggregates carry Min/Avg/Max, and the pipeline reads Max,
+    # so stored per-minute data keeps the true peak. The per-minute MEAN is
+    # what a reader of Avg alone would see; it is reported to show that
+    # difference, not as a loss in storage.
+    minute_mean_max = max(in_workout[minute == k, 1].mean() for k in np.unique(minute))
     km_aw = w["distance"]["qty"]
     return {
         "km_aw": round(km_aw, 2),
@@ -107,7 +122,7 @@ def compare_run(g: dict, tcx: str, w: dict, a0: float, a1: float, hr_body: dict)
         "lag": lag,
         "max_g": g.get("maxHR"),
         "max_aw": float(in_workout[:, 1].max()),
-        "max_aw_min": round(float(minute_max)),
+        "max_aw_minavg": round(float(minute_mean_max)),
         "aw_pts_per_min": round(len(in_workout) / ((a1 - a0) / 60), 1),
         "elev_g": round(g.get("elevationGain") or 0),
         "elev_aw": round((w.get("elevationUp") or {}).get("qty", 0)),
@@ -141,8 +156,8 @@ def summarise(rows: list) -> None:
         print(
             f"{era} all n={len(sel)}: max HR Watch-Garmin "
             f"{statistics.median(r['max_aw'] - r['max_g'] for r in sel)}, "
-            f"minute-stored max minus raw max "
-            f"{statistics.median(r['max_aw_min'] - r['max_aw'] for r in sel)}, "
+            f"peak of per-minute Avg minus raw max "
+            f"{statistics.median(r['max_aw_minavg'] - r['max_aw'] for r in sel)}, "
             f"elevation Watch/Garmin "
             f"{statistics.median(r['elev_aw'] / r['elev_g'] for r in sel if r['elev_g']):.2f}"
         )
