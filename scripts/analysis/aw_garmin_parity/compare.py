@@ -43,10 +43,18 @@ MAX_GAP_S = 30
 
 
 def _covered(grid: np.ndarray, t: np.ndarray) -> np.ndarray:
-    """True where a sample of t lies within MAX_GAP_S of each grid second."""
-    i = np.clip(np.searchsorted(t, grid), 1, len(t) - 1)
-    nearest = np.minimum(np.abs(grid - t[i - 1]), np.abs(t[i] - grid))
-    return nearest <= MAX_GAP_S
+    """True where each grid second is bracketed by samples at most MAX_GAP_S apart.
+
+    Testing only the nearest sample would still accept the first and last
+    MAX_GAP_S of a long pause and interpolate across them; the bracketing
+    interval is what np.interp actually spans.
+    """
+    i = np.searchsorted(t, grid, side="right")
+    inside = (i > 0) & (i < len(t))
+    exact = np.isin(grid, t)
+    lo = t[np.clip(i - 1, 0, len(t) - 1)]
+    hi = t[np.clip(i, 0, len(t) - 1)]
+    return exact | (inside & (hi - lo <= MAX_GAP_S))
 
 
 def load_json(path: str) -> dict:
