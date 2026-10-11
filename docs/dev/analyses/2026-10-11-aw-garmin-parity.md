@@ -66,7 +66,7 @@ figure below comes from those two outputs.
   trend.
 - **Lag.** The Watch series leads Garmin by a median 5–6 s (dense runs).
 - **Max HR.** Watch − Garmin median −0.5 to −1 bpm.
-- **Distance.** Watch − Garmin median +1 %; 22 of 89 runs differ by
+- **Distance.** Watch − Garmin median +1.2 %; 22 of 89 runs differ by
   more than 3 %.
 - **Elevation gain.** The Watch reports 13–23 % more (median ratio
   1.23 U1, 1.13 U4).
