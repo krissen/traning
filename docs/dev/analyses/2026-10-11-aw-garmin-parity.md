@@ -44,7 +44,10 @@ after each pause. See "What changed" below.
   keeping only seconds that lie between two samples at most 30 s apart
   in **both** series. This drops Garmin's pauses (no trackpoints at all)
   and the gaps in a sparse Watch series, instead of interpolating across
-  them. A pair with fewer than 60 such seconds gets no statistics.
+  them. A pair with fewer than 60 such seconds gets no heart-rate
+  statistics; its distance, elevation, max HR and coverage still count.
+  Coverage is measured over the whole overlap of the two workouts, so a
+  series that starts late or stops early counts as uncovered there.
 - A run is **dense** when the Watch series has at least 6 points a
   minute (normal workout sampling is ~12), otherwise **sparse**.
 
@@ -66,14 +69,14 @@ from those outputs.
 | Runs with MAE > 5 bpm | 1 (2 %) | 0 |
 | Seconds differing > 10 bpm, median share | 1.0 % | 2.6 % |
 | Watch HR points per minute | ~12 | ~12 |
-| Watch coverage of the run, median | 100 % | 100 % |
+| Watch coverage of the run, median | 99 % | 100 % |
 
 - **Sparse period.** Every run until 2026-05-31 and half of June (last
   2026-06-15), 31 runs, has an Apple Watch HR series of 1–3 points a
   minute instead of ~12, in HealthKit itself, with gaps of minutes:
-  only a median 18 % of the run lies between Watch samples at most 30 s
+  only a median 13 % of the run lies between Watch samples at most 30 s
   apart. 29 of them have fewer than 60 comparable seconds and get no
-  statistics; the series cannot be compared second by second. Something on the watch side changed in mid-June; the
+  heart-rate statistics; the series cannot be compared second by second. Something on the watch side changed in mid-June; the
   device log shows no watchOS update then, so a setting (for example low
   power mode during workouts) is the likelier cause. Not verified.
 - **Dense runs.** The one run above 5 bpm (2026-09-15, 6.1 bpm) is a
@@ -83,11 +86,12 @@ from those outputs.
   warm-up, not a trend.
 - **Lag.** The Watch series leads Garmin by a median 3.5–5 s (dense
   runs).
-- **Max HR.** Watch − Garmin median −0.5 to −1 bpm.
-- **Distance.** Watch − Garmin median +1.05 % over the 60 runs with
-  statistics; 14 of 60 differ by more than 3 %.
-- **Elevation gain.** The Watch reports 13–27 % more (median ratio
-  1.27 U1, 1.13 U4).
+- **Max HR.** Watch − Garmin median −1 bpm (U1) and −0.5 bpm (U4),
+  all pairs.
+- **Distance.** Watch − Garmin median +1.2 % over all 89 pairs; 22 of
+  89 differ by more than 3 %.
+- **Elevation gain.** The Watch reports 13–23 % more (median ratio
+  1.23 U1, 1.13 U4; all pairs).
 
 ### Who is right when they disagree
 

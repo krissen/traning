@@ -96,25 +96,49 @@ def best_watch_workout(workouts: list, g0: float, g1: float):
     return best
 
 
-def compare_run(g: dict, tcx: str, w: dict, a0: float, a1: float, hr_body: dict) -> dict | None:
+def compare_run(g: dict, tcx: str, w: dict, a0: float, a1: float, hr_body: dict) -> dict:
+    """Per-run figures. Distance, elevation, max HR and coverage come for
+    every pair; the heart-rate agreement only where at least 60 seconds
+    are comparable in both series."""
     g0 = dt.datetime.fromisoformat(g["startTimeGMT"].replace(" ", "T") + "+00:00").timestamp()
     g1 = g0 + g["elapsedDuration"]
     metrics = hr_body["data"]["metrics"]
     samples = metrics[0]["data"] if metrics else []
     hr = np.array(
         sorted((hae_ts(x["date"]), x["Avg"]) for x in samples if "Watch" in x.get("source", ""))
-    )
-    garmin = tcx_hr(tcx)
-    if len(hr) < 20 or len(garmin) < 20:
-        return None
-    t0 = max(a0, g0, hr[0, 0], garmin[0, 0])
-    t1 = min(a1, g1, hr[-1, 0], garmin[-1, 0])
-    full = np.arange(math.ceil(t0), math.floor(t1))
-    cov_aw = _covered(full, hr[:, 0])
-    cov_g = _covered(full, garmin[:, 0])
+    ).reshape(-1, 2)
+    garmin = tcx_hr(tcx).reshape(-1, 2)
+    km_aw = w["distance"]["qty"]
+    # Coverage is measured over the whole overlap of the two workouts, so
+    # a series that starts late or stops early counts as uncovered there.
+    full = np.arange(math.ceil(max(a0, g0)), math.floor(min(a1, g1)))
+    cov_aw = _covered(full, hr[:, 0]) if len(hr) > 1 else np.zeros(len(full), bool)
+    cov_g = _covered(full, garmin[:, 0]) if len(garmin) > 1 else np.zeros(len(full), bool)
+    in_workout = hr[(hr[:, 0] >= a0) & (hr[:, 0] <= a1)]
+    out = {
+        "km_aw": round(km_aw, 2),
+        "km_pct": round(100 * (km_aw * 1000 - g["distance"]) / g["distance"], 1),
+        "start_off_s": round(a0 - g0),
+        "max_g": g.get("maxHR"),
+        "max_aw": float(in_workout[:, 1].max()) if len(in_workout) else None,
+        "aw_pts_per_min": round(len(in_workout) / ((a1 - a0) / 60), 1),
+        # Share of the overlap lying between samples at most MAX_GAP_S apart.
+        "cov_aw": round(float(cov_aw.mean()), 3) if len(full) else None,
+        "cov_g": round(float(cov_g.mean()), 3) if len(full) else None,
+        "elev_g": round(g.get("elevationGain") or 0),
+        "elev_aw": round((w.get("elevationUp") or {}).get("qty", 0)),
+    }
+    if len(in_workout):
+        minute = ((in_workout[:, 0] - a0) // 60).astype(int)
+        # HAE's minute aggregates carry Min/Avg/Max, so a stored minute keeps
+        # the peak. The peak of the per-minute MEAN is what a reader of Avg
+        # alone would see; it is reported to show that difference.
+        out["max_aw_minavg"] = round(
+            float(max(in_workout[minute == k, 1].mean() for k in np.unique(minute)))
+        )
     grid = full[cov_aw & cov_g]
     if len(grid) < 60:
-        return None
+        return out
     ha = np.interp(grid, hr[:, 0], hr[:, 1])
     hg = np.interp(grid, garmin[:, 0], garmin[:, 1])
     diff = ha - hg
@@ -124,45 +148,34 @@ def compare_run(g: dict, tcx: str, w: dict, a0: float, a1: float, hr_body: dict)
         key=lambda s: np.corrcoef(np.interp(grid + s, hr[:, 0], hr[:, 1]), hg)[0, 1],
     )
     first5 = grid < grid[0] + 300
-    in_workout = hr[(hr[:, 0] >= a0) & (hr[:, 0] <= a1)]
-    minute = ((in_workout[:, 0] - a0) // 60).astype(int)
-    # HAE's minute aggregates carry Min/Avg/Max, and the pipeline reads Max,
-    # so stored per-minute data keeps the true peak. The per-minute MEAN is
-    # what a reader of Avg alone would see; it is reported to show that
-    # difference, not as a loss in storage.
-    minute_mean_max = max(in_workout[minute == k, 1].mean() for k in np.unique(minute))
-    km_aw = w["distance"]["qty"]
-    return {
-        "km_aw": round(km_aw, 2),
-        "km_pct": round(100 * (km_aw * 1000 - g["distance"]) / g["distance"], 1),
-        "start_off_s": round(a0 - g0),
-        "hr_g": round(float(hg.mean()), 1),
-        "hr_aw": round(float(ha.mean()), 1),
-        "bias": round(float(diff.mean()), 1),
-        "mae": round(float(np.abs(diff).mean()), 1),
-        "r": round(float(np.corrcoef(ha, hg)[0, 1]), 2),
-        "pct_gt10": round(100 * float((np.abs(diff) > 10).mean()), 1),
-        "mae_f5": round(float(np.abs(diff[first5]).mean()), 1),
-        "mae_rest": round(float(np.abs(diff[~first5]).mean()), 1) if (~first5).any() else None,
-        "lag": lag,
-        "max_g": g.get("maxHR"),
-        "max_aw": float(in_workout[:, 1].max()),
-        "max_aw_minavg": round(float(minute_mean_max)),
-        "aw_pts_per_min": round(len(in_workout) / ((a1 - a0) / 60), 1),
-        # Share of the overlap with a sample within MAX_GAP_S, per watch.
-        "cov_aw": round(float(cov_aw.mean()), 3),
-        "cov_g": round(float(cov_g.mean()), 3),
-        "elev_g": round(g.get("elevationGain") or 0),
-        "elev_aw": round((w.get("elevationUp") or {}).get("qty", 0)),
-    }
+    out.update(
+        {
+            "hr_g": round(float(hg.mean()), 1),
+            "hr_aw": round(float(ha.mean()), 1),
+            "bias": round(float(diff.mean()), 1),
+            "mae": round(float(np.abs(diff).mean()), 1),
+            "r": round(float(np.corrcoef(ha, hg)[0, 1]), 2),
+            "pct_gt10": round(100 * float((np.abs(diff) > 10).mean()), 1),
+            "mae_f5": round(float(np.abs(diff[first5]).mean()), 1),
+            "mae_rest": round(float(np.abs(diff[~first5]).mean()), 1) if (~first5).any() else None,
+            "lag": lag,
+        }
+    )
+    return out
 
 
 def summarise(rows: list) -> None:
-    paired = [r for r in rows if "mae" in r]
+    paired = [r for r in rows if r["paired"]]
+    with_hr = [r for r in paired if r.get("mae") is not None]
     print(
-        f"Garmin runs: {len(rows)}, paired with HR: {len(paired)}, "
-        f"no Watch workout: {sum(1 for r in rows if not r['paired'])}"
+        f"Garmin runs: {len(rows)}, paired: {len(paired)}, with HR statistics: "
+        f"{len(with_hr)}, no Watch workout: {len(rows) - len(paired)}"
     )
+
+    def med(sel, key):
+        vals = [r[key] for r in sel if r.get(key) is not None]
+        return round(statistics.median(vals), 3) if vals else None
+
     for era in ("U1", "U4"):
         for label, dense in (("dense", True), ("sparse", False)):
             sel = [
@@ -170,29 +183,31 @@ def summarise(rows: list) -> None:
             ]
             if not sel:
                 continue
-
-            def med(key, sel=sel):
-                return round(statistics.median(r[key] for r in sel if r[key] is not None), 1)
-
+            hr_sel = [r for r in sel if r.get("mae") is not None]
             print(
-                f"{era} {label} n={len(sel)}: mae {med('mae')}, bias {med('bias')}, "
-                f"share mae>5 {sum(r['mae'] > 5 for r in sel) / len(sel):.2f}, "
-                f"mae first 5 min {med('mae_f5')}, after {med('mae_rest')}, lag {med('lag')} s, "
-                f"km {med('km_pct')} %, HR points/min {med('aw_pts_per_min')}, "
-                f"Watch coverage {med('cov_aw')}, Garmin coverage {med('cov_g')}, "
-                f"Watch coverage < 95 %: {sum(r['cov_aw'] < 0.95 for r in sel)}"
+                f"{era} {label}: paired {len(sel)}, with HR statistics {len(hr_sel)}; "
+                f"Watch coverage {med(sel, 'cov_aw')}, Garmin coverage {med(sel, 'cov_g')}, "
+                f"HR points/min {med(sel, 'aw_pts_per_min')}"
             )
+            if hr_sel:
+                print(
+                    f"    mae {med(hr_sel, 'mae')}, bias {med(hr_sel, 'bias')}, "
+                    f"mae>5 {sum(r['mae'] > 5 for r in hr_sel)}, "
+                    f"share >10 bpm {med(hr_sel, 'pct_gt10')} %, "
+                    f"first 5 min {med(hr_sel, 'mae_f5')}, after {med(hr_sel, 'mae_rest')}, "
+                    f"lag {med(hr_sel, 'lag')} s"
+                )
         sel = [r for r in paired if r["era"] == era]
+        mx = [r["max_aw"] - r["max_g"] for r in sel if r.get("max_aw") is not None and r["max_g"]]
+        el = [r["elev_aw"] / r["elev_g"] for r in sel if r["elev_g"]]
         print(
-            f"{era} all n={len(sel)}: max HR Watch-Garmin "
-            f"{statistics.median(r['max_aw'] - r['max_g'] for r in sel)}, "
-            f"peak of per-minute Avg minus raw max "
-            f"{statistics.median(r['max_aw_minavg'] - r['max_aw'] for r in sel)}, "
-            f"elevation Watch/Garmin "
-            f"{statistics.median(r['elev_aw'] / r['elev_g'] for r in sel if r['elev_g']):.2f}"
+            f"{era} all paired n={len(sel)}: max HR Watch-Garmin {statistics.median(mx)}, "
+            f"elevation Watch/Garmin {statistics.median(el):.2f}, "
+            f"distance {statistics.median(r['km_pct'] for r in sel)} %"
         )
     print(
-        f"distance |Watch-Garmin| > 3 %: {sum(abs(r['km_pct']) > 3 for r in paired)} of {len(paired)}"
+        f"distance |Watch-Garmin| > 3 %: {sum(abs(r['km_pct']) > 3 for r in paired)} "
+        f"of {len(paired)}"
     )
 
 
@@ -225,7 +240,7 @@ def main(garmin_dir: str, srv_dir: str) -> None:
             continue
         _, w, a0, a1 = best
         result = compare_run(g, summary.replace("_summary.json", ".tcx"), w, a0, a1, load_json(hrf))
-        rows.append({**base, "paired": True, **(result or {})})
+        rows.append({**base, "paired": True, **result})
 
     # A fetch that stopped part-way leaves later days without files.
     # Analysing the rest would give date-biased figures that look whole.
