@@ -400,8 +400,10 @@ operator asserts that the file in hand is the better record for those
 days. Pair it with `--dry-run` first, which lists each combination and
 how many samples would be displaced.
 
-The receiver sets the flag only when the push URL carries
-`?authoritative=day` (any other value is rejected with 422). An ordinary
+The receiver sets the flag only when the push carries `authoritative:
+day`, as a header (what HAE's per-automation key/value field sends) or
+as the URL parameter `?authoritative=day`; any other value is rejected
+with 422. An ordinary
 push that arrives on its own schedule is not authoritative about days
 it did not set out to correct, and stays append-only. The parameter is
 an operator assertion made once, in the URL of an automation whose

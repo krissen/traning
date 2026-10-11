@@ -87,6 +87,21 @@ def test_receive_health_authoritative_day_replaces_covered_days(client):
     assert client.save_calls == [{"replace_source_days": True}]
 
 
+def test_receive_health_authoritative_header_replaces_covered_days(client):
+    # HAE's per-automation key/value field sends headers, not URL params.
+    body = {"data": {"metrics": [{"name": "step_count", "data": [1]}]}}
+    resp = client.post("/v1/health", json=body, headers={**HEADERS, "Authoritative": "day"})
+    assert resp.status_code == 200
+    assert client.save_calls == [{"replace_source_days": True}]
+
+
+def test_receive_health_unknown_authoritative_header_is_422(client):
+    body = {"data": {"metrics": [{"name": "step_count", "data": [1]}]}}
+    resp = client.post("/v1/health", json=body, headers={**HEADERS, "authoritative": "days"})
+    assert resp.status_code == 422
+    assert client.save_calls == []
+
+
 def test_receive_health_unknown_authoritative_value_is_422(client):
     # A typo in the automation URL must fail loudly, not fall back to the
     # append-only merge and keep doubling revised minutes.
