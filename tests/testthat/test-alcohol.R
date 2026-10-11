@@ -236,6 +236,21 @@ test_that("unlabelled energy counts only when a drink shares its minute", {
   expect_equal(round(night$alcohol_grams, 1), 35.1)
 })
 
+test_that("unlabelled energy matches a drink only on the same day", {
+  # A back-dated drink lives in its own day's document but carries the
+  # minute it was entered. It must not vouch for energy filed under the
+  # next day at that minute.
+  s <- sample_row("2026-10-06", 3.5)
+  s$minute <- "2026-10-07 09:15"
+  e <- sample_row("2026-10-07", 900, "", "kcal")
+  e$minute <- "2026-10-07 09:15"
+  n <- build_alcohol_nights(s, e, today = as.Date("2026-10-08"))
+  night <- n[n$date == as.Date("2026-10-07"), ]
+  expect_true(night$alcohol_grams_estimated)
+  expect_equal(night$alcohol_grams, 35)
+  expect_true(is.na(n$alcohol_kcal[n$date == as.Date("2026-10-08")]))
+})
+
 test_that("unlabelled energy without minute information stays out", {
   s <- sample_row("2026-10-07", 3.5)
   e <- sample_row("2026-10-07", 245.848, "", "kcal")

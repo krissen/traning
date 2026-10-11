@@ -288,7 +288,7 @@
 #' source for every metric (Lybron/health-auto-export#78), so the label
 #' alone would drop every new night to the count-based fallback. An
 #' unlabelled sample therefore also qualifies when an alcohol_consumption
-#' sample sits in the same minute: DrinkControl writes the drink and its
+#' sample sits in the same minute of the same canonical day: DrinkControl writes the drink and its
 #' energy together, a food logger writes no drink at all. Without minute
 #' information an unlabelled sample is left out, as before.
 #'
@@ -302,8 +302,12 @@
     return(labelled)
   }
   unlabelled <- is.na(energy$source) | !nzchar(energy$source)
-  drink_minutes <- unique(stats::na.omit(samples$minute))
-  matched <- unlabelled & !is.na(energy$minute) & energy$minute %in% drink_minutes
+  # Keyed on the canonical date as well as the minute: a back-dated
+  # drink sits in its own day's document but carries the minute it was
+  # entered, and must not vouch for energy filed under another day.
+  key <- function(d) paste(as.character(as.Date(d$date)), d$minute)
+  drink_keys <- unique(key(samples)[!is.na(samples$minute)])
+  matched <- unlabelled & !is.na(energy$minute) & key(energy) %in% drink_keys
   labelled | matched
 }
 
