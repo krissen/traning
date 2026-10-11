@@ -150,12 +150,44 @@ curl -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status
 
 ## HAE configuration (iPhone)
 
-Two automations in Health Auto Export app on anandavani:
+Four automations in Health Auto Export app on anandavani. Automation
+names are as the app shows them. Metric and period names are given as the
+exported configuration stores them, with the Swedish label the app shows
+in parentheses (from the app's own `sv.lproj/Localizable.strings`):
 
-1. **Health metrics:** REST API POST to `http://100.93.126.68:8421/v1/health`
-2. **Workouts:** REST API POST to `http://100.93.126.68:8421/v1/workouts`
+1. **Exportera metrics:** health metrics, period "Today" (Idag), minute
+   (Minuter) aggregation, every 3 hours. REST API POST to
+   `http://100.93.126.68:8421/v1/health`.
+2. **Exportera workouts:** REST API POST to
+   `http://100.93.126.68:8421/v1/workouts`.
+3. **Vätska:** Alcohol Consumption (Alkoholkonsumtion) and Dietary Energy
+   (Dietär Energi) only, period "Previous 7 Days" (Föregående 7 Dagar), same aggregation, every 5 hours. POST to
+   `http://100.93.126.68:8421/v1/health?authoritative=day`.
+4. **Backsync:** Resting Heart Rate (Vilo hjärtfrekvens), Heart Rate (Puls),
+   Heart Rate Variability (Hjärtfrekvensvariabilitet), Step Count
+   (Stegräkning), Active Energy (Aktiv energi) and Basal Energy Burned
+   (Basal Energiförbrukning), period "Yesterday" (Igår), same aggregation, every 12 hours. POST
+   to `http://100.93.126.68:8421/v1/health?authoritative=day`.
 
-Both with header `X-API-Key: <key from traning-env.local>`.
+All with header `X-API-Key: <key from traning-env.local>`.
+
+Why the extra two: "Today" only ever exports the current day. iOS pushes
+sparsely, so everything after the day's last push was lost for good, and
+so were samples entered the next day with an earlier timestamp
+(DrinkControl's back-dated drinks). "Since Last Sync" is no alternative:
+it anchors on the sample timestamp and permanently misses back-dated
+samples (Lybron/health-auto-export#61).
+
+Why `?authoritative=day`: a "Today" push can catch a minute before the
+watch has delivered it in full, and the later whole-day push then carries
+a revised aggregate for the same minute. The ordinary merge is
+append-only and would keep both, summing a step or energy minute twice.
+With the parameter, each (metric, day, source) the push covers replaces
+what is stored, as `traning import canonical --replace-source-days` does
+for a manual fetch. The receiver logs `Push markerad som hela dygn` for
+such a push. Put the parameter only on automations whose period is whole
+past days; on a "Today" automation it would replace a full day with a
+partial one. An unknown value is rejected with 422.
 
 The receiver is intended to be Tailscale-only on kailash. If you later move
 the HAE client off tailnet, change `TRANING_RECEIVER_HOST` in
@@ -179,7 +211,7 @@ HAE pushes automatically in the background. iOS may delay execution;
 frequency depends on Background App Refresh and device state (charging
 improves reliability).
 
-The two automations are independent. Workouts can stop while metrics keep
+The automations are independent. Workouts can stop while metrics keep
 flowing (and vice versa) — always check both endpoints separately.
 
 ### When HAE data stops arriving
@@ -258,7 +290,7 @@ that its automation is disabled — count the files in
 
 **3. Total silence — check the phone (anandavani).**
 
-- Both automations still **enabled** in Health Auto Export, not just one.
+- All four automations still **enabled** in Health Auto Export.
 - Last run / error status per automation — a failed run usually shows there.
 - `X-API-Key` header still present. App updates and re-installs can drop
   custom headers; re-paste from `deploy/traning-env.local` if unsure.

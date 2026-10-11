@@ -10,8 +10,9 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 
@@ -678,11 +679,23 @@ def create_app() -> FastAPI:
         }
 
     @application.post("/v1/health", dependencies=[Depends(require_api_key)])
-    async def receive_health(payload: HealthPayload):
+    async def receive_health(
+        payload: HealthPayload,
+        authoritative: Literal["day"] | None = Query(default=None),
+    ):
         global _last_received, _total_received
 
         metrics = payload.data.metrics
-        n, changed_files = save_health_push(payload.model_dump())
+        # ?authoritative=day is set in the URL of an automation whose
+        # pushes cover whole days (HAE's "Yesterday" or "Previous 7 Days"
+        # windows). Each (metric, date, source) such a push covers then
+        # replaces what is stored, so a minute that an earlier same-day
+        # push caught half-filled is superseded instead of doubled. Pushes
+        # without the parameter keep the append-only merge.
+        whole_days = authoritative == "day"
+        if whole_days:
+            log.info("Push markerad som hela dygn: ersätter täckta (metrik, dag, källa)")
+        n, changed_files = save_health_push(payload.model_dump(), replace_source_days=whole_days)
         if n > 0:
             commit_health_data(n_metrics=n)
             # save_health_push returns Path objects; downstream join + R CLI

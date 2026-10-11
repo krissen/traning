@@ -431,9 +431,10 @@ def save_health_push(
     2. Track changed files for downstream import.
 
     ``replace_source_days`` is passed through to ``canonicalize_metric``;
-    see there. The receiver never sets it — a push that arrives on its
-    own schedule is not authoritative about days it did not intend to
-    correct. Legacy metrics (sleep_analysis) ignore it: their files span
+    see there. The receiver sets it only when the push URL carries
+    ``?authoritative=day``, which an operator puts on an automation whose
+    window is whole past days; an ordinary push is not authoritative
+    about days it did not intend to correct. Legacy metrics (sleep_analysis) ignore it: their files span
     midnight and are merged by date range rather than per day.
 
     Returns (n_metrics, changed_files).

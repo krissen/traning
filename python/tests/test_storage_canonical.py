@@ -725,3 +725,23 @@ def test_metrics_from_different_files_are_all_written(tmp_path):
     n_files, n_metrics, changed = canonicalize_paths([src], data_dir=tmp_path)
 
     assert (n_files, n_metrics, len(changed)) == (2, 2, 2)
+
+
+def test_whole_day_push_supersedes_a_half_filled_minute(tmp_path):
+    # A same-day push caught 17:34 before the watch had delivered the
+    # minute in full; the next morning's whole-day push carries the
+    # complete minute. Appending would sum both into the day's steps.
+    partial = {"date": "2026-10-10 17:34:00 +0200", "qty": 30.9, "source": ""}
+    complete = {"date": "2026-10-10 17:34:00 +0200", "qty": 44.4, "source": ""}
+    earlier = {"date": "2026-10-10 09:00:00 +0200", "qty": 12.0, "source": ""}
+    save_health_push(_payload("step_count", "count", [earlier, partial]), tmp_path)
+    save_health_push(
+        _payload("step_count", "count", [earlier, complete]),
+        tmp_path,
+        replace_source_days=True,
+    )
+    doc = json.loads(
+        (tmp_path / "kristian/health_export/canonical/step_count/2026-10-10.json").read_text()
+    )
+    assert sorted(s["qty"] for s in doc["samples"]) == [12.0, 44.4]
+    assert doc["daily_total"] == pytest.approx(56.4)

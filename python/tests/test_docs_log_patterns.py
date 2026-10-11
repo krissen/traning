@@ -47,7 +47,7 @@ def _grep_patterns() -> list[str]:
 @pytest.fixture
 def client(traning_data_dir, monkeypatch):
     monkeypatch.setenv("TRANING_API_KEY", API_KEY)
-    monkeypatch.setattr(app_mod, "save_health_push", lambda payload: (1, []))
+    monkeypatch.setattr(app_mod, "save_health_push", lambda payload, **kw: (1, []))
     monkeypatch.setattr(app_mod, "save_workout_push", lambda payload: 1)
     monkeypatch.setattr(app_mod, "commit_health_data", lambda **kw: True)
     monkeypatch.setattr(app_mod, "_schedule_health_import", lambda files: None)

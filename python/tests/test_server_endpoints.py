@@ -42,7 +42,13 @@ def client(traning_data_dir, monkeypatch):
     # Avoid touching disk/git/R in these endpoint-shape tests — the
     # storage/commit/debounce internals are covered elsewhere
     # (test_app_debounce.py, and the storage/git_utils tests).
-    monkeypatch.setattr(app_mod, "save_health_push", lambda payload: (1, []))
+    calls = []
+
+    def _save(payload, **kw):
+        calls.append(kw)
+        return 1, []
+
+    monkeypatch.setattr(app_mod, "save_health_push", _save)
     monkeypatch.setattr(app_mod, "save_workout_push", lambda payload: 1)
     monkeypatch.setattr(app_mod, "commit_health_data", lambda **kw: True)
     monkeypatch.setattr(app_mod, "_schedule_health_import", lambda files: None)
@@ -50,6 +56,7 @@ def client(traning_data_dir, monkeypatch):
 
     application = app_mod.create_app()
     with TestClient(application) as c:
+        c.save_calls = calls
         yield c
 
 
@@ -64,6 +71,29 @@ def test_receive_health_valid_payload_returns_200(client):
     resp = client.post("/v1/health", json=body, headers=HEADERS)
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok", "metrics_saved": 1, "total_samples": 2}
+
+
+def test_receive_health_merges_append_only_by_default(client):
+    body = {"data": {"metrics": [{"name": "step_count", "data": [1]}]}}
+    resp = client.post("/v1/health", json=body, headers=HEADERS)
+    assert resp.status_code == 200
+    assert client.save_calls == [{"replace_source_days": False}]
+
+
+def test_receive_health_authoritative_day_replaces_covered_days(client):
+    body = {"data": {"metrics": [{"name": "step_count", "data": [1]}]}}
+    resp = client.post("/v1/health?authoritative=day", json=body, headers=HEADERS)
+    assert resp.status_code == 200
+    assert client.save_calls == [{"replace_source_days": True}]
+
+
+def test_receive_health_unknown_authoritative_value_is_422(client):
+    # A typo in the automation URL must fail loudly, not fall back to the
+    # append-only merge and keep doubling revised minutes.
+    body = {"data": {"metrics": [{"name": "step_count", "data": [1]}]}}
+    resp = client.post("/v1/health?authoritative=days", json=body, headers=HEADERS)
+    assert resp.status_code == 422
+    assert client.save_calls == []
 
 
 def test_receive_health_missing_data_key_is_422(client):
