@@ -160,8 +160,9 @@ is listed as "Vila energigivande" (key Resting Energy).
 1. **Exportera metrics:** health metrics, period "Today" (Idag), minute
    (Minuter) aggregation, every 3 hours. REST API POST to
    `http://100.93.126.68:8421/v1/health`.
-2. **Exportera workouts:** REST API POST to
-   `http://100.93.126.68:8421/v1/workouts`.
+2. **Exportera workouts:** period "Today", routes and workout metadata on,
+   metadata interval "Seconds" (since 2026-10-11; "Minutes" before). REST
+   API POST to `http://100.93.126.68:8421/v1/workouts`.
 3. **Vätska:** Alcohol Consumption (Alkoholkonsumtion) and Dietary Energy
    (Dietär Energi) only, period "Previous 7 Days" (Föregående 7 Dagar),
    same aggregation, every 5 hours. POST to
@@ -174,7 +175,24 @@ is listed as "Vila energigivande" (key Resting Energy).
    extra header `authoritative: day` (in the automation's key/value
    field), or equivalently the URL `…/v1/health?authoritative=day`.
 
-All with header `X-API-Key: <key from traning-env.local>`.
+All with header `X-API-Key: <key from traning-env.local>`, and a request
+timeout of 300 s. The largest pushes are a few MB (a day of workouts at
+second resolution) and upload in seconds, so a run still going after five
+minutes is stuck, not slow; a longer timeout only delays noticing it.
+
+Two things to watch after the 2026-10-11 changes:
+
+- **Workouts at second resolution.** In HAE 10.0.4 the per-workout
+  cumulative queries (energy, distance, steps) can stall or be cancelled
+  at second resolution (Lybron/health-auto-export#78). If workouts stop
+  arriving (`grep "Received .* workouts"` in the receiver journal), set the
+  metadata interval back to "Minutes". Heart rate at full resolution for
+  a session can still be fetched with `get_health_metrics` and
+  `aggregate=false`.
+- **Unchanged data is not re-sent.** A manual run shortly after an
+  automatic one may deliver only the metrics that changed in between
+  (Backsync on 2026-10-11 17:42 sent two of six). An absent push right
+  after another is therefore not by itself a failure.
 
 Why the extra two: "Today" only ever exports the current day. iOS pushes
 sparsely, so everything after the day's last push was lost for good, and
