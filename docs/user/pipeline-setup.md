@@ -170,7 +170,9 @@ is listed as "Vila energigivande" (key Resting Energy).
    Heart Rate Variability (Hjärtfrekvensvariabilitet), Step Count
    (Stegräkning), Active Energy (Aktiv energi) and Basal Energy Burned
    (Vila energigivande), period "Yesterday" (Igår), same aggregation,
-   every 12 hours. POST to `http://100.93.126.68:8421/v1/health?authoritative=day`.
+   every 12 hours. POST to `http://100.93.126.68:8421/v1/health` with the
+   extra header `authoritative: day` (in the automation's key/value
+   field), or equivalently the URL `…/v1/health?authoritative=day`.
 
 All with header `X-API-Key: <key from traning-env.local>`.
 
@@ -181,16 +183,18 @@ so were samples entered the next day with an earlier timestamp
 it anchors on the sample timestamp and permanently misses back-dated
 samples (Lybron/health-auto-export#61).
 
-Why `?authoritative=day`: a "Today" push can catch a minute before the
+Why `authoritative: day` (header or URL parameter): a "Today" push can catch a minute before the
 watch has delivered it in full, and the later whole-day push then carries
 a revised aggregate for the same minute. The ordinary merge is
 append-only and would keep both, summing a step or energy minute twice.
-With the parameter, each (metric, day, source) the push covers replaces
+With it, each (metric, day, source) the push covers replaces
 what is stored, as `traning import canonical --replace-source-days` does
 for a manual fetch. The receiver logs `Push markerad som hela dygn` for
-such a push. Put the parameter only on automations whose period is whole
-past days; on a "Today" automation it would replace a full day with a
-partial one. An unknown value is rejected with 422.
+such a push; if that line is missing after a Backsync run, the header or
+parameter did not arrive. Put it only on automations whose period is
+whole past days; on a "Today" automation it would replace a full day
+with a partial one. An unknown value, in either place, is rejected with
+422.
 
 Verified for Backsync: its first push (2026-10-11 16:32) touched only
 2026-10-10, and heart rate for that day then ran 00:04–23:59, so

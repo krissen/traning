@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
-from fastapi import BackgroundTasks, Depends, FastAPI, Query, Request
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, Query, Request
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 
@@ -682,6 +682,7 @@ def create_app() -> FastAPI:
     async def receive_health(
         payload: HealthPayload,
         authoritative: Literal["day"] | None = Query(default=None),
+        authoritative_header: Literal["day"] | None = Header(default=None, alias="authoritative"),
     ):
         global _last_received, _total_received
 
@@ -691,8 +692,10 @@ def create_app() -> FastAPI:
         # windows). Each (metric, date, source) such a push covers then
         # replaces what is stored, so a minute that an earlier same-day
         # push caught half-filled is superseded instead of doubled. Pushes
-        # without the parameter keep the append-only merge.
-        whole_days = authoritative == "day"
+        # without the parameter keep the append-only merge. Health Auto
+        # Export's key/value field sends headers, so an `authoritative: day`
+        # header means the same; any other value in either place is a 422.
+        whole_days = "day" in (authoritative, authoritative_header)
         if whole_days:
             log.info("Push markerad som hela dygn: ersätter täckta (metrik, dag, källa)")
         n, changed_files = save_health_push(payload.model_dump(), replace_source_days=whole_days)
