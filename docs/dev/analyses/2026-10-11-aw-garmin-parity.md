@@ -84,7 +84,7 @@ from those outputs.
 - **First minutes.** On dense runs, MAE in the first five minutes is
   2.0 bpm (U1) and 3.9 bpm (U4) against about 1 bpm after. Optical
   warm-up, not a trend.
-- **Lag.** The Watch series leads Garmin by a median 3.5–5 s (dense
+- **Lag.** The Watch series leads Garmin by a median 4–4.5 s (dense
   runs).
 - **Max HR.** Watch − Garmin median −1 bpm (U1) and −0.5 bpm (U4),
   all pairs.

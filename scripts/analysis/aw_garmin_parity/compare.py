@@ -28,6 +28,9 @@ NS = {"t": "http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"}
 TZ = dt.timezone(dt.timedelta(hours=2))
 # The Ultra 4 replaced the Ultra (gen 1) on this date (devices.csv).
 U4_FROM = dt.date(2026, 9, 25)
+# The window the report covers. Runs outside it are ignored, so a
+# gconnect directory holding more history does not change the figures.
+WINDOW = (dt.date(2026, 5, 1), dt.date(2026, 10, 7))
 # Below this many Apple Watch HR points per minute a run counts as sparse.
 DENSE_MIN = 6
 # A Watch workout pairs with a Garmin run only if it covers at least this
@@ -142,11 +145,17 @@ def compare_run(g: dict, tcx: str, w: dict, a0: float, a1: float, hr_body: dict)
     ha = np.interp(grid, hr[:, 0], hr[:, 1])
     hg = np.interp(grid, garmin[:, 0], garmin[:, 1])
     diff = ha - hg
-    # Shift the Watch series against Garmin's and keep the best-correlated lag.
-    lag = max(
-        range(-30, 31),
-        key=lambda s: np.corrcoef(np.interp(grid + s, hr[:, 0], hr[:, 1]), hg)[0, 1],
-    )
+
+    # Shift the Watch series against Garmin's and keep the best-correlated
+    # lag. Each shift is masked on its own, so a shifted second that falls
+    # into a Watch gap is not interpolated across it.
+    def shifted_corr(s: int) -> float:
+        ok = _covered(grid + s, hr[:, 0])
+        if ok.sum() < 60:
+            return -np.inf
+        return np.corrcoef(np.interp(grid[ok] + s, hr[:, 0], hr[:, 1]), hg[ok])[0, 1]
+
+    lag = max(range(-30, 31), key=shifted_corr)
     first5 = grid < grid[0] + 300
     out.update(
         {
@@ -220,6 +229,8 @@ def main(garmin_dir: str, srv_dir: str) -> None:
             continue
         g0 = dt.datetime.fromisoformat(g["startTimeGMT"].replace(" ", "T") + "+00:00")
         local = g0.astimezone(TZ)
+        if not WINDOW[0] <= local.date() <= WINDOW[1]:
+            continue
         wk = os.path.join(srv_dir, f"wk_{local:%Y%m%d}.json")
         hrf = os.path.join(srv_dir, f"hr_{local:%Y%m%d_%H%M}.json")
         if not (os.path.exists(wk) and os.path.exists(hrf)):
