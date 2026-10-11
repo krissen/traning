@@ -893,6 +893,12 @@ without a record is a gap in the data, typically a push that never
 arrived. Before the October backfill, 2026-09-13..19 showed as seven dry
 nights although drinks were logged on each. Only explicit zeros count as
 dry; gaps stay `NA`, and a week containing one has no weekly total.
+Two consequences are intended. A week in which logging started after
+Monday has no total, because its earlier evenings are unknown (the first
+row's evening is the one before the first logged day). And until the
+previous evening is logged, the week in progress shows no total either,
+so the Monday line stays silent if Sunday evening is entered late: no
+line is better than a total that is too low.
 
 ### Stop rule
 
