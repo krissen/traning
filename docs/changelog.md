@@ -16,7 +16,9 @@ eller dagen efter.
   för att lägga till. En minut som dagens push fångade halvfärdig
   räknas då inte två gånger när gårdagens kompletta minut kommer.
   Används bara av Backsync, vars fönster är verifierat som ett helt
-  kalenderdygn.
+  kalenderdygn. Markeringen kan också skickas som headern
+  `authoritative: day`, som är vad automationens nyckel/värde-fält i
+  appen ger.
 
 ## 2026-10-11 — Alkoholsiffror som håller trots luckor i synken
 
