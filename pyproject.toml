@@ -25,6 +25,10 @@ dev = [
     "ruff==0.16.5",
     "mypy>=1.10",
 ]
+# One-off analyses under scripts/analysis/.
+analysis = [
+    "numpy>=2.0",
+]
 
 [project.scripts]
 traning = "traning_cli.main:cli"
