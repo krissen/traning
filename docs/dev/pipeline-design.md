@@ -400,9 +400,19 @@ operator asserts that the file in hand is the better record for those
 days. Pair it with `--dry-run` first, which lists each combination and
 how many samples would be displaced.
 
-The receiver never sets the flag. A push that arrives on its own
-schedule is not authoritative about days it did not set out to correct.
-Legacy metrics (`sleep_analysis`) ignore it as well: their files span
+The receiver sets the flag only when the push URL carries
+`?authoritative=day` (any other value is rejected with 422). An ordinary
+push that arrives on its own schedule is not authoritative about days
+it did not set out to correct, and stays append-only. The parameter is
+an operator assertion made once, in the URL of an automation whose
+period is verified to be whole past days: today only Backsync
+("Yesterday"), added 2026-10-11 because a same-day push can store a
+minute aggregate before the watch has delivered the minute in full, and
+the whole-day push then carries a revised aggregate that the
+append-only merge would sum with the first. A window that may start
+mid-day ("Previous 7 Days", not verified) must not carry it: the
+replacement would wipe the earlier samples of its oldest day. See
+`docs/user/pipeline-setup.md`. Legacy metrics (`sleep_analysis`) ignore it as well: their files span
 midnight and are merged by date range rather than per day.
 
 ### Commit deduplication
