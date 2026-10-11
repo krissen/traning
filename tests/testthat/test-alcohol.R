@@ -218,6 +218,42 @@ test_that("kcal comes only from DrinkControl's own dietary_energy samples", {
   expect_equal(round(night$alcohol_kcal, 1), 422.6)
 })
 
+test_that("unlabelled energy counts only when a drink shares its minute", {
+  # HAE 10.0.4 pushes every minute aggregate with an empty source
+  # (Lybron/health-auto-export#78). Matching on the minute keeps the
+  # app's own energy figure without letting a food logger in.
+  s <- sample_row("2026-10-07", 3.5)
+  s$minute <- "2026-10-07 20:00"
+  e <- dplyr::bind_rows(
+    sample_row("2026-10-07", 245.848, "", "kcal"),
+    sample_row("2026-10-07", 900, "", "kcal")
+  )
+  e$minute <- c("2026-10-07 20:00", "2026-10-07 12:31")
+  n <- build_alcohol_nights(s, e, today = as.Date("2026-10-08"))
+  night <- n[n$date == as.Date("2026-10-08"), ]
+  expect_equal(round(night$alcohol_kcal, 1), 245.8)
+  expect_false(night$alcohol_grams_estimated)
+  expect_equal(round(night$alcohol_grams, 1), 35.1)
+})
+
+test_that("unlabelled energy without minute information stays out", {
+  s <- sample_row("2026-10-07", 3.5)
+  e <- sample_row("2026-10-07", 245.848, "", "kcal")
+  n <- build_alcohol_nights(s, e, today = as.Date("2026-10-08"))
+  night <- n[n$date == as.Date("2026-10-08"), ]
+  expect_true(night$alcohol_grams_estimated)
+})
+
+test_that("the canonical reader keeps each sample's minute", {
+  tmp <- withr::local_tempdir()
+  writeLines(
+    '{"metric": "dietary_energy", "date": "2026-10-07", "units": "kcal", "samples": [{"source": "", "qty": 245.8, "date": "2026-10-07 20:00:00 +0200"}, {"source": "", "qty": 1}]}',
+    file.path(tmp, "2026-10-07.json")
+  )
+  out <- traning:::.read_canonical_samples(tmp)
+  expect_equal(out$minute, c("2026-10-07 20:00", NA))
+})
+
 test_that("energy already in kcal is not converted a second time", {
   expect_equal(traning:::.energy_to_kcal(100, "kcal"), 100)
   expect_equal(round(traning:::.energy_to_kcal(418.4, "kJ"), 1), 100)

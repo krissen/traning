@@ -141,7 +141,7 @@
 .read_canonical_samples <- function(dir) {
   empty <- tibble::tibble(
     date = as.Date(character()), qty = numeric(),
-    source = character(), units = character()
+    source = character(), units = character(), minute = character()
   )
   if (is.null(dir) || !dir.exists(dir)) {
     return(empty)
@@ -184,7 +184,8 @@
         date   = d,
         qty    = qty,
         source = as.character(.coalesce_scalar(s$source, NA_character_)),
-        units  = as.character(units)
+        units  = as.character(units),
+        minute = .sample_minute(.coalesce_scalar(s$date, NA_character_))
       )
     })
     dplyr::bind_rows(parts)
@@ -194,6 +195,24 @@
     return(empty)
   }
   out[!is.na(out$date) & !is.na(out$qty), , drop = FALSE]
+}
+
+#' Minute a canonical sample was stamped at
+#'
+#' "2026-10-07 20:00:00 +0200" becomes "2026-10-07 20:00". The offset is
+#' dropped on purpose: both metrics compared through it come from the
+#' same push, so they carry the same offset.
+#'
+#' @param x Sample timestamp string, or NA.
+#' @return Character scalar, NA when the timestamp is absent or malformed.
+#' @keywords internal
+.sample_minute <- function(x) {
+  x <- as.character(x)
+  if (length(x) != 1L || is.na(x) ||
+    !grepl("^\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}", x)) {
+    return(NA_character_)
+  }
+  sub("T", " ", substr(x, 1, 16), fixed = TRUE)
 }
 
 #' Read the unit string a canonical metric is written in
@@ -260,6 +279,32 @@
   is_kcal <- !is.na(u) & u %in% c("kcal", "cal", "kalorier")
   # The kJ branch takes both the declared kilojoules and the unknowns.
   dplyr::if_else(is_kcal, qty, qty / .kj_per_kcal)
+}
+
+#' Which dietary_energy samples are DrinkControl's alcohol energy
+#'
+#' A sample labelled DrinkControl qualifies. Since Health Auto Export
+#' 10.0.4 (late September 2026) minute-aggregated pushes carry an empty
+#' source for every metric (Lybron/health-auto-export#78), so the label
+#' alone would drop every new night to the count-based fallback. An
+#' unlabelled sample therefore also qualifies when an alcohol_consumption
+#' sample sits in the same minute: DrinkControl writes the drink and its
+#' energy together, a food logger writes no drink at all. Without minute
+#' information an unlabelled sample is left out, as before.
+#'
+#' @param energy Tibble of dietary_energy samples.
+#' @param samples Tibble of alcohol_consumption samples.
+#' @return Logical vector along \code{energy}.
+#' @keywords internal
+.is_alcohol_energy <- function(energy, samples) {
+  labelled <- !is.na(energy$source) & energy$source == .alcohol_energy_source
+  if (!"minute" %in% names(energy) || !"minute" %in% names(samples)) {
+    return(labelled)
+  }
+  unlabelled <- is.na(energy$source) | !nzchar(energy$source)
+  drink_minutes <- unique(stats::na.omit(samples$minute))
+  matched <- unlabelled & !is.na(energy$minute) & energy$minute %in% drink_minutes
+  labelled | matched
 }
 
 # --- Night table -------------------------------------------------------------
@@ -351,7 +396,7 @@ build_alcohol_nights <- function(samples, energy = NULL,
   kcal_by_night <- NULL
   if (!is.null(energy) && nrow(energy) > 0) {
     e <- energy[!is.na(energy$date) & !is.na(energy$qty), , drop = FALSE]
-    e <- e[!is.na(e$source) & e$source == .alcohol_energy_source, , drop = FALSE]
+    e <- e[.is_alcohol_energy(e, samples), , drop = FALSE]
     if (nrow(e) > 0) {
       e$date <- .alcohol_night_date(as.Date(e$date))
       e$kcal <- .energy_to_kcal(e$qty, e$units)
