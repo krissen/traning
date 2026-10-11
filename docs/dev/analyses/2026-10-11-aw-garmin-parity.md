@@ -7,10 +7,11 @@ Apple Watch data?
 
 **Answer in short.** Whenever the Apple Watch records heart rate at its
 normal workout rate, which it has done on every run since mid-June 2026,
-the two watches agree to a median 1.3 bpm (Ultra 1) and 1.9 bpm
+the two watches agree to a median 1.2 bpm (Ultra 1) and 1.7 bpm
 (Ultra 4) second by second, and 1 run in 58 differs by more than 5 bpm.
 Distance agrees to about 1 %. Before mid-June the Watch's heart-rate
-series was sparse (1–3 points a minute) and agreement was poor. Nothing
+series was sparse (1–3 points a minute, gaps of minutes) and cannot be
+compared second by second at all. Nothing
 in this data says Garmin measures heart rate better than the Watch. The
 storage loses sub-minute shape and, since HAE 10.0.4, the `source`
 label, but not agreement.
@@ -40,9 +41,10 @@ after each pause. See "What changed" below.
   writes its runs into Apple Health; those copies are excluded by
   source. 89 of 97 runs paired; 8 had no qualifying Apple Watch workout.
 - **Comparison grid:** both HR series on a 1 s grid over the overlap,
-  keeping only seconds with a sample within 30 s in **both** series.
-  This drops Garmin's pauses (no trackpoints at all) and the gaps in a
-  sparse Watch series, instead of interpolating across them.
+  keeping only seconds that lie between two samples at most 30 s apart
+  in **both** series. This drops Garmin's pauses (no trackpoints at all)
+  and the gaps in a sparse Watch series, instead of interpolating across
+  them. A pair with fewer than 60 such seconds gets no statistics.
 - A run is **dense** when the Watch series has at least 6 points a
   minute (normal workout sampling is ~12), otherwise **sparse**.
 
@@ -57,44 +59,44 @@ from those outputs.
 
 ## Results
 
-| | U1 dense (n=50) | U1 sparse (n=31) | U4 dense (n=8) |
-|---|---|---|---|
-| HR MAE, median | 1.3 bpm | 7.3 bpm | 1.9 bpm |
-| HR bias (Watch − Garmin), median | −0.6 | 0.0 | −1.1 |
-| Runs with MAE > 5 bpm | 1 (2 %) | 28 (90 %) | 0 |
-| Seconds differing > 10 bpm, median share | 1.7 % | 24.5 % | 3.3 % |
-| Watch HR points per minute | ~12 | 1–3 | ~12 |
-| Watch coverage of the run, median | 100 % | 20 % | 100 % |
+| | U1 dense (n=50) | U4 dense (n=8) |
+|---|---|---|
+| HR MAE, median | 1.2 bpm | 1.7 bpm |
+| HR bias (Watch − Garmin), median | −0.6 | −1.1 |
+| Runs with MAE > 5 bpm | 1 (2 %) | 0 |
+| Seconds differing > 10 bpm, median share | 1.0 % | 2.6 % |
+| Watch HR points per minute | ~12 | ~12 |
+| Watch coverage of the run, median | 100 % | 100 % |
 
 - **Sparse period.** Every run until 2026-05-31 and half of June (last
-  2026-06-15) has an Apple Watch HR series of 1–3 points a minute
-  instead of ~12, in HealthKit itself, covering a median 20 % of the
-  run. Agreement in that period is poor throughout and has no direction
-  (median bias 0). Something on the watch side changed in mid-June; the
+  2026-06-15), 31 runs, has an Apple Watch HR series of 1–3 points a
+  minute instead of ~12, in HealthKit itself, with gaps of minutes:
+  only a median 18 % of the run lies between Watch samples at most 30 s
+  apart. 29 of them have fewer than 60 comparable seconds and get no
+  statistics; the series cannot be compared second by second. Something on the watch side changed in mid-June; the
   device log shows no watchOS update then, so a setting (for example low
   power mode during workouts) is the likelier cause. Not verified.
-- **Dense runs.** The one run above 5 bpm (2026-09-15, 5.7 bpm) is a
+- **Dense runs.** The one run above 5 bpm (2026-09-15, 6.1 bpm) is a
   15-lap session.
 - **First minutes.** On dense runs, MAE in the first five minutes is
-  2.5 bpm (U1) and 4.2 bpm (U4) against about 1 bpm after. Optical
+  2.0 bpm (U1) and 3.9 bpm (U4) against about 1 bpm after. Optical
   warm-up, not a trend.
-- **Lag.** The Watch series leads Garmin by a median 4–4.5 s (dense
+- **Lag.** The Watch series leads Garmin by a median 3.5–5 s (dense
   runs).
 - **Max HR.** Watch − Garmin median −0.5 to −1 bpm.
-- **Distance.** Watch − Garmin median +1.2 % over all pairs; 22 of 89
-  differ by more than 3 %.
-- **Elevation gain.** The Watch reports 13–23 % more (median ratio
-  1.23 U1, 1.13 U4).
+- **Distance.** Watch − Garmin median +1.05 % over the 60 runs with
+  statistics; 14 of 60 differ by more than 3 %.
+- **Elevation gain.** The Watch reports 13–27 % more (median ratio
+  1.27 U1, 1.13 U4).
 
 ### Who is right when they disagree
 
 `arbiter.py` fits average HR on pace over the runs where the watches
-agree (53 runs, MAE ≤ 3 bpm, dense), HR = 209.2 − 0.224 × pace (s/km),
-residual SD 4.5 bpm, and classifies each run with MAE > 5 bpm as
+agree (54 runs, MAE ≤ 3 bpm, dense), HR = 210.2 − 0.226 × pace (s/km),
+residual SD 4.3 bpm, and classifies each run with MAE > 5 bpm as
 decisive (one watch within 2 SD of the prediction, the other outside)
-or undecided. On dense runs there is a single such run, undecided. On
-sparse runs (n=28) it is Garmin 1, Watch 2, undecided 25. There is no
-disagreement left on dense runs for the arbitration to settle.
+or undecided. Two runs qualify, one dense and one sparse, both
+undecided. There is no disagreement left for the arbitration to settle.
 
 Caveat: the fit uses the same two watches it arbitrates, and pace is
 Garmin's. It ranks plausibility; it does not measure error.
@@ -104,14 +106,15 @@ Garmin's. It ranks plausibility; it does not measure error.
 The first version interpolated both series over every second of the
 overlap. Ten dense runs then showed MAE > 5 bpm, almost all with the
 Watch lower, and pace seemed to side with Garmin. In all ten, the gaps
-were in Garmin's series and were pauses: 8 to 133 minutes without any
+were in Garmin's series and were pauses, totalling 8 to 133 minutes without any
 trackpoint (interval sessions, a 41-lap session, a run with long
 stops), and no minute anywhere with trackpoints lacking heart rate. The
 Watch workout kept recording through the pauses. Interpolation drew a
 line across each Garmin pause at running heart rate and compared it with
 the Watch's recovery heart rate. With the pause seconds excluded, the
-ten runs fall to MAE 1.3–5.7 bpm. Codex flagged the interpolation in
-review of PR #100.
+ten runs fall to MAE 1.0–6.1 bpm, nine of them below 4. Codex flagged
+the interpolation in review of PR #100. The total pause per run was
+8–133 minutes; the longest single pause 4–81 minutes.
 
 ## Watches or storage?
 
@@ -145,7 +148,7 @@ the per-workout cumulative queries then stall and block the export
 
 - **Heart rate does not justify wearing the Garmin on runs.** Since the
   Watch's series became dense in mid-June, 58 dual-recorded runs agree to
-  1–2 bpm, and the two watches are interchangeable for heart rate within
+  a median 1.2–1.7 bpm, and the two watches are interchangeable for heart rate within
   what wrist sensors can show without a reference.
 - **Distance agrees to about 1 %.**
 - **What the Garmin still provides is not tested here:** running
