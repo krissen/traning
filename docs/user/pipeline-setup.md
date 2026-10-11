@@ -152,8 +152,10 @@ curl -H "X-API-Key: <key>" http://100.93.126.68:8421/v1/status
 
 Four automations in Health Auto Export app on anandavani. Automation
 names are as the app shows them. Metric and period names are given as the
-exported configuration stores them, with the Swedish label the app shows
-in parentheses (from the app's own `sv.lproj/Localizable.strings`):
+exported configuration stores them, with the Swedish label from the
+app's own `sv.lproj/Localizable.strings` in parentheses. The metric
+picker can use a different key than the stored name: Basal Energy Burned
+is listed as "Vila energigivande" (key Resting Energy).
 
 1. **Exportera metrics:** health metrics, period "Today" (Idag), minute
    (Minuter) aggregation, every 3 hours. REST API POST to
@@ -167,7 +169,7 @@ in parentheses (from the app's own `sv.lproj/Localizable.strings`):
 4. **Backsync:** Resting Heart Rate (Vilo hjärtfrekvens), Heart Rate (Puls),
    Heart Rate Variability (Hjärtfrekvensvariabilitet), Step Count
    (Stegräkning), Active Energy (Aktiv energi) and Basal Energy Burned
-   (Basal Energiförbrukning), period "Yesterday" (Igår), same aggregation,
+   (Vila energigivande), period "Yesterday" (Igår), same aggregation,
    every 12 hours. POST to `http://100.93.126.68:8421/v1/health?authoritative=day`.
 
 All with header `X-API-Key: <key from traning-env.local>`.
