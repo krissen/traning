@@ -91,13 +91,16 @@ dispatcher to read it.
   commits being pushed). **Decision (2026-09-09): no R job in GitHub
   CI** — see below. The runner
   (`scripts/run_testthat.R`, shared by this hook and `make check`)
-  snapshots `$TRANING_DATA/cache` before the suite and restores it
-  afterwards — including on error or interrupt — so an automatic run
-  cannot leave live cached data mutated when `TRANING_DATA` points at a
-  real data directory (krissen/traning#91). It deliberately does *not*
-  redirect `TRANING_DATA` at a temp directory: the integration tests
-  gate on `Sys.getenv("TRANING_DATA") == ""`, and pointing the variable
-  at an empty directory would turn skips into failures.
+  points `TRANING_DATA` at an isolated, populated copy of the data
+  directory for the run — every top-level entry except `cache` is
+  symlinked, `cache` is copied — and restores the variable afterwards,
+  so an automatic run cannot mutate live cached data when
+  `TRANING_DATA` points at a real data directory (krissen/traning#91).
+  It deliberately does *not* use an empty temp directory: the
+  integration tests gate on `Sys.getenv("TRANING_DATA") == ""`, and
+  pointing the variable at an empty directory would turn skips into
+  failures. Unlike a snapshot/restore of the live cache, the copy also
+  cannot roll back a receiver import that lands during the run.
 
 CI (`.github/workflows/ci.yml`) runs the same `prek` configuration via
 `pipx run --spec prek==0.5.2 prek run --all-files`, skipping the three

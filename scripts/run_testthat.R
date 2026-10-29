@@ -8,132 +8,104 @@
 # once the suite runs automatically on every `git push`, that makes a
 # push a possible mutation of real cached data.
 #
-# The fix is deliberately *not* to redirect TRANING_DATA at a temp dir:
-# the suite's integration tests gate on `Sys.getenv("TRANING_DATA") == ""`,
-# so an empty-but-set value turns "skip" into "run and fail" and changes
-# which tests execute. Instead the cache directory is snapshotted before
-# the suite and restored afterwards, so every test sees exactly the same
-# TRANING_DATA it would otherwise have seen.
+# The fix is to run the suite against an isolated, populated copy of the
+# data directory:
+#
+#   * every top-level entry except `cache` is symlinked into a temp
+#     sandbox (reads behave exactly as against the live directory),
+#   * `cache` is copied (the directory tests write to),
+#   * TRANING_DATA points at the sandbox for the run and is restored
+#     afterwards.
+#
+# Redirecting TRANING_DATA at an *empty* temp directory would not work:
+# the integration tests gate on `Sys.getenv("TRANING_DATA") == ""`, so an
+# empty-but-set value turns "skip" into "run and fail" and changes which
+# tests execute. A populated copy keeps that distinction and also avoids
+# restoring over live files: a receiver import that lands during the run
+# writes to the real cache and is never rolled back.
 
-.traning_cache_dir <- function() {
+.traning_live_data_dir <- function() {
   td <- Sys.getenv("TRANING_DATA", unset = "")
-  if (!nzchar(td)) {
+  if (!nzchar(td) || !dir.exists(td)) {
     return(NULL)
   }
-  cache <- file.path(td, "cache")
-  if (!dir.exists(cache)) {
-    return(NULL)
-  }
-  normalizePath(cache, mustWork = TRUE)
+  normalizePath(td, mustWork = TRUE)
 }
 
-.traning_rel_files <- function(dir) {
-  list.files(
-    dir,
+.traning_copy_dir <- function(from, to) {
+  ok <- file.copy(
+    from,
+    to,
     recursive = TRUE,
+    copy.mode = TRUE,
+    copy.date = TRUE
+  )
+  if (!isTRUE(ok)) {
+    stop("could not copy data directory entry: ", from, call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.traning_make_sandbox <- function(live) {
+  sandbox <- tempfile("traning-test-data-")
+  dir.create(sandbox, recursive = TRUE)
+
+  entries <- list.files(
+    live,
     all.files = TRUE,
     no.. = TRUE,
     full.names = FALSE
   )
-}
-
-.traning_rel_dirs <- function(dir) {
-  # list.dirs() includes the root as "", which callers skip.
-  list.dirs(dir, recursive = TRUE, full.names = FALSE)
-}
-
-.traning_cache_backup <- function(cache) {
-  backup <- tempfile("traning-cache-backup-")
-  dir.create(backup, recursive = TRUE)
-  dirs <- .traning_rel_dirs(cache)
-  for (d in dirs[nzchar(dirs)]) {
-    dir.create(file.path(backup, d), recursive = TRUE, showWarnings = FALSE)
-  }
-  files <- .traning_rel_files(cache)
-  for (f in files) {
-    ok <- file.copy(
-      file.path(cache, f),
-      file.path(backup, f),
-      overwrite = TRUE,
-      copy.mode = TRUE,
-      copy.date = TRUE
-    )
-    if (!isTRUE(ok)) {
-      stop("could not back up cache file: ", f, call. = FALSE)
+  for (entry in entries) {
+    src <- file.path(live, entry)
+    dst <- file.path(sandbox, entry)
+    if (entry == "cache") {
+      # Tests write here, so it must be a real copy, not a link.
+      if (dir.exists(src)) {
+        dir.create(dst)
+        inner <- list.files(src, all.files = TRUE, no.. = TRUE, full.names = FALSE)
+        for (item in inner) {
+          .traning_copy_dir(file.path(src, item), dst)
+        }
+      }
+    } else if (!isTRUE(file.symlink(src, dst))) {
+      # Platforms without symlink support get a real copy. Slower, but
+      # still isolated from the live tree.
+      .traning_copy_dir(src, sandbox)
     }
   }
-  backup
+  sandbox
 }
 
-.traning_cache_restore <- function(cache, backup) {
-  dir.create(cache, recursive = TRUE, showWarnings = FALSE)
-  backup_files <- .traning_rel_files(backup)
-  backup_dirs <- .traning_rel_dirs(backup)
-  current_files <- .traning_rel_files(cache)
-  current_dirs <- .traning_rel_dirs(cache)
-
-  # Files the tests created (and directories they created) go away.
-  new_files <- setdiff(current_files, backup_files)
-  if (length(new_files) > 0) {
-    unlink(file.path(cache, new_files), force = TRUE)
-  }
-
-  # Restore every backed-up directory, then every backed-up file.
-  for (d in backup_dirs[nzchar(backup_dirs)]) {
-    dir.create(file.path(cache, d), recursive = TRUE, showWarnings = FALSE)
-  }
-  for (f in backup_files) {
-    ok <- file.copy(
-      file.path(backup, f),
-      file.path(cache, f),
-      overwrite = TRUE,
-      copy.mode = TRUE,
-      copy.date = TRUE
-    )
-    if (!isTRUE(ok)) {
-      warning("could not restore cache file: ", f, call. = FALSE)
-    }
-  }
-
-  # Drop directories the tests created, now that their files are gone.
-  new_dirs <- setdiff(current_dirs, backup_dirs)
-  for (d in new_dirs[nzchar(new_dirs)]) {
-    unlink(file.path(cache, d), recursive = TRUE)
-  }
-
-  unlink(backup, recursive = TRUE)
-  invisible(TRUE)
-}
-
-# Run `expr` with $TRANING_DATA/cache snapshotted and restored. When
-# TRANING_DATA is unset/empty, or there is no cache directory, this is a
-# no-op and `expr` runs against whatever environment the caller has.
-with_protected_cache <- function(expr) {
-  cache <- .traning_cache_dir()
-  if (is.null(cache)) {
+# Run `expr` with TRANING_DATA pointing at an isolated copy of the live
+# data directory. When TRANING_DATA is unset/empty or does not exist,
+# this is a no-op and `expr` sees the caller's environment unchanged.
+with_isolated_data <- function(expr) {
+  live <- .traning_live_data_dir()
+  if (is.null(live)) {
     return(eval(expr, envir = parent.frame()))
   }
 
-  backup <- .traning_cache_backup(cache)
+  sandbox <- .traning_make_sandbox(live)
+  old <- Sys.getenv("TRANING_DATA", unset = NA_character_)
+  Sys.setenv(TRANING_DATA = sandbox)
   on.exit(
-    tryCatch(
-      .traning_cache_restore(cache, backup),
-      error = function(e) {
-        warning(
-          "could not restore $TRANING_DATA/cache after the test run: ",
-          conditionMessage(e),
-          "\nBackup kept at: ", backup,
-          call. = FALSE
-        )
+    {
+      if (is.na(old)) {
+        Sys.unsetenv("TRANING_DATA")
+      } else {
+        Sys.setenv(TRANING_DATA = old)
       }
-    ),
+      unlink(sandbox, recursive = TRUE)
+    },
     add = TRUE
   )
+
   eval(expr, envir = parent.frame())
 }
 
 run_traning_tests <- function() {
-  with_protected_cache({
+  with_isolated_data({
     devtools::test(stop_on_failure = TRUE)
     TRUE
   })

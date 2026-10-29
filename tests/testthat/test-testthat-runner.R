@@ -1,4 +1,4 @@
-# Tests for the cache-protecting testthat runner (#91). The runner lives
+# Tests for the isolated test-data runner (#91). The runner lives
 # outside the package (scripts/run_testthat.R) because it wraps
 # devtools::test() itself, so the helpers are sourced directly.
 source(file.path(
@@ -7,78 +7,98 @@ source(file.path(
   "run_testthat.R"
 ))
 
-test_that("with_protected_cache is a no-op when TRANING_DATA is unset", {
+test_that("with_isolated_data is a no-op when TRANING_DATA is unset", {
   withr::local_envvar(TRANING_DATA = NA)
-  expect_identical(with_protected_cache("ran"), "ran")
+  expect_identical(with_isolated_data("ran"), "ran")
+  expect_identical(Sys.getenv("TRANING_DATA", unset = NA), NA_character_)
 })
 
-test_that("with_protected_cache is a no-op when TRANING_DATA is empty", {
+test_that("with_isolated_data is a no-op when TRANING_DATA is empty", {
   withr::local_envvar(TRANING_DATA = "")
-  expect_identical(with_protected_cache("ran"), "ran")
+  expect_identical(with_isolated_data("ran"), "ran")
+  expect_identical(Sys.getenv("TRANING_DATA"), "")
 })
 
-test_that("with_protected_cache is a no-op when there is no cache dir", {
-  td <- withr::local_tempdir()
-  withr::local_envvar(TRANING_DATA = td)
-
-  expect_identical(with_protected_cache({
-    dir.create(file.path(td, "cache"))
-    "ran"
-  }), "ran")
-  # The expression's own filesystem changes are not rolled back.
-  expect_true(dir.exists(file.path(td, "cache")))
+test_that("with_isolated_data is a no-op when the data dir does not exist", {
+  withr::local_envvar(TRANING_DATA = file.path(tempdir(), "does-not-exist"))
+  expect_identical(with_isolated_data("ran"), "ran")
 })
 
-test_that("with_protected_cache restores the cache after a run", {
-  td <- withr::local_tempdir()
-  cache <- file.path(td, "cache")
-  dir.create(cache)
-  writeLines("old", file.path(cache, "a.RData"))
-  dir.create(file.path(cache, "nested"))
-  writeLines("keep", file.path(cache, "nested", "b.RData"))
-  withr::local_envvar(TRANING_DATA = td)
+test_that("with_isolated_data points TRANING_DATA at a populated copy", {
+  live <- withr::local_tempdir()
+  dir.create(file.path(live, "cache"))
+  writeLines("old", file.path(live, "cache", "a.RData"))
+  dir.create(file.path(live, "cache", "nested"))
+  writeLines("keep", file.path(live, "cache", "nested", "b.RData"))
+  dir.create(file.path(live, "other"))
+  writeLines("source", file.path(live, "other", "file.txt"))
+  withr::local_envvar(TRANING_DATA = live)
 
-  result <- with_protected_cache({
-    writeLines("new", file.path(cache, "a.RData"))
-    writeLines("added", file.path(cache, "c.RData"))
-    unlink(file.path(cache, "nested"), recursive = TRUE)
-    dir.create(file.path(cache, "tmpdir"))
-    writeLines("x", file.path(cache, "tmpdir", "d.RData"))
-    "done"
+  seen <- new.env()
+  result <- with_isolated_data({
+    seen$sandbox <- Sys.getenv("TRANING_DATA")
+    sandbox <- seen$sandbox
+    testthat::expect_false(identical(normalizePath(sandbox), normalizePath(live)))
+    testthat::expect_identical(readLines(file.path(sandbox, "cache", "a.RData")), "old")
+    testthat::expect_identical(
+      readLines(file.path(sandbox, "cache", "nested", "b.RData")),
+      "keep"
+    )
+    testthat::expect_true(file.exists(file.path(sandbox, "other", "file.txt")))
+    writeLines("new", file.path(sandbox, "cache", "a.RData"))
+    writeLines("added", file.path(sandbox, "cache", "c.RData"))
+    "wrote"
   })
 
-  expect_identical(result, "done")
-  expect_identical(readLines(file.path(cache, "a.RData")), "old")
-  expect_false(file.exists(file.path(cache, "c.RData")))
-  expect_identical(readLines(file.path(cache, "nested", "b.RData")), "keep")
-  expect_false(dir.exists(file.path(cache, "tmpdir")))
+  expect_identical(result, "wrote")
+  expect_identical(Sys.getenv("TRANING_DATA"), live)
+  expect_identical(readLines(file.path(live, "cache", "a.RData")), "old")
+  expect_false(file.exists(file.path(live, "cache", "c.RData")))
+  expect_false(dir.exists(seen$sandbox))
 })
 
-test_that("with_protected_cache restores the cache after an error", {
-  td <- withr::local_tempdir()
-  cache <- file.path(td, "cache")
-  dir.create(cache)
-  writeLines("old", file.path(cache, "a.RData"))
-  withr::local_envvar(TRANING_DATA = td)
+test_that("with_isolated_data restores the env and removes the sandbox on error", {
+  live <- withr::local_tempdir()
+  dir.create(file.path(live, "cache"))
+  writeLines("old", file.path(live, "cache", "a.RData"))
+  withr::local_envvar(TRANING_DATA = live)
 
+  seen <- new.env()
   expect_error(
-    with_protected_cache({
-      writeLines("new", file.path(cache, "a.RData"))
+    with_isolated_data({
+      seen$sandbox <- Sys.getenv("TRANING_DATA")
+      writeLines("new", file.path(seen$sandbox, "cache", "a.RData"))
       stop("boom")
     }),
     "boom"
   )
-  expect_identical(readLines(file.path(cache, "a.RData")), "old")
+
+  expect_identical(Sys.getenv("TRANING_DATA"), live)
+  expect_identical(readLines(file.path(live, "cache", "a.RData")), "old")
+  expect_false(dir.exists(seen$sandbox))
 })
 
-test_that("with_protected_cache keeps a cache that was deleted by a test", {
-  td <- withr::local_tempdir()
-  cache <- file.path(td, "cache")
-  dir.create(cache)
-  writeLines("old", file.path(cache, "a.RData"))
-  withr::local_envvar(TRANING_DATA = td)
+test_that("with_isolated_data keeps a cache deleted inside the run", {
+  live <- withr::local_tempdir()
+  dir.create(file.path(live, "cache"))
+  writeLines("old", file.path(live, "cache", "a.RData"))
+  withr::local_envvar(TRANING_DATA = live)
 
-  with_protected_cache(unlink(cache, recursive = TRUE))
+  with_isolated_data(unlink(file.path(Sys.getenv("TRANING_DATA"), "cache"), recursive = TRUE))
 
-  expect_identical(readLines(file.path(cache, "a.RData")), "old")
+  expect_identical(readLines(file.path(live, "cache", "a.RData")), "old")
+})
+
+test_that("with_isolated_data handles a live data dir with no cache", {
+  live <- withr::local_tempdir()
+  dir.create(file.path(live, "other"))
+  withr::local_envvar(TRANING_DATA = live)
+
+  seen <- new.env()
+  expect_identical(with_isolated_data({
+    seen$sandbox <- Sys.getenv("TRANING_DATA")
+    testthat::expect_false(dir.exists(file.path(seen$sandbox, "cache")))
+    "ran"
+  }), "ran")
+  expect_false(dir.exists(seen$sandbox))
 })
