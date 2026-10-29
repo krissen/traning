@@ -77,6 +77,27 @@
   sandbox
 }
 
+# Child R processes re-read .Renviron at startup (Rscript in the
+# mcp-bridge tests, for example) and would overwrite the inherited
+# sandbox path with a live one. Point R_ENVIRON_USER at a copy of the
+# user environment file with TRANING_DATA removed: R_ENVIRON_USER
+# suppresses the cwd/home .Renviron search, while children still inherit
+# the parent's TRANING_DATA (the sandbox, or a test's own override).
+.traning_isolated_environ <- function(old_user_environ) {
+  src <- old_user_environ
+  if (is.na(src) || !nzchar(src)) {
+    home <- path.expand("~/.Renviron")
+    src <- if (file.exists(home)) home else NULL
+  } else if (!file.exists(src)) {
+    src <- NULL
+  }
+  lines <- if (is.null(src)) character() else readLines(src, warn = FALSE)
+  lines <- lines[!grepl("^\\s*(export\\s+)?TRANING_DATA\\s*=", lines)]
+  path <- tempfile("traning-test-environ-")
+  writeLines(lines, path)
+  path
+}
+
 # Run `expr` with TRANING_DATA pointing at an isolated copy of the live
 # data directory. When TRANING_DATA is unset/empty or does not exist,
 # this is a no-op and `expr` sees the caller's environment unchanged.
@@ -88,7 +109,9 @@ with_isolated_data <- function(expr) {
 
   sandbox <- .traning_make_sandbox(live)
   old <- Sys.getenv("TRANING_DATA", unset = NA_character_)
-  Sys.setenv(TRANING_DATA = sandbox)
+  old_user_environ <- Sys.getenv("R_ENVIRON_USER", unset = NA_character_)
+  environ_file <- .traning_isolated_environ(old_user_environ)
+  Sys.setenv(TRANING_DATA = sandbox, R_ENVIRON_USER = environ_file)
   on.exit(
     {
       if (is.na(old)) {
@@ -96,7 +119,12 @@ with_isolated_data <- function(expr) {
       } else {
         Sys.setenv(TRANING_DATA = old)
       }
-      unlink(sandbox, recursive = TRUE)
+      if (is.na(old_user_environ)) {
+        Sys.unsetenv("R_ENVIRON_USER")
+      } else {
+        Sys.setenv(R_ENVIRON_USER = old_user_environ)
+      }
+      unlink(c(sandbox, environ_file), recursive = TRUE)
     },
     add = TRUE
   )

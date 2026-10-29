@@ -16,6 +16,41 @@ skip_without_runner <- function() {
   )
 }
 
+test_that("with_isolated_data survives child R startup", {
+  skip_without_runner()
+  live <- withr::local_tempdir()
+  dir.create(file.path(live, "cache"))
+  stale_env <- tempfile("environ-")
+  writeLines(sprintf('TRANING_DATA="%s"', live), stale_env)
+  withr::local_envvar(TRANING_DATA = live, R_ENVIRON_USER = stale_env)
+
+  rscript <- file.path(R.home("bin"), "Rscript")
+  skip_if_not(file.exists(rscript), "Rscript not available")
+
+  seen <- new.env()
+  with_isolated_data({
+    seen$sandbox <- Sys.getenv("TRANING_DATA")
+    out <- system2(
+      rscript,
+      c("-e", shQuote('cat(Sys.getenv("TRANING_DATA"))')),
+      stdout = TRUE,
+      stderr = TRUE
+    )
+    testthat::expect_identical(out[[1]], seen$sandbox)
+
+    override <- file.path(tempdir(), "child-override")
+    out <- system2(
+      rscript,
+      c("-e", shQuote('cat(Sys.getenv("TRANING_DATA"))')),
+      stdout = TRUE,
+      stderr = TRUE,
+      env = paste0("TRANING_DATA=", override)
+    )
+    testthat::expect_identical(out[[1]], override)
+  })
+  expect_identical(Sys.getenv("R_ENVIRON_USER"), stale_env)
+})
+
 test_that("the runner resolves the repository root from --file=", {
   skip_without_runner()
   script <- normalizePath(
