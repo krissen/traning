@@ -104,9 +104,9 @@ with_isolated_data <- function(expr) {
   eval(expr, envir = parent.frame())
 }
 
-run_traning_tests <- function() {
+run_traning_tests <- function(pkg = ".") {
   with_isolated_data({
-    devtools::test(stop_on_failure = TRUE)
+    devtools::test(pkg, stop_on_failure = TRUE)
     TRUE
   })
 }
