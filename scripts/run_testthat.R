@@ -113,7 +113,7 @@ run_traning_tests <- function() {
 
 # Returns TRUE on a green suite, FALSE otherwise. Shared entry point so
 # the hook and a direct `Rscript scripts/run_testthat.R` behave alike.
-run_traning_tests_cli <- function() {
+run_traning_tests_cli <- function(pkg = ".") {
   if (!requireNamespace("devtools", quietly = TRUE)) {
     message(
       "testthat: the 'devtools' package is required to run the ",
@@ -124,7 +124,7 @@ run_traning_tests_cli <- function() {
   suppressMessages(library(devtools))
 
   tryCatch(
-    run_traning_tests(),
+    run_traning_tests(pkg),
     error = function(e) {
       message("testthat: ", conditionMessage(e))
       FALSE
@@ -133,5 +133,7 @@ run_traning_tests_cli <- function() {
 }
 
 if (sys.nframe() == 0L) {
-  if (!isTRUE(run_traning_tests_cli())) quit(status = 1)
+  if (!isTRUE(run_traning_tests_cli(.traning_runner_repo_root()))) {
+    quit(status = 1)
+  }
 }

@@ -7,13 +7,14 @@
 # automatic suite run cannot mutate live cached data (krissen/traning#91).
 args <- commandArgs(trailingOnly = FALSE)
 file_arg <- grep("^--file=", args, value = TRUE)
-script_dir <- if (length(file_arg) > 0) {
-  dirname(normalizePath(sub("^--file=", "", file_arg[1])))
+if (length(file_arg) > 0) {
+  script_dir <- dirname(normalizePath(sub("^--file=", "", file_arg[1])))
+  repo_root <- normalizePath(file.path(script_dir, ".."), mustWork = TRUE)
 } else {
-  getwd()
+  # No --file= means the hook was sourced directly from the repo root.
+  repo_root <- normalizePath(getwd(), mustWork = TRUE)
 }
-repo_root <- normalizePath(file.path(script_dir, ".."), mustWork = TRUE)
 
 source(file.path(repo_root, "scripts", "run_testthat.R"), local = FALSE)
 
-if (!isTRUE(run_traning_tests_cli())) quit(status = 1)
+if (!isTRUE(run_traning_tests_cli(repo_root))) quit(status = 1)
