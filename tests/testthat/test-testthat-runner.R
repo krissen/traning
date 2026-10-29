@@ -16,6 +16,19 @@ skip_without_runner <- function() {
   )
 }
 
+test_that("the runner resolves the repository root from --file=", {
+  skip_without_runner()
+  script <- normalizePath(
+    file.path(testthat::test_path("..", ".."), "scripts", "run_testthat.R")
+  )
+  root <- .traning_runner_repo_root(c("Rscript", paste0("--file=", script)))
+  expect_true(file.exists(file.path(root, "DESCRIPTION")))
+  expect_identical(
+    .traning_runner_repo_root(character(0)),
+    normalizePath(getwd(), mustWork = TRUE)
+  )
+})
+
 test_that("with_isolated_data is a no-op when TRANING_DATA is unset", {
   skip_without_runner()
   withr::local_envvar(TRANING_DATA = NA)

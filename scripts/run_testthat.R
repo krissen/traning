@@ -104,6 +104,17 @@ with_isolated_data <- function(expr) {
   eval(expr, envir = parent.frame())
 }
 
+# Resolve the repository root when this file is executed directly
+# (`Rscript scripts/run_testthat.R`) rather than sourced by the hook.
+.traning_runner_repo_root <- function(args = commandArgs(trailingOnly = FALSE)) {
+  file_arg <- grep("^--file=", args, value = TRUE)
+  if (length(file_arg) == 0) {
+    return(normalizePath(getwd(), mustWork = TRUE))
+  }
+  script <- normalizePath(sub("^--file=", "", file_arg[1]))
+  normalizePath(file.path(dirname(script), ".."), mustWork = TRUE)
+}
+
 run_traning_tests <- function(pkg = ".") {
   with_isolated_data({
     devtools::test(pkg, stop_on_failure = TRUE)
