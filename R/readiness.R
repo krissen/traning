@@ -354,7 +354,8 @@ compute_readiness <- function(health_daily, summaries,
     "rhr_score", "rhr_flag",
     "sleep_totalSleep", "sleep_deep", "sleep_rem",
     "sleep_score", "sleep_flag",
-    "daily_trimp", "atl", "ctl", "tsb", "trimp_score", "load_flag"
+    "daily_trimp", "trimp_yesterday", "atl", "ctl", "tsb",
+    "trimp_score", "load_flag"
   )
   if (has_wrist_temp) {
     base_cols <- c(
