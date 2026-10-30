@@ -833,6 +833,14 @@ test_that(".parse_iso_time handles the receiver's formats and junk", {
   expect_true(is.na(.parse_iso_time("not a date")))
 })
 
+test_that("offset-aware timestamps render in the display timezone", {
+  withr::local_timezone("Europe/Stockholm")
+  reference <- as.POSIXct("2026-07-21 21:30:00", tz = "Europe/Stockholm")
+  ts <- .parse_iso_time("2026-07-11T22:30:00+00:00")
+
+  expect_equal(.freshness_date_sv(ts, reference = reference), "12 juli")
+})
+
 test_that(".parse_iso_time accepts offset-aware receiver timestamps", {
   utc <- function(x) {
     format(.parse_iso_time(x), "%Y-%m-%d %H:%M:%S", tz = "UTC")

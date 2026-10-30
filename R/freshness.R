@@ -280,17 +280,17 @@
   if (is.na(ts)) {
     return(NA_character_)
   }
-  # Read the calendar fields off the timestamp directly. as.Date() on a
-  # POSIXct converts via UTC, so an arrival at 00:30 local time would
-  # render as the previous day here while the English message — built
-  # with format() — named the right one. A function whose whole purpose
-  # is to say *when* something last arrived cannot afford that.
+  # Read the calendar fields off the timestamp in the display timezone.
+  # Offset-aware receiver timestamps arrive as UTC POSIXct objects;
+  # formatting those without converting would report the UTC calendar
+  # day, so a 00:30 local import reads as the previous date (and around
+  # New Year, the wrong year).
   base <- sprintf(
-    "%d %s", as.integer(format(ts, "%d")),
-    .swedish_months[as.integer(format(ts, "%m"))]
+    "%d %s", as.integer(format(ts, "%d", tz = "")),
+    .swedish_months[as.integer(format(ts, "%m", tz = ""))]
   )
-  if (format(ts, "%Y") != format(reference, "%Y")) {
-    base <- paste(base, format(ts, "%Y"))
+  if (format(ts, "%Y", tz = "") != format(reference, "%Y", tz = "")) {
+    base <- paste(base, format(ts, "%Y", tz = ""))
   }
   base
 }
@@ -337,7 +337,7 @@
   } else {
     "ok"
   }
-  when <- format(newest$ts, "%Y-%m-%d %H:%M")
+  when <- format(newest$ts, "%Y-%m-%d %H:%M", tz = "")
 
   message <- if (status == "ok") {
     sprintf("%s: %.1f h old (%s, %s).", flow, max(age, 0), newest$source, when)
