@@ -89,11 +89,18 @@ dispatcher to read it.
   pre-commit (`always_run: true`, no `files:` filter — too slow to run
   on every commit; a `git push` runs it once for the whole batch of
   commits being pushed). **Decision (2026-09-09): no R job in GitHub
-  CI** — see below. **Known risk, not yet fixed:** if your `TRANING_DATA`
-  points at a real, live data directory (the normal daily-use setup),
-  `git push` now runs the full suite against it, and a few tests write
-  cache files under `$TRANING_DATA/cache` as a side effect — see
-  krissen/traning#91.
+  CI** — see below. The runner
+  (`scripts/run_testthat.R`, shared by this hook and `make check`)
+  points `TRANING_DATA` at an isolated, populated copy of the data
+  directory for the run — every top-level entry except `cache` is
+  symlinked, `cache` is copied — and restores the variable afterwards,
+  so an automatic run cannot mutate live cached data when
+  `TRANING_DATA` points at a real data directory (krissen/traning#91).
+  It deliberately does *not* use an empty temp directory: the
+  integration tests gate on `Sys.getenv("TRANING_DATA") == ""`, and
+  pointing the variable at an empty directory would turn skips into
+  failures. Unlike a snapshot/restore of the live cache, the copy also
+  cannot roll back a receiver import that lands during the run.
 
 CI (`.github/workflows/ci.yml`) runs the same `prek` configuration via
 `pipx run --spec prek==0.5.2 prek run --all-files`, skipping the three

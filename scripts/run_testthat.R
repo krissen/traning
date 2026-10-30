@@ -1,0 +1,178 @@
+# Full testthat suite runner, shared by the pre-push hook
+# (.hooks/testthat.R) and `make check`.
+#
+# Why this file exists (krissen/traning#91): R auto-sources .Renviron at
+# startup, so on a developer machine TRANING_DATA usually points at the
+# live data directory. A handful of tests write cache files under
+# $TRANING_DATA/cache (load_zone_distribution(), load_decoupling()), and
+# once the suite runs automatically on every `git push`, that makes a
+# push a possible mutation of real cached data.
+#
+# The fix is to run the suite against an isolated, populated copy of the
+# data directory:
+#
+#   * every top-level entry except `cache` is symlinked into a temp
+#     sandbox (reads behave exactly as against the live directory),
+#   * `cache` is copied (the directory tests write to),
+#   * TRANING_DATA points at the sandbox for the run and is restored
+#     afterwards.
+#
+# Redirecting TRANING_DATA at an *empty* temp directory would not work:
+# the integration tests gate on `Sys.getenv("TRANING_DATA") == ""`, so an
+# empty-but-set value turns "skip" into "run and fail" and changes which
+# tests execute. A populated copy keeps that distinction and also avoids
+# restoring over live files: a receiver import that lands during the run
+# writes to the real cache and is never rolled back.
+
+.traning_live_data_dir <- function() {
+  td <- Sys.getenv("TRANING_DATA", unset = "")
+  if (!nzchar(td) || !dir.exists(td)) {
+    return(NULL)
+  }
+  normalizePath(td, mustWork = TRUE)
+}
+
+.traning_copy_dir <- function(from, to) {
+  ok <- file.copy(
+    from,
+    to,
+    recursive = TRUE,
+    copy.mode = TRUE,
+    copy.date = TRUE
+  )
+  if (!isTRUE(ok)) {
+    stop("could not copy data directory entry: ", from, call. = FALSE)
+  }
+  invisible(TRUE)
+}
+
+.traning_make_sandbox <- function(live) {
+  sandbox <- tempfile("traning-test-data-")
+  dir.create(sandbox, recursive = TRUE)
+
+  entries <- list.files(
+    live,
+    all.files = TRUE,
+    no.. = TRUE,
+    full.names = FALSE
+  )
+  for (entry in entries) {
+    src <- file.path(live, entry)
+    dst <- file.path(sandbox, entry)
+    if (entry == "cache") {
+      # Tests write here, so it must be a real copy, not a link.
+      if (dir.exists(src)) {
+        dir.create(dst)
+        inner <- list.files(src, all.files = TRUE, no.. = TRUE, full.names = FALSE)
+        for (item in inner) {
+          .traning_copy_dir(file.path(src, item), dst)
+        }
+      }
+    } else if (!isTRUE(file.symlink(src, dst))) {
+      # Platforms without symlink support get a real copy. Slower, but
+      # still isolated from the live tree.
+      .traning_copy_dir(src, sandbox)
+    }
+  }
+  sandbox
+}
+
+# Child R processes re-read .Renviron at startup (Rscript in the
+# mcp-bridge tests, for example) and would overwrite the inherited
+# sandbox path with a live one. Point R_ENVIRON_USER at a copy of the
+# user environment file with TRANING_DATA removed: R_ENVIRON_USER
+# suppresses the cwd/home .Renviron search, while children still inherit
+# the parent's TRANING_DATA (the sandbox, or a test's own override).
+.traning_isolated_environ <- function(old_user_environ) {
+  src <- old_user_environ
+  if (is.na(src) || !nzchar(src)) {
+    home <- path.expand("~/.Renviron")
+    src <- if (file.exists(home)) home else NULL
+  } else if (!file.exists(src)) {
+    src <- NULL
+  }
+  lines <- if (is.null(src)) character() else readLines(src, warn = FALSE)
+  lines <- lines[!grepl("^\\s*(export\\s+)?TRANING_DATA\\s*=", lines)]
+  path <- tempfile("traning-test-environ-")
+  writeLines(lines, path)
+  path
+}
+
+# Run `expr` with TRANING_DATA pointing at an isolated copy of the live
+# data directory. When TRANING_DATA is unset/empty or does not exist,
+# this is a no-op and `expr` sees the caller's environment unchanged.
+with_isolated_data <- function(expr) {
+  live <- .traning_live_data_dir()
+  if (is.null(live)) {
+    return(eval(expr, envir = parent.frame()))
+  }
+
+  sandbox <- .traning_make_sandbox(live)
+  old <- Sys.getenv("TRANING_DATA", unset = NA_character_)
+  old_user_environ <- Sys.getenv("R_ENVIRON_USER", unset = NA_character_)
+  environ_file <- .traning_isolated_environ(old_user_environ)
+  Sys.setenv(TRANING_DATA = sandbox, R_ENVIRON_USER = environ_file)
+  on.exit(
+    {
+      if (is.na(old)) {
+        Sys.unsetenv("TRANING_DATA")
+      } else {
+        Sys.setenv(TRANING_DATA = old)
+      }
+      if (is.na(old_user_environ)) {
+        Sys.unsetenv("R_ENVIRON_USER")
+      } else {
+        Sys.setenv(R_ENVIRON_USER = old_user_environ)
+      }
+      unlink(c(sandbox, environ_file), recursive = TRUE)
+    },
+    add = TRUE
+  )
+
+  eval(expr, envir = parent.frame())
+}
+
+# Resolve the repository root when this file is executed directly
+# (`Rscript scripts/run_testthat.R`) rather than sourced by the hook.
+.traning_runner_repo_root <- function(args = commandArgs(trailingOnly = FALSE)) {
+  file_arg <- grep("^--file=", args, value = TRUE)
+  if (length(file_arg) == 0) {
+    return(normalizePath(getwd(), mustWork = TRUE))
+  }
+  script <- normalizePath(sub("^--file=", "", file_arg[1]))
+  normalizePath(file.path(dirname(script), ".."), mustWork = TRUE)
+}
+
+run_traning_tests <- function(pkg = ".") {
+  with_isolated_data({
+    devtools::test(pkg, stop_on_failure = TRUE)
+    TRUE
+  })
+}
+
+# Returns TRUE on a green suite, FALSE otherwise. Shared entry point so
+# the hook and a direct `Rscript scripts/run_testthat.R` behave alike.
+run_traning_tests_cli <- function(pkg = ".") {
+  if (!requireNamespace("devtools", quietly = TRUE)) {
+    message(
+      "testthat: the 'devtools' package is required to run the ",
+      "test suite — install it: install.packages('devtools')"
+    )
+    return(FALSE)
+  }
+  suppressMessages(library(devtools))
+
+  tryCatch(
+    run_traning_tests(pkg),
+    error = function(e) {
+      message("testthat: ", conditionMessage(e))
+      FALSE
+    }
+  )
+}
+
+if (sys.nframe() == 0L) {
+  if (!isTRUE(run_traning_tests_cli(.traning_runner_repo_root()))) {
+    quit(status = 1)
+  }
+}
