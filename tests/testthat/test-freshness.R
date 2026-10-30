@@ -294,6 +294,8 @@ test_that("a poison-message wedge is caught: fresh arrivals, no successful impor
     "kommer in men har inte kunnat läsas in sedan"
   )
   expect_match(fr$flows$workouts$message, "queue stuck")
+  expect_match(fr$flows$workouts$message, "144.0 h ago")
+  expect_false(grepl("1.0 h old", fr$flows$workouts$message, fixed = TRUE))
   # The detail fields follow the verdict's evidence, not the fresh
   # arrival the prose just said was not importable.
   expect_equal(fr$flows$workouts$source, "receiver_import_ok")

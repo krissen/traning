@@ -492,10 +492,21 @@
       label, when
     )
   }
-  flow$message <- paste0(
-    flow$message,
-    " [queue stuck: pending workouts not importing]"
-  )
+  # Rebuild the message from the success evidence too. Leaving the
+  # arrival-based sentence in place would print "1.0 h old" beside an
+  # age_hours of 144 in doctor's JSON.
+  flow$message <- if (is.na(last_import_ok)) {
+    sprintf(
+      "%s: queue stuck, no successful import recorded (pending workouts not importing).",
+      flow$flow
+    )
+  } else {
+    sprintf(
+      "%s: queue stuck, last successful import %.1f h ago (pending workouts not importing).",
+      flow$flow,
+      flow$age_hours
+    )
+  }
   flow
 }
 
