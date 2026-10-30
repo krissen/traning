@@ -172,9 +172,13 @@
     # Today's value can sit above the 7-day mean while the week still
     # slopes down. Say both, so the line does not read as a contradiction
     # of an "OK/stark" HRV component.
-    today_value <- mean(y[in_window$date == window_end], na.rm = TRUE)
-    prior <- y[in_window$date < window_end]
-    prior_mean <- if (length(prior) > 0) mean(prior, na.rm = TRUE) else NA_real_
+    today_value <- mean(hrv$value[hrv$date == window_end], na.rm = TRUE)
+    # Use the same preceding-seven-day baseline as the HRV component
+    # (.readiness_for_insight()), not the six earlier days inside the
+    # slope window — otherwise the note can contradict the component it
+    # is meant to reconcile.
+    prior <- hrv$value[hrv$date >= window_end - 7L & hrv$date < window_end]
+    prior_mean <- if (length(prior) >= 2L) mean(prior, na.rm = TRUE) else NA_real_
     if (is.finite(today_value) && is.finite(prior_mean) &&
       today_value > prior_mean) {
       return(sprintf(
