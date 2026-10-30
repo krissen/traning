@@ -1,5 +1,17 @@
 # tRäning — Changelog
 
+## 2026-10-30 — Tidsstämplar och stuck-detaljer utan tidszonsglidning
+
+- **`/v1/status` skickar UTC med explicit offset.** Alla tidsfält
+  (`last_received`, `last_import`, `last_workouts_import`,
+  `last_workouts_import_ok`) är nu offset-medvetna. R-kontrollen
+  accepterar både det nya formatet och det gamla naiva under
+  övergången, så en kontroll från en annan tidszon räknar rätt ålder.
+- **Stuck-flödet visar senaste lyckade importen i detaljfälten.**
+  `last_data` / `age_hours` / `source` beskrev tidigare den senaste
+  ankomsten medan prosan sa att den inte kunde läsas in. De följer nu
+  `last_workouts_import_ok`, samma bevis som verdictet bygger på.
+
 ## 2026-10-30 — Mottagaren tappar inte tysta metrics eller framgångsstämpeln
 
 - **Skippade metrikgrupper räknas och loggas med råa nycklar.** Om

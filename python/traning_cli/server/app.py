@@ -8,7 +8,7 @@ import tempfile
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -287,7 +287,7 @@ def _flush_pending_health() -> None:
     _persist_pending_state()
     if files:
         _import_and_notify(files, "health")
-        _last_import_ts = datetime.now()
+        _last_import_ts = datetime.now(UTC)
         _last_import_files = len(files)
 
 
@@ -450,7 +450,7 @@ def _flush_pending_workouts() -> None:
         # behaviour) so an attempted-but-failed import is still visible.
         # The pending counter is only drained on success; a failed run keeps
         # it surfaced for the next push to retry.
-        _last_workouts_import_ts = datetime.now()
+        _last_workouts_import_ts = datetime.now(UTC)
         _last_workouts_import_count = n
         # Success-only timestamp: set here, inside `if ok`, and nowhere
         # else. A freshness check uses it to tell a draining backfill from
@@ -458,7 +458,7 @@ def _flush_pending_workouts() -> None:
         # fresh, but only a real success moves this. Bumping it on an
         # attempt would recreate the exact lie it exists to expose.
         if ok:
-            _last_workouts_import_ok_ts = datetime.now()
+            _last_workouts_import_ok_ts = datetime.now(UTC)
     finally:
         # Always reset the guard and persist the resulting state, even if
         # something above raised. On the normal path ok reflects whether
@@ -720,7 +720,7 @@ def create_app() -> FastAPI:
             # need plain strings.
             _schedule_health_import([str(f) for f in changed_files])
 
-        _last_received = datetime.now()
+        _last_received = datetime.now(UTC)
         _total_received += 1
 
         total_samples = sum(
@@ -756,7 +756,7 @@ def create_app() -> FastAPI:
             # summaries.RData without waiting for the next Garmin fetch.
             _schedule_workouts_import(n)
 
-        _last_received = datetime.now()
+        _last_received = datetime.now(UTC)
         _total_received += 1
 
         log.info("Received %d workouts", n)

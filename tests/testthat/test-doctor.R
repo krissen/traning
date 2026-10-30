@@ -504,6 +504,26 @@ test_that("check_data_freshness details survive JSON serialisation", {
   )
 })
 
+test_that("offset-aware freshness details render in the display timezone", {
+  withr::local_timezone("Europe/Stockholm")
+  res <- check_freshness(
+    status_payload = list(
+      last_workouts_import_ok = "2026-07-21T18:30:00+00:00"
+    ),
+    health_daily = tibble::tibble(),
+    summaries = tibble::tibble()
+  )
+  json <- jsonlite::toJSON(res,
+    auto_unbox = TRUE, null = "null",
+    na = "string"
+  )
+  parsed <- jsonlite::fromJSON(json, simplifyVector = FALSE)
+  expect_equal(
+    parsed$details$flows$workouts$last_data,
+    "2026-07-21 20:30:00"
+  )
+})
+
 # --- doctor_run ----------------------------------------------------------
 
 test_that("doctor_run reports ok=FALSE when any check fails", {

@@ -294,6 +294,13 @@ test_that("a poison-message wedge is caught: fresh arrivals, no successful impor
     "kommer in men har inte kunnat läsas in sedan"
   )
   expect_match(fr$flows$workouts$message, "queue stuck")
+  expect_match(fr$flows$workouts$message, "144.0 h ago")
+  expect_false(grepl("1.0 h old", fr$flows$workouts$message, fixed = TRUE))
+  # The detail fields follow the verdict's evidence, not the fresh
+  # arrival the prose just said was not importable.
+  expect_equal(fr$flows$workouts$source, "receiver_import_ok")
+  expect_equal(fr$flows$workouts$age_hours, 24 * 6, tolerance = 1e-6)
+  expect_equal(fr$last_data, NOW - as.difftime(24 * 6, units = "hours"))
 })
 
 test_that("last_workouts_import (last attempt) is not arrival evidence", {
@@ -366,6 +373,11 @@ test_that("a queue whose import never succeeded since boot alarms once uptime pa
   ))
   expect_equal(fr$flows$workouts$queue_state, "stuck")
   expect_equal(fr$flows$workouts$status, "fail")
+  # No success ever recorded: the detail fields are empty rather than
+  # pointing at the arrival that is not importable.
+  expect_true(is.na(fr$flows$workouts$last_data))
+  expect_true(is.na(fr$flows$workouts$age_hours))
+  expect_true(is.na(fr$flows$workouts$source))
 })
 
 test_that("a queue resumed into a just-booted receiver reads ok, not stuck", {
@@ -821,4 +833,23 @@ test_that(".parse_iso_time handles the receiver's formats and junk", {
   expect_true(is.na(.parse_iso_time(NULL)))
   expect_true(is.na(.parse_iso_time("")))
   expect_true(is.na(.parse_iso_time("not a date")))
+})
+
+test_that("offset-aware timestamps render in the display timezone", {
+  withr::local_timezone("Europe/Stockholm")
+  reference <- as.POSIXct("2026-07-21 21:30:00", tz = "Europe/Stockholm")
+  ts <- .parse_iso_time("2026-07-11T22:30:00+00:00")
+
+  expect_equal(.freshness_date_sv(ts, reference = reference), "12 juli")
+})
+
+test_that(".parse_iso_time accepts offset-aware receiver timestamps", {
+  utc <- function(x) {
+    format(.parse_iso_time(x), "%Y-%m-%d %H:%M:%S", tz = "UTC")
+  }
+  expect_equal(utc("2026-07-21T20:14:03+00:00"), "2026-07-21 20:14:03")
+  expect_equal(utc("2026-07-21T18:14:03+02:00"), "2026-07-21 16:14:03")
+  expect_equal(utc("2026-07-21T15:14:03-05:00"), "2026-07-21 20:14:03")
+  expect_equal(utc("2026-07-21T20:14:03Z"), "2026-07-21 20:14:03")
+  expect_equal(utc("2026-07-21T20:14:03.123456+00:00"), "2026-07-21 20:14:03")
 })
