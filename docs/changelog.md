@@ -1,5 +1,14 @@
 # tRäning — Changelog
 
+## 2026-10-30 — Summaries får kanoniska kolumntyper vid laddning
+
+- **En normalisering i `my_dbs_load()` i stället för lokala skydd på
+  varje prosaställe.** Äldre cachar och handbyggda frames kan bära
+  `sport` som factor eller måttkolumner som text; de kommer nu ut som
+  character respektive numeric. `difftime`- och logiska kolumner behåller
+  sina typer, och ett otolkbart värde blir `NA` i stället för att göra
+  hela cachen oläsbar.
+
 ## 2026-10-30 — Tidsstämplar och stuck-detaljer utan tidszonsglidning
 
 - **`/v1/status` skickar UTC med explicit offset.** Alla tidsfält

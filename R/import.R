@@ -156,6 +156,54 @@ my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
   save_atomic(summaries, file = db_summaries)
 }
 
+# Canonical summaries column types. Legacy caches and hand-built frames
+# can carry a factor `sport` (read.csv without stringsAsFactors = FALSE)
+# or character measure columns, which makes downstream prose code guard
+# every read. Normalise once at the single load path instead.
+#
+# Duration columns are difftime and are deliberately absent: as.numeric()
+# on them would silently drop the unit. Logical flag columns likewise
+# keep their type.
+.SUMMARY_CHARACTER_COLUMNS <- c("sport", "file", "source", "superseded_file")
+
+.SUMMARY_NUMERIC_COLUMNS <- c(
+  "distance", "avgSpeed", "avgSpeedMoving", "avgPace", "avgPaceMoving",
+  "avgCadenceRunning", "avgCadenceCycling", "avgAltitude",
+  "avgAltitudeMoving", "avgCadenceRunningMoving",
+  "avgCadenceCyclingMoving", "avgPower", "avgPowerMoving",
+  "avgHeartRate", "avgTemperature", "avgHeartRateMoving",
+  "avgHeartRateResting", "wrRatio", "total_elevation_gain",
+  "avgStrideMoving", "avgStride", "garmin_maxHR", "garmin_vO2MaxValue",
+  "garmin_hrTimeInZone_1", "garmin_hrTimeInZone_2",
+  "garmin_hrTimeInZone_3", "garmin_hrTimeInZone_4",
+  "garmin_hrTimeInZone_5", "garmin_recoveryHeartRate",
+  "garmin_directWorkoutRpe", "garmin_averageTemperature", "garmin_minHR"
+)
+
+# Coerce the canonical columns once, at load. Unparseable values become
+# NA rather than aborting the load: a single bad legacy cell must not
+# make the whole cache unreadable.
+.normalize_summaries_types <- function(summaries) {
+  if (!is.data.frame(summaries) || nrow(summaries) == 0) {
+    return(summaries)
+  }
+  for (col in intersect(names(summaries), .SUMMARY_CHARACTER_COLUMNS)) {
+    if (!is.character(summaries[[col]])) {
+      summaries[[col]] <- as.character(summaries[[col]])
+    }
+  }
+  for (col in intersect(names(summaries), .SUMMARY_NUMERIC_COLUMNS)) {
+    x <- summaries[[col]]
+    if (is.factor(x)) {
+      x <- as.character(x)
+    }
+    if (!is.numeric(x)) {
+      summaries[[col]] <- suppressWarnings(as.numeric(x))
+    }
+  }
+  summaries
+}
+
 #' Load summaries and myruns from RData files
 #' @param db_summaries Path to summaries.RData
 #' @param db_myruns Path to myruns.RData
@@ -164,7 +212,10 @@ my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
 #'   FALSE for callers that only need `summaries` (e.g. the Shiny landing
 #'   page's initial load) and want to skip that cost. When FALSE, `myruns`
 #'   is returned as `list()` regardless of what's on disk.
-#' @return List with elements "summaries" and "myruns"
+#' @return List with elements "summaries" and "myruns". The summaries
+#'   frame is normalised to canonical types on the way out: character
+#'   identifiers (`sport`, `file`, `source`, `superseded_file`), numeric
+#'   measures, and difftime / logical columns preserved.
 #' @export
 my_dbs_load <- function(db_summaries, db_myruns, load_myruns = TRUE) {
   if (file.exists(db_summaries)) {
@@ -188,6 +239,11 @@ my_dbs_load <- function(db_summaries, db_myruns, load_myruns = TRUE) {
     !"source" %in% names(summaries)) {
     summaries$source <- "tcx"
   }
+
+  # One coercion pass so every downstream consumer receives character
+  # `sport`/`file`/`source` and numeric measures, instead of each prose
+  # site guarding its own columns.
+  summaries <- .normalize_summaries_types(summaries)
 
   # Report — but don't repair — a positional mismatch between the two
   # caches. Repairing here would silently rewrite what the caller sees
@@ -628,7 +684,10 @@ get_new_workouts <- function(files, summaries, myruns, verbose = FALSE,
 #' @param summaries Existing summaries data frame.
 #' @param myruns Existing myruns list.
 #' @param verbose Logical. Print progress messages.
-#' @return List with elements "summaries" and "myruns" (summaries unchanged,
+#' @return List with elements "summaries" and "myruns". The summaries
+#'   frame is normalised to canonical types on the way out: character
+#'   identifiers (`sport`, `file`, `source`, `superseded_file`), numeric
+#'   measures, and difftime / logical columns preserved. (summaries unchanged,
 #'   myruns with repaired entries).
 #' @export
 repair_myruns <- function(files, summaries, myruns, verbose = FALSE) {
