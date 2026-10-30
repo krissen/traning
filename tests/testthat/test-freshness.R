@@ -552,8 +552,9 @@ test_that("sessions serve workouts only when nothing local exists", {
 # --- Inbox mtime fallback ------------------------------------------------
 
 test_that("a null last_workouts_import falls back to the inbox mtime", {
-  # /v1/status counters are in-memory and reset on every receiver
-  # restart, so null is a normal post-restart state, not an outage.
+  # The success stamp is persisted across restarts (#80); null means no
+  # success has been recorded yet (fresh data dir or missing state), so
+  # the inbox mtime remains a valid arrival fallback, not an outage.
   fr <- assess(
     status_payload = payload(
       received = 2, workouts = NULL,

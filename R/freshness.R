@@ -154,11 +154,12 @@
 # Judged on content it looks ancient; judged on arrival it correctly
 # reads as a live feed.
 #
-# It is also the durable half of the receiver's evidence: /v1/status's
-# counters live in process memory and reset on every restart, so
-# without this a restart would read as "workouts never arrived".
-# Caveat: a fresh git clone rewrites mtimes to checkout time, which
-# reads as artificially fresh.
+# It is also a durable arrival signal: /v1/status's arrival counters
+# live in process memory and reset on every restart, so without this a
+# restart would read as "workouts never arrived". (The success-only
+# import stamp is persisted separately, see #80.) Caveat: a fresh git
+# clone rewrites mtimes to checkout time, which reads as artificially
+# fresh.
 #
 # Cost matters here — the workouts inbox holds ~15 000 files and the
 # canonical metric tree ~62 000 across 78 per-metric subdirectories, and
@@ -414,9 +415,11 @@
   if (!import_stalled) {
     # Force ok: an imports-are-keeping-up queue is a live-but-incomplete
     # feed, but the arrival verdict can read unknown/fail when the only
-    # arrival signal is null — a receiver just restarted with a resumed
-    # queue, or a remote doctor that can reach /v1/status but not the
-    # inbox. Doctor must not alarm on a queue that is being worked.
+    # arrival signal is null — a receiver that has no recorded success
+    # yet (fresh data dir, or missing/corrupt pending state) and is still
+    # inside the uptime grace, or a remote doctor that can reach
+    # /v1/status but not the inbox. Doctor must not alarm on a queue that
+    # is being worked.
     #
     # This cannot mask a wedge. import_stalled is FALSE here, which for a
     # never-succeeded queue (null success) requires uptime < the stall
@@ -658,10 +661,11 @@ data_freshness <- function(health_daily = NULL,
   workouts_flow <- .freshness_assess_flow(
     "workouts",
     list(
-      # Arrival evidence only. The success timestamp resets on receiver
-      # restart; the inbox mtime is the durable half. The receiver's
-      # pending queue is NOT here — it measures non-consumption, not
-      # arrival — and is folded in by .freshness_annotate_queue() below.
+      # Arrival evidence only. The success timestamp is persisted across
+      # receiver restarts (#80); the inbox mtime remains an independent
+      # arrival signal. The receiver's pending queue is NOT here — it
+      # measures non-consumption, not arrival — and is folded in by
+      # .freshness_annotate_queue() below.
       list(
         receiver_import_ok = last_import_ok,
         workout_files = .freshness_dir_mtime(workouts_dir)
@@ -693,9 +697,12 @@ data_freshness <- function(health_daily = NULL,
   success_age <- if (!is.na(last_import_ok)) {
     as.numeric(difftime(now, last_import_ok, units = "hours"))
   } else if (!is.na(uptime)) {
-    # Never succeeded since boot: the longest it can have been failing is
-    # the receiver's uptime. A queue resumed into a fresh process is not
-    # yet a wedge — only one that has failed for the whole stall window.
+    # No success ever recorded (fresh data dir, or missing/corrupt pending
+    # state): the longest it can have been failing is the receiver's
+    # uptime. This is a conservative floor — a wedged importer whose
+    # state file was lost can be older than it suggests — and a resumed
+    # queue inside the grace is not yet a wedge. Only one that has failed
+    # for the whole stall window is.
     uptime / 3600
   } else {
     Inf
