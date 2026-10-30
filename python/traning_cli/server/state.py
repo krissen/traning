@@ -117,7 +117,11 @@ def _pending_state_path() -> Path | None:
 
 def empty_pending_state() -> dict[str, Any]:
     """Return a fresh, empty debounce-pending state dict."""
-    return {"pending_files": [], "pending_workouts_count": 0}
+    return {
+        "pending_files": [],
+        "pending_workouts_count": 0,
+        "last_workouts_import_ok": None,
+    }
 
 
 def load_pending_state() -> dict[str, Any]:
@@ -141,6 +145,8 @@ def load_pending_state() -> dict[str, Any]:
         base["pending_workouts_count"] = int(raw.get("pending_workouts_count") or 0)
     except (TypeError, ValueError):
         base["pending_workouts_count"] = 0
+    ok = raw.get("last_workouts_import_ok")
+    base["last_workouts_import_ok"] = ok if isinstance(ok, str) and ok else None
     return base
 
 

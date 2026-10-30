@@ -590,6 +590,36 @@ def test_non_dict_samples_do_not_reach_the_writer(tmp_path, caplog):
     assert any("step_count" in r.getMessage() for r in caplog.records if r.levelname == "WARNING")
 
 
+def test_skipped_summary_reports_counts_and_raw_keys(tmp_path, caplog):
+    """A renamed field is named by its actual keys, not silently dropped."""
+    with caplog.at_level("WARNING"):
+        n, _ = save_health_push(
+            {
+                "data": {
+                    "metrics": [
+                        {
+                            "naam": "step_count",
+                            "units": "count",
+                            "data": [_aggregate("2026-08-29 10:00:00 +0200", 100)],
+                        },
+                        "junk",
+                        {
+                            "name": "alcohol_consumption",
+                            "units": "count",
+                            "data": [_aggregate("2026-08-29 21:06:07 +0200", 8.1)],
+                        },
+                    ]
+                }
+            },
+            tmp_path,
+        )
+
+    messages = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert n == 1
+    assert any("Sparade 1 av 3" in m for m in messages)
+    assert any("naam" in m for m in messages)
+
+
 def test_partly_malformed_sample_list_is_skipped_whole(tmp_path):
     """One bad element condemns its group, not the groups beside it."""
     save_health_push(

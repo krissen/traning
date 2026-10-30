@@ -10,6 +10,7 @@ that and gets the actual module object with the debounce internals.
 """
 
 import importlib
+from datetime import datetime
 
 import pytest
 from traning_cli.server import state
@@ -114,6 +115,8 @@ def test_flush_pending_workouts_success_stamps_the_ok_timestamp(traning_data_dir
     app_mod._flush_pending_workouts()
 
     assert app_mod._last_workouts_import_ok_ts is not None
+    persisted = state.load_pending_state()
+    assert persisted["last_workouts_import_ok"] is not None
 
 
 def test_flush_pending_workouts_failure_leaves_ok_timestamp_untouched(
@@ -276,6 +279,7 @@ def test_persist_pending_state_writes_current_globals(traning_data_dir):
     assert state.load_pending_state() == {
         "pending_files": ["a.json", "b.json"],
         "pending_workouts_count": 4,
+        "last_workouts_import_ok": None,
     }
 
 
@@ -312,3 +316,44 @@ def test_resume_pending_state_no_persisted_file_is_noop(traning_data_dir):
     assert app_mod._pending_timer is None
     assert app_mod._pending_workouts_count == 0
     assert app_mod._workouts_timer is None
+
+
+# --- last_workouts_import_ok survives receiver restarts --------------------
+
+
+def test_persist_includes_the_success_timestamp(traning_data_dir):
+    app_mod._last_workouts_import_ok_ts = datetime(2026, 10, 29, 12, 34, 56)
+
+    app_mod._persist_pending_state()
+
+    assert state.load_pending_state()["last_workouts_import_ok"] == "2026-10-29T12:34:56"
+
+
+def test_resume_restores_the_success_timestamp(traning_data_dir):
+    state.save_pending_state(
+        {
+            "pending_files": [],
+            "pending_workouts_count": 0,
+            "last_workouts_import_ok": "2026-10-29T12:34:56",
+        }
+    )
+
+    app_mod._resume_pending_state()
+
+    assert app_mod._last_workouts_import_ok_ts == datetime(2026, 10, 29, 12, 34, 56)
+
+
+def test_resume_ignores_an_unparseable_success_timestamp(traning_data_dir, caplog):
+    state.save_pending_state(
+        {
+            "pending_files": [],
+            "pending_workouts_count": 0,
+            "last_workouts_import_ok": "not-a-timestamp",
+        }
+    )
+
+    with caplog.at_level("WARNING"):
+        app_mod._resume_pending_state()
+
+    assert app_mod._last_workouts_import_ok_ts is None
+    assert any("last_workouts_import_ok" in r.getMessage() for r in caplog.records)

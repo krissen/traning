@@ -1,5 +1,18 @@
 # tRäning — Changelog
 
+## 2026-10-30 — Mottagaren tappar inte tysta metrics eller framgångsstämpeln
+
+- **Skippade metrikgrupper räknas och loggas med råa nycklar.** Om
+  Health Auto Export byter namn på ett fält inuti en metric accepterades
+  pushen tidigare med 200 medan hela gruppen hoppades över tyst. Nu
+  loggas antal sparade/hoppade grupper och deras nycklar, och
+  `/v1/health` svarar med `metrics_received`, `metrics_saved` och
+  `metrics_skipped`.
+- **Senaste lyckade workout-import överlever omstart.** Tidsstämpeln
+  ligger nu i `.pending_state.json` vid sidan av den väntande kön, så en
+  import som fastnat över flera receiver-omstarter fortfarande kan
+  upptäckas.
+
 ## 2026-10-11 — Hela gårdagen kommer fram
 
 Hälsoexporten från telefonen gällde bara innevarande dygn, och iOS

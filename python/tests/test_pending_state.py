@@ -12,6 +12,7 @@ def test_empty_pending_state_shape():
     assert state.empty_pending_state() == {
         "pending_files": [],
         "pending_workouts_count": 0,
+        "last_workouts_import_ok": None,
     }
 
 
@@ -20,7 +21,11 @@ def test_load_pending_state_missing_file_returns_empty(traning_data_dir):
 
 
 def test_save_and_load_pending_state_roundtrip(traning_data_dir):
-    payload = {"pending_files": ["a.json", "b.json"], "pending_workouts_count": 3}
+    payload = {
+        "pending_files": ["a.json", "b.json"],
+        "pending_workouts_count": 3,
+        "last_workouts_import_ok": "2026-10-29T12:34:56",
+    }
 
     assert state.save_pending_state(payload) is True
 
@@ -33,7 +38,13 @@ def test_save_and_load_pending_state_roundtrip(traning_data_dir):
 
 
 def test_save_pending_state_overwrites_previous(traning_data_dir):
-    state.save_pending_state({"pending_files": ["a.json"], "pending_workouts_count": 1})
+    state.save_pending_state(
+        {
+            "pending_files": ["a.json"],
+            "pending_workouts_count": 1,
+            "last_workouts_import_ok": "2026-10-29T12:34:56",
+        }
+    )
     state.save_pending_state({"pending_files": [], "pending_workouts_count": 0})
 
     assert state.load_pending_state() == state.empty_pending_state()
@@ -60,6 +71,7 @@ def test_load_pending_state_coerces_field_types(traning_data_dir):
     assert state.load_pending_state() == {
         "pending_files": ["1", "2"],
         "pending_workouts_count": 5,
+        "last_workouts_import_ok": None,
     }
 
 
@@ -80,3 +92,22 @@ def test_load_pending_state_without_traning_data_returns_empty(monkeypatch):
     monkeypatch.delenv("TRANING_DATA", raising=False)
 
     assert state.load_pending_state() == state.empty_pending_state()
+
+
+def test_load_pending_state_keeps_success_timestamp(traning_data_dir):
+    path = traning_data_dir / ".pending_state.json"
+    path.write_text(
+        '{"pending_files": [], "pending_workouts_count": 0, '
+        '"last_workouts_import_ok": "2026-10-29T12:34:56"}'
+    )
+
+    assert state.load_pending_state()["last_workouts_import_ok"] == "2026-10-29T12:34:56"
+
+
+def test_load_pending_state_ignores_non_string_success_timestamp(traning_data_dir):
+    path = traning_data_dir / ".pending_state.json"
+    path.write_text(
+        '{"pending_files": [], "pending_workouts_count": 0, "last_workouts_import_ok": 123}'
+    )
+
+    assert state.load_pending_state()["last_workouts_import_ok"] is None

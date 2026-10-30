@@ -70,7 +70,31 @@ def test_receive_health_valid_payload_returns_200(client):
     body = {"data": {"metrics": [{"name": "heart_rate", "units": "bpm", "data": [1, 2]}]}}
     resp = client.post("/v1/health", json=body, headers=HEADERS)
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok", "metrics_saved": 1, "total_samples": 2}
+    assert resp.json() == {
+        "status": "ok",
+        "metrics_received": 1,
+        "metrics_saved": 1,
+        "metrics_skipped": 0,
+        "total_samples": 2,
+    }
+
+
+def test_receive_health_reports_skipped_groups(client):
+    """One group without a name is counted separately from the saved one."""
+    body = {
+        "data": {
+            "metrics": [
+                {"name": "heart_rate", "units": "bpm", "data": [1, 2]},
+                {"units": "count", "data": [1]},
+            ]
+        }
+    }
+    resp = client.post("/v1/health", json=body, headers=HEADERS)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["metrics_received"] == 2
+    assert data["metrics_saved"] == 1
+    assert data["metrics_skipped"] == 1
 
 
 def test_receive_health_merges_append_only_by_default(client):
