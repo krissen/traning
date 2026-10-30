@@ -88,10 +88,11 @@
 
 .na_time <- function() as.POSIXct(NA_character_)
 
-# Parse the receiver's ISO strings. FastAPI emits naive local time
-# (datetime.now().isoformat()), but tolerate a trailing Z / date-only
-# values so a future serialisation change degrades to "older reading"
-# rather than "no reading".
+# Parse the receiver's ISO strings. Current receivers emit UTC with an
+# explicit offset (datetime.now(timezone.utc).isoformat(), e.g.
+# "+00:00"); legacy receivers emitted naive local time. Accept both, plus
+# a trailing Z and date-only values, so a serialisation change degrades
+# to "older reading" rather than "no reading".
 .parse_iso_time <- function(x) {
   if (is.null(x) || length(x) == 0) {
     return(.na_time())
@@ -101,14 +102,24 @@
     return(.na_time())
   }
   tz <- ""
+  has_offset <- FALSE
   if (grepl("Z$", x)) {
     x <- sub("Z$", "", x)
     tz <- "UTC"
+  } else if (grepl("[+-][0-9]{2}:?[0-9]{2}$", x)) {
+    # +HH:MM is what datetime.isoformat() emits for an aware timestamp;
+    # %z wants +HHMM.
+    x <- sub("([+-][0-9]{2}):([0-9]{2})$", "\\1\\2", x)
+    tz <- "UTC"
+    has_offset <- TRUE
   }
   fmts <- c(
     "%Y-%m-%dT%H:%M:%OS", "%Y-%m-%d %H:%M:%OS",
     "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%d"
   )
+  if (has_offset) {
+    fmts <- paste0(fmts, "%z")
+  }
   for (f in fmts) {
     ts <- suppressWarnings(as.POSIXct(x, format = f, tz = tz))
     if (!is.na(ts)) {
@@ -456,7 +467,16 @@
   flow$in_flight <- FALSE
   # Date the failure by the last successful import — when the data last
   # actually landed in summaries — not by the last arrival, which under
-  # a wedge is today and would read as if nothing were wrong.
+  # a wedge is today and would read as if nothing were wrong. Reconcile
+  # the detail fields to the same evidence so the JSON detail beside the
+  # verdict does not describe a fresh arrival the prose just contradicted.
+  flow$last_data <- last_import_ok
+  flow$age_hours <- if (is.na(last_import_ok)) {
+    NA_real_
+  } else {
+    as.numeric(difftime(now, last_import_ok, units = "hours"))
+  }
+  flow$source <- if (is.na(last_import_ok)) NA_character_ else "receiver_import_ok"
   when <- .freshness_date_sv(last_import_ok, reference = now)
   flow$prose <- if (is.na(when)) {
     sprintf(
