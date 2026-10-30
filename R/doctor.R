@@ -429,7 +429,7 @@ check_data_freshness <- function(health_daily = NULL,
     last_data = if (is.na(flow$last_data)) {
       NA_character_
     } else {
-      format(flow$last_data, "%Y-%m-%d %H:%M:%S")
+      format(flow$last_data, "%Y-%m-%d %H:%M:%S", tz = "")
     },
     warn_hours = flow$warn_hours,
     fail_hours = flow$fail_hours,
