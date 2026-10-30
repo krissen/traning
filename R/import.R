@@ -184,7 +184,7 @@ my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
 # NA rather than aborting the load: a single bad legacy cell must not
 # make the whole cache unreadable.
 .normalize_summaries_types <- function(summaries) {
-  if (!is.data.frame(summaries) || nrow(summaries) == 0) {
+  if (!is.data.frame(summaries)) {
     return(summaries)
   }
   for (col in intersect(names(summaries), .SUMMARY_CHARACTER_COLUMNS)) {
@@ -198,7 +198,18 @@ my_dbs_save <- function(db_summaries, db_myruns, summaries, myruns) {
       x <- as.character(x)
     }
     if (!is.numeric(x)) {
-      summaries[[col]] <- suppressWarnings(as.numeric(x))
+      new <- suppressWarnings(as.numeric(x))
+      n_bad <- sum(is.na(new) & !is.na(x))
+      if (n_bad > 0) {
+        warning(
+          sprintf(
+            "%s: %d värde(n) kunde inte tolkas som numeriska och blev NA",
+            col, n_bad
+          ),
+          call. = FALSE
+        )
+      }
+      summaries[[col]] <- new
     }
   }
   summaries

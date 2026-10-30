@@ -146,8 +146,9 @@ health_cache_path <- traning:::.hae_cache_path()
 # only need summaries). That's fine for a process that exits after one
 # call; it would defeat the warm server's entire purpose. These two
 # loaders replicate my_dbs_load()'s per-file logic (including its
-# trackeRdataSummary-class-stripping and source-column-backfill
-# normalization — see R/import.R) but split so myruns.RData is loaded
+# trackeRdataSummary-class-stripping, source-column backfill and
+# canonical column-type normalization — see R/import.R) but split so
+# myruns.RData is loaded
 # ONLY when a request's dependency bucket actually contains "m".
 .load_summaries_only <- function() {
   message("mcp_bridge_server: (re)loading summaries.RData from disk")
@@ -167,7 +168,9 @@ health_cache_path <- traning:::.hae_cache_path()
     !"source" %in% names(summaries)) {
     summaries$source <- "tcx"
   }
-  summaries
+  # Same canonical type pass as my_dbs_load(); the two bridges must hand
+  # the dispatch layer identical data.
+  traning:::.normalize_summaries_types(summaries)
 }
 
 .load_myruns_only <- function() {

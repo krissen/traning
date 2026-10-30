@@ -80,10 +80,24 @@ test_that("unparseable numeric cells become NA instead of erroring", {
     stringsAsFactors = FALSE
   )
 
-  out <- load_cache(summaries)
+  expect_warning(out <- load_cache(summaries), "distance")
 
   expect_type(out$distance, "double")
   expect_true(is.na(out$distance))
+})
+
+test_that("zero-row caches are normalised too", {
+  summaries <- data.frame(
+    sport = factor(character(), levels = c("running")),
+    distance = character(),
+    stringsAsFactors = FALSE
+  )
+
+  out <- suppressWarnings(load_cache(summaries))
+
+  expect_type(out$sport, "character")
+  expect_type(out$distance, "double")
+  expect_identical(nrow(out), 0L)
 })
 
 test_that("non-canonical columns keep their type", {
