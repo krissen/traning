@@ -267,7 +267,14 @@ def _persist_pending_state() -> None:
         files = sorted(_pending_files)
     with _workouts_lock:
         count = _pending_workouts_count
-    save_pending_state({"pending_files": files, "pending_workouts_count": count})
+        ok_ts = _last_workouts_import_ok_ts
+    save_pending_state(
+        {
+            "pending_files": files,
+            "pending_workouts_count": count,
+            "last_workouts_import_ok": ok_ts.isoformat() if ok_ts else None,
+        }
+    )
 
 
 def _flush_pending_health() -> None:
@@ -488,9 +495,17 @@ def _resume_pending_state() -> None:
     fresh full debounce window rather than being lost.
     """
     global _pending_timer, _workouts_timer, _pending_workouts_count
+    global _last_workouts_import_ok_ts
     persisted = load_pending_state()
     files = persisted.get("pending_files") or []
     count = persisted.get("pending_workouts_count") or 0
+    ok_value = persisted.get("last_workouts_import_ok")
+    if ok_value:
+        try:
+            _last_workouts_import_ok_ts = datetime.fromisoformat(ok_value)
+        except (TypeError, ValueError):
+            _last_workouts_import_ok_ts = None
+            log.warning("pending_state: could not parse last_workouts_import_ok, ignoring")
 
     if files:
         with _pending_lock:
