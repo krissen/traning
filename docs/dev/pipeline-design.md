@@ -178,9 +178,9 @@ empty-delta imports are silent:
 ```json
 {
   "uptime_seconds": 8421,
-  "last_received": "2026-04-25T22:09:17",
+  "last_received": "2026-04-25T20:09:17+00:00",
   "total_pushes": 142,
-  "last_import": "2026-04-25T22:19:41",
+  "last_import": "2026-04-25T20:19:41+00:00",
   "last_import_files": 19,
   "pending_files": 0,
   "pending_timer_armed": false,
@@ -189,6 +189,9 @@ empty-delta imports are silent:
 ```
 
 - `last_received` — most recent `POST /v1/health` or `/v1/workouts`.
+  Every timestamp field in `/v1/status` is UTC with an explicit offset
+  (`+00:00`). Older receivers emitted naive local time; the R freshness
+  parser accepts both during rollout.
 - `last_import` / `last_import_files` — when the last debounce flush
   finished and how many files it covered. Updated for every flush,
   including silent ones (empty delta).

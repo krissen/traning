@@ -12,6 +12,7 @@ attribute with a built FastAPI instance.
 """
 
 import importlib
+from datetime import UTC, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -224,6 +225,32 @@ def test_status_exposes_workout_import_ok_field(client):
     body = resp.json()
     assert "last_workouts_import_ok" in body
     assert body["last_workouts_import_ok"] is None
+
+
+def test_status_timestamps_are_utc_offset_aware(client, monkeypatch):
+    stamp = datetime(2026, 10, 30, 7, 0, 0, tzinfo=UTC)
+    attrs = {
+        "_last_received": "last_received",
+        "_last_import_ts": "last_import",
+        "_last_workouts_import_ts": "last_workouts_import",
+        "_last_workouts_import_ok_ts": "last_workouts_import_ok",
+    }
+    for attr in attrs:
+        monkeypatch.setattr(app_mod, attr, stamp)
+
+    body = client.get("/v1/status", headers=HEADERS).json()
+
+    for field in attrs.values():
+        assert body[field] == "2026-10-30T07:00:00+00:00"
+
+
+def test_receive_health_stamps_offset_aware_now(client):
+    body = {"data": {"metrics": [{"name": "heart_rate", "units": "bpm", "data": [1]}]}}
+    client.post("/v1/health", json=body, headers=HEADERS)
+
+    status = client.get("/v1/status", headers=HEADERS).json()
+
+    assert status["last_received"].endswith("+00:00")
 
 
 # --- client logging ----------------------------------------------------------
