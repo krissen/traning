@@ -723,12 +723,25 @@ def create_app() -> FastAPI:
         _last_received = datetime.now()
         _total_received += 1
 
-        total_samples = sum(len(m.get("data", [])) for m in metrics)
-        log.info("Received %d metrics, %d samples", n, total_samples)
+        total_samples = sum(
+            len(m["data"])
+            for m in metrics
+            if isinstance(m, dict) and isinstance(m.get("data"), list)
+        )
+        n_received = len(metrics)
+        log.info(
+            "Received %d metrics, %d samples; saved %d, skipped %d",
+            n_received,
+            total_samples,
+            n,
+            n_received - n,
+        )
 
         return {
             "status": "ok",
+            "metrics_received": n_received,
             "metrics_saved": n,
+            "metrics_skipped": n_received - n,
             "total_samples": total_samples,
         }
 

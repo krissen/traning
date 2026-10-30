@@ -449,6 +449,8 @@ def save_health_push(
         return 0, []
 
     n_written = 0
+    n_received = len(metrics)
+    skipped: list[str] = []
     all_changed: list[Path] = []
 
     # Sleep segments span midnight — per-day canonical files would break
@@ -460,9 +462,17 @@ def save_health_push(
 
     for m in metrics:
         if not _metric_is_writable(m):
-            name = m.get("name") if isinstance(m, dict) else None
+            if isinstance(m, dict):
+                label = str(m.get("name") or "(namnlös)")
+                keys = ",".join(sorted(str(k) for k in m))
+            else:
+                label = "(namnlös)"
+                keys = type(m).__name__
+            skipped.append(label)
             log.warning(
-                "Hoppar över metrikgrupp utan namn eller giltiga samples: %s", name or "(namnlös)"
+                "Hoppar över metrikgrupp utan namn eller giltiga samples: %s (nycklar: %s)",
+                label,
+                keys,
             )
             continue
         name = m.get("name")
@@ -482,6 +492,15 @@ def save_health_push(
             )
 
         n_written += 1
+
+    if skipped:
+        log.warning(
+            "Sparade %d av %d metrikgrupper; hoppade över %d: %s",
+            n_written,
+            n_received,
+            len(skipped),
+            ", ".join(skipped),
+        )
 
     return n_written, all_changed
 
