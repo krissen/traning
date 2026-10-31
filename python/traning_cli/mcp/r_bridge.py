@@ -603,7 +603,12 @@ def _device_change_clause(c: dict, is_swap: bool) -> str:
         desc = c.get("model") or c.get("note") or "okänd enhet"
         return f"klockbyte till {desc} den {c.get('valid_from', '?')}"
 
-    label = _DEVICE_UPDATE_LABEL.get(c.get("platform"), "uppdatering")
+    platform = c.get("platform")
+    label = (
+        _DEVICE_UPDATE_LABEL.get(platform, "uppdatering")
+        if isinstance(platform, str)
+        else "uppdatering"
+    )
     desc = c.get("os_version") or c.get("note") or ""
     desc_part = f" till {desc}" if desc else ""
     return f"{label}{desc_part} den {c.get('valid_from', '?')}"
@@ -699,6 +704,8 @@ def _format_device_changes_note(changes: list[dict]) -> str:
     bump_counts: dict[str, int] = {}
     for c in bumps:
         platform = c.get("platform")
+        if not isinstance(platform, str):
+            platform = ""
         bump_counts[platform] = bump_counts.get(platform, 0) + 1
     bump_parts = [
         f"{count} {_DEVICE_UPDATE_LABEL.get(platform, 'uppdatering')}{'ar' if count != 1 else ''}"

@@ -79,6 +79,23 @@ repos:
       - id: actionlint
         stages: [pre-commit]
 
+  - repo: local
+    hooks:
+      - id: basedpyright
+        # Type-checks python/traning_cli against python/.venv (see
+        # [tool.basedpyright] in pyproject.toml). `language: system` with
+        # an explicit venv path rather than an isolated hook env: the
+        # check needs the project's installed dependencies to resolve
+        # pydantic/fastapi imports. CI's lint job skips it (no venv
+        # there) and the test job runs `uv run basedpyright` after
+        # `uv sync` instead.
+        name: basedpyright
+        entry: python/.venv/bin/basedpyright
+        language: system
+        pass_filenames: false
+        files: '\.py$'
+        stages: [pre-commit]
+
   # R: local hooks against the system's installed styler/lintr/Rscript.
   - repo: local
     hooks:

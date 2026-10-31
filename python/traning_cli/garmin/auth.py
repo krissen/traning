@@ -62,7 +62,7 @@ def _pirate_login(token_dir: Path, force_reauth: bool = False) -> Garmin:
             "Browser login requires pirate-garmin. Install it:\n  pip install pirate-garmin"
         ) from None
 
-    app_dir = str(token_dir / "pirate-garmin")
+    app_dir = token_dir / "pirate-garmin"
 
     # Try loading saved session first
     if not force_reauth:
