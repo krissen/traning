@@ -2283,32 +2283,6 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   blood_oxygen_saturation          = 2
 )
 
-#' Determine whether a follow-up notification is warranted
-#'
-#' Compares today's readiness state against \code{prev_state} (the morning
-#' notification snapshot from \code{.notify_state.json}) and decides whether
-#' something has materially changed.
-#'
-#' Triggers (in order):
-#' \enumerate{
-#'   \item Morning was partial/minimal AND a previously missing component is
-#'         now present → re-render today's state.
-#'   \item A tier-1 metric (VO2max, wrist temp, respiratory rate, SpO2) has a
-#'         new value not yet reported, with abs(delta vs 7d-mean) above
-#'         threshold.
-#' }
-#'
-#' Empty string = no notification.
-#'
-#' @param data A traning_data bundle (or, via the legacy shim, a bare
-#'   summaries data.frame with \code{health_daily = ...} folded in).
-#' @param prev_state List parsed from \code{.notify_state.json} (or NULL).
-#' @param hr_max,hr_rest Optional overrides.
-#' @param on_date Date to evaluate (default = latest).
-#' @return List with \code{prosa} (character, possibly ""),
-#'   \code{trigger} (character: "rerender" / "tier1" / ""),
-#'   plus the same fields as \code{health_insight_readiness} when re-rendering.
-#' @export
 # Trigger 1 for health_insight_update(): a partial morning gained a
 # component. Returns the re-render prose (and transition phrase) or NULL.
 .readiness_rerender_prose <- function(current, prev_state) {
@@ -2399,6 +2373,32 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
   NULL
 }
 
+#' Determine whether a follow-up notification is warranted
+#'
+#' Compares today's readiness state against \code{prev_state} (the morning
+#' notification snapshot from \code{.notify_state.json}) and decides whether
+#' something has materially changed.
+#'
+#' Triggers (in order):
+#' \enumerate{
+#'   \item Morning was partial/minimal AND a previously missing component is
+#'         now present → re-render today's state.
+#'   \item A tier-1 metric (VO2max, wrist temp, respiratory rate, SpO2) has a
+#'         new value not yet reported, with abs(delta vs 7d-mean) above
+#'         threshold.
+#' }
+#'
+#' Empty string = no notification.
+#'
+#' @param data A traning_data bundle (or, via the legacy shim, a bare
+#'   summaries data.frame with \code{health_daily = ...} folded in).
+#' @param prev_state List parsed from \code{.notify_state.json} (or NULL).
+#' @param hr_max,hr_rest Optional overrides.
+#' @param on_date Date to evaluate (default = latest).
+#' @return List with \code{prosa} (character, possibly ""),
+#'   \code{trigger} (character: "rerender" / "tier1" / ""),
+#'   plus the same fields as \code{health_insight_readiness} when re-rendering.
+#' @export
 health_insight_update <- function(data, prev_state,
                                   hr_max = NULL, hr_rest = NULL,
                                   on_date = NULL) {

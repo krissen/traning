@@ -954,47 +954,6 @@ parse_hae_workout <- function(path) {
 
 # --- Importer -----------------------------------------------------------------
 
-#' Import HAE workout JSON files into summaries
-#'
-#' Scans `workouts_dir` for `*.json` files, parses each into a summary row,
-#' and appends new rows to `summaries`.  Three dedup checks are applied:
-#' \enumerate{
-#'   \item filename already imported (matched via `file = "hae:<basename>"`)
-#'   \item a Garmin (`source == "tcx"`) row describes the same workout per
-#'     \code{.is_same_workout()} — either because the two start close
-#'     together or because their wall-clock intervals overlap — in which
-#'     case Garmin wins and the HAE row is skipped. Sport is **not**
-#'     required to match, since two different activities at the same
-#'     instant aren't a realistic case and the sport label sometimes
-#'     disagrees between Garmin and AW (e.g. a slow jog logged as
-#'     "walking" by AW).
-#'   \item another HAE row — already cached or accepted earlier in this
-#'     same run — describes the same workout, by the same rule. HAE
-#'     frequently delivers two JSON files per session (the Apple Watch
-#'     recording and the Garmin-Connect-mirrored copy, typically 0–5 s
-#'     apart); the first one seen wins.
-#' }
-#' `myruns` receives `NULL` placeholders so positional alignment with
-#' `summaries` is preserved.
-#'
-#' @param workouts_dir Path to directory containing HAE workout JSON.
-#' @param summaries Existing summaries data frame.
-#' @param myruns Existing myruns list.
-#' @param verbose Logical. Print per-file progress.
-#' @param tolerance_seconds Integer. Δstart window (seconds) for dedup when
-#'   distance or duration can be compared (default 300).
-#' @param time_only_seconds Integer. Narrower Δstart window used when
-#'   neither distance nor duration is available on both sides (default 120).
-#' @return List with `summaries`, `myruns`, `n_imported`, `n_skipped_dup`,
-#'   `n_skipped_dup_hae`, `n_skipped_invalid`, `by_sport`,
-#'   `n_unmapped_sports` and `unmapped_names`. `n_skipped_dup` counts rows
-#'   dropped in favour of a Garmin row, `n_skipped_dup_hae` rows dropped in
-#'   favour of another HAE row. `n_unmapped_sports`/`unmapped_names`
-#'   surface activity types that fell through to the slug fallback in
-#'   `.hae_sport_from_name()` — they get neither a Swedish label nor a
-#'   bucket, so they should be added to `.HAE_SPORT_NAMES` the first time
-#'   they appear rather than be discovered months later in a report.
-#' @export
 # Cached summaries rows for one source, shaped for the workout matcher.
 # Very old caches lack some columns, which fall back to typed NA rather
 # than dropping the row.
@@ -1084,6 +1043,47 @@ parse_hae_workout <- function(path) {
   result
 }
 
+#' Import HAE workout JSON files into summaries
+#'
+#' Scans `workouts_dir` for `*.json` files, parses each into a summary row,
+#' and appends new rows to `summaries`.  Three dedup checks are applied:
+#' \enumerate{
+#'   \item filename already imported (matched via `file = "hae:<basename>"`)
+#'   \item a Garmin (`source == "tcx"`) row describes the same workout per
+#'     \code{.is_same_workout()} — either because the two start close
+#'     together or because their wall-clock intervals overlap — in which
+#'     case Garmin wins and the HAE row is skipped. Sport is **not**
+#'     required to match, since two different activities at the same
+#'     instant aren't a realistic case and the sport label sometimes
+#'     disagrees between Garmin and AW (e.g. a slow jog logged as
+#'     "walking" by AW).
+#'   \item another HAE row — already cached or accepted earlier in this
+#'     same run — describes the same workout, by the same rule. HAE
+#'     frequently delivers two JSON files per session (the Apple Watch
+#'     recording and the Garmin-Connect-mirrored copy, typically 0–5 s
+#'     apart); the first one seen wins.
+#' }
+#' `myruns` receives `NULL` placeholders so positional alignment with
+#' `summaries` is preserved.
+#'
+#' @param workouts_dir Path to directory containing HAE workout JSON.
+#' @param summaries Existing summaries data frame.
+#' @param myruns Existing myruns list.
+#' @param verbose Logical. Print per-file progress.
+#' @param tolerance_seconds Integer. Δstart window (seconds) for dedup when
+#'   distance or duration can be compared (default 300).
+#' @param time_only_seconds Integer. Narrower Δstart window used when
+#'   neither distance nor duration is available on both sides (default 120).
+#' @return List with `summaries`, `myruns`, `n_imported`, `n_skipped_dup`,
+#'   `n_skipped_dup_hae`, `n_skipped_invalid`, `by_sport`,
+#'   `n_unmapped_sports` and `unmapped_names`. `n_skipped_dup` counts rows
+#'   dropped in favour of a Garmin row, `n_skipped_dup_hae` rows dropped in
+#'   favour of another HAE row. `n_unmapped_sports`/`unmapped_names`
+#'   surface activity types that fell through to the slug fallback in
+#'   `.hae_sport_from_name()` — they get neither a Swedish label nor a
+#'   bucket, so they should be added to `.HAE_SPORT_NAMES` the first time
+#'   they appear rather than be discovered months later in a report.
+#' @export
 import_hae_workouts <- function(workouts_dir, summaries, myruns,
                                 verbose = FALSE,
                                 tolerance_seconds = .WORKOUT_MATCH_WINDOW,

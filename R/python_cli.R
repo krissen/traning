@@ -98,6 +98,29 @@ traning_cli_path <- function() {
 }
 
 
+# Validation helpers for traning_backfill(): the Shiny page expects a
+# clean envelope rather than an exception for malformed paths.
+.is_executable_cli <- function(cli_path) {
+  !is.null(cli_path) &&
+    is.character(cli_path) &&
+    length(cli_path) == 1L &&
+    !is.na(cli_path) &&
+    nzchar(cli_path) &&
+    file.exists(cli_path) &&
+    !isTRUE(file.info(cli_path)$isdir) &&
+    file.access(cli_path, mode = 1L) == 0L
+}
+
+.is_regular_file <- function(path) {
+  !is.null(path) &&
+    is.character(path) &&
+    length(path) == 1L &&
+    !is.na(path) &&
+    nzchar(path) &&
+    file.exists(path) &&
+    !isTRUE(file.info(path)$isdir)
+}
+
 #' Run `traning backfill <zip>` and capture the result
 #'
 #' @param zip_path Path to the archive to backfill from.
@@ -125,29 +148,6 @@ traning_cli_path <- function() {
 #'     \item{stderr}{Character vector, raw stderr lines.}
 #'   }
 #' @export
-# Validation helpers for traning_backfill(): the Shiny page expects a
-# clean envelope rather than an exception for malformed paths.
-.is_executable_cli <- function(cli_path) {
-  !is.null(cli_path) &&
-    is.character(cli_path) &&
-    length(cli_path) == 1L &&
-    !is.na(cli_path) &&
-    nzchar(cli_path) &&
-    file.exists(cli_path) &&
-    !isTRUE(file.info(cli_path)$isdir) &&
-    file.access(cli_path, mode = 1L) == 0L
-}
-
-.is_regular_file <- function(path) {
-  !is.null(path) &&
-    is.character(path) &&
-    length(path) == 1L &&
-    !is.na(path) &&
-    nzchar(path) &&
-    file.exists(path) &&
-    !isTRUE(file.info(path)$isdir)
-}
-
 traning_backfill <- function(zip_path, dry_run = FALSE, cli_path = NULL) {
   .fail <- function(msg) {
     list(

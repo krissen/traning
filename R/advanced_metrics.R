@@ -1478,18 +1478,6 @@ compute_decoupling <- function(summaries, myruns,
   if (is.na(d)) 0 else d
 }
 
-#' Load aerobic decoupling with incremental caching
-#'
-#' Wraps \code{compute_decoupling()} with RData caching.  On first call,
-#' computes decoupling for all qualifying sessions and saves results.  On
-#' subsequent calls, only processes sessions not already cached.
-#'
-#' @inheritParams compute_decoupling
-#' @param force Logical.  If TRUE, discard cache and recompute.
-#' @param cache_path Character or NULL.  Path to cache file.
-#'   NULL = auto-detect from TRANING_DATA.
-#' @return Tibble — same as \code{compute_decoupling()}.
-#' @export
 # Cache-reading half of load_decoupling(). Extracted so the exported
 # function stays under the cyclocomp ratchet; the parameter identity
 # checks are the branch-heavy part.
@@ -1595,6 +1583,18 @@ compute_decoupling <- function(summaries, myruns,
   message("Decoupling-cache sparad: ", nrow(per_run), " sessioner.")
 }
 
+#' Load aerobic decoupling with incremental caching
+#'
+#' Wraps \code{compute_decoupling()} with RData caching.  On first call,
+#' computes decoupling for all qualifying sessions and saves results.  On
+#' subsequent calls, only processes sessions not already cached.
+#'
+#' @inheritParams compute_decoupling
+#' @param force Logical.  If TRUE, discard cache and recompute.
+#' @param cache_path Character or NULL.  Path to cache file.
+#'   NULL = auto-detect from TRANING_DATA.
+#' @return Tibble — same as \code{compute_decoupling()}.
+#' @export
 load_decoupling <- function(summaries, myruns,
                             min_duration_min = 45,
                             max_pace_min_km = NULL,
