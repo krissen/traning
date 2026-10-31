@@ -221,7 +221,10 @@ def _fetch_activity_list(client: Garmin, start: int, limit: int) -> list[dict]:
     for attempt in range(MAX_RETRIES):
         try:
             time.sleep(REQUEST_DELAY)
-            return client.get_activities(start=start, limit=limit)
+            activities = client.get_activities(start=start, limit=limit)
+            if isinstance(activities, list):
+                return activities
+            raise RuntimeError(f"unexpected activity-list response: {type(activities).__name__}")
         except Exception as e:
             if "429" in str(e) or "Too Many" in str(e):
                 delay = min(BACKOFF_BASE ** (attempt + 1), BACKOFF_MAX)

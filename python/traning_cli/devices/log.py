@@ -672,7 +672,7 @@ def add_devices_bulk(
 
             if outcome == "added" and result_row is not None:
                 after_day = _collapsed_day_row(rows, key)
-                if after_day != before_day:
+                if after_day is not None and after_day != before_day:
                     added.append(after_day)
             elif outcome == "updated" and result_row is not None:
                 updated.append(result_row)
