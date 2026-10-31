@@ -11,11 +11,12 @@
 # existed, none of them a defect.
 #
 # Everything else still applies — seq_linter and friends catch real bugs
-# here just as they do in R/. Keep this list in step with the root .lintr.
+# here just as they do in R/. Keep this list in step with the root .lintr:
+# cyclocomp steps 80 -> 50 -> 25 alongside it.
 linters: list(
    equals_na_linter = equals_na_linter(),
    seq_linter = seq_linter(),
    T_and_F_symbol_linter = T_and_F_symbol_linter(),
    vector_logic_linter = vector_logic_linter(),
-   cyclocomp_linter = cyclocomp_linter(125)
+   cyclocomp_linter = cyclocomp_linter(80)
    )

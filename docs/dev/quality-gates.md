@@ -94,9 +94,10 @@ dispatcher to read it.
   global. `app/tRanat/.lintr` scopes `object_usage_linter` off just for
   the Shiny app directory (lintr can't resolve its cross-module,
   runtime-sourced function calls); the root `.lintr` pins
-  `cyclocomp_linter` at 125, just above the current worst offender —
-  that threshold ratchets down as functions get broken up, it isn't a
-  statement that 125 is fine.
+  `cyclocomp_linter` at 80. It started at 125, just above the then-worst
+  offender; that expression now uses `any(c(...))` (worst offender 53),
+  and the threshold ratchets down stepwise as functions get broken up.
+  It isn't a statement that 80 is fine.
 - **testthat** — the full R test suite, at **pre-push**, not
   pre-commit (`always_run: true`, no `files:` filter — too slow to run
   on every commit; a `git push` runs it once for the whole batch of
