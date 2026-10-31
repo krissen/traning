@@ -18,5 +18,5 @@ linters: list(
    seq_linter = seq_linter(),
    T_and_F_symbol_linter = T_and_F_symbol_linter(),
    vector_logic_linter = vector_logic_linter(),
-   cyclocomp_linter = cyclocomp_linter(80)
+   cyclocomp_linter = cyclocomp_linter(50)
    )

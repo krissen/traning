@@ -954,6 +954,95 @@ parse_hae_workout <- function(path) {
 
 # --- Importer -----------------------------------------------------------------
 
+# Cached summaries rows for one source, shaped for the workout matcher.
+# Very old caches lack some columns, which fall back to typed NA rather
+# than dropping the row.
+.hae_candidate_rows <- function(summaries, which_source) {
+  if (!all(c("source", "sessionStart") %in% names(summaries)) ||
+    nrow(summaries) == 0) {
+    return(NULL)
+  }
+  keep <- !is.na(summaries$source) & summaries$source == which_source
+  if (!any(keep)) {
+    return(NULL)
+  }
+  data.frame(
+    idx = which(keep),
+    new_pos = NA_integer_,
+    sessionStart = summaries$sessionStart[keep],
+    sessionEnd = if ("sessionEnd" %in% names(summaries)) {
+      summaries$sessionEnd[keep]
+    } else {
+      as.POSIXct(NA)
+    },
+    sport = if ("sport" %in% names(summaries)) {
+      as.character(summaries$sport[keep])
+    } else {
+      NA_character_
+    },
+    distance = if ("distance" %in% names(summaries)) {
+      as.numeric(summaries$distance[keep])
+    } else {
+      NA_real_
+    },
+    duration = if ("duration" %in% names(summaries)) {
+      .workout_secs(summaries$duration[keep])
+    } else {
+      NA_real_
+    },
+    stringsAsFactors = FALSE
+  )
+}
+
+# Final assembly for import_hae_workouts(): unmapped reporting, per-sport
+# tally, rbind of the surviving rows, and removal of superseded cached
+# rows. Kept separate so the import loop stays under the cyclocomp gate.
+.finalize_hae_import <- function(result, new_rows, superseded, unmapped,
+                                 verbose) {
+  unmapped <- sort(unique(unmapped))
+  result$unmapped_names <- unmapped
+  result$n_unmapped_sports <- length(unmapped)
+  if (length(unmapped) > 0 && verbose) {
+    cat("Okänd aktivitetstyp (ingen etikett, ingen bucket): ",
+      paste(unmapped, collapse = ", "), "\n",
+      sep = ""
+    )
+  }
+
+  new_rows <- Filter(Negate(is.null), new_rows)
+  if (length(new_rows) > 0) {
+    sports <- vapply(new_rows, function(r) as.character(r$sport), character(1))
+    by_sport <- table(sports)
+    by_sport <- stats::setNames(as.integer(by_sport), names(by_sport))
+  }
+  if (length(new_rows) > 0) {
+    new_df <- Reduce(.rbind_align, new_rows)
+    summaries <- .rbind_align(result$summaries, new_df)
+    n_new <- nrow(new_df)
+    myruns <- c(result$myruns, vector("list", n_new))
+
+    result$summaries <- summaries
+    result$myruns <- myruns
+    result$n_imported <- n_new
+    result$by_sport <- by_sport
+  }
+
+  if (length(superseded) > 0) {
+    drop <- sort(unique(superseded))
+    summaries <- .restore_df_attrs(
+      result$summaries[-drop, , drop = FALSE], result$summaries
+    )
+    rownames(summaries) <- NULL
+    myruns <- result$myruns
+    keep_runs <- drop[drop <= length(myruns)]
+    if (length(keep_runs) > 0) myruns <- myruns[-keep_runs]
+    result$summaries <- summaries
+    result$myruns <- myruns
+  }
+
+  result
+}
+
 #' Import HAE workout JSON files into summaries
 #'
 #' Scans `workouts_dir` for `*.json` files, parses each into a summary row,
@@ -1041,59 +1130,9 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     existing_hae <- sub("^hae:", "", hae_files)
   }
 
-  # Cached rows to dedup against: Garmin (TCX) rows for cross-source
-  # dedup, HAE rows for the duplicate-JSON case. Both carry distance and
-  # duration so .is_same_workout() can apply its sanity check.
-  .candidates <- function(which_source) {
-    if (!all(c("source", "sessionStart") %in% names(summaries)) ||
-      nrow(summaries) == 0) {
-      return(NULL)
-    }
-    keep <- !is.na(summaries$source) & summaries$source == which_source
-    if (!any(keep)) {
-      return(NULL)
-    }
-    data.frame(
-      # Original row position, so a losing Garmin row can be found again
-      # in `summaries` when the fragment rule sends the win to HAE.
-      idx = which(keep),
-      # Position in `new_rows` for copies accepted during this run, so a
-      # fuller copy arriving later can strike them before anything is
-      # written. Cached rows have none.
-      new_pos = NA_integer_,
-      sessionStart = summaries$sessionStart[keep],
-      # sessionEnd and sport feed the overlap criterion; both are absent
-      # from very old caches, which simply falls back to the start rule.
-      sessionEnd = if ("sessionEnd" %in% names(summaries)) {
-        summaries$sessionEnd[keep]
-      } else {
-        as.POSIXct(NA)
-      },
-      sport = if ("sport" %in% names(summaries)) {
-        as.character(summaries$sport[keep])
-      } else {
-        NA_character_
-      },
-      distance = if ("distance" %in% names(summaries)) {
-        as.numeric(summaries$distance[keep])
-      } else {
-        NA_real_
-      },
-      duration = if ("duration" %in% names(summaries)) {
-        .workout_secs(summaries$duration[keep])
-      } else {
-        NA_real_
-      },
-      stringsAsFactors = FALSE
-    )
-  }
-  tcx_rows <- .candidates("tcx")
-  # Cached HAE rows plus the ones accepted earlier in this same run: two
-  # new JSON files for one session usually arrive in the same batch, so
-  # comparing against the cache alone would let the pair through.
-  hae_rows <- .candidates("hae")
+  tcx_rows <- .hae_candidate_rows(summaries, "tcx")
+  hae_rows <- .hae_candidate_rows(summaries, "hae")
 
-  by_sport <- integer(0)
   unmapped <- character(0)
   new_rows <- list()
   # Positions of Garmin rows displaced by the fragment rule, removed
@@ -1276,57 +1315,7 @@ import_hae_workouts <- function(workouts_dir, summaries, myruns,
     if (verbose) cat("HAE ny: ", bn, " [", row$sport, "]\n", sep = "")
   }
 
-  unmapped <- sort(unique(unmapped))
-  result$unmapped_names <- unmapped
-  result$n_unmapped_sports <- length(unmapped)
-  if (length(unmapped) > 0 && verbose) {
-    cat("Okänd aktivitetstyp (ingen etikett, ingen bucket): ",
-      paste(unmapped, collapse = ", "), "\n",
-      sep = ""
-    )
-  }
-
-  # Copies struck by a fuller one leave holes; the per-sport tally is
-  # taken from what actually survived rather than counted along the way.
-  new_rows <- Filter(Negate(is.null), new_rows)
-  if (length(new_rows) > 0) {
-    sports <- vapply(new_rows, function(r) as.character(r$sport), character(1))
-    by_sport <- table(sports)
-    by_sport <- stats::setNames(as.integer(by_sport), names(by_sport))
-  }
-  if (length(new_rows) > 0) {
-    # Reduce() rather than do.call(rbind): only the rows that displaced a
-    # Garmin fragment carry `superseded_file`, so the columns differ.
-    new_df <- Reduce(.rbind_align, new_rows)
-    # Align columns: pad missing in summaries or new_df with NA
-    summaries <- .rbind_align(summaries, new_df)
-    # Add NULL placeholders to myruns
-    n_new <- nrow(new_df)
-    myruns <- c(myruns, vector("list", n_new))
-
-    result$summaries <- summaries
-    result$myruns <- myruns
-    result$n_imported <- n_new
-    result$by_sport <- by_sport
-  }
-
-  # Drop the Garmin fragments last: their positions were taken before any
-  # rows were appended, and appending only adds to the end, so they are
-  # still valid here.
-  if (length(superseded) > 0) {
-    drop <- sort(unique(superseded))
-    summaries <- .restore_df_attrs(
-      result$summaries[-drop, , drop = FALSE], result$summaries
-    )
-    rownames(summaries) <- NULL
-    myruns <- result$myruns
-    keep_runs <- drop[drop <= length(myruns)]
-    if (length(keep_runs) > 0) myruns <- myruns[-keep_runs]
-    result$summaries <- summaries
-    result$myruns <- myruns
-  }
-
-  result
+  .finalize_hae_import(result, new_rows, superseded, unmapped, verbose)
 }
 
 # Bind two data frames by union of columns, filling NA where absent

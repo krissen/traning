@@ -98,6 +98,29 @@ traning_cli_path <- function() {
 }
 
 
+# Validation helpers for traning_backfill(): the Shiny page expects a
+# clean envelope rather than an exception for malformed paths.
+.is_executable_cli <- function(cli_path) {
+  !is.null(cli_path) &&
+    is.character(cli_path) &&
+    length(cli_path) == 1L &&
+    !is.na(cli_path) &&
+    nzchar(cli_path) &&
+    file.exists(cli_path) &&
+    !isTRUE(file.info(cli_path)$isdir) &&
+    file.access(cli_path, mode = 1L) == 0L
+}
+
+.is_regular_file <- function(path) {
+  !is.null(path) &&
+    is.character(path) &&
+    length(path) == 1L &&
+    !is.na(path) &&
+    nzchar(path) &&
+    file.exists(path) &&
+    !isTRUE(file.info(path)$isdir)
+}
+
 #' Run `traning backfill <zip>` and capture the result
 #'
 #' @param zip_path Path to the archive to backfill from.
@@ -138,15 +161,7 @@ traning_backfill <- function(zip_path, dry_run = FALSE, cli_path = NULL) {
   # Treat NA, NULL, empty string, missing-file and non-executable
   # paths uniformly — system2() would error on any of them, and the
   # Shiny page expects a clean envelope.
-  cli_ok <- !is.null(cli_path) &&
-    is.character(cli_path) &&
-    length(cli_path) == 1L &&
-    !is.na(cli_path) &&
-    nzchar(cli_path) &&
-    file.exists(cli_path) &&
-    !isTRUE(file.info(cli_path)$isdir) &&
-    file.access(cli_path, mode = 1L) == 0L
-  if (!cli_ok) {
+  if (!.is_executable_cli(cli_path)) {
     return(.fail(
       "Could not locate an executable `traning` CLI. Set TRANING_CLI."
     ))
@@ -156,14 +171,7 @@ traning_backfill <- function(zip_path, dry_run = FALSE, cli_path = NULL) {
   # zero-length, vector, or directory zip_path would let
   # file.exists() throw or let the CLI invocation fail in obscure
   # ways later. We promise a clean envelope; produce one.
-  zip_ok <- !is.null(zip_path) &&
-    is.character(zip_path) &&
-    length(zip_path) == 1L &&
-    !is.na(zip_path) &&
-    nzchar(zip_path) &&
-    file.exists(zip_path) &&
-    !isTRUE(file.info(zip_path)$isdir)
-  if (!zip_ok) {
+  if (!.is_regular_file(zip_path)) {
     return(.fail(paste0(
       "Archive does not exist or is not a regular file: ",
       paste(zip_path, collapse = ", ")

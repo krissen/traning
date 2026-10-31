@@ -5,21 +5,22 @@
 # Formatting is not lintr's job here — styler owns it, and the pre-commit
 # hygiene hooks own trailing whitespace / end-of-file.
 #
-# cyclocomp is 80, not a conventional 25. 25 would flag the vast majority
+# cyclocomp is 50, not a conventional 25. 25 would flag the vast majority
 # of existing functions in R/ and inst/ (this is a data-analysis package
 # with long, branch-heavy report/pipeline functions) — a refactoring
 # programme, not a gate. The starting 125 sat just above the then-worst
 # offender, inst/cli.R's 121-branch argument dispatcher; that expression
-# now uses any(c(...)), bringing the worst offender to 53. The threshold
-# ratchets down stepwise (80 -> 50 -> 25) as functions are broken up; it
-# is not a statement that 80 is acceptable complexity.
+# now uses any(c(...)), and the remaining offenders were split into
+# helpers, bringing the worst expression to 50. The threshold ratchets
+# down stepwise (80 -> 50 -> 25) as functions are broken up; it is not a
+# statement that 50 is acceptable complexity.
 linters: list(
    object_usage_linter = object_usage_linter(),
    equals_na_linter = equals_na_linter(),
    seq_linter = seq_linter(),
    T_and_F_symbol_linter = T_and_F_symbol_linter(),
    vector_logic_linter = vector_logic_linter(),
-   cyclocomp_linter = cyclocomp_linter(80)
+   cyclocomp_linter = cyclocomp_linter(50)
    )
 exclusions: list(
    "tests/testthat/"

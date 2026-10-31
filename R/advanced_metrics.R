@@ -1478,6 +1478,111 @@ compute_decoupling <- function(summaries, myruns,
   if (is.na(d)) 0 else d
 }
 
+# Cache-reading half of load_decoupling(). Extracted so the exported
+# function stays under the cyclocomp ratchet; the parameter identity
+# checks are the branch-heavy part.
+.read_decoupling_cache <- function(cache_path, force, min_duration_min,
+                                   max_pace_min_km, warmup_sec,
+                                   smooth_window, max_half_speed_diff_pct,
+                                   cap_pct, sport) {
+  empty <- list(
+    cached = NULL,
+    skipped = as.Date(character(0)),
+    valid = FALSE
+  )
+  if (force || is.null(cache_path) || !file.exists(cache_path)) {
+    return(empty)
+  }
+  decoupling_cache <- NULL # nolint: object_usage_linter.
+  load(cache_path) # loads: decoupling_cache
+  # Cache must also match `sport` — without that, a cache produced for
+  # one sport could be reused (or merged with) a request for another and
+  # return cross-sport results. Older caches (pre-sport-key) are treated
+  # as invalid and recomputed.
+  if (!identical(decoupling_cache$min_duration_min, min_duration_min) ||
+    !identical(decoupling_cache$max_pace_min_km, max_pace_min_km) ||
+    !identical(decoupling_cache$warmup_sec, warmup_sec) ||
+    !identical(decoupling_cache$smooth_window, smooth_window) ||
+    !identical(
+      decoupling_cache$max_half_speed_diff_pct,
+      max_half_speed_diff_pct
+    ) ||
+    !identical(decoupling_cache$cap_pct, cap_pct) ||
+    !identical(decoupling_cache$sport %||% NULL, sport)) {
+    message("Decoupling-cache: parametrar ändrade, räknar om allt.")
+    return(empty)
+  }
+  cached <- decoupling_cache$per_run
+  skipped <- decoupling_cache$skipped_dates %||% as.Date(character(0))
+  message(
+    "Decoupling-cache: ", nrow(cached), " sessioner (",
+    length(skipped), " utan data)."
+  )
+  list(cached = cached, skipped = skipped, valid = TRUE)
+}
+
+# Recompute the 28-day rolling decoupling mean on merged data, excluding
+# capped sessions so a single -75 % artefact doesn't pull the trend down.
+.attach_decoupling_rolling <- function(per_run) {
+  if (nrow(per_run) == 0) {
+    return(per_run)
+  }
+  if (!"capped" %in% names(per_run)) per_run$capped <- FALSE
+  daily <- per_run %>%
+    dplyr::filter(!.data$capped) %>%
+    dplyr::group_by(sessionStart) %>%
+    dplyr::summarise(
+      daily_dc = mean(decoupling_pct, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::arrange(sessionStart)
+
+  if (nrow(daily) == 0) {
+    per_run$decoupling_rolling28 <- NA_real_
+    return(per_run)
+  }
+
+  date_spine <- tibble::tibble(
+    sessionStart = seq(min(daily$sessionStart), max(daily$sessionStart),
+      by = "day"
+    )
+  )
+
+  rolling <- date_spine %>%
+    dplyr::left_join(daily, by = "sessionStart") %>%
+    dplyr::mutate(
+      decoupling_rolling28 = .rolling_mean(daily_dc, window = 28)
+    ) %>%
+    dplyr::select(sessionStart, decoupling_rolling28)
+
+  per_run %>%
+    dplyr::select(-decoupling_rolling28) %>%
+    dplyr::left_join(rolling, by = "sessionStart")
+}
+
+# Save half of load_decoupling(). Skipped for read_only callers (the
+# Shiny per-session load) so readers do not write the disk on every
+# session or race parallel consumers.
+.save_decoupling_cache <- function(cache_path, read_only, per_run,
+                                   all_skipped, params) {
+  if (is.null(cache_path) || read_only) {
+    return(invisible(NULL))
+  }
+  decoupling_cache <- list(
+    per_run                 = per_run,
+    skipped_dates           = all_skipped,
+    min_duration_min        = params$min_duration_min,
+    max_pace_min_km         = params$max_pace_min_km,
+    warmup_sec              = params$warmup_sec,
+    smooth_window           = params$smooth_window,
+    max_half_speed_diff_pct = params$max_half_speed_diff_pct,
+    cap_pct                 = params$cap_pct,
+    sport                   = params$sport
+  )
+  save_atomic(decoupling_cache, file = cache_path)
+  message("Decoupling-cache sparad: ", nrow(per_run), " sessioner.")
+}
+
 #' Load aerobic decoupling with incremental caching
 #'
 #' Wraps \code{compute_decoupling()} with RData caching.  On first call,
@@ -1512,39 +1617,14 @@ load_decoupling <- function(summaries, myruns,
   }
   if (is.null(cache_path)) cache_path <- .decoupling_cache_path()
 
-  cached <- NULL
-  cached_skipped_dates <- as.Date(character(0))
-  cache_valid <- FALSE
-
-  if (!force && !is.null(cache_path) && file.exists(cache_path)) {
-    load(cache_path) # loads: decoupling_cache
-    # Cache must also match `sport` — without that, a cache produced for
-    # one sport could be reused (or merged with) a request for another
-    # and return cross-sport results. Older caches (pre-sport-key) are
-    # treated as invalid and recomputed.
-    if (exists("decoupling_cache") &&
-      identical(decoupling_cache$min_duration_min, min_duration_min) &&
-      identical(decoupling_cache$max_pace_min_km, max_pace_min_km) &&
-      identical(decoupling_cache$warmup_sec, warmup_sec) &&
-      identical(decoupling_cache$smooth_window, smooth_window) &&
-      identical(
-        decoupling_cache$max_half_speed_diff_pct,
-        max_half_speed_diff_pct
-      ) &&
-      identical(decoupling_cache$cap_pct, cap_pct) &&
-      identical(decoupling_cache$sport %||% NULL, sport)) {
-      cached <- decoupling_cache$per_run
-      cached_skipped_dates <- decoupling_cache$skipped_dates %||%
-        as.Date(character(0))
-      cache_valid <- TRUE
-      message(
-        "Decoupling-cache: ", nrow(cached), " sessioner (",
-        length(cached_skipped_dates), " utan data)."
-      )
-    } else {
-      message("Decoupling-cache: parametrar \u00e4ndrade, r\u00e4knar om allt.")
-    }
-  }
+  cache_state <- .read_decoupling_cache(
+    cache_path, force,
+    min_duration_min, max_pace_min_km, warmup_sec, smooth_window,
+    max_half_speed_diff_pct, cap_pct, sport
+  )
+  cached <- cache_state$cached
+  cached_skipped_dates <- cache_state$skipped
+  cache_valid <- cache_state$valid
 
   # Find qualifying sessions not already cached
   run_idx <- which(
@@ -1605,61 +1685,20 @@ load_decoupling <- function(summaries, myruns,
 
   if (!exists("all_skipped")) all_skipped <- cached_skipped_dates
 
-  # Recompute rolling mean on the merged data — exclude capped sessions
-  # so a single -75 % artefact doesn't pull the trend line down. Older
-  # caches lacking the column behave as if no rows were capped.
-  if (nrow(per_run) > 0) {
-    if (!"capped" %in% names(per_run)) per_run$capped <- FALSE
-    daily <- per_run %>%
-      dplyr::filter(!.data$capped) %>%
-      dplyr::group_by(sessionStart) %>%
-      dplyr::summarise(
-        daily_dc = mean(decoupling_pct, na.rm = TRUE),
-        .groups = "drop"
-      ) %>%
-      dplyr::arrange(sessionStart)
+  per_run <- .attach_decoupling_rolling(per_run)
 
-    if (nrow(daily) > 0) {
-      date_spine <- tibble::tibble(
-        sessionStart = seq(min(daily$sessionStart), max(daily$sessionStart),
-          by = "day"
-        )
-      )
-
-      rolling <- date_spine %>%
-        dplyr::left_join(daily, by = "sessionStart") %>%
-        dplyr::mutate(
-          decoupling_rolling28 = .rolling_mean(daily_dc, window = 28)
-        ) %>%
-        dplyr::select(sessionStart, decoupling_rolling28)
-
-      per_run <- per_run %>%
-        dplyr::select(-decoupling_rolling28) %>%
-        dplyr::left_join(rolling, by = "sessionStart")
-    } else {
-      per_run$decoupling_rolling28 <- NA_real_
-    }
-  }
-
-  # Save cache. Hoppas över när `read_only = TRUE` (typiskt Shiny
-  # per-session-load) så att läsare inte skriver disken vid varje
-  # session och inte racar mot parallella konsumenter. Validering,
-  # incremental compute och merge sker fortfarande in-memory.
-  if (!is.null(cache_path) && !read_only) {
-    decoupling_cache <- list(
-      per_run                 = per_run,
-      skipped_dates           = all_skipped,
-      min_duration_min        = min_duration_min,
-      max_pace_min_km         = max_pace_min_km,
-      warmup_sec              = warmup_sec,
-      smooth_window           = smooth_window,
+  .save_decoupling_cache(
+    cache_path, read_only, per_run, all_skipped,
+    list(
+      min_duration_min = min_duration_min,
+      max_pace_min_km = max_pace_min_km,
+      warmup_sec = warmup_sec,
+      smooth_window = smooth_window,
       max_half_speed_diff_pct = max_half_speed_diff_pct,
-      cap_pct                 = cap_pct,
-      sport                   = sport
+      cap_pct = cap_pct,
+      sport = sport
     )
-    save_atomic(decoupling_cache, file = cache_path)
-    message("Decoupling-cache sparad: ", nrow(per_run), " sessioner.")
-  }
+  )
 
   per_run
 }

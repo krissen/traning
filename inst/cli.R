@@ -408,6 +408,85 @@ if ((!("garmin_matched" %in% names(summaries)) || json_cache_newer) &&
   }
 }
 
+# Import Apple Watch workouts from the HAE inbox and report what changed.
+# Extracted from the --import block so that block stays under the
+# cyclocomp ratchet; returns the updated pair plus the swap counter used
+# by the save decision.
+run_hae_workout_import <- function(summaries, myruns, hae_workouts_dir,
+                                   verbose) {
+  if (!dir.exists(hae_workouts_dir)) {
+    return(list(
+      summaries = summaries, myruns = myruns,
+      n_hae_fragment_swaps = 0L
+    ))
+  }
+  hae_res <- import_hae_workouts(hae_workouts_dir, summaries, myruns,
+    verbose = verbose
+  )
+  summaries <- hae_res$summaries
+  myruns <- hae_res$myruns
+  # A Garmin fragment replaced by the Apple Watch row: one row out, one
+  # row in, so the row count alone cannot tell that the cache changed.
+  n_garmin_fragments_hae <- hae_res$n_garmin_fragments %||% 0L
+  n_replaced_hae <- hae_res$n_replaced_hae %||% 0L
+  # One counter for the save decision, two sentences for the reader: a
+  # Garmin fragment giving way to the watch and a thinner Apple Watch
+  # copy giving way to a fuller one are both one row out and one in,
+  # but they are not the same event.
+  n_hae_fragment_swaps <- n_garmin_fragments_hae + n_replaced_hae
+  if (n_garmin_fragments_hae > 0) {
+    cat("Ersatte ", n_garmin_fragments_hae,
+      " Garmin-fragment med Apple Watch-raden.\n",
+      sep = ""
+    )
+  }
+  if (n_replaced_hae > 0) {
+    cat("Ersatte ", n_replaced_hae,
+      " Apple Watch-rad(er) med en fylligare kopia.\n",
+      sep = ""
+    )
+  }
+  if (hae_res$n_imported > 0 || hae_res$n_skipped_dup > 0 ||
+    hae_res$n_skipped_dup_hae > 0) {
+    cat("HAE-workouts: ", hae_res$n_imported, " importerade, ",
+      hae_res$n_skipped_dup, " deduppade mot Garmin",
+      if (hae_res$n_skipped_dup_hae > 0) {
+        paste0(", ", hae_res$n_skipped_dup_hae, " dubbla HAE-filer")
+      } else {
+        ""
+      },
+      if (hae_res$n_skipped_invalid > 0) {
+        paste0(", ", hae_res$n_skipped_invalid, " ogiltiga")
+      } else {
+        ""
+      },
+      "\n",
+      sep = ""
+    )
+    if (hae_res$n_imported > 0 && length(hae_res$by_sport) > 0) {
+      cat("  per sport: ",
+        paste(names(hae_res$by_sport), hae_res$by_sport,
+          sep = "=", collapse = ", "
+        ),
+        "\n",
+        sep = ""
+      )
+    }
+    if (hae_res$n_unmapped_sports > 0) {
+      cat("  okänd aktivitetstyp: ",
+        paste(hae_res$unmapped_names, collapse = ", "),
+        " (saknar etikett och bucket)\n",
+        sep = ""
+      )
+    }
+  }
+  list(
+    summaries = summaries,
+    myruns = myruns,
+    n_hae_fragment_swaps = n_hae_fragment_swaps
+  )
+}
+
 # --- Import ---
 if (do_import) {
   files <- get_my_files(mytcxpath)
@@ -442,71 +521,12 @@ if (do_import) {
     Sys.getenv("TRANING_DATA"),
     "kristian", "health_export", "workouts"
   )
-  if (dir.exists(hae_workouts_dir)) {
-    hae_res <- import_hae_workouts(hae_workouts_dir, summaries, myruns,
-      verbose = do_verbose
-    )
-    summaries <- hae_res$summaries
-    myruns <- hae_res$myruns
-    # A Garmin fragment replaced by the Apple Watch row: one row out, one
-    # row in, so the row count alone cannot tell that the cache changed.
-    n_garmin_fragments_hae <- hae_res$n_garmin_fragments %||% 0L
-    n_replaced_hae <- hae_res$n_replaced_hae %||% 0L
-    # One counter for the save decision, two sentences for the reader:
-    # a Garmin fragment giving way to the watch and a thinner Apple Watch
-    # copy giving way to a fuller one are both one row out and one in,
-    # but they are not the same event.
-    n_hae_fragment_swaps <- n_garmin_fragments_hae + n_replaced_hae
-    if (n_garmin_fragments_hae > 0) {
-      cat("Ersatte ", n_garmin_fragments_hae,
-        " Garmin-fragment med Apple Watch-raden.\n",
-        sep = ""
-      )
-    }
-    if (n_replaced_hae > 0) {
-      cat("Ersatte ", n_replaced_hae,
-        " Apple Watch-rad(er) med en fylligare kopia.\n",
-        sep = ""
-      )
-    }
-    if (hae_res$n_imported > 0 || hae_res$n_skipped_dup > 0 ||
-      hae_res$n_skipped_dup_hae > 0) {
-      cat("HAE-workouts: ", hae_res$n_imported, " importerade, ",
-        hae_res$n_skipped_dup, " deduppade mot Garmin",
-        if (hae_res$n_skipped_dup_hae > 0) {
-          paste0(", ", hae_res$n_skipped_dup_hae, " dubbla HAE-filer")
-        } else {
-          ""
-        },
-        if (hae_res$n_skipped_invalid > 0) {
-          paste0(", ", hae_res$n_skipped_invalid, " ogiltiga")
-        } else {
-          ""
-        },
-        "\n",
-        sep = ""
-      )
-      if (hae_res$n_imported > 0 && length(hae_res$by_sport) > 0) {
-        cat("  per sport: ",
-          paste(names(hae_res$by_sport), hae_res$by_sport,
-            sep = "=", collapse = ", "
-          ),
-          "\n",
-          sep = ""
-        )
-      }
-      # New Apple activity types get neither a Swedish label nor a
-      # bucket until they are added to .HAE_SPORT_NAMES — say so on the
-      # first import instead of letting them show up as raw slugs later.
-      if (hae_res$n_unmapped_sports > 0) {
-        cat("  okänd aktivitetstyp: ",
-          paste(hae_res$unmapped_names, collapse = ", "),
-          " (saknar etikett och bucket)\n",
-          sep = ""
-        )
-      }
-    }
-  }
+  hae_res <- run_hae_workout_import(
+    summaries, myruns, hae_workouts_dir, do_verbose
+  )
+  summaries <- hae_res$summaries
+  myruns <- hae_res$myruns
+  n_hae_fragment_swaps <- hae_res$n_hae_fragment_swaps
 
   summaries_newlength <- nrow(summaries)
   summaries_lengthdiff <- summaries_newlength - summaries_oldlength
