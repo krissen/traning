@@ -642,3 +642,34 @@ test_that("TRANING_NOTIFY_CONTEXT=false suppresses the context line", {
     expect_false(grepl("Första löpningen", res$prosa))
   })
 })
+
+
+test_that(".render_component load: flagged day names acute volume, not TSB", {
+  comp <- list(
+    value = 9.4, delta = NA_real_, flag = TRUE, score = 50,
+    trimp_yesterday = 250, atl = 100
+  )
+
+  out <- traning:::.render_component("load", comp, kind = "neg")
+
+  expect_match(out, "^h\u00f6g akut volym")
+  expect_match(out, "TRIMP 250")
+  expect_match(out, "ATL 100")
+  expect_false(grepl("TSB", out, fixed = TRUE))
+})
+
+test_that(".render_component load: unflagged day keeps the TSB reading", {
+  comp <- list(value = 9.4, delta = NA_real_, flag = FALSE, score = 90)
+
+  out <- traning:::.render_component("load", comp, kind = "ok")
+
+  expect_match(out, "belastning \\(TSB \\+9,4\\)")
+})
+
+test_that(".render_component hrv: includes the 7d SD", {
+  comp <- list(value = 84, delta = 14, flag = FALSE, score = 90, sd = 12)
+
+  out <- traning:::.render_component("hrv", comp, kind = "pos")
+
+  expect_match(out, "SD \u00b112 ms")
+})

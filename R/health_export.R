@@ -1458,7 +1458,11 @@ health_insight_delta <- function(before, after) {
     unit = "bpm", digits = 0, baseline_label = "vs baseline"
   ),
   load = list(
-    label_neg = "h\u00f6g belastning", label_pos = "l\u00e5g belastning", label_ok = "belastning",
+    # The flag is yesterday's acute TRIMP vs ATL, not TSB (form). The
+    # positive/neutral reading still shows TSB, which is the right scale
+    # for "utvilad"; the flagged line names the acute-volume pair instead.
+    label_neg = "h\u00f6g akut volym", label_pos = "l\u00e5g belastning",
+    label_ok = "belastning",
     unit = "", digits = 1, baseline_label = "TSB"
   ),
   wrist_temp = list(
@@ -1510,6 +1514,7 @@ health_insight_delta <- function(before, after) {
     ) |>
     dplyr::pull(value)
   hrv_7d_mean <- if (length(hrv_7d) >= 2) mean(hrv_7d, na.rm = TRUE) else NA_real_
+  hrv_7d_sd <- if (length(hrv_7d) >= 2) stats::sd(hrv_7d, na.rm = TRUE) else NA_real_
 
   # Raw sleep 7d mean
   sleep_7d <- health_daily |>
@@ -1524,6 +1529,7 @@ health_insight_delta <- function(before, after) {
     row = row,
     hrv_ms = hrv_today,
     hrv_ms_7d = hrv_7d_mean,
+    hrv_ms_7d_sd = hrv_7d_sd,
     sleep_7d = sleep_7d_mean
   )
 }
@@ -1542,7 +1548,8 @@ health_insight_delta <- function(before, after) {
         NA_real_
       },
       flag = isTRUE(row$hrv_flag),
-      score = row$hrv_score
+      score = row$hrv_score,
+      sd = if (is.finite(ctx$hrv_ms_7d_sd)) round(ctx$hrv_ms_7d_sd, 0) else NA_real_
     ),
     sleep = list(
       value = if (is.finite(row$sleep_total)) round(row$sleep_total, 1) else NA_real_,
@@ -1563,8 +1570,10 @@ health_insight_delta <- function(before, after) {
     load = list(
       value = if (is.finite(row$tsb)) round(row$tsb, 1) else NA_real_,
       delta = NA_real_,
-      flag  = isTRUE(row$load_flag),
-      score = row$trimp_score
+      flag = isTRUE(row$load_flag),
+      score = row$trimp_score,
+      trimp_yesterday = row$trimp_yesterday,
+      atl = row$atl
     ),
     wrist_temp = if ("wrist_temp" %in% names(row) && is.finite(row$wrist_temp)) {
       list(
@@ -1612,6 +1621,13 @@ health_insight_delta <- function(before, after) {
   unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
   val_str <- fmt_dec_sv(c$value, digits = spec$digits)
 
+  if (name == "load" && kind == "neg") {
+    return(paste0(
+      label, " (g\u00e5rdagens TRIMP ",
+      fmt_dec_sv(c$trimp_yesterday, digits = 0),
+      " mot ATL ", fmt_dec_sv(c$atl, digits = 0), ")"
+    ))
+  }
   if (name == "load") {
     sign_str <- if (!is.na(c$value) && c$value > 0) "+" else ""
     return(paste0(label, " (", spec$baseline_label, " ", sign_str, val_str, ")"))
@@ -1626,15 +1642,20 @@ health_insight_delta <- function(before, after) {
       wrist_temp = 0.05,
       0
     )
+  sd_str <- if (name == "hrv" && !is.null(c$sd) && is.finite(c$sd)) {
+    paste0(", SD \u00b1", fmt_dec_sv(c$sd, digits = 0), " ms")
+  } else {
+    ""
+  }
   if (delta_meaningful) {
     sign_str <- if (c$delta > 0) "+" else ""
     paste0(
       label, " (", val_str, unit_str, ", ", sign_str,
       fmt_dec_sv(c$delta, digits = spec$digits), " ",
-      spec$baseline_label, ")"
+      spec$baseline_label, sd_str, ")"
     )
   } else {
-    paste0(label, " (", val_str, unit_str, ")")
+    paste0(label, " (", val_str, unit_str, sd_str, ")")
   }
 }
 

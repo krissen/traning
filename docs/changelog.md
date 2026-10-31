@@ -1,5 +1,18 @@
 # tRäning — Changelog
 
+## 2026-10-30 — Morgonprosan säger inte längre två saker samtidigt
+
+- **Belastningsflaggan beskrivs som akut volym, inte TSB.** Flaggan
+  tänds av gårdagens TRIMP mot ATL, men etiketten sa "hög belastning
+  (TSB +N)" — två oförenliga begrepp när TSB samtidigt var positiv.
+  Den flaggade raden visar nu "hög akut volym (gårdagens TRIMP X mot
+  ATL Y)"; den ostörda raden behåller TSB-läsningen.
+- **HRV-trenden får en divergensnot.** Ligger dagens HRV över
+  7d-snittet men veckolutvecklingen pekar nedåt skrivs båda ut, i
+  stället för att trendraden motsäger en "OK"/"stark" HRV-komponent.
+  HRV-komponenten visar också 7d-SD, så tröskeln bakom OK/svag går att
+  förstå.
+
 ## 2026-10-30 — Summaries får kanoniska kolumntyper vid laddning
 
 - **En normalisering i `my_dbs_load()` så konsumenterna kan lita på

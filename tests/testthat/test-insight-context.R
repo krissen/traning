@@ -184,6 +184,36 @@ test_that(".insight_hrv_trend_line fires on a clear downtrend", {
   expect_match(line, "sjunkande trend")
 })
 
+test_that(".insight_hrv_trend_line names a high day inside a downtrend", {
+  today <- as.Date("2026-05-11")
+  hd <- tibble::tibble(
+    metric = "heart_rate_variability",
+    date   = today - (6:0),
+    # Week slopes down, but today sits just above the earlier mean.
+    value  = c(76, 74, 72, 70, 68, 66, 72),
+    source = "AW"
+  )
+  line <- traning:::.insight_hrv_trend_line(hd, today)
+  expect_match(line, "sjunkande trend")
+  expect_match(line, "\\+1 ms \u00f6ver 7d-snittet")
+  expect_match(line, "veckolutvecklingen pekar ned\u00e5t")
+})
+
+test_that(".insight_hrv_trend_line uses the component's 7d baseline", {
+  today <- as.Date("2026-05-11")
+  hd <- tibble::tibble(
+    metric = "heart_rate_variability",
+    date   = today - (7:0),
+    # Today is above the six earlier slope-window days but below the
+    # preceding seven-day mean the HRV component uses (-3 vs 7d).
+    value  = c(100, 76, 74, 72, 70, 68, 66, 72),
+    source = "AW"
+  )
+  line <- traning:::.insight_hrv_trend_line(hd, today)
+  expect_match(line, "sjunkande trend")
+  expect_false(grepl("\u00f6ver 7d-snittet", line, fixed = TRUE))
+})
+
 test_that(".insight_hrv_trend_line silent when flat", {
   today <- as.Date("2026-05-11")
   hd <- tibble::tibble(
