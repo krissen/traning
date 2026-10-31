@@ -131,14 +131,16 @@ def parse_fit_device(path: Path) -> FitDeviceRecord | None:
     activity_local_timestamp = None
 
     for msg in cast(Iterable[Any], fit.messages):
-        fields = _message_fields(msg)
         if msg.name == "file_id" and file_id is None:
-            file_id = fields
+            file_id = _message_fields(msg)
         elif msg.name == "activity" and activity_local_timestamp is None:
-            candidate = fields.get("local_timestamp")
+            candidate = _message_fields(msg).get("local_timestamp")
             if isinstance(candidate, (datetime, date)):
                 activity_local_timestamp = candidate
-        elif msg.name == "device_info" and fields.get("device_index") == "creator":
+        elif msg.name == "device_info":
+            fields = _message_fields(msg)
+            if fields.get("device_index") != "creator":
+                continue
             sw = fields.get("software_version")
             if sw is not None:
                 creator_software_version = sw
