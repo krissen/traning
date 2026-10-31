@@ -766,10 +766,12 @@ if (do_year_top) {
 
 # Date summary: triggered by --datesum OR standalone --after/--before/--span
 # Only runs if no other report command was given (to avoid double output)
-any_report <- do_month_top || do_month_running || do_month_this ||
-  do_month_last || do_year_running || do_year_top || do_total_pace ||
-  do_ef || do_hre || do_acwr || do_monotony || do_pmc || do_recovery_hr ||
-  do_decoupling || do_readiness || do_hr_zones
+any_report <- any(c(
+  do_month_top, do_month_running, do_month_this,
+  do_month_last, do_year_running, do_year_top, do_total_pace,
+  do_ef, do_hre, do_acwr, do_monotony, do_pmc, do_recovery_hr,
+  do_decoupling, do_readiness, do_hr_zones
+))
 
 if (!is.null(options$datesum) || (has_daterange && !any_report)) {
   dr_from <- date_range$from
