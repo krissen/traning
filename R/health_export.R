@@ -2309,6 +2309,96 @@ health_insight_readiness <- function(data, hr_max = NULL, hr_rest = NULL,
 #'   \code{trigger} (character: "rerender" / "tier1" / ""),
 #'   plus the same fields as \code{health_insight_readiness} when re-rendering.
 #' @export
+# Trigger 1 for health_insight_update(): a partial morning gained a
+# component. Returns the re-render prose (and transition phrase) or NULL.
+.readiness_rerender_prose <- function(current, prev_state) {
+  prev_present <- prev_state$morning_components %||% list()
+  new_keys <- character()
+  for (k in names(current$components_present)) {
+    now <- isTRUE(current$components_present[[k]])
+    then <- isTRUE(prev_present[[k]])
+    if (now && !then) new_keys <- c(new_keys, k)
+  }
+  if (length(new_keys) == 0) {
+    return(NULL)
+  }
+
+  added_parts <- character()
+  for (k in new_keys) {
+    c <- current$components[[k]]
+    spec <- .readiness_components[[k]]
+    if (!is.null(c) && !is.na(c$value) && !is.null(spec)) {
+      unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
+      added_parts <- c(
+        added_parts,
+        paste0(
+          spec$label_ok, " ",
+          fmt_dec_sv(c$value, digits = spec$digits), unit_str
+        )
+      )
+    }
+  }
+
+  transition <- ""
+  prev_status <- prev_state$morning_status
+  prev_score <- prev_state$morning_score
+  if (!is.null(prev_status) && !is.na(current$status) &&
+    length(prev_status) == 1 && !is.na(prev_status)) {
+    if (prev_status != current$status ||
+      (!is.null(prev_score) && length(prev_score) == 1 &&
+        !is.na(prev_score) && abs(prev_score - current$score) >= 5)) {
+      transition <- paste0(
+        " ", prev_status, " ", prev_score,
+        " ⇒ ", current$status, " ", current$score, "."
+      )
+    } else {
+      transition <- paste0(" ", current$status, " ", current$score, ".")
+    }
+  }
+  paste0(
+    "Dagsform uppdaterad: ",
+    paste(added_parts, collapse = ", "), ".",
+    transition
+  )
+}
+
+# Trigger 2 for health_insight_update(): an unreported tier-1 metric with
+# a material delta vs its 7d mean. Returns list(prosa, metric) or NULL.
+.readiness_tier1_update <- function(current, health_daily, already_sent) {
+  for (m in names(.tier1_update_thresholds)) {
+    if (m %in% already_sent) next
+    today <- health_daily |>
+      dplyr::filter(metric == m, date == current$datum) |>
+      dplyr::pull(value)
+    if (length(today) == 0 || all(is.na(today))) next
+    val <- mean(today, na.rm = TRUE)
+    hist <- health_daily |>
+      dplyr::filter(
+        metric == m,
+        date >= current$datum - 7, date < current$datum
+      ) |>
+      dplyr::pull(value)
+    if (length(hist) < 2) next
+    avg7d <- mean(hist, na.rm = TRUE)
+    delta <- val - avg7d
+    if (!is.finite(delta) || abs(delta) < .tier1_update_thresholds[[m]]) next
+
+    label <- if (m %in% names(.metric_labels)) .metric_labels[[m]] else m
+    unit <- if (m %in% names(.metric_units)) .metric_units[[m]] else ""
+    unit_str <- if (nzchar(unit)) paste0(" ", unit) else ""
+    sign_str <- if (delta > 0) "+" else ""
+    return(list(
+      prosa = paste0(
+        toupper(substr(label, 1, 1)), substr(label, 2, nchar(label)),
+        " ", fmt_dec_sv(val, trim_zero = TRUE), unit_str,
+        " (", sign_str, fmt_dec_sv(delta, trim_zero = TRUE), " vs 7d)."
+      ),
+      metric = m
+    ))
+  }
+  NULL
+}
+
 health_insight_update <- function(data, prev_state,
                                   hr_max = NULL, hr_rest = NULL,
                                   on_date = NULL) {
@@ -2337,50 +2427,8 @@ health_insight_update <- function(data, prev_state,
   # --- Trigger 1: re-render after partial morning -------------------------
   was_partial <- isTRUE(prev_state$morning_kvalitet %in% c("partial", "minimal"))
   if (was_partial) {
-    prev_present <- prev_state$morning_components %||% list()
-    new_keys <- character()
-    for (k in names(current$components_present)) {
-      now <- isTRUE(current$components_present[[k]])
-      then <- isTRUE(prev_present[[k]])
-      if (now && !then) new_keys <- c(new_keys, k)
-    }
-    if (length(new_keys) > 0) {
-      added_parts <- character()
-      for (k in new_keys) {
-        c <- current$components[[k]]
-        spec <- .readiness_components[[k]]
-        if (!is.null(c) && !is.na(c$value) && !is.null(spec)) {
-          unit_str <- if (nzchar(spec$unit)) paste0(" ", spec$unit) else ""
-          added_parts <- c(
-            added_parts,
-            paste0(
-              spec$label_ok, " ",
-              fmt_dec_sv(c$value, digits = spec$digits), unit_str
-            )
-          )
-        }
-      }
-      transition <- ""
-      prev_status <- prev_state$morning_status
-      prev_score <- prev_state$morning_score
-      if (!is.null(prev_status) && !is.na(current$status) &&
-        length(prev_status) == 1 && !is.na(prev_status)) {
-        if (prev_status != current$status ||
-          (!is.null(prev_score) && length(prev_score) == 1 &&
-            !is.na(prev_score) && abs(prev_score - current$score) >= 5)) {
-          transition <- paste0(
-            " ", prev_status, " ", prev_score,
-            " ⇒ ", current$status, " ", current$score, "."
-          )
-        } else {
-          transition <- paste0(" ", current$status, " ", current$score, ".")
-        }
-      }
-      prosa <- paste0(
-        "Dagsform uppdaterad: ",
-        paste(added_parts, collapse = ", "), ".",
-        transition
-      )
+    prosa <- .readiness_rerender_prose(current, prev_state)
+    if (!is.null(prosa)) {
       out <- current
       out$prosa <- prosa
       out$trigger <- "rerender"
@@ -2390,38 +2438,15 @@ health_insight_update <- function(data, prev_state,
   }
 
   # --- Trigger 2: tier-1 metric not yet reported --------------------------
-  already_sent <- prev_state$afternoon_updates_sent %||% character()
-  for (m in names(.tier1_update_thresholds)) {
-    if (m %in% already_sent) next
-    today <- health_daily |>
-      dplyr::filter(metric == m, date == current$datum) |>
-      dplyr::pull(value)
-    if (length(today) == 0 || all(is.na(today))) next
-    val <- mean(today, na.rm = TRUE)
-    hist <- health_daily |>
-      dplyr::filter(
-        metric == m,
-        date >= current$datum - 7, date < current$datum
-      ) |>
-      dplyr::pull(value)
-    if (length(hist) < 2) next
-    avg7d <- mean(hist, na.rm = TRUE)
-    delta <- val - avg7d
-    if (!is.finite(delta) || abs(delta) < .tier1_update_thresholds[[m]]) next
-
-    label <- if (m %in% names(.metric_labels)) .metric_labels[[m]] else m
-    unit <- if (m %in% names(.metric_units)) .metric_units[[m]] else ""
-    unit_str <- if (nzchar(unit)) paste0(" ", unit) else ""
-    sign_str <- if (delta > 0) "+" else ""
-    prosa <- paste0(
-      toupper(substr(label, 1, 1)), substr(label, 2, nchar(label)),
-      " ", fmt_dec_sv(val, trim_zero = TRUE), unit_str,
-      " (", sign_str, fmt_dec_sv(delta, trim_zero = TRUE), " vs 7d)."
-    )
+  update <- .readiness_tier1_update(
+    current, health_daily,
+    prev_state$afternoon_updates_sent %||% character()
+  )
+  if (!is.null(update)) {
     out <- current
-    out$prosa <- prosa
+    out$prosa <- update$prosa
     out$trigger <- "tier1"
-    out$tier1_metric <- m
+    out$tier1_metric <- update$metric
     return(out)
   }
 
