@@ -291,7 +291,6 @@ get_my_files <- function(mytcxpath) {
 }
 
 # Apple Watch rows describing the same session as `row`.
-# Apple Watch rows describing the same session as `row`.
 .matching_hae_rows <- function(summaries, row) {
   if (!"source" %in% names(summaries) || nrow(summaries) == 0) {
     return(integer(0))
@@ -304,8 +303,6 @@ get_my_files <- function(mytcxpath) {
 }
 
 
-# Distances of the Garmin rows already cached for the session that the
-# Apple Watch rows `dup` describe.
 # Distances of the Garmin rows already cached for the session that the
 # Apple Watch rows `dup` describe.
 #
