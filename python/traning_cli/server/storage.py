@@ -169,9 +169,10 @@ def _suspected_aggregates(samples: list[dict]) -> list[tuple[str, str]]:
         bare_zeros = []
         detailed_peers = 0
         for i in idx:
-            sec = _TS_RE.match(str(samples[i].get("date", samples[i].get("startDate", "")))).group(
-                2
-            )
+            m = _TS_RE.match(str(samples[i].get("date", samples[i].get("startDate", ""))))
+            if m is None:
+                continue
+            sec = m.group(2)
             if sec == "00":
                 bare_zeros.append(i)
             elif _has_detail(samples[i]):

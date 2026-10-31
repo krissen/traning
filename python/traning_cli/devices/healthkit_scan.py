@@ -242,7 +242,7 @@ def _scan_xml_stream(
     fh,
     export_path: Path,
     stats: HealthKitScanStats,
-    earliest: dict[tuple[str, str], datetime],
+    earliest: dict[tuple[str, str | None], datetime],
     *,
     _root_len_probe=None,
 ) -> None:
@@ -272,6 +272,8 @@ def _scan_xml_stream(
             continue
 
         if elem.tag not in WATCH_RECORD_TAGS:
+            continue
+        if root is None:
             continue
         if _root_len_probe is not None:
             _root_len_probe(len(root))
@@ -338,7 +340,7 @@ def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthK
     # (full datetime, not just date — see the sort below). Bounded by
     # the number of distinct device/firmware combinations in the whole
     # export, not the number of samples.
-    earliest: dict[tuple[str, str], datetime] = {}
+    earliest: dict[tuple[str, str | None], datetime] = {}
 
     try:
         if _is_zip_path(export_path):
@@ -371,7 +373,7 @@ def scan_export(export_path: Path) -> tuple[list[HealthKitDeviceRecord], HealthK
             path=export_path,
             activity_date=record_dt.date(),
             model=normalize_watch_model(hardware),
-            os_version=normalize_os_version(software),
+            os_version=normalize_os_version(software or ""),
         )
         for (hardware, software), record_dt in sorted(earliest.items(), key=lambda kv: kv[1])
     ]

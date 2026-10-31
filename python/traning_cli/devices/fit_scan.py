@@ -27,9 +27,11 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any, cast
 
 import fitparse
 
@@ -108,6 +110,14 @@ def _format_os_version(value) -> str:
     return str(value)
 
 
+def _message_fields(msg: object) -> dict[str, Any]:
+    """Field name -> value for a fitparse message (or the test double)."""
+    fields = getattr(msg, "fields", None)
+    if isinstance(fields, dict):
+        return {str(name): getattr(field, "value", None) for name, field in fields.items()}
+    return {d.name: d.value for d in cast(Iterable[Any], msg)}
+
+
 def parse_fit_device(path: Path) -> FitDeviceRecord | None:
     """Extract (model, os_version, activity_date) from one FIT file.
 
@@ -120,20 +130,20 @@ def parse_fit_device(path: Path) -> FitDeviceRecord | None:
     creator_software_version = None
     activity_local_timestamp = None
 
-    for msg in fit.messages:
+    for msg in cast(Iterable[Any], fit.messages):
         if msg.name == "file_id" and file_id is None:
-            file_id = {d.name: d.value for d in msg}
+            file_id = _message_fields(msg)
         elif msg.name == "activity" and activity_local_timestamp is None:
-            fields = {d.name: d.value for d in msg}
-            candidate = fields.get("local_timestamp")
+            candidate = _message_fields(msg).get("local_timestamp")
             if isinstance(candidate, (datetime, date)):
                 activity_local_timestamp = candidate
         elif msg.name == "device_info":
-            fields = {d.name: d.value for d in msg}
-            if fields.get("device_index") == "creator":
-                sw = fields.get("software_version")
-                if sw is not None:
-                    creator_software_version = sw
+            fields = _message_fields(msg)
+            if fields.get("device_index") != "creator":
+                continue
+            sw = fields.get("software_version")
+            if sw is not None:
+                creator_software_version = sw
 
     if file_id is None:
         raise ValueError(f"{path}: no file_id message")

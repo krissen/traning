@@ -15,7 +15,10 @@ missing: `install.packages(c("pkgload", "devtools"))`. `make setup`
 `make setup` (`scripts/setup.sh`) bootstraps everything below in one
 step: a pinned, persistently-installed `prek`, a `gitleaks` presence/
 version check, `python/.venv` (via `python/setup_venv.sh`), and the four
-R packages the local hooks need. Which of the two paths it takes for
+R packages the local hooks need. `setup_venv.sh` exits early when the
+venv already exists, so after pulling a change that adds a dev
+dependency (e.g. `basedpyright`) refresh it with
+`python/.venv/bin/pip install -e '.[dev]'`. Which of the two paths it takes for
 wiring the actual git hook depends on `core.hooksPath`:
 
 **(a) Plain clone** (no `core.hooksPath` set) — `make setup` runs
@@ -68,6 +71,15 @@ dispatcher to read it.
   has nothing staged).
 - **ruff** (`ruff-check --fix`, `ruff-format`) — Python lint/format,
   `[tool.ruff]` in `pyproject.toml`.
+- **basedpyright** — type check of `python/traning_cli` against
+  `python/.venv`, configured by `[tool.basedpyright]` in
+  `pyproject.toml`. It starts in `basic` mode with the pure-noise
+  rules from a pre-typing codebase switched off (unknown-type and
+  missing-type-argument reports), mirroring `.lintr`'s permissive
+  cyclocomp start; tighten the set as annotations land. The hook is
+  `language: system` because it needs the project's installed
+  dependencies to resolve imports, so the CI *lint* job skips it and
+  the *test* job runs `uv run basedpyright` after `uv sync`.
 - **pre-commit-hooks** — YAML/JSON syntax, added-file size (`--maxkb=1000`),
   end-of-file/trailing-whitespace hygiene.
 - **shellcheck** / **shfmt** — the five shell scripts under `scripts/` and
@@ -104,8 +116,11 @@ dispatcher to read it.
 
 CI (`.github/workflows/ci.yml`) runs the same `prek` configuration via
 `pipx run --spec prek==0.5.2 prek run --all-files`, skipping the three
-non-test R hooks (`SKIP=parsable-R,style-files,lintr` — the runner has
-no R toolchain), plus a full-tree `gitleaks dir .` and `pytest`.
+non-test R hooks and `basedpyright` (`SKIP=parsable-R,style-files,lintr,basedpyright`
+— the lint runner has no R toolchain or project venv), plus a
+full-tree `gitleaks dir .`. The test job installs the dev extra,
+places the venv at `python/.venv` (matching the config), runs
+`uv run basedpyright`, and then `pytest`.
 **`testthat` does not run in CI.** DESCRIPTION lists ~29 CRAN
 dependencies (`ggplot2`, `dplyr`, `shiny`, `plotly`, `DT`, and others);
 installing and caching that on GitHub Actions is the same class of cost
@@ -127,8 +142,9 @@ changed.
 
 ## `make check`
 
-Runs locally before commit/PR: `prek run --all-files`, a full-tree
-`gitleaks dir .`, `ruff check .` **without** `--fix` (prek's own
+Runs locally before commit/PR: `prek run --all-files` (including
+`basedpyright` via `python/.venv`), a full-tree `gitleaks dir .`,
+`ruff check .` **without** `--fix` (prek's own
 `--fix` hook would otherwise silently clean up and pass a newly
 created, still-untracked file with nothing staged to compare against),
 `pytest`, and `testthat` (same as the pre-push hook — running it here

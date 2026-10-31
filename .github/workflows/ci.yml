@@ -51,7 +51,10 @@ jobs:
         # ORDER 1 report) — R/lintr debt was paid down as part of
         # introducing this config, rather than deferred to diff mode.
         env:
-          SKIP: parsable-R,style-files,lintr
+          # basedpyright is also skipped here: it needs python/.venv's
+          # project dependencies, which this job does not install. The
+          # test job runs it explicitly after `uv sync`.
+          SKIP: parsable-R,style-files,lintr,basedpyright
         run: pipx run --spec prek==0.5.2 prek run --all-files --show-diff-on-failure
 
       - name: Gitleaks full-tree scan
@@ -70,6 +73,10 @@ jobs:
     name: pytest
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      # Keep the CI venv where pyproject's [tool.basedpyright] points
+      # (venvPath = "python"), matching the local setup script.
+      UV_PROJECT_ENVIRONMENT: python/.venv
     steps:
       - uses: actions/checkout@v4
 
@@ -100,6 +107,9 @@ jobs:
         # against a stale environment. --locked asserts the lockfile is
         # already up to date and fails otherwise.
         run: uv sync --locked --extra dev --python ${{ env.PYTHON_VERSION }}
+
+      - name: Type check
+        run: uv run basedpyright
 
       - name: Run tests
         run: uv run pytest -q python/tests
